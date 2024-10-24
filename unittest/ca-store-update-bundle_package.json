@@ -1,0 +1,8 @@
+{
+  "name": "ca-store-update-bundle",
+  "description": "ca cert updates",
+  "version": "0.3",
+  "contents": ["ca-store-update-bundle.tar"],
+  "size": "80K",
+  "installScript": "etc/rdm/post-services/post_cadl.sh"
+}
