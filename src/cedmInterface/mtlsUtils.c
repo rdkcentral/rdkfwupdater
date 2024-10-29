@@ -18,7 +18,9 @@
 
 #include "mtlsUtils.h"
 #include "deviceutils.h"
+#ifdef LIBRDKCONFIG_BUILD
 #include "rdkconfig.h"
+#endif
 
 /* Description: Use for get all mtls related certificate and key.
  * @param sec: This is a pointer hold the certificate, key and type of certificate.
