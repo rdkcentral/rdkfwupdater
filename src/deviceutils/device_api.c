@@ -275,9 +275,13 @@ size_t GetAdditionalFwVerInfo( char *pAdditionalFwVerInfo, size_t szBufSize )
     if( pAdditionalFwVerInfo != NULL )
     {
         len = GetPDRIFileName( pAdditionalFwVerInfo, szBufSize );
-	if( len < szBufSize )
+	    if(len && len < szBufSize )
         {
             len += GetRemoteInfo( (pAdditionalFwVerInfo + len), (szBufSize - len) );
+        }
+        else
+        {
+            SWLOG_DEBUG("GetAdditionalFwVerInfo: GetPDRIFileName len = %d. discarding it.", len);
         }
     }
     else
@@ -305,7 +309,7 @@ size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
     if( pPDRIFilename != NULL )
     {
         len = RunCommand( eMfrUtil, "--PDRIVersion", pPDRIFilename, szBufSize );
-        if( len && ((pTmp = strcasestr( pPDRIFilename, "failed" )) == NULL) )   // if "failed" is not found
+        if (len > 0 && pPDRIFilename[0] != '\0' && pPDRIFilename[0] != '\n' && (pTmp = strcasestr(pPDRIFilename, "failed")) == NULL) {
         {
             SWLOG_INFO( "GetPDRIFileName: PDRI Version = %s\n", pPDRIFilename );
         }
