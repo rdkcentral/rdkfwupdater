@@ -309,7 +309,7 @@ size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
     if( pPDRIFilename != NULL )
     {
         len = RunCommand( eMfrUtil, "--PDRIVersion", pPDRIFilename, szBufSize );
-        if (len > 0 && pPDRIFilename[0] != '\0' && pPDRIFilename[0] != '\n' && (pTmp = strcasestr(pPDRIFilename, "failed")) == NULL) {
+        if (len > 0 && pPDRIFilename[0] != '\0' && pPDRIFilename[0] != '\n' && (pTmp = strcasestr(pPDRIFilename, "failed")) == NULL)
         {
             SWLOG_INFO( "GetPDRIFileName: PDRI Version = %s\n", pPDRIFilename );
         }
