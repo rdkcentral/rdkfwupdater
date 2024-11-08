@@ -275,7 +275,7 @@ size_t GetAdditionalFwVerInfo( char *pAdditionalFwVerInfo, size_t szBufSize )
     if( pAdditionalFwVerInfo != NULL )
     {
         len = GetPDRIFileName( pAdditionalFwVerInfo, szBufSize );
-	    if(len && len < szBufSize )
+        if(len && len < szBufSize )
         {
             len += GetRemoteInfo( (pAdditionalFwVerInfo + len), (szBufSize - len) );
         }
