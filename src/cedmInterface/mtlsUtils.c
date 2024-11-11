@@ -30,7 +30,7 @@ int getMtlscert(MtlsAuth_t *sec) {
     /* RDKE-419: temporary change to support community devices.
      * Community devices does not support LIBRDKCONFIG_BUILD as well.
      * Use that as a temporary solution until RDKE-419 gets proper solution. */
-#ifndef LIBRDKCONFIG_BUILD
+#ifdef NO_SUPPORT_FOR_XPKI_MTLS
     return MTLS_FAILURE;
 #endif
     /*
