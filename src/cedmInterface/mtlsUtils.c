@@ -27,7 +27,13 @@
  * @return : int Success 1 and failure -1
  * */
 int getMtlscert(MtlsAuth_t *sec) {
-	/*
+    /* RDKE-419: temporary change to support community devices.
+     * Community devices does not support LIBRDKCONFIG_BUILD as well.
+     * Use that as a temporary solution until RDKE-419 gets proper solution. */
+#ifndef LIBRDKCONFIG_BUILD
+    return MTLS_FAILURE;
+#endif
+    /*
             strncpy(sec->cert_name, STATE_RED_CERT, sizeof(sec->cert_name) - 1);
 	    sec->cert_name[sizeof(sec->cert_name) - 1] = '\0';
             strncpy(sec->cert_type, "P12", sizeof(sec->cert_type) - 1);
