@@ -281,7 +281,7 @@ size_t GetAdditionalFwVerInfo( char *pAdditionalFwVerInfo, size_t szBufSize )
         }
         else
         {
-            SWLOG_DEBUG("GetAdditionalFwVerInfo: GetPDRIFileName len = %d. discarding it.", len);
+            SWLOG_INFO("GetAdditionalFwVerInfo: GetPDRIFileName len = %d. discarding it.", len);
         }
     }
     else
