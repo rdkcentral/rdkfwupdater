@@ -241,7 +241,7 @@ void getPidStore(const char *device, const char *maint_window) {
     pid = getpid();
     sprintf(data, "%u\n", pid);
     SWLOG_INFO("getPidStore() pid=%u in string=%s\n", pid, data);
-    if(!(strcmp(device, "LLAMA")) || (!(strcmp(device, "XiOne"))) || (!(strcmp(maint_window, "true")))) {
+    if((!(strcmp(maint_window, "true")))) {
         savePID(CURL_PID_FILE, data);
         savePID(FWDNLD_PID_FILE, data);
     }
