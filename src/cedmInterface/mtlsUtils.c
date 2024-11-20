@@ -27,13 +27,6 @@
  * @return : int Success 1 and failure -1
  * */
 int getMtlscert(MtlsAuth_t *sec) {
-    /* TODO: RDKE-419: temporary change to support community devices.
-     * Community devices does not support LIBRDKCONFIG_BUILD as well.
-     * Use below build flag which is enabled from product layer until
-     * RDKE-419 gets proper solution. */
-#ifdef NO_SUPPORT_FOR_MTLS
-    return MTLS_FAILURE;
-#endif
     /*
             strncpy(sec->cert_name, STATE_RED_CERT, sizeof(sec->cert_name) - 1);
 	    sec->cert_name[sizeof(sec->cert_name) - 1] = '\0';
@@ -42,5 +35,6 @@ int getMtlscert(MtlsAuth_t *sec) {
             strncpy(sec->key_pas, mtlsbuff, sizeof(sec->key_pas) - 1);
             sec->key_pas[sizeof(sec->key_pas) - 1] = '\0';
 	*/
-    return MTLS_SUCCESS;
+    /* TODO: RDKE-419: temporary change until RDKE-419 gets proper solution. */
+    return MTLS_FAILURE;
 }
