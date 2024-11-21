@@ -27,7 +27,7 @@
  * @return : int Success 1 and failure -1
  * */
 int getMtlscert(MtlsAuth_t *sec) {
-	/*
+    /*
             strncpy(sec->cert_name, STATE_RED_CERT, sizeof(sec->cert_name) - 1);
 	    sec->cert_name[sizeof(sec->cert_name) - 1] = '\0';
             strncpy(sec->cert_type, "P12", sizeof(sec->cert_type) - 1);
@@ -35,5 +35,6 @@ int getMtlscert(MtlsAuth_t *sec) {
             strncpy(sec->key_pas, mtlsbuff, sizeof(sec->key_pas) - 1);
             sec->key_pas[sizeof(sec->key_pas) - 1] = '\0';
 	*/
-    return MTLS_SUCCESS;
+    /* TODO: RDKE-419: temporary change until RDKE-419 gets proper solution. */
+    return MTLS_FAILURE;
 }
