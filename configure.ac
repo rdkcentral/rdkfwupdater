@@ -82,9 +82,6 @@ AC_SUBST(LIBRDKCONFIG_FLAG)
 
 PKG_CHECK_MODULES([cjson], [libcjson])
 PKG_CHECK_MODULES([curl], [libcurl])
-AM_COND_IF([ubuntu], [PKG_CHECK_MODULES([dbus], [dbus-1])])
-AM_COND_IF([ubuntu], [PKG_CHECK_MODULES([gio], [gio-2.0])])
-
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_HEADER_STDBOOL
