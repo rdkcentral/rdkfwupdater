@@ -43,17 +43,21 @@ TRACE_LIBS==" "
 
 # Checks for header files.
 AC_CHECK_HEADERS([stdlib.h string.h unistd.h])
-AC_CHECK_FUNCS([memset])
-AC_CHECK_FUNCS([socket])
-AC_CHECK_HEADERS([arpa/inet.h])
-AC_CHECK_HEADERS([netinet/in.h])
-AC_CHECK_HEADERS([sys/ioctl.h])
-AC_CHECK_HEADERS([sys/socket.h])
-AC_CHECK_HEADERS([termio.h])
 AC_FUNC_MKTIME
 AC_PROG_RANLIB
 AC_TYPE_SIZE_T
 AC_TYPE_UINT32_T
+
+AC_ARG_ENABLE([cpc-code],
+    [AS_HELP_STRING([--enable-cpc-code], [Enable CPC code support])],
+    [USE_CPC_CODE="$enableval"],
+    [USE_CPC_CODE=no])
+
+AM_CONDITIONAL([USE_CPC_CODE], [test "$USE_CPC_CODE" = "yes"])
+
+if test "$USE_CPC_CODE" = "yes"; then
+    AC_DEFINE([USE_CPC_CODE], [1], [Define to enable CPC CODE support])
+fi
 
 AC_ARG_ENABLE([mountutils],
         AS_HELP_STRING([--enable-mountutils],[enables mountutils replacement (default is no)]),
@@ -85,5 +89,3 @@ AC_CONFIG_FILES(
     Makefile
     )
 AC_OUTPUT
-
-
