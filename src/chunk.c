@@ -101,7 +101,7 @@ int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_li
             curl_ret_code = CURLE_OK;
             return curl_ret_code;
         } else if (file_size != -1) {
-            sprintf(range, "%d-", file_size);
+            snprintf(range,sizeof(range), "%d-", file_size);
             SWLOG_INFO("chunkDownload() file size=%d and range=%s\n", file_size, range);
         }   else {
             SWLOG_ERROR( "chunkDownload() error getFileSize=%s\n", pfile_dwnl->pathname);

@@ -366,7 +366,7 @@ void checkAndEnterStateRed(int curlret, const char *disableStatsUpdate) {
     }
     if((curlret == 35) || (curlret == 51) || (curlret == 53) || (curlret == 54) || (curlret == 58) || (curlret == 59) || (curlret == 60)
             || (curlret == 64) || (curlret == 66) || (curlret == 77) || (curlret == 80) || (curlret == 82) || (curlret == 83) || (curlret == 90)
-            || (curlret == 91)) {
+            || (curlret == 91)|| (curlret == 495)) {
         SWLOG_INFO("RED checkAndEnterStateRed: Curl SSL/TLS error %d. Set State Red Recovery Flag and Exit!!!", curlret);
         //CID:280507-Unchecked return value
 	if(remove(DIRECT_BLOCK_FILENAME) != 0){
