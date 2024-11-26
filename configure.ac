@@ -55,65 +55,6 @@ AC_PROG_RANLIB
 AC_TYPE_SIZE_T
 AC_TYPE_UINT32_T
 
-RDK_FLAVOR="ubuntu"
-AC_ARG_WITH([rdk-flavor],
-[  --with-rdk-flavor    build flavor],
-[case "${withval}" in
-  ubuntu) RDK_FLAVOR=ubuntu;;
-  rdkb) RDK_FLAVOR=rdkb ;;
-  rdkv) RDK_FLAVOR=rdkv ;;
-  *) AC_MSG_ERROR([bad value ${withval} for --with-rdk-flavor]) ;;
-esac],[RDK_FLAVOR="ubuntu"])
-AM_CONDITIONAL([ubuntu], [test "x$RDK_FLAVOR" = xubuntu])
-AM_COND_IF([ubuntu], [AC_DEFINE([__UBUNTU__], [1], [ubuntu platform selection macro])])
-AM_COND_IF([ubuntu], [PKG_CHECK_MODULES([dbuscpp], [dbus-c++-glib-1])])
-
-AM_CONDITIONAL([rdkb], [test "x$RDK_FLAVOR" = xrdkb])
-AM_COND_IF([rdkb], [AC_DEFINE([__RDKB__], [1], [rdkb platform selection macro])])
-AM_COND_IF([rdkb], [PKG_CHECK_MODULES([dbus], [dbus-1])])
-AM_COND_IF([rdkb], [PKG_CHECK_MODULES([gio], [gio-2.0])])
-
-AM_CONDITIONAL([rdkv], [test "x$RDK_FLAVOR" = xrdkv])
-AM_COND_IF([rdkv], [AC_DEFINE([__RDKV__], [1], [rdkv platform selection macro])])
-
-AC_ARG_ENABLE([cpc-cedm],
-    [AS_HELP_STRING([--enable-cpc-cedm], [Enable CPC CEDM support])],
-    [USE_CPC_CEDM="$enableval"],
-    [USE_CPC_CEDM=no])
-
-AM_CONDITIONAL([USE_CPC_CEDM], [test "$USE_CPC_CEDM" = "yes"])
-
-if test "$USE_CPC_CEDM" = "yes"; then
-    AC_DEFINE([USE_CPC_CEDM], [1], [Define to enable CPC CEDM support])
-fi
-
-RDK_DEVICE="none"
-AC_ARG_WITH([rdk-device],
-[  --with-rdk-device    device model possible values arrisxb6, technicolorxb6, ciscoxb3, xb3_3939, pacexf3, none],
-[case "${withval}" in
-  pacexf3-bci) RDK_DEVICE=pacexf3 ;; # translate xf3-bci to xf3 as they are both same.
-  *) RDK_DEVICE=${withval} ;;
-esac],[RDK_DEVICE=none])
-
-AM_CONDITIONAL([pacexf3], [test "x$RDK_DEVICE" = xpacexf3])
-AM_COND_IF([pacexf3], [AC_DEFINE([__pacexf3__], [1], [pacexf3 device selection macro])])
-
-AC_ARG_ENABLE([comcast-build],
-              AS_HELP_STRING([--enable-comcast-build],[enable comcast build (default is yes)]),
-              [
-                case "${enableval}" in
-                 yes) ENABLE_COMCAST_BUILD=true 
-                      ENABLE_COMCAST_OFFSET_FLAG="-DCOMCAST_OFFSET" ;;
-                  no) [echo "comcast build is disabled"] ;;
-                   *) AC_MSG_ERROR([bad value ${enableval} for --enable-comcast-build]) ;;
-                esac
-              ],
-              [
-                ENABLE_COMCAST_BUILD=true
-                [echo "comcast build is enabled"]
-              ])
-AM_CONDITIONAL([ENABLE_COMCAST_BUILD], [test x$ENABLE_COMCAST_BUILD = xtrue])
-
 AC_ARG_ENABLE([mountutils],
         AS_HELP_STRING([--enable-mountutils],[enables mountutils replacement (default is no)]),
         [
@@ -130,9 +71,6 @@ AC_SUBST(LIBRDKCONFIG_FLAG)
 
 PKG_CHECK_MODULES([cjson], [libcjson])
 PKG_CHECK_MODULES([curl], [libcurl])
-AM_COND_IF([ubuntu], [PKG_CHECK_MODULES([dbus], [dbus-1])])
-AM_COND_IF([ubuntu], [PKG_CHECK_MODULES([gio], [gio-2.0])])
-
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_HEADER_STDBOOL

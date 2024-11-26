@@ -15,8 +15,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-if rdkv
-
 AM_CFLAGS = $(TRACE_CFLAGS)
 
 AM_CFLAGS += -Wall -Werror $(cjson_CFLAGS) $(curl_CFLAGS) $(CFLAGS)
@@ -53,7 +51,7 @@ rdkvfwupgrader_include_HEADERS = \
 rdkvfwupgrader_CFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
 rdkvfwupgrader_CPPFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
 
-if USE_CPC_CEDM
+if USE_CPC_CODE
 rdkvfwupgrader_SOURCES += \
     ${top_srcdir}/src/cedmInterface-cpc/codebigUtils.c \
     ${top_srcdir}/src/cedmInterface-cpc/mtlsUtils.c
@@ -88,4 +86,3 @@ testrdkvfwupgrader_include_HEADERS = \
 
 testrdkvfwupgrader_includedir = ${includedir}
 
-endif
