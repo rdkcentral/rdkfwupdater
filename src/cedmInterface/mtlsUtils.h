@@ -16,8 +16,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */ 
 
-#ifndef VIDEO_CEDMINTERFACE_MTLSUTILS_H_
-#define VIDEO_CEDMINTERFACE_MTLSUTILS_H_
+#ifndef VIDEO_CORE_MTLSUTILS_H_
+#define VIDEO_CORE_MTLSUTILS_H_
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,4 +51,4 @@
 int getMtlscert(MtlsAuth_t *sec);
 
 
-#endif /* VIDEO_CEDMINTERFACE_MTLSUTILS_H_ */
+#endif /* VIDEO_CORE_MTLSUTILS_H_ */

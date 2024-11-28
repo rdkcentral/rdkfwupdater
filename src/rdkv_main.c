@@ -241,10 +241,8 @@ void getPidStore(const char *device, const char *maint_window) {
     pid = getpid();
     snprintf(data,sizeof(data), "%u\n", pid);
     SWLOG_INFO("getPidStore() pid=%u in string=%s\n", pid, data);
-    if(!(strcmp(device, "LLAMA")) || (!(strcmp(device, "XiOne"))) || (!(strcmp(maint_window, "true")))) {
-        savePID(CURL_PID_FILE, data);
-        savePID(FWDNLD_PID_FILE, data);
-    }
+    savePID(CURL_PID_FILE, data);
+    savePID(FWDNLD_PID_FILE, data);
 }
 
 // TODO - do similar to what is done for IARM eventing. Is not the primary goal of this module
@@ -1234,8 +1232,7 @@ int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocati
             }
             if (upgrade_type == PCI_UPGRADE || upgrade_type == PDRI_UPGRADE) {
                 setDwnlState(RDKV_FWDNLD_FLASH_INPROGRESS);
-		// Added for update Flashing In Progress status inside status file. For AXG1V4 status is Download complete
-                snprintf(dwnl_status, sizeof(dwnl_status),(false == (isMediaClientDevice())) ? "Download complete" : "Flashing In Progress");
+                snprintf(dwnl_status, sizeof(dwnl_status), "Flashing In Progress");
                 snprintf(fwdls.status, sizeof(fwdls.status), "Status|%s\n", dwnl_status);
                 updateFWDownloadStatus(&fwdls, disableStatsUpdate);
                 flash_status  = flashImage(artifactLocationUrl, dwlpath_filename, immed_reboot_flag, "2", upgrade_type, device_info.maint_status);
