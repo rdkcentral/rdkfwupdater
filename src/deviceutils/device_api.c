@@ -751,8 +751,7 @@ size_t GetModelNum( char *pModelNum, size_t szBufSize )
         SWLOG_INFO( "GetModelNum: Error, input argument NULL\n" );
     }
 #else
-/* DELIA-60757: Below code need to be implemented for both mdeiaclient and non mediclient device.
- * This code not use now because in case of axg1v4 the model number featched using snmpget*/
+/* DELIA-60757: Below code need to be implemented for both mdeiaclient and non mediclient device. */
     FILE *fp;
     char *pTmp;
     char buf[150];
