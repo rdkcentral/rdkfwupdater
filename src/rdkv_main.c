@@ -250,6 +250,7 @@ void getPidStore(const char *device, const char *maint_window) {
  * @param marker: use for send marker details
  * @return : void
  * */
+#ifndef CONTAINER_COVERITY_ENABLE
 void t2CountNotify(char *marker) {
     T2ERROR t2_ret = -1;
     if(marker != NULL) {
@@ -274,6 +275,13 @@ void t2ValNotify( char *marker, char *val )
         SWLOG_INFO("t2CountNotify() Error: one or more input args is NULL\n");
     }
 }
+#else
+void t2CountNotify(char *marker) {
+}
+void t2ValNotify( char *marker, char *val )
+{
+}
+#endif
 
 // TODO: Use following function for all types of downloads when needed for telemetry v2 logs
 bool checkt2ValNotify( int iCurlCode, int iUpgradeType, char *Url  )
@@ -417,7 +425,9 @@ int initialize(void) {
     int mode = 1;
     char post_data[] = "{\"jsonrpc\":\"2.0\",\"id\":\"3\",\"method\":\"org.rdk.MaintenanceManager.1.getMaintenanceMode\",\"params\":{}}";
 
+#ifndef CONTAINER_COVERITY_ENABLE
     t2_init("rdkfwupgrader");
+#endif
  
     *cur_img_detail.cur_img_name = 0;
     *rfc_list.rfc_fw_upgrader = 0;
@@ -465,7 +475,9 @@ int initialize(void) {
  * @return: void
  * */
 void uninitialize(int fwDwnlStatus) {
+#ifndef CONTAINER_COVERITY_ENABLE    
     t2_uninit();
+#endif
     pthread_mutex_destroy(&mutuex_dwnl_state);
     pthread_mutex_destroy(&app_mode_status);
     term_event_handler();

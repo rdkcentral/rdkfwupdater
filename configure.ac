@@ -73,6 +73,17 @@ AC_ARG_ENABLE([mountutils],
 AM_CONDITIONAL([IS_LIBRDKCONFIG_ENABLED], [test x$IS_LIBRDKCONFIG_ENABLED = xtrue])
 AC_SUBST(LIBRDKCONFIG_FLAG)
 
+AC_ARG_ENABLE([coverity-feature],
+    [AS_HELP_STRING([--enable-coverity-feature], [Enable COVERITY code support])],
+    [CONTAINER_COVERITY_ENABLE=yes],
+    [CONTAINER_COVERITY_ENABLE=no])
+
+AM_CONDITIONAL([CONTAINER_COVERITY_ENABLE], [test "$CONTAINER_COVERITY_ENABLE" = "yes"])
+
+if test "$CONTAINER_COVERITY_ENABLE" = "yes"; then
+    AC_DEFINE([CONTAINER_COVERITY_ENABLE], [1], [Define to enable Coverity support])
+fi
+
 PKG_CHECK_MODULES([cjson], [libcjson])
 PKG_CHECK_MODULES([curl], [libcurl])
 

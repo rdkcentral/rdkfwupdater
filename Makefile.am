@@ -20,7 +20,13 @@ AM_CFLAGS = $(TRACE_CFLAGS)
 AM_CFLAGS += -Wall -Werror $(cjson_CFLAGS) $(curl_CFLAGS) $(CFLAGS)
 AM_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
 AM_LDFLAGS += $(cjson_LIBS) $(curl_LIBS)
-AM_LDFLAGS += -lrfcapi -ltelemetry_msgsender -lt2utils -lIARMBus -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread
+AM_LDFLAGS += -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread
+
+if CONTAINER_COVERITY_ENABLE
+else
+AM_LDFLAGS += -lrfcapi -ltelemetry_msgsender -lt2utils -lIARMBus
+endif
+
 if IS_LIBRDKCONFIG_ENABLED
 AM_CFLAGS += $(LIBRDKCONFIG_FLAG)
 AM_LDFLAGS += -lrdkconfig
