@@ -24,7 +24,6 @@ make
 make install
 
 #Build rdkfwupdater
-export CFLAGS="-DCONTAINER_COVERITY_ENABLE"
 cd /home/rdkfwupdater
 autoreconf -i
 ./configure --enable-coverity-feature  --prefix=${INSTALL_DIR}

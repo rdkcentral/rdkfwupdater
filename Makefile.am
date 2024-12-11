@@ -22,11 +22,6 @@ AM_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
 AM_LDFLAGS += $(cjson_LIBS) $(curl_LIBS)
 AM_LDFLAGS += -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread
 
-#if CONTAINER_COVERITY_ENABLE
-#else
-#AM_LDFLAGS += -lrfcapi -ltelemetry_msgsender -lt2utils -lIARMBus
-#endif
-
 if IS_LIBRFCAPI_ENABLED
 AM_CFLAGS += $(LIBRFCAPI_FLAG)
 AM_LDFLAGS += -lrfcapi
