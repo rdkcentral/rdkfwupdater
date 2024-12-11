@@ -21,7 +21,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#ifndef CONTAINER_COVERITY_ENABLE
+#if defined(IARM_ENABLED)
 #include "sysMgr.h"
 #include "libIARMCore.h"
 #include "libIBus.h"

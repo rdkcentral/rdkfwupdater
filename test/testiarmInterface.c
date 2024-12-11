@@ -25,7 +25,7 @@
 
 #include "testiarmInterface.h"
 
-#ifndef CONTAINER_COVERITY_ENABLE
+#if defined(IARM_ENABLED)
 void eventManagerTest(const char *cur_event_name, int app_mode) {
     if(cur_event_name == NULL) {
         printf("eventManager() failed due to NULL parameter\n");
@@ -68,7 +68,7 @@ int main(int argc, char *argv[])
    if (argc == 2) {
        app_mode = atoi(argv[1]);
        printf("app mode = %d\n", app_mode);
-#ifndef CONTAINER_COVERITY_ENABLE
+#if defined(IARM_ENABLED)
        eventManagerTest("RdkvFWupgrader", app_mode);
 #endif
    } else {

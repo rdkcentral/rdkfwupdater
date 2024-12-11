@@ -29,15 +29,10 @@
 #include <stdbool.h>
 
 #ifndef GTEST_ENABLE
-#ifndef CONTAINER_COVERITY_ENABLE
+#ifdef T2_EVENT_ENABLED
 #include <telemetry_busmessage_sender.h>
-#include "libIBus.h"
-#include "libIBusDaemon.h"
-#include "sysMgr.h"
-#include "libIARMCore.h"
-#include <glib.h>
-#include <secure_wrapper.h>
 #endif
+#include <secure_wrapper.h>
 #include "urlHelper.h"
 #endif
 

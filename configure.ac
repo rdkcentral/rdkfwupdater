@@ -73,16 +73,57 @@ AC_ARG_ENABLE([mountutils],
 AM_CONDITIONAL([IS_LIBRDKCONFIG_ENABLED], [test x$IS_LIBRDKCONFIG_ENABLED = xtrue])
 AC_SUBST(LIBRDKCONFIG_FLAG)
 
-AC_ARG_ENABLE([coverity-feature],
-    [AS_HELP_STRING([--enable-coverity-feature], [Enable COVERITY code support])],
-    [CONTAINER_COVERITY_ENABLE=yes],
-    [CONTAINER_COVERITY_ENABLE=no])
+AC_ARG_ENABLE([rfcapi],
+        AS_HELP_STRING([--enable-rfcapi],[enables rfcapi]),
+        [
+          case "${enableval}" in
+           yes) IS_LIBRFCAPI_ENABLED=true
+                LIBRFCAPI_FLAG=" -DRFC_API_ENABLED ";;
+           no)  IS_LIBRFCAPI_ENABLED=false ;;
+          *) AC_MSG_ERROR([bad value ${enableval} for --enable-rfcapi]) ;;
+           esac
+           ],
+        [echo "rfcapi is disabled"])
+AM_CONDITIONAL([IS_LIBRFCAPI_ENABLED], [test x$IS_LIBRFCAPI_ENABLED = xtrue])
+AC_SUBST(LIBRFCAPI_FLAG)
 
-AM_CONDITIONAL([CONTAINER_COVERITY_ENABLE], [test "$CONTAINER_COVERITY_ENABLE" = "yes"])
+AC_ARG_ENABLE([t2api],
+        AS_HELP_STRING([--enable-t2api],[enables telemetry]),
+        [
+          case "${enableval}" in
+           yes) IS_TELEMETRY2_ENABLED=true
+                T2_EVENT_FLAG=" -DT2_EVENT_ENABLED ";;
+           no)  IS_TELEMETRY2_ENABLED=false ;;
+          *) AC_MSG_ERROR([bad value ${enableval} for --enable-t2enable]) ;;
+           esac
+           ],
+        [echo "telemetry is disabled"])
+AM_CONDITIONAL([IS_TELEMETRY2_ENABLED], [test x$IS_TELEMETRY2_ENABLED = xtrue])
+AC_SUBST(T2_EVENT_FLAG)
 
-if test "$CONTAINER_COVERITY_ENABLE" = "yes"; then
-    AC_DEFINE([CONTAINER_COVERITY_ENABLE], [1], [Define to enable Coverity support])
-fi
+AC_ARG_ENABLE([iarmevent],
+        AS_HELP_STRING([--enable-iarmevent],[enables IARM event]),
+        [
+          case "${enableval}" in
+           yes) IS_IARMEVENT_ENABLED=true
+                IARM_EVENT_FLAG=" -DIARM_ENABLED ";;
+           no)  IS_IARMEVENT_ENABLED=false ;;
+          *) AC_MSG_ERROR([bad value ${enableval} for --enable-iarmevent]) ;;
+           esac
+           ],
+        [echo "iarm is disabled"])
+AM_CONDITIONAL([IS_IARMEVENT_ENABLED], [test x$IS_IARMEVENT_ENABLED = xtrue])
+AC_SUBST(IARM_EVENT_FLAG)
+#AC_ARG_ENABLE([coverity-feature],
+#    [AS_HELP_STRING([--enable-coverity-feature], [Enable COVERITY code support])],
+#    [CONTAINER_COVERITY_ENABLE=yes],
+#    [CONTAINER_COVERITY_ENABLE=no])
+#
+#AM_CONDITIONAL([CONTAINER_COVERITY_ENABLE], [test "$CONTAINER_COVERITY_ENABLE" = "yes"])
+#
+#if test "$CONTAINER_COVERITY_ENABLE" = "yes"; then
+#    AC_DEFINE([CONTAINER_COVERITY_ENABLE], [1], [Define to enable Coverity support])
+#fi
 
 PKG_CHECK_MODULES([cjson], [libcjson])
 PKG_CHECK_MODULES([curl], [libcurl])

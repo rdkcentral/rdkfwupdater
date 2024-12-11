@@ -250,7 +250,7 @@ void getPidStore(const char *device, const char *maint_window) {
  * @param marker: use for send marker details
  * @return : void
  * */
-#ifndef CONTAINER_COVERITY_ENABLE
+#ifdef T2_EVENT_ENABLED
 void t2CountNotify(char *marker) {
     T2ERROR t2_ret = -1;
     if(marker != NULL) {
@@ -425,7 +425,7 @@ int initialize(void) {
     int mode = 1;
     char post_data[] = "{\"jsonrpc\":\"2.0\",\"id\":\"3\",\"method\":\"org.rdk.MaintenanceManager.1.getMaintenanceMode\",\"params\":{}}";
 
-#ifndef CONTAINER_COVERITY_ENABLE
+#ifdef T2_EVENT_ENABLED
     t2_init("rdkfwupgrader");
 #endif
  
@@ -475,7 +475,7 @@ int initialize(void) {
  * @return: void
  * */
 void uninitialize(int fwDwnlStatus) {
-#ifndef CONTAINER_COVERITY_ENABLE    
+#ifdef T2_EVENT_ENABLED
     t2_uninit();
 #endif
     pthread_mutex_destroy(&mutuex_dwnl_state);

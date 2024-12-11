@@ -22,9 +22,24 @@ AM_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
 AM_LDFLAGS += $(cjson_LIBS) $(curl_LIBS)
 AM_LDFLAGS += -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread
 
-if CONTAINER_COVERITY_ENABLE
-else
-AM_LDFLAGS += -lrfcapi -ltelemetry_msgsender -lt2utils -lIARMBus
+#if CONTAINER_COVERITY_ENABLE
+#else
+#AM_LDFLAGS += -lrfcapi -ltelemetry_msgsender -lt2utils -lIARMBus
+#endif
+
+if IS_LIBRFCAPI_ENABLED
+AM_CFLAGS += $(LIBRFCAPI_FLAG)
+AM_LDFLAGS += -lrfcapi
+endif
+
+if IS_TELEMETRY2_ENABLED
+AM_CFLAGS += $(T2_EVENT_FLAG)
+AM_LDFLAGS += -ltelemetry_msgsender -lt2utils
+endif
+
+if IS_IARMEVENT_ENABLED
+AM_CFLAGS += $(IARM_EVENT_FLAG)
+AM_LDFLAGS += -lIARMBus
 endif
 
 if IS_LIBRDKCONFIG_ENABLED
