@@ -250,8 +250,8 @@ void getPidStore(const char *device, const char *maint_window) {
  * @param marker: use for send marker details
  * @return : void
  * */
-#ifdef T2_EVENT_ENABLED
 void t2CountNotify(char *marker) {
+#ifdef T2_EVENT_ENABLED
     T2ERROR t2_ret = -1;
     if(marker != NULL) {
         t2_ret = t2_event_s(marker, "1");
@@ -259,10 +259,12 @@ void t2CountNotify(char *marker) {
     }else {
         SWLOG_INFO("t2CountNotify() marker is NULL\n");
     }
+#endif
 }
 
 void t2ValNotify( char *marker, char *val )
 {
+#ifdef T2_EVENT_ENABLED
     T2ERROR t2_ret;
 
     if( marker != NULL && val != NULL )
@@ -274,14 +276,8 @@ void t2ValNotify( char *marker, char *val )
     {
         SWLOG_INFO("t2CountNotify() Error: one or more input args is NULL\n");
     }
-}
-#else
-void t2CountNotify(char *marker) {
-}
-void t2ValNotify( char *marker, char *val )
-{
-}
 #endif
+}
 
 // TODO: Use following function for all types of downloads when needed for telemetry v2 logs
 bool checkt2ValNotify( int iCurlCode, int iUpgradeType, char *Url  )

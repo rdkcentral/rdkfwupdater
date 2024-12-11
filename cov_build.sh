@@ -10,6 +10,7 @@ git clone https://github.com/rdkcentral/common_utilities.git
 cd /home/common_utilities
 autoreconf -i
 ./configure --prefix=${INSTALL_DIR}
+# Below change  is for temporary fix
 sed -i 's/-Werror//g' ./utils/Makefile 
 make && make install
 
@@ -17,7 +18,6 @@ make && make install
 cd /home
 git clone https://github.com/rdkcmf/rdk-libSyscallWrapper.git
 cd /home/rdk-libSyscallWrapper
-#autoupdate
 autoreconf -i
 ./configure --prefix=${INSTALL_DIR}
 make
@@ -27,5 +27,4 @@ make install
 cd /home/rdkfwupdater
 autoreconf -i
 ./configure --enable-coverity-feature  --prefix=${INSTALL_DIR}
-#sed -i 's/-Werror//g' ./utils/Makefile 
 make && make install
