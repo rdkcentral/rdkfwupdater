@@ -26,5 +26,5 @@ make install
 #Build rdkfwupdater
 cd /home/rdkfwupdater
 autoreconf -i
-./configure --enable-coverity-feature  --prefix=${INSTALL_DIR}
+./configure --prefix=${INSTALL_DIR}
 make && make install
