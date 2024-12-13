@@ -25,8 +25,7 @@
 
 #include "testiarmInterface.h"
 
-//#include "rdkv_cdl_log_wrapper.h"
-
+#if defined(IARM_ENABLED)
 void eventManagerTest(const char *cur_event_name, int app_mode) {
     if(cur_event_name == NULL) {
         printf("eventManager() failed due to NULL parameter\n");
@@ -62,14 +61,16 @@ void eventManagerTest(const char *cur_event_name, int app_mode) {
     IARM_Bus_Term();
     printf("%s : IARM_event_sender closing\n", __FUNCTION__);
 }
-
+#endif
 int main(int argc, char *argv[])
 {
    int app_mode = 0;
    if (argc == 2) {
        app_mode = atoi(argv[1]);
        printf("app mode = %d\n", app_mode);
+#if defined(IARM_ENABLED)
        eventManagerTest("RdkvFWupgrader", app_mode);
+#endif
    } else {
        printf("Invalid no of argument\nReq only 1 argument 1 or 0\n");
    }

@@ -29,14 +29,11 @@
 #include <stdbool.h>
 
 #ifndef GTEST_ENABLE
+#ifdef T2_EVENT_ENABLED
 #include <telemetry_busmessage_sender.h>
-#include "libIBus.h"
-#include "libIBusDaemon.h"
-#include "sysMgr.h"
-#include "libIARMCore.h"
-#include "urlHelper.h"
-#include <glib.h>
+#endif
 #include <secure_wrapper.h>
+#include "urlHelper.h"
 #endif
 
 #include "mtlsUtils.h"
