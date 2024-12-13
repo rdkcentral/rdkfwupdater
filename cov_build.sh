@@ -9,9 +9,7 @@ cd /home
 git clone https://github.com/rdkcentral/common_utilities.git
 cd /home/common_utilities
 autoreconf -i
-./configure --prefix=${INSTALL_DIR}
-# Below change  is for temporary fix
-sed -i 's/-Werror//g' ./utils/Makefile 
+./configure --prefix=${INSTALL_DIR} CFLAGS="-Wno-unused-result -Wno-format-truncation -Wno-error=format-security"
 make && make install
 
 #Build libsyswrapper
