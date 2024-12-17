@@ -59,6 +59,13 @@
 #define TWO_FIFTY_SIX           256
 #define DOWNLOADED_VERS_SIZE    TWO_FIFTY_SIX
 
+#define IMAGE_UPGRADE 		1
+#define SCHECULED_IMAGE_UPGRADE 2
+#define SNMP_TR69_IMAGE_UPGRADE	3
+#define APP_TRIGGERED_UPGRADE	4
+#define DELAYED_TRIGGERED_UPGRADE 5
+#define STATE_RED_UPGRADE	6
+
 // Below are the global variable
 // TODO  Global variables should be avoided to best possible extend and used only as a very last resort !!
 // Device properties is a candidate for getter only utils
@@ -1909,17 +1916,17 @@ int main(int argc, char *argv[]) {
 
 
     trigger_type = atoi(argv[2]);
-    if (trigger_type == 1) {
+    if (trigger_type == IMAGE_UPGRADE) {
         SWLOG_INFO("Image Upgrade During Bootup ..!\n");
-    }else if (trigger_type == 2) {
+    }else if (trigger_type == SCHEDULED_IMAGE_UPGRADE) {
         SWLOG_INFO("Scheduled Image Upgrade using cron ..!\n");
-    }else if(trigger_type == 3){
+    }else if(trigger_type == SNMP_TR69_IMAGE_UPGRADE){
         SWLOG_INFO("TR-69/SNMP triggered Image Upgrade ..!\n");
-    }else if(trigger_type == 4){
+    }else if(trigger_type == APP_TRIGGERED_UPGRADE){
         SWLOG_INFO("App triggered Image Upgrade ..!\n");
-    }else if(trigger_type == 5){
+    }else if(trigger_type == DELAYED_TRIGGERED_UPGRADE){
         SWLOG_INFO("Delayed Trigger Image Upgrade ..!\n");
-    }else if(trigger_type == 6){
+    }else if(trigger_type == STATE_RED_UPGRADE){
         SWLOG_INFO("State Red Image Upgrade ..!\n");
     }else{
         SWLOG_INFO("Invalid trigger type Image Upgrade ..!\n");
