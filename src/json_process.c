@@ -51,6 +51,7 @@ int getXconfRespData( XCONFRES *pResponse, char *pJsonStr )
             GetJsonVal( pJson, "dlCertBundle", pResponse->dlCertBundle, sizeof(pResponse->dlCertBundle) );
             GetJsonVal( pJson, "rdmCatalogueVersion", pResponse->rdmCatalogueVersion, sizeof(pResponse->rdmCatalogueVersion) );
             GetJsonVal( pJson, "ipv6FirmwareLocation", pResponse->ipv6cloudFWLocation, sizeof(pResponse->ipv6cloudFWLocation) );
+            GetJsonVal( pJson, "additionalPostFields", pResponse->additionalPostFields, sizeof(pResponse->additionalPostFields) );
 
             FreeJson( pJson );
             ret = 0;
@@ -115,6 +116,7 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
         SWLOG_INFO("dlCertBundle: %s\n", response->dlCertBundle);
         SWLOG_INFO("cloudPDRIVersion: %s\n", response->cloudPDRIVersion);
         SWLOG_INFO("rdmCatalogueVersion: %s\n", response->rdmCatalogueVersion);
+        SWLOG_INFO("additionalPostFields: %s\n", response->additionalPostFields);
 
         fp = fopen("/tmp/.xconfssrdownloadurl", "w");
         if (fp != NULL) {

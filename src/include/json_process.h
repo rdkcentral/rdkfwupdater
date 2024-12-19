@@ -33,6 +33,7 @@ typedef struct xconf_response {
 	char dlCertBundle[64];
 	char cloudPDRIVersion[64];
     char rdmCatalogueVersion[512];
+    char additionalPostFields[512];
 } XCONFRES;
 
 int processJsonResponse(XCONFRES *response, const char *myfwversion, const char *model, const char *maint);

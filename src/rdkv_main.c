@@ -1491,12 +1491,20 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
     int pdri_curl_code = -1;
     int peripheral_curl_code = -1;
     char imageHTTPURL[URL_MAX_LEN];
+    char postFields[URL_MAX_LEN] = {0};
     char dwlpath_filename[DWNL_PATH_FILE_LEN];
     FILE *fp = NULL;
     int optout = -1;
 
     imageHTTPURL[0] = 0;
     dwlpath_filename[0] = 0;
+    if ((NULL != pResponse) && (NULL != pResponse->additionalPostFields)) {
+        if ((0 < strlen(pResponse->additionalPostFields)) && (strlen(pResponse->additionalPostFields) < (URL_MAX_LEN - 1))) {
+            snprintf(postFields, sizeof(postFields), "%s", pResponse->additionalPostFields);
+        } else {
+            SWLOG_ERROR("%s : postField payload is more than buffer size; may not work.\n", __FUNCTION__);
+        }
+    }
     if (model == NULL) {
         SWLOG_ERROR("%s : Parameter is NULL\n", __FUNCTION__);
         return upgrade_status;
@@ -1542,7 +1550,7 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
         snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s", device_info.difw_path, pResponse->cloudFWFile);
 	    SWLOG_INFO("DWNL path with img name=%s\n", dwlpath_filename);
         eraseFolderExcePramaFile(device_info.difw_path, pResponse->cloudFWFile, device_info.model);
-        pci_curl_code = upgradeRequest(PCI_UPGRADE, HTTP_SSR_DIRECT, imageHTTPURL, dwlpath_filename, NULL, &http_code);
+        pci_curl_code = upgradeRequest(PCI_UPGRADE, HTTP_SSR_DIRECT, imageHTTPURL, dwlpath_filename, ((postFields[0] != 0)? postFields: NULL), &http_code);
     } else {
         SWLOG_INFO("checkForValidPCIUpgrade return false\n");
         pci_curl_code = 0;
@@ -1567,7 +1575,7 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
                 sleep(30);
             }
             snprintf(disableStatsUpdate, sizeof(disableStatsUpdate), "%s","yes");
-            pdri_curl_code = upgradeRequest(PDRI_UPGRADE, HTTP_SSR_DIRECT, imageHTTPURL, dwlpath_filename, NULL, &http_code);
+            pdri_curl_code = upgradeRequest(PDRI_UPGRADE, HTTP_SSR_DIRECT, imageHTTPURL, dwlpath_filename, ((postFields[0] != 0)? postFields: NULL), &http_code);
             snprintf(disableStatsUpdate, sizeof(disableStatsUpdate), "%s","no");
             if (pdri_curl_code == 100) {
                 pdri_curl_code = 0;
@@ -1880,6 +1888,7 @@ int main(int argc, char *argv[]) {
     *response.peripheralFirmwares = 0;
     *response.dlCertBundle = 0;
     *response.cloudPDRIVersion = 0;
+    *response.additionalPostFields = 0;
     SWLOG_INFO("Starting c method rdkvfwupgrader\n");
     
     snprintf(disableStatsUpdate, sizeof(disableStatsUpdate), "%s","no");
