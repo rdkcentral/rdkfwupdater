@@ -251,6 +251,7 @@ void getPidStore(const char *device, const char *maint_window) {
  * @return : void
  * */
 void t2CountNotify(char *marker) {
+#ifdef T2_EVENT_ENABLED
     T2ERROR t2_ret = -1;
     if(marker != NULL) {
         t2_ret = t2_event_s(marker, "1");
@@ -258,10 +259,12 @@ void t2CountNotify(char *marker) {
     }else {
         SWLOG_INFO("t2CountNotify() marker is NULL\n");
     }
+#endif
 }
 
 void t2ValNotify( char *marker, char *val )
 {
+#ifdef T2_EVENT_ENABLED
     T2ERROR t2_ret;
 
     if( marker != NULL && val != NULL )
@@ -273,6 +276,7 @@ void t2ValNotify( char *marker, char *val )
     {
         SWLOG_INFO("t2CountNotify() Error: one or more input args is NULL\n");
     }
+#endif
 }
 
 // TODO: Use following function for all types of downloads when needed for telemetry v2 logs
@@ -425,7 +429,9 @@ int initialize(void) {
     int mode = 1;
     char post_data[] = "{\"jsonrpc\":\"2.0\",\"id\":\"3\",\"method\":\"org.rdk.MaintenanceManager.1.getMaintenanceMode\",\"params\":{}}";
 
+#ifdef T2_EVENT_ENABLED
     t2_init("rdkfwupgrader");
+#endif
  
     *cur_img_detail.cur_img_name = 0;
     *rfc_list.rfc_incr_cdl = 0;
@@ -472,7 +478,9 @@ int initialize(void) {
  * @return: void
  * */
 void uninitialize(int fwDwnlStatus) {
+#ifdef T2_EVENT_ENABLED
     t2_uninit();
+#endif
     pthread_mutex_destroy(&mutuex_dwnl_state);
     pthread_mutex_destroy(&app_mode_status);
     term_event_handler();
