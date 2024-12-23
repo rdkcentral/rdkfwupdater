@@ -1504,7 +1504,7 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
         return upgrade_status;
     }
     if (true == isUpgradeInProgress()) {
-        SWLOG_INFO("Exiting from DEVICE INITIATED HTTP CDL\nAnother upgrade is in progress\n");
+        SWLOG_ERROR("Exiting from DEVICE INITIATED HTTP CDL\nAnother upgrade is in progress\n");
         if (!(strncmp(device_info.maint_status, "true", 4))) {
             eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR);
         }
