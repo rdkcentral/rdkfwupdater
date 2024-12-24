@@ -1070,6 +1070,7 @@ int main(int argc, char *argv[]) {
         eventManager(FW_STATE_EVENT, FW_STATE_UNINITIALIZED);
 	if( isInStateRed() ) {
           eventManager(RED_STATE_EVENT, RED_RECOVERY_STARTED);
+	  write_RFCProperty("REDRECV", RFC_RED_RECV, "STARTED", RFC_STRING);
         }
 	eventManager(FW_STATE_EVENT, FW_STATE_REQUESTING);
         ret_curl_code = MakeXconfComms( &response, server_type, &http_code );
