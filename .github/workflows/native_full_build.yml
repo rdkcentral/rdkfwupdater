@@ -7,7 +7,7 @@ on:
 
 jobs:
   build-breakpad-wrapper-on-pr:
-    name: Build breakpad wrapper component in github rdkcentral
+    name: Build rdkfwupdater component in github rdkcentral
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/rdkcentral/docker-device-mgt-service-test/native-platform:latest
