@@ -19,6 +19,7 @@
 #ifndef VIDEO_IARMINTERFACE_IARMINTERFACE_H_
 #define VIDEO_IARMINTERFACE_IARMINTERFACE_H_
 
+#if defined(IARM_ENABLED)
 #ifndef GTEST_ENABLE
 #include "sysMgr.h"
 #include "libIARMCore.h"
@@ -72,6 +73,7 @@ typedef struct _IARM_BUS_SYSMgr_EventData_t{
 
 typedef char gchar;
 
+#endif
 #endif
 
 #define IARM_BUS_RDKVFWUPGRADER_MGR_NAME "RdkvFWupgrader"

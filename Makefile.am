@@ -20,11 +20,7 @@ AM_CFLAGS = $(TRACE_CFLAGS)
 AM_CFLAGS += -Wall -Werror $(cjson_CFLAGS) $(curl_CFLAGS) $(CFLAGS)
 AM_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
 AM_LDFLAGS += $(cjson_LIBS) $(curl_LIBS)
-AM_LDFLAGS += -lrfcapi -ltelemetry_msgsender -lt2utils -lIARMBus -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread
-if IS_LIBRDKCONFIG_ENABLED
-AM_CFLAGS += $(LIBRDKCONFIG_FLAG)
-AM_LDFLAGS += -lrdkconfig
-endif
+AM_LDFLAGS += -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread
 
 bin_PROGRAMS= rdkvfwupgrader
 bin_PROGRAMS+= testrdkvfwupgrader
@@ -85,3 +81,25 @@ testrdkvfwupgrader_include_HEADERS = \
     ${top_srcdir}/test/testiarmInterface.h
 
 testrdkvfwupgrader_includedir = ${includedir}
+
+
+if IS_TELEMETRY2_ENABLED
+rdkvfwupgrader_CFLAGS +=  $(T2_EVENT_FLAG)
+AM_LDFLAGS += -ltelemetry_msgsender -lt2utils
+endif
+
+if IS_LIBRFCAPI_ENABLED
+rdkvfwupgrader_CFLAGS += $(LIBRFCAPI_FLAG)
+AM_LDFLAGS += -lrfcapi
+endif
+
+if IS_IARMEVENT_ENABLED
+rdkvfwupgrader_CFLAGS += $(IARM_EVENT_FLAG)
+testrdkvfwupgrader_CFLAGS = $(IARM_EVENT_FLAG)
+AM_LDFLAGS += -lIARMBus
+endif
+
+if IS_LIBRDKCONFIG_ENABLED
+rdkvfwupgrader_CFLAGS += $(LIBRDKCONFIG_FLAG)
+AM_LDFLAGS += -lrdkconfig
+endif

@@ -239,7 +239,7 @@ void getPidStore(const char *device, const char *maint_window) {
 	return;
     }
     pid = getpid();
-    sprintf(data, "%u\n", pid);
+    snprintf(data,sizeof(data), "%u\n", pid);
     SWLOG_INFO("getPidStore() pid=%u in string=%s\n", pid, data);
     savePID(CURL_PID_FILE, data);
     savePID(FWDNLD_PID_FILE, data);
@@ -251,6 +251,7 @@ void getPidStore(const char *device, const char *maint_window) {
  * @return : void
  * */
 void t2CountNotify(char *marker) {
+#ifdef T2_EVENT_ENABLED
     T2ERROR t2_ret = -1;
     if(marker != NULL) {
         t2_ret = t2_event_s(marker, "1");
@@ -258,10 +259,12 @@ void t2CountNotify(char *marker) {
     }else {
         SWLOG_INFO("t2CountNotify() marker is NULL\n");
     }
+#endif
 }
 
 void t2ValNotify( char *marker, char *val )
 {
+#ifdef T2_EVENT_ENABLED
     T2ERROR t2_ret;
 
     if( marker != NULL && val != NULL )
@@ -273,6 +276,7 @@ void t2ValNotify( char *marker, char *val )
     {
         SWLOG_INFO("t2CountNotify() Error: one or more input args is NULL\n");
     }
+#endif
 }
 
 // TODO: Use following function for all types of downloads when needed for telemetry v2 logs
@@ -363,7 +367,7 @@ void dwnlError(int curl_code, int http_code, int server_type)
     }
     checkForTlsErrors(curl_code, type);
     snprintf( device_type, sizeof(device_type), "%s", device_info.dev_type );
-    if(curl_code != 0 || (http_code != 200 && http_code != 206)) {
+    if(curl_code != 0 || (http_code != 200 && http_code != 206) || http_code == 495) {
         if (server_type == HTTP_SSR_DIRECT) {
             SWLOG_ERROR("%s : Failed to download image from normal SSR code download server with ret:%d, httpcode:%d\n", __FUNCTION__, curl_code, http_code);
         }
@@ -372,7 +376,9 @@ void dwnlError(int curl_code, int http_code, int server_type)
                 snprintf( failureReason, sizeof(failureReason), "FailureReason|Image Download Failed -Unable to connect\n" );
             }else if(http_code == 404) {
                 snprintf( failureReason, sizeof(failureReason), "FailureReason|Image Download Failed -Server not Found\n" );
-            }else if(http_code >= 500 && http_code <= 511) {
+            }else if(http_code == 495) {
++                snprintf( failureReason, sizeof(failureReason), "FailureReason|Image Download Failed -Client certificate expired\n" );
+	    }else if(http_code >= 500 && http_code <= 511) {
                 snprintf( failureReason, sizeof(failureReason), "FailureReason|Image Download Failed -Error response from server\n" );
             }else {
                 snprintf( failureReason, sizeof(failureReason), "FailureReason|Image Download Failed - Unknown\n" );
@@ -381,7 +387,7 @@ void dwnlError(int curl_code, int http_code, int server_type)
             //eventManager $ImageDwldEvent $IMAGE_FWDNLD_DOWNLOAD_FAILED
             eventManager(IMG_DWL_EVENT, IMAGE_FWDNLD_DOWNLOAD_FAILED);
         }else {
-            if(http_code == 0) {
+            if((http_code == 0) || (http_code == 495)) {
                 snprintf( failureReason, sizeof(failureReason), "FailureReason|ESTB Download Failure");
             }
             //updateFWDownloadStatus "$cloudProto" "Failure" "$cloudImmediateRebootFlag" "$failureReason" "$dnldFWVersion" "$UPGRADE_FILE" "$runtime" "Failed" "$DelayDownloadXconf"
@@ -402,8 +408,14 @@ void dwnlError(int curl_code, int http_code, int server_type)
         snprintf(fwdls.DelayDownload, sizeof(fwdls.DelayDownload), "DelayDownload|\n"); // This data should come from script as a argument
         updateFWDownloadStatus(&fwdls, disableStatsUpdate);
     }
-    SWLOG_INFO("%s : Calling checkAndEnterStateRed() with code:%d\n", __FUNCTION__, curl_code);
-    checkAndEnterStateRed(curl_code, disableStatsUpdate);
+    // HTTP CODE 495 - Expired client certificate not in servers allow list
+    if( http_code == 495 ) {
+        SWLOG_INFO("%s : Calling checkAndEnterStateRed() with code:%d\n", __FUNCTION__, http_code);
+        checkAndEnterStateRed(http_code, disableStatsUpdate);
+    }else {
+        SWLOG_INFO("%s : Calling checkAndEnterStateRed() with code:%d\n", __FUNCTION__, curl_code);
+        checkAndEnterStateRed(curl_code, disableStatsUpdate);
+    }
 }
 
 
@@ -417,10 +429,11 @@ int initialize(void) {
     int mode = 1;
     char post_data[] = "{\"jsonrpc\":\"2.0\",\"id\":\"3\",\"method\":\"org.rdk.MaintenanceManager.1.getMaintenanceMode\",\"params\":{}}";
 
+#ifdef T2_EVENT_ENABLED
     t2_init("rdkfwupgrader");
+#endif
  
     *cur_img_detail.cur_img_name = 0;
-    *rfc_list.rfc_fw_upgrader = 0;
     *rfc_list.rfc_incr_cdl = 0;
     *rfc_list.rfc_mtls = 0;
     *rfc_list.rfc_throttle = 0;
@@ -465,7 +478,9 @@ int initialize(void) {
  * @return: void
  * */
 void uninitialize(int fwDwnlStatus) {
+#ifdef T2_EVENT_ENABLED
     t2_uninit();
+#endif
     pthread_mutex_destroy(&mutuex_dwnl_state);
     pthread_mutex_destroy(&app_mode_status);
     term_event_handler();
@@ -565,7 +580,8 @@ int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const
                                          oAuthHeader, sizeof(oAuthHeader) )) == 0 )
         {
             strncpy(file_dwnl.pathname, (char *)localDownloadLocation, sizeof(file_dwnl.pathname)-1);
-            file_dwnl.pDlData = NULL;
+            file_dwnl.pathname[sizeof(file_dwnl.pathname)-1] = '\0';
+	    file_dwnl.pDlData = NULL;
             file_dwnl.pHeaderData = oAuthHeader;
 	    file_dwnl.pDlHeaderData = NULL;
             file_dwnl.pPostFields = NULL;
@@ -667,9 +683,11 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
     *httpCode = 0;
     file_dwnl.chunk_dwnl_retry_time = (((strncmp(immed_reboot_flag, "false", 5)) == 0) ? 10 : 0);
     strncpy(file_dwnl.url, artifactLocationUrl, sizeof(file_dwnl.url)-1);
+    file_dwnl.url[sizeof(file_dwnl.url)-1] = '\0';
     if( server_type == HTTP_SSR_DIRECT )
     {
         strncpy(file_dwnl.pathname, (char *)localDownloadLocation, sizeof(file_dwnl.pathname)-1);
+	file_dwnl.pathname[sizeof(file_dwnl.pathname)-1] = '\0';
         file_dwnl.pDlData = NULL;
         snprintf(headerInfoFile, sizeof(headerInfoFile), "%s.header", file_dwnl.pathname);
     }
@@ -1023,15 +1041,6 @@ int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocati
 
     if( ret_curl_code != DWNL_BLOCK )   // no point in continuing if both download types are blocked
     {
-        /*TODO:Below check is same as script method implementation. Need to remove next sprint*/
-        if ((upgrade_type == PCI_UPGRADE) && (true == isUpgradeInProgress())) {
-            SWLOG_INFO("Exiting from DEVICE INITIATED HTTP CDL\nAnother upgrade is in progress\n");
-            if (!(strncmp(device_info.maint_status, "true", 4))) {
-                eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR);
-            }
-            uninitialize(INITIAL_VALIDATION_SUCCESS);
-            exit(1); //TBD:Alreday one upgrade in progress exit with status 1 and exit from script as well
-        }
         if( server_type == HTTP_SSR_DIRECT || server_type == HTTP_SSR_CODEBIG )
         {
             dwlpath_filename = (const char*)dwlloc;
@@ -1213,7 +1222,8 @@ int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocati
             eventManager(FW_STATE_EVENT, FW_STATE_DOWNLOAD_COMPLETE);
 
             strncpy(fwdls.FwUpdateState, "FwUpdateState|Download complete\n", sizeof(fwdls.FwUpdateState)-1);
-            updateFWDownloadStatus(&fwdls, disableStatsUpdate);
+            fwdls.FwUpdateState[sizeof(fwdls.FwUpdateState)-1] = '\0';
+	    updateFWDownloadStatus(&fwdls, disableStatsUpdate);
             if (true == st_notify_flag) {
                 notifyDwnlStatus(RFC_FW_DWNL_END, "true", RFC_BOOL);
                 SWLOG_INFO("FirmwareDownloadCompletedNotification SET to true succeeded\n");
@@ -1493,6 +1503,14 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
         SWLOG_ERROR("%s : Parameter is NULL\n", __FUNCTION__);
         return upgrade_status;
     }
+    if (true == isUpgradeInProgress()) {
+        SWLOG_ERROR("Exiting from DEVICE INITIATED HTTP CDL\nAnother upgrade is in progress\n");
+        if (!(strncmp(device_info.maint_status, "true", 4))) {
+            eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR);
+        }
+        uninitialize(INITIAL_VALIDATION_SUCCESS);
+        exit(1);
+    }
     if ((strstr(pResponse->cloudFWVersion, model)) == NULL) {
         SWLOG_INFO("cloudFWVersion is empty. Do Nothing\n");
         eventManager(FW_STATE_EVENT, FW_STATE_FAILED);
@@ -1571,7 +1589,8 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
     }
     if ((0 == (filePresentCheck("/etc/os-release"))) && (*pResponse->peripheralFirmwares != 0)) {
         strncat(pResponse->peripheralFirmwares, ",", sizeof(pResponse->peripheralFirmwares) - 1);
-        SWLOG_INFO("Triggering Peripheral Download cloudFWLocation: %s\nperipheralFirmwares: %s\n", pResponse->cloudFWLocation, pResponse->peripheralFirmwares);
+        pResponse->peripheralFirmwares[sizeof(pResponse->peripheralFirmwares) - 1] = '\0';
+	SWLOG_INFO("Triggering Peripheral Download cloudFWLocation: %s\nperipheralFirmwares: %s\n", pResponse->cloudFWLocation, pResponse->peripheralFirmwares);
         peripheral_curl_code = peripheral_firmware_dndl( pResponse->cloudFWLocation, pResponse->peripheralFirmwares );
         SWLOG_INFO("After Trigger Peripheral Download status=%d\n", peripheral_curl_code);
     } else {

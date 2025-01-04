@@ -878,7 +878,7 @@ size_t GetBuildType( char *pBuildType, size_t szBufSize, BUILDTYPE *peBuildTypeO
 
         if( *pBuildType == 0 && pOut != NULL )
         {
-            i = snprintf( pBuildType, szBufSize, pOut );
+            i = snprintf( pBuildType, szBufSize, "%s", pOut );
         }
     }
     else

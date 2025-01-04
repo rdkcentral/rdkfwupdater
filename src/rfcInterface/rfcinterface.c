@@ -37,43 +37,36 @@ int getRFCSettings(Rfc_t *rfc_list) {
 	SWLOG_ERROR("getRFCSettings(): Parameter is NULL ret= %d\n", ret);
 	return;
     }
-    ret = read_RFCProperty("RDKFirmwareUpgrader", RFC_FW, data, sizeof(data));
-    if(ret == -1) {
-        SWLOG_ERROR("getRFCSettings() return failed Status %d\n", ret);
-    }else {
-        strncpy(rfc_list->rfc_fw_upgrader, data, RFC_VALUE_BUF_SIZE - 1);
-        SWLOG_INFO("getRFCSettings() rfc fw= %s\n", rfc_list->rfc_fw_upgrader);
-    }
-    //memset(data, '\0', sizeof(data));
     ret = read_RFCProperty("SWDLSpLimit", RFC_THROTTLE, data, sizeof(data));
     if(ret == -1) {
         SWLOG_ERROR("getRFCSettings() failed Status %d\n", ret);
     }else {
         strncpy(rfc_list->rfc_throttle, data, RFC_VALUE_BUF_SIZE - 1);
-        SWLOG_INFO("getRFCSettings() rfc throttle= %s\n", rfc_list->rfc_throttle);
+        rfc_list->rfc_throttle[RFC_VALUE_BUF_SIZE - 1] = '\0';
+	SWLOG_INFO("getRFCSettings() rfc throttle= %s\n", rfc_list->rfc_throttle);
     }
-    //memset(data, '\0', sizeof(data));
     ret = read_RFCProperty("SWDLSpLimit", RFC_TOPSPEED, data, sizeof(data));
     if(ret == -1) {
         SWLOG_ERROR("getRFCSettings() failed Status %d\n", ret);
     }else {
         strncpy(rfc_list->rfc_topspeed, data, RFC_VALUE_BUF_SIZE - 1);
-        SWLOG_INFO("getRFCSettings() rfc topspeed= %s\n", rfc_list->rfc_topspeed);
+        rfc_list->rfc_topspeed[RFC_VALUE_BUF_SIZE - 1] = '\0';
+	SWLOG_INFO("getRFCSettings() rfc topspeed= %s\n", rfc_list->rfc_topspeed);
     }
-    //memset(data, '\0', sizeof(data));
     ret = read_RFCProperty("IncrementalCDL", RFC_INCR_CDL, data, sizeof(data));
     if(ret == -1) {
         SWLOG_ERROR("getRFCSettings() failed Status %d and %s\n", ret, rfc_list->rfc_incr_cdl);
     }else {
         strncpy(rfc_list->rfc_incr_cdl, data, RFC_VALUE_BUF_SIZE - 1);
-        SWLOG_INFO("getRFCSettings() rfc IncrementalCDL= %s\n", rfc_list->rfc_incr_cdl);
+        rfc_list->rfc_incr_cdl[RFC_VALUE_BUF_SIZE - 1] = '\0';
+	SWLOG_INFO("getRFCSettings() rfc IncrementalCDL= %s\n", rfc_list->rfc_incr_cdl);
     }
-    //memset(data, '\0', sizeof(data));
     ret = read_RFCProperty("MTLS", RFC_MTLS, data, sizeof(data));
     if(ret == -1) {
         SWLOG_ERROR("getRFCSettings() rfc= %s failed Status %d\n", RFC_MTLS, ret);
     }else {
         strncpy(rfc_list->rfc_mtls, data, RFC_VALUE_BUF_SIZE - 1);
+	rfc_list->rfc_mtls[RFC_VALUE_BUF_SIZE - 1] = '\0';
         SWLOG_INFO("getRFCSettings() rfc mtls= %s\n", rfc_list->rfc_mtls);
     }
     return 0;
