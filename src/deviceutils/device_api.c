@@ -960,7 +960,7 @@ size_t GetEstbMac( char *pEstbMac, size_t szBufSize )
     size_t len = 0;
     char estb_interface[8] = {0};
     int ret = -1;
-    bool read_from_hwinterface = false // default value
+    bool read_from_hwinterface = false; // default value
 
     if( pEstbMac != NULL )
     {
