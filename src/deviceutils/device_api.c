@@ -1056,7 +1056,6 @@ size_t GetRemoteVers( char *pRemoteVers , size_t szBufSize )
     size_t len = 0;
     JSON *pJson, *pItem;
     char *pJsonStr;
-    size_t szBufRemaining;
     unsigned index, num;
 
     if( pRemoteVers  != NULL )
@@ -1065,7 +1064,6 @@ size_t GetRemoteVers( char *pRemoteVers , size_t szBufSize )
         pJsonStr = GetJson( PERIPHERAL_JSON_FILE );
         if( pJsonStr != NULL )
         {
-            szBufRemaining = szBufSize;
             pJson = ParseJsonStr( pJsonStr );
             if( pJson != NULL )
             {
