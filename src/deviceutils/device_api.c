@@ -999,7 +999,7 @@ size_t GetEstbMac( char *pEstbMac, size_t szBufSize )
                 {
                     /* When there is no hw address available */
                     *pEstbMac = 0;
-                    SWLOG_ERROR("GetEstbMac: GetHwAddress return fail\n");
+                    SWLOG_ERROR("GetEstbMac: GetHwMacAddress return fail\n");
                 }
             }
             else

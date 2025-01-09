@@ -423,8 +423,8 @@ TEST_F(DeviceApiTestFixture, TestName_GetEstbMac_Nullcheck)
 TEST_F(DeviceApiTestFixture, TestName_GetEstbMac_Success)
 {
     int ret;
-    char output[8];
-    ret = system("echo \"aa:bb:cc:dd:ff\" > /tmp/.estb_mac_gtest.txt");
+    char output[32];
+    ret = system("echo \"aa:bb:cc:dd:ff:gg\" > /tmp/.estb_mac_gtest.txt");
     EXPECT_NE(GetEstbMac(output, sizeof(output)), 0);
     ret = system("rm -f /tmp/.estb_mac_gtest.txt");
 }
