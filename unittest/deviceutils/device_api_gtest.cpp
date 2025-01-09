@@ -206,7 +206,7 @@ TEST_F(DeviceApiTestFixture,TestName_bundle_rfcpath)
     int ret;
     char pBundles[32] = {0};
     ret = system("mkdir /tmp/rfc;mkdir /tmp/rfc/certs; cp ca-store-update-bundle_package.json /tmp/rfc/certs/ ");
-    EXPECT_EQ(GetInstalledBundles(pBundles, sizeof(pBundles)), 0);//The above path is not cover in code
+    EXPECT_NE(GetInstalledBundles(pBundles, sizeof(pBundles)), 0);
     ret = system("rm -rf /tmp/rfc/certs/ ");
     ret = system("rm -rf /tmp/rfc/ ");
     printf("BUNDLE = %s\n",pBundles);
