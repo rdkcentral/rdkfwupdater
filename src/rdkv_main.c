@@ -870,8 +870,7 @@ int retryDownload(int server_type, const char* artifactLocationUrl, const void* 
             SWLOG_INFO("%s: servertype=%d, url=%s, loc=MEMORY, httpcode=%d, retry=%d, delay=%d\n", __FUNCTION__, server_type, artifactLocationUrl, *httpCode, retry_cnt, delay);
         }
         while( retry_completed <= retry_cnt) {
-            //sleep(delay);
-            sleep(1);
+            sleep(delay);
             curl_ret_code = downloadFile(server_type, artifactLocationUrl, localDownloadLocation, pPostFields, httpCode);
             if ((curl_ret_code == CURL_SUCCESS) && (*httpCode == HTTP_SUCCESS || *httpCode == HTTP_CHUNK_SUCCESS)) {
                 (server_type == HTTP_SSR_DIRECT) ? SWLOG_INFO("%s : Direct Image upgrade Success: ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *httpCode) : SWLOG_INFO("%s : Direct Image upgrade connection success: ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *httpCode);
@@ -888,8 +887,7 @@ int retryDownload(int server_type, const char* artifactLocationUrl, const void* 
         }
     } else if (server_type == HTTP_SSR_CODEBIG || server_type == HTTP_XCONF_CODEBIG) {
         while(retry_completed <= retry_cnt) {
-            //sleep(delay);
-            sleep(1);
+            sleep(delay);
             curl_ret_code = codebigdownloadFile(server_type, artifactLocationUrl, localDownloadLocation, pPostFields, httpCode);
             if ((curl_ret_code == CURL_SUCCESS) && (*httpCode == HTTP_SUCCESS || *httpCode == HTTP_CHUNK_SUCCESS)) {
                 SWLOG_INFO("%s : Codebig Image upgrade Success: ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *httpCode);

@@ -34,9 +34,9 @@ echo "*********** Return value $devicestatus"
 deviceutils=$?
 echo "==========> Return value $deviceutils"
 
-#./rdkfw_main_gtest
+./rdkfw_main_gtest
 
-mainapp=0
+mainapp=$?
 echo "-------------> Retrun value $mainapp"
 
 ./rdkfw_interface_gtest
