@@ -6,7 +6,7 @@ on:
     paths: ['**/*.c', '**/*.cpp', '**/*.cc', '**/*.cxx', '**/*.h', '**/*.hpp']
 
 jobs:
-  build-breakpad-wrapper-on-pr:
+  build-rdkfwupdater-on-pr:
     name: Build rdkfwupdater component in github rdkcentral
     runs-on: ubuntu-latest
     container:
