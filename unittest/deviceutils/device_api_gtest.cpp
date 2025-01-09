@@ -432,6 +432,7 @@ TEST_F(DeviceApiTestFixture, TestName_GetEstbMac_Fail)
 {
     int ret;
     char output[8];
+    EXPECT_CALL(*g_DeviceUtilsMock, getDevicePropertyData(_, _, _)).Times(1).WillOnce(Return(-1));
     EXPECT_EQ(GetEstbMac(output, sizeof(output)), 0);
 }
 
