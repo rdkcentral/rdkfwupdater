@@ -115,6 +115,8 @@ extern "C" int getDevicePropertyData(const char *model, char *data, int size)
         snprintf(data, size, "%s", "true");
     } else if (0 == (strncmp(model, "STAGE2LOCKFILE", 13))) {
         snprintf(data, size, "%s", "/tmp/stage2");
+    } else if (0 == (strncmp(model, "ESTB_INTERFACE", 14))) {
+        snprintf(data, size, "%s", "eth1");
     }
     return g_DeviceUtilsMock->getDevicePropertyData(model, data, size);
 }
@@ -172,4 +174,15 @@ extern "C" bool isInStateRed()
     }
     printf("Inside Mock Function isInStateRed\n");
     return g_DeviceUtilsMock->isInStateRed();
+}
+
+extern "C" size_t GetHwMacAddress( char *iface, char *pMac, size_t szBufSize )
+{
+    if (!g_DeviceUtilsMock)
+    {
+        cout << "GetHwMacAddress g_DeviceUtilsMock object is NULL" << endl;
+        return 0;
+    }
+    printf("Inside Mock Function GetHwMacAddress\n");
+    return g_DeviceUtilsMock->GetHwMacAddress(iface, pMac, szBufSize);
 }

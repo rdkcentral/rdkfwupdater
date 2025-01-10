@@ -38,6 +38,7 @@ class DeviceUtilsInterface
 	virtual int filePresentCheck(const char *filename) = 0;
 	virtual int getFileSize(const char *filename) = 0;
 	virtual bool isInStateRed() = 0;
+        virtual size_t GetHwMacAddress( char *iface, char *pMac, size_t szBufSize ) = 0;
 };
 
 class DeviceUtilsMock: public DeviceUtilsInterface
@@ -55,5 +56,6 @@ class DeviceUtilsMock: public DeviceUtilsInterface
 	MOCK_METHOD(int, filePresentCheck, (const char *filename ), ());
 	MOCK_METHOD(int, getFileSize, (const char *filename ), ());
 	MOCK_METHOD(bool, isInStateRed, (), ());
+	MOCK_METHOD(size_t, GetHwMacAddress, (char *iface, char *pMac, size_t szBufSize), ());
 };
 #endif

@@ -36,6 +36,8 @@
 #include "device_status_helper.h"
 #include "../rfcInterface/rfcinterface.h"
 
+#define MAC_ADDRESS_LEN 17
+
 /* function GetServerUrlFile - scans a file for a URL. 
         Usage: size_t GetServerUrlFile <char *pServUrl> <size_t szBufSize> <char *pFileName>
  
@@ -955,6 +957,10 @@ size_t GetEstbMac( char *pEstbMac, size_t szBufSize )
 {
     FILE *fp;
     size_t i = 0;
+    size_t len = 0;
+    char estb_interface[8] = {0};
+    int ret = -1;
+    bool read_from_hwinterface = false; // default value
 
     if( pEstbMac != NULL )
     {
@@ -964,6 +970,44 @@ size_t GetEstbMac( char *pEstbMac, size_t szBufSize )
             fgets( pEstbMac, szBufSize, fp );   // better be a valid string on first line
             fclose( fp );
             i = stripinvalidchar( pEstbMac, szBufSize );
+            SWLOG_INFO("GetEstbMac: After reading ESTB_MAC_FILE value=%s\n", pEstbMac);
+            /* Below condition if ESTB_MAC_FILE file having empty data and pEstbMac does not have 17 character 
+            * including total mac address with : separate */
+            if (pEstbMac[0] == '\0' || pEstbMac[0] == '\n' || i != MAC_ADDRESS_LEN)
+            {
+                SWLOG_INFO("GetEstbMac: ESTB_MAC_FILE file is empty read_from_hwinterface is set to true\n");
+                read_from_hwinterface = true;
+            }
+        }
+        else
+        {
+            read_from_hwinterface = true;//ESTB_MAC_FILE file does not present proceed for reading from interface
+            SWLOG_INFO("GetEstbMac: read_from_hwinterface is set to true\n");
+        }
+        if (read_from_hwinterface == true)
+        {
+            SWLOG_INFO("GetEstbMac: Reading from hw interface\n");
+            ret = getDevicePropertyData("ESTB_INTERFACE", estb_interface, sizeof(estb_interface));
+            if (ret == UTILS_SUCCESS)
+            {
+                i = GetHwMacAddress(estb_interface, pEstbMac, szBufSize);
+                if(i)
+                {
+                    SWLOG_INFO("GetEstbMac: Hardware address=%s=\n", pEstbMac);
+                }
+                else
+                {
+                    /* When there is no hw address available */
+                    *pEstbMac = 0;
+                    SWLOG_ERROR("GetEstbMac: GetHwMacAddress return fail\n");
+                }
+            }
+            else
+            {
+                *pEstbMac = 0;
+                i = 0;
+                SWLOG_ERROR("GetEstbMac: Interface is not part of /etc/device.properties missing\n");
+            }
         }
     }
     else
