@@ -562,7 +562,7 @@ metaDataFileList_st *getMetaDataFile(char *dir)
             {
                 newnode = (metaDataFileList_st *)malloc(sizeof(metaDataFileList_st));
                 SWLOG_INFO("GetInstalledBundles: found %s\n", pDirent->d_name);
-                snprintf(newnode->fileName, sizeof(newnode->fileName), "%s/%s", BUNDLE_METADATA_NVM_PATH, pDirent->d_name);
+                snprintf(newnode->fileName, sizeof(newnode->fileName), "%s/%s", dir, pDirent->d_name);
                 newnode->next = NULL;
                 if (headNode == NULL)
                 {

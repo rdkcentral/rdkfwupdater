@@ -206,7 +206,7 @@ TEST_F(DeviceApiTestFixture,TestName_bundle_rfcpath)
     int ret;
     char pBundles[32] = {0};
     ret = system("mkdir /tmp/rfc;mkdir /tmp/rfc/certs; cp ca-store-update-bundle_package.json /tmp/rfc/certs/ ");
-    EXPECT_EQ(GetInstalledBundles(pBundles, sizeof(pBundles)), 0);//The above path is not cover in code
+    EXPECT_NE(GetInstalledBundles(pBundles, sizeof(pBundles)), 0);
     ret = system("rm -rf /tmp/rfc/certs/ ");
     ret = system("rm -rf /tmp/rfc/ ");
     printf("BUNDLE = %s\n",pBundles);
@@ -423,8 +423,8 @@ TEST_F(DeviceApiTestFixture, TestName_GetEstbMac_Nullcheck)
 TEST_F(DeviceApiTestFixture, TestName_GetEstbMac_Success)
 {
     int ret;
-    char output[8];
-    ret = system("echo \"aa:bb:cc:dd:ff\" > /tmp/.estb_mac_gtest.txt");
+    char output[32];
+    ret = system("echo \"aa:bb:cc:dd:ff:gg\" > /tmp/.estb_mac_gtest.txt");
     EXPECT_NE(GetEstbMac(output, sizeof(output)), 0);
     ret = system("rm -f /tmp/.estb_mac_gtest.txt");
 }
@@ -432,6 +432,7 @@ TEST_F(DeviceApiTestFixture, TestName_GetEstbMac_Fail)
 {
     int ret;
     char output[8];
+    EXPECT_CALL(*g_DeviceUtilsMock, getDevicePropertyData(_, _, _)).Times(1).WillOnce(Return(-1));
     EXPECT_EQ(GetEstbMac(output, sizeof(output)), 0);
 }
 
