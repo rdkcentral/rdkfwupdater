@@ -330,7 +330,7 @@ size_t RunCommand( SYSCMD eSysCmd, const char *pArgs, char *pResult, size_t szRe
             {
                 SWLOG_ERROR( "%s fread fails:%d\n", __FUNCTION__, nbytes_read );
             }
-//            SWLOG_INFO( "RunCommand: cmd:%s\n", pCommand );
+            SWLOG_INFO( "RunCommand: cmd:%s\n", pCommand );
 //            SWLOG_INFO( "output=%s\n", pResult );
         }
         else
@@ -437,8 +437,6 @@ size_t BuildRemoteInfo( JSON *pItem, char *pRemoteInfo, size_t szMaxBuf, bool bA
 int getJsonRpc(char *post_data, DownloadData* pJsonRpc )
 {
     void *Curl_req = NULL;
-    FILE *fp;
-    int nbytes_read = -1;
     char token[256];
     char jsondata[256];
     int httpCode = 0;
@@ -552,9 +550,7 @@ metaDataFileList_st *getInstalledBundleFileList()
 */
 metaDataFileList_st *getMetaDataFile(char *dir)
 {
-    char *metaDataFile = NULL;
     metaDataFileList_st *newnode = NULL, *prevnode = NULL, *headNode = NULL;
-    int fileNameLen = 0;
     struct dirent *pDirent = NULL;
 
     DIR *directory = opendir(dir);

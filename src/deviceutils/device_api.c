@@ -22,6 +22,7 @@
 #include <ctype.h>
 #include <stdbool.h>
 #include <time.h>
+#include "system_utils.h"
 
 #ifndef GTEST_ENABLE
 #include "urlHelper.h"
@@ -957,7 +958,6 @@ size_t GetEstbMac( char *pEstbMac, size_t szBufSize )
 {
     FILE *fp;
     size_t i = 0;
-    size_t len = 0;
     char estb_interface[8] = {0};
     int ret = -1;
     bool read_from_hwinterface = false; // default value
@@ -1100,7 +1100,6 @@ size_t GetRemoteVers( char *pRemoteVers , size_t szBufSize )
     size_t len = 0;
     JSON *pJson, *pItem;
     char *pJsonStr;
-    size_t szBufRemaining;
     unsigned index, num;
 
     if( pRemoteVers  != NULL )
@@ -1109,7 +1108,6 @@ size_t GetRemoteVers( char *pRemoteVers , size_t szBufSize )
         pJsonStr = GetJson( PERIPHERAL_JSON_FILE );
         if( pJsonStr != NULL )
         {
-            szBufRemaining = szBufSize;
             pJson = ParseJsonStr( pJsonStr );
             if( pJson != NULL )
             {
