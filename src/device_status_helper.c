@@ -729,6 +729,7 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
             ++totlen;
         }
         remainlen = szPostFieldOut - totlen;
+        tmpbuf[strcspn(tmpbuf, "\n")] = '\0';
         totlen += snprintf( (pTmpPost + totlen), remainlen, "additionalFwVerInfo=%s", tmpbuf );
     }
     len = GetBuildType( tmpbuf, sizeof(tmpbuf), NULL );
@@ -752,6 +753,18 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
         }
         remainlen = szPostFieldOut - totlen;
         totlen += snprintf( (pTmpPost + totlen), remainlen, "model=%s", tmpbuf );
+    }
+    len = GetMFRName( tmpbuf, sizeof(tmpbuf) );
+    if( len )
+    {
+        if( totlen )
+        {
+            *(pTmpPost + totlen) = '&';
+            ++totlen;
+        }
+        remainlen = szPostFieldOut - totlen;
+        tmpbuf[strcspn(tmpbuf, "\n")] = '\0';
+        totlen += snprintf( (pTmpPost + totlen), remainlen, "manufacturer=%s", tmpbuf );
     }
     len = GetPartnerId( tmpbuf, sizeof(tmpbuf) );
     if( len )
