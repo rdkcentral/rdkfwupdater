@@ -31,7 +31,7 @@
 extern char* strcasestr(const char* s1, const char* s2);
 #endif
 
-#define URL_MAX_LEN 512
+#define URL_MAX_LEN 1024
 
 typedef enum {
     eRecovery,

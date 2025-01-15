@@ -35,7 +35,7 @@ int getRFCSettings(Rfc_t *rfc_list) {
 
     if (rfc_list == NULL) {
 	SWLOG_ERROR("getRFCSettings(): Parameter is NULL ret= %d\n", ret);
-	return;
+	return ret;
     }
     ret = read_RFCProperty("SWDLSpLimit", RFC_THROTTLE, data, sizeof(data));
     if(ret == -1) {
@@ -203,9 +203,7 @@ int isIncremetalCDLEnable(const char *file_name)
 {
     int chunk_dwld = 0;
     int ret = -1;
-    char dev_name[16] = {0};
     char rfc_data[RFC_VALUE_BUF_SIZE];
-    char *dev_prop_name = "DEVICE_NAME";
 
     if (file_name == NULL) {
         SWLOG_ERROR("%s : Parameter is NULL\n", __FUNCTION__);

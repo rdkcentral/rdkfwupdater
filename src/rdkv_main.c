@@ -72,7 +72,7 @@ char disableStatsUpdate[4] = { 0 }; // Use for Flag to disable STATUS_FILE updat
 int long_term_cert = 0; // If this value is 1 we will select the key file insted of password. 
 
 char lastrun[64] = { 0 };  // Store last run time
-char immed_reboot_flag[6] = { 0 }; // Store immediate reboot flag
+char immed_reboot_flag[12] = { 0 }; // Store immediate reboot flag
 static int delay_dwnl = 0; // Store delay in integer format
 
 static int proto = 1;       //0 = tftp and 1  = http
@@ -232,7 +232,6 @@ bool savePID(const char *file, char *data)
  * */
 void getPidStore(const char *device, const char *maint_window) {
     pid_t pid;
-    FILE *fp = NULL;
     char data[16] = { 0 };
     if (device == NULL || maint_window == NULL) {
         SWLOG_ERROR("getPidStore() parameter is NULL\n");
@@ -349,7 +348,7 @@ bool checkForTlsErrors(int curl_code, const char *type)
 void dwnlError(int curl_code, int http_code, int server_type)
 {
     char telemetry_data[32];
-    char device_type[32];
+    char device_type[128];
     struct FWDownloadStatus fwdls;
     char failureReason[128];
     char *type = "Direct"; //TODO: Need to pass this type as a function parameter
@@ -426,7 +425,6 @@ void dwnlError(int curl_code, int http_code, int server_type)
 int initialize(void) {
     DownloadData DwnLoc;
     int ret = -1;
-    int mode = 1;
     char post_data[] = "{\"jsonrpc\":\"2.0\",\"id\":\"3\",\"method\":\"org.rdk.MaintenanceManager.1.getMaintenanceMode\",\"params\":{}}";
 
 #ifdef T2_EVENT_ENABLED
@@ -501,7 +499,7 @@ void saveHTTPCode(int http_code)
     char http[8] = { 0 };
     FILE *fp = NULL;
 
-    snprintf( http, sizeof(http), "%03ld\n", http_code );
+    snprintf( http, sizeof(http), "%03ld\n", (long int)http_code );
     fp = fopen(HTTP_CODE_FILE, "w");
     if(fp == NULL) {
         SWLOG_ERROR("%s : fopen failed:%s\n", __FUNCTION__, HTTP_CODE_FILE);
@@ -524,7 +522,7 @@ int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const
     FileDwnl_t file_dwnl;
     char oAuthHeader[BIG_BUF_LEN]  = "Authorization: OAuth realm=\"\", ";
     int curl_ret_code = -1;
-    char headerInfoFile[128];
+    char headerInfoFile[512];
 
     if (artifactLocationUrl == NULL || localDownloadLocation == NULL || httpCode == NULL) {
         SWLOG_ERROR("%s: Parameter is NULL\n", __FUNCTION__);
@@ -669,7 +667,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
     FileDwnl_t file_dwnl;
     int chunk_dwnl = 0;
     int mtls_enable = 1; //Setting mtls by default enable
-    char headerInfoFile[128] = {0};
+    char headerInfoFile[512] = {0};
 
     app_mode = getAppMode();
     memset(&sec, '\0', sizeof(MtlsAuth_t));
@@ -863,7 +861,7 @@ int retryDownload(int server_type, const char* artifactLocationUrl, const void* 
     if (server_type == HTTP_SSR_DIRECT || server_type == HTTP_XCONF_DIRECT) {
         if( server_type == HTTP_SSR_DIRECT )
         {
-            SWLOG_INFO("%s: servertype=%d, url=%s, loc=%s, httpcode=%d, total retry=%d, delay=%d\n", __FUNCTION__, server_type, artifactLocationUrl, localDownloadLocation, *httpCode, retry_cnt, delay);
+            SWLOG_INFO("%s: servertype=%d, url=%s, loc=%s, httpcode=%d, total retry=%d, delay=%d\n", __FUNCTION__, server_type, artifactLocationUrl, (const char *)localDownloadLocation, *httpCode, retry_cnt, delay);
         }
         else
         {
@@ -1107,8 +1105,8 @@ int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocati
 
         if (true == st_notify_flag) {
             curtime = getCurrentSysTimeSec();
-            snprintf(current_time, sizeof(current_time), "%lu", curtime);
-            SWLOG_INFO("current_time calculated as %lu and %s\n", curtime, current_time);
+            snprintf(current_time, sizeof(current_time), "%lu", (unsigned long)curtime);
+            SWLOG_INFO("current_time calculated as %lu and %s\n", (unsigned long)curtime, current_time);
             //write_RFCProperty("Rfc_FW", RFC_FW_DWNL_START, current_time, RFC_STRING);
             notifyDwnlStatus(RFC_FW_DWNL_START, current_time, RFC_STRING);
             SWLOG_INFO("FirmwareDownloadStartedNotification SET succeeded\n");
@@ -1212,7 +1210,7 @@ int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocati
                 cmd_args = "FWDNLD_FAILED";
                 logMilestone(cmd_args);
             } else if (upgrade_type == PERIPHERAL_UPGRADE) {
-                checkt2ValNotify( ret_curl_code, upgrade_type, artifactLocationUrl );
+                checkt2ValNotify( ret_curl_code, upgrade_type, (char *)artifactLocationUrl );
             } else{
                 SWLOG_ERROR("Invalid upgrade type\n");
             }
@@ -1308,7 +1306,6 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
     char *pSavedFW;
     char *pSavedDetails;
     char *pFW;
-    char *pFWVer;
     char *pDeviceName;      // based upon function input arg pPeripheralFirmwares
     char *pDeviceType;      // based upon function input arg pPeripheralFirmwares
     char *pDeviceVer;       // based upon function input arg pPeripheralFirmwares

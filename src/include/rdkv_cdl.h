@@ -86,10 +86,10 @@
 
 #define MAX_BUFF_SIZE 512
 #define MAX_BUFF_SIZE1 256
-#define MIN_BUFF_SIZE 64
-#define MIN_BUFF_SIZE1 32
+#define MIN_BUFF_SIZE 128
+#define MIN_BUFF_SIZE1 128
 #define SMALL_SIZE_BUFF 8
-#define DWNL_PATH_FILE_LEN 128
+#define DWNL_PATH_FILE_LEN 256
 
 //TLS values and timeouts
 //#define CURL_TLS_TIMEOUT 7200L

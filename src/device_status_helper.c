@@ -43,7 +43,7 @@ bool CurrentRunningInst(const char *file)
     FILE *fp = NULL;
     char buf[64] = {0};
     char *tmp = NULL;
-    char procfile[32];
+    char procfile[128];
     char *arg = NULL;
     size_t size = 0;
 
@@ -240,7 +240,6 @@ bool updateOPTOUTFile(const char *optout_file_name)
     FILE *fp_write = NULL;
     char tbuff[80] = {0};
     char *update_data = "softwareoptout=ENFORCE_OPTOUT\n";
-    char *tmp;
     int ret = -1;
     if (optout_file_name == NULL) {
         SWLOG_ERROR("%s: parameter is NULL\n", __FUNCTION__);
@@ -1036,7 +1035,6 @@ bool checkForValidPCIUpgrade(int trigger_type, const char *myfwversion, const ch
     bool pci_valid_status = false;
     bool last_dwnl_status = false;
     bool current_img_status = false;
-    int upgrade = 0;
     char last_dwnl_img[64] = {0};
     char current_img[64] = {0};
     struct FWDownloadStatus fwdls;
@@ -1065,7 +1063,6 @@ bool checkForValidPCIUpgrade(int trigger_type, const char *myfwversion, const ch
             SWLOG_INFO("Error identified with image file comparison !!! Proceeding with firmware version check.\n");
             if (strcasecmp(myfwversion, cloudFWVersion)) {
                 SWLOG_INFO("Firmware versions are different myFWVersion : %s and cloudFWVersion : %s\n", myfwversion, cloudFWVersion);
-                upgrade = 1;
                 pci_valid_status = true;
             }
         }

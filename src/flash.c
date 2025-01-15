@@ -51,7 +51,6 @@ int flashImage(const char *server_url, const char *upgrade_file, const char *reb
     char *uptype = "pci";
     char *file = NULL;
     int flash_status = -1;
-    bool st_notify_flag = false;
     struct FWDownloadStatus fwdls;
     memset(&fwdls, '\0', sizeof(fwdls));
 

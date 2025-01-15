@@ -49,7 +49,7 @@ typedef enum {
 
 typedef struct metaDataFileList
 {
-    char fileName[120];
+    char fileName[512];
     struct metaDataFileList *next;
 }metaDataFileList_st;
 
