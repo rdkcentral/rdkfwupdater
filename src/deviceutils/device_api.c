@@ -22,7 +22,6 @@
 #include <ctype.h>
 #include <stdbool.h>
 #include <time.h>
-#include "system_utils.h"
 
 #ifndef GTEST_ENABLE
 #include "urlHelper.h"
