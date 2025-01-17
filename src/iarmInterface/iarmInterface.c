@@ -86,6 +86,10 @@ void eventManager(const char *cur_event_name, const char *event_status) {
         IARM_Result_t result;
         char *pSaved;
 	char* event_status_copy = strdup(event_status);
+	if(event_status_copy == NULL) {
+            SWLOG_ERROR("eventManager() failed due to NULL parameter\n");
+            return;
+        }    
 
         SWLOG_INFO( "%s: event_status = %s\n", __FUNCTION__, event_status );
         firmwareInfo.api_revision = CTRLM_DEVICE_UPDATE_IARM_BUS_API_REVISION;
