@@ -810,6 +810,17 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
         remainlen = szPostFieldOut - totlen;
         totlen += snprintf( (pTmpPost + totlen), remainlen, "experience=%s", tmpbuf );
     }
+    len = GetMigrationReady( tmpbuf, sizeof(tmpbuf) );
+    if( len )
+    {
+        if( totlen )
+        {
+            *(pTmpPost + totlen) = '&';
+            ++totlen;
+        }
+        remainlen = szPostFieldOut - totlen;
+        totlen += snprintf( (pTmpPost + totlen), remainlen, "migrationReady=%s", tmpbuf );
+    }   
     len = GetSerialNum( tmpbuf, sizeof(tmpbuf) );
     if( len )
     {

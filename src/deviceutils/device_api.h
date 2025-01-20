@@ -238,6 +238,17 @@ size_t GetSerialNum( char *pSerialNum, size_t szBufSize);
 // TODO: GetExperience must be implemented correctly
 size_t GetExperience(char *pExperience, size_t szBufSize);
 
+/* function GetMigrationReady - gets the migration readiness status.
+
+       Usage: size_t GetMigrationReady <char *pMRComponents> <size_t szBufSize>
+
+            pMRComponents - pointer to a char buffer to store the output string.
+
+            szBufSize - the size of the character buffer in argument 1.
+
+            RETURN - number of characters copied to the output buffer.
+*/
+size_t GetMigrationReady(char *pMRComponents, size_t szBufSize);
 
 /* function GetAccountID - gets the account ID of the device.
  
