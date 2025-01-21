@@ -87,7 +87,7 @@ void eventManager(const char *cur_event_name, const char *event_status) {
         char *pSaved;
 	char* event_status_copy = strdup(event_status);
 	if(event_status_copy == NULL) {
-            SWLOG_ERROR("eventManager() failed due to NULL parameter\n");
+            SWLOG_ERROR("eventManager() failed due to strdup returned NULL\n");
             return;
         }    
 
