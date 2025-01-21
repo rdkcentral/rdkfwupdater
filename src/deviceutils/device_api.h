@@ -73,7 +73,7 @@ typedef enum {
 #define RFC_ACCOUNTID       "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.AccountInfo.AccountID"
 #define RFC_SERIALNUM       "Device.DeviceInfo.SerialNumber"
 #define RFC_OS_CLASS        "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Bootstrap.OsClass"
-
+#define MR_ID               "Device.DeviceInfo.MigrationPreparer.MigrationReady"
 #define NO_URL              NULL
 
 #define RFC_DAC15URL        "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Sysint.DAC15CDLUrl"
