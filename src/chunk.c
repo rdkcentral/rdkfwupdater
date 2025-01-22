@@ -84,7 +84,7 @@ int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_li
     size_t content_len = 0;
     char range[16] = {0};
     int file_size = 0;
-    char headerfile[128];
+    char headerfile[136];
 
     if (pfile_dwnl == NULL || httpcode == NULL) {
         return ret;

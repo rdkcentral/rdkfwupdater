@@ -85,11 +85,16 @@ void eventManager(const char *cur_event_name, const char *event_status) {
         ctrlm_device_update_iarm_call_update_available_t firmwareInfo;
         IARM_Result_t result;
         char *pSaved;
+	char* event_status_copy = strdup(event_status);
+	if(event_status_copy == NULL) {
+            SWLOG_ERROR("eventManager() failed due to strdup returned NULL\n");
+            return;
+        }    
 
         SWLOG_INFO( "%s: event_status = %s\n", __FUNCTION__, event_status );
         firmwareInfo.api_revision = CTRLM_DEVICE_UPDATE_IARM_BUS_API_REVISION;
         snprintf( firmwareInfo.firmwareLocation, sizeof(firmwareInfo.firmwareLocation), "%s",
-                  strtok_r( event_status, ":", &pSaved ) );
+                  strtok_r( event_status_copy, ":", &pSaved ) );
         snprintf( firmwareInfo.firmwareNames, sizeof(firmwareInfo.firmwareLocation), "%s",
                   strtok_r( NULL, ":", &pSaved ) );
         SWLOG_INFO( "%s: firmwareInfo.firmwareLocation = %s\nfirmwareInfo.firmwareNames = %s\n",
@@ -101,6 +106,7 @@ void eventManager(const char *cur_event_name, const char *event_status) {
                   sizeof(firmwareInfo) );
 
         SWLOG_INFO("%s : IARM_Bus_Call result = %d\n", __FUNCTION__, (int)result );
+	free(event_status_copy);
 #else
         SWLOG_INFO( "%s: event_status = %s - no control manager available, not processing IARM event\n",
                     __FUNCTION__, event_status );
@@ -197,10 +203,8 @@ static bool isConnected()
 int init_event_handler(void)
 {
     IARM_Result_t res;
-    int result = -1;
     if (isConnected()) {
             SWLOG_INFO("IARM already connected\n");
-            result = 0;
     } else {
         res = IARM_Bus_Init(IARM_RDKVFWUPGRADER_EVENT);
 	SWLOG_INFO("IARM_Bus_Init: %d\n", res);
@@ -210,8 +214,9 @@ int init_event_handler(void)
             res = IARM_Bus_Connect();
 	    SWLOG_INFO("IARM_Bus_Connect: %d\n", res);
 	    if (res == IARM_RESULT_SUCCESS || res == IARM_RESULT_INVALID_STATE) {
-                result = isConnected();
-                SWLOG_INFO("SUCCESS: IARM_Bus_Connect done!\n");
+		if (isConnected()) {
+		      SWLOG_INFO("SUCCESS: IARM_Bus_Connect done!\n");
+		}
 	    } else {
                 SWLOG_ERROR("IARM_Bus_Connect failure: %d\n", res);
 	    }
