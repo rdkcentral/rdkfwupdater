@@ -21,13 +21,15 @@
 
 #include "rdkv_cdl.h"
 #include "../rfcInterface/rfcinterface.h"
+#define MIN_BUFF_SIZE2 MIN_BUFF_SIZE1 + 40
+#define MIN_BUFF_SIZE3 MIN_BUFF_SIZE + 64
 
 struct FWDownloadStatus {
     char method[MIN_BUFF_SIZE1];
     char proto[MIN_BUFF_SIZE1];
-    char status[MIN_BUFF_SIZE1];
+    char status[MIN_BUFF_SIZE2];
     char reboot[MIN_BUFF_SIZE1];
-    char failureReason[MIN_BUFF_SIZE];
+    char failureReason[MIN_BUFF_SIZE3];
     char dnldVersn[MAX_BUFF_SIZE1];
     char dnldfile[MAX_BUFF_SIZE1];
     char dnldurl[MAX_BUFF_SIZE];

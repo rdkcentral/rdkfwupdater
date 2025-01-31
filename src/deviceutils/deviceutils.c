@@ -242,7 +242,6 @@ int MemDLAlloc( DownloadData *pDwnData, size_t szDataSize )
 */
 size_t RunCommand( SYSCMD eSysCmd, const char *pArgs, char *pResult, size_t szResultSize )
 {
-    char *pCommand;
     FILE *fp;
     size_t nbytes_read = 0;
 
@@ -252,7 +251,6 @@ size_t RunCommand( SYSCMD eSysCmd, const char *pArgs, char *pResult, size_t szRe
         switch( eSysCmd )
         {
            case eMD5Sum :
-               pCommand = MD5SUM;
                if( pArgs != NULL )
                {
                    fp = v_secure_popen( "r", MD5SUM, pArgs );
@@ -265,7 +263,6 @@ size_t RunCommand( SYSCMD eSysCmd, const char *pArgs, char *pResult, size_t szRe
                break;
 
            case eRdkSsaCli :
-               pCommand = RDKSSACLI;
                if( pArgs != NULL )
                {
                    fp = v_secure_popen( "r", RDKSSACLI, pArgs );
@@ -278,7 +275,6 @@ size_t RunCommand( SYSCMD eSysCmd, const char *pArgs, char *pResult, size_t szRe
                break;
 
            case eMfrUtil :
-               pCommand = MFRUTIL;
                if( pArgs != NULL )
                {
                    fp = v_secure_popen( "r", MFRUTIL, pArgs );
@@ -291,26 +287,22 @@ size_t RunCommand( SYSCMD eSysCmd, const char *pArgs, char *pResult, size_t szRe
                break;
 
            case eWpeFrameworkSecurityUtility :
-               pCommand = WPEFRAMEWORKSECURITYUTILITY;
                fp = v_secure_popen( "r", WPEFRAMEWORKSECURITYUTILITY );
                break;
 
 
 #ifdef GETRDMMANIFESTVERSION_IN_SCRIPT
            case eGetInstalledRdmManifestVersion :
-               pCommand = GETINSTALLEDRDMMANIFESTVERSIONSCRIPT;
                fp = v_secure_popen( "r", GETINSTALLEDRDMMANIFESTVERSIONSCRIPT );
                break;
 #endif
 #ifdef GETMODEL_IN_SCRIPT 
            case eGetModelNum :
-               pCommand = GETMODELSCRIPT;
                fp = v_secure_popen( "r", GETMODELSCRIPT );
                break;
 #endif
 
            default:
-               pCommand = NULL;
                fp = NULL;
                SWLOG_ERROR( "RunCommand: Error, unknown request type %d\n", (int)eSysCmd );
                break;
@@ -330,7 +322,6 @@ size_t RunCommand( SYSCMD eSysCmd, const char *pArgs, char *pResult, size_t szRe
             {
                 SWLOG_ERROR( "%s fread fails:%d\n", __FUNCTION__, nbytes_read );
             }
-//            SWLOG_INFO( "RunCommand: cmd:%s\n", pCommand );
 //            SWLOG_INFO( "output=%s\n", pResult );
         }
         else
@@ -437,8 +428,6 @@ size_t BuildRemoteInfo( JSON *pItem, char *pRemoteInfo, size_t szMaxBuf, bool bA
 int getJsonRpc(char *post_data, DownloadData* pJsonRpc )
 {
     void *Curl_req = NULL;
-    FILE *fp;
-    int nbytes_read = -1;
     char token[256];
     char jsondata[256];
     int httpCode = 0;
@@ -552,9 +541,7 @@ metaDataFileList_st *getInstalledBundleFileList()
 */
 metaDataFileList_st *getMetaDataFile(char *dir)
 {
-    char *metaDataFile = NULL;
     metaDataFileList_st *newnode = NULL, *prevnode = NULL, *headNode = NULL;
-    int fileNameLen = 0;
     struct dirent *pDirent = NULL;
 
     DIR *directory = opendir(dir);
