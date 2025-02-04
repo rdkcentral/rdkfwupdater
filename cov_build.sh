@@ -10,7 +10,6 @@ cd $ROOT
 
 
 #Build rdkfwupdater
-cd /home/rdkfwupdater
 autoreconf -i
 ./configure --prefix=${INSTALL_DIR}
 make && make install
