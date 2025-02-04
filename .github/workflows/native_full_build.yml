@@ -3,7 +3,7 @@ name: Build Component in Native Environment
 on:
   pull_request:
     branches: [ develop ]
-    paths: ['**/*.c', '**/*.cpp', '**/*.cc', '**/*.cxx', '**/*.h', '**/*.hpp']
+    paths: ['**/*.c', '**/*.cpp', '**/*.cc', '**/*.cxx', '**/*.h', '**/*.hpp', '**/*.sh']
 
 jobs:
   build-rdkfwupdater-on-pr:
