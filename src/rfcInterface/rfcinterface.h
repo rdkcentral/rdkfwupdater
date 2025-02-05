@@ -95,5 +95,6 @@ int write_RFCProperty(char* type, const char* key, const char *data, RFCVALDATAT
 int isMtlsEnabled(const char *);
 int isIncremetalCDLEnable(const char *file_name);
 bool isMmgbleNotifyEnabled(void);
+bool isDebugServicesEnabled(void);
 
 #endif /* VIDEO_RFCINTERFACE_RFCINTERFACE_H_ */
