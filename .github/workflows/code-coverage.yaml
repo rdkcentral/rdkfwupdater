@@ -1,0 +1,53 @@
+name: Unit tests RdkFirmwareUpgrader
+
+on:
+  pull_request:
+    branches: [ develop, main ]
+
+jobs:
+  execute-unit-code-coverage-report-on-release:
+    name: Execute unit tests in gtest test suite
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/rdkcentral/docker-rdk-ci:latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Run unit tests
+        run: sh run_ut.sh --enable-cov
+
+      - name: Caculate the code coverage summary
+        run: |
+          lcov --list coverage.info | grep "Lines\|Total" > /tmp/coverage_summary.txt
+
+      - name: Update the coverage report to Pull request using actions
+        uses: actions/github-script@v4
+        with:
+          script: |
+            const fs = require('fs');
+            const lcov_result = fs.readFileSync('/tmp/coverage_summary.txt', 'utf8'); 
+          
+            github.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: 
+                    '## Code Coverage Summary \n' +
+                    ' ' +
+                    '|Line Coverage|      |Function Coverage|' +
+                    '```' +
+                    lcov_result + 
+                    '```'
+            });
+
+      - name: Generate the html report
+        run: |
+          genhtml coverage.info --output-directory /tmp/coverage_report
+
+      - name: Upload the coverage report to Pull request using actions
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: /tmp/coverage_report
