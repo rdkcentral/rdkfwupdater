@@ -165,15 +165,15 @@ TEST_F(InterfaceTestFixture, TestName_isMmgbleNotifyEnabledSuccess)
     EXPECT_EQ(isMmgbleNotifyEnabled(), true);
 }
 
-TEST_F(InterfaceTestFixture, TestName_isDebugServicesEnabledFail)
+TEST_F(InterfaceTestFixture, TestName_isDebugServiceEnabledFail)
 {
     EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(1).WillOnce(Return(-1));
-    EXPECT_EQ(isDebugServicesEnabled(), false);
+    EXPECT_EQ(isDebugServiceEnabled(), false);
 }
-TEST_F(InterfaceTestFixture, TestName_isDebugServicesEnabledSuccess)
+TEST_F(InterfaceTestFixture, TestName_isDebugServiceEnabledSuccess)
 {
     EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(1).WillOnce(Return(1));
-    EXPECT_EQ(isDebugServicesEnabled(), true);
+    EXPECT_EQ(isDebugServiceEnabled(), true);
 }
 TEST_F(InterfaceTestFixture, TestName_isIncremetalCDLEnableSuccess)
 {
