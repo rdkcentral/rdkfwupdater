@@ -176,6 +176,13 @@ extern "C" bool isInStateRed()
     return g_DeviceUtilsMock->isInStateRed();
 }
 
+extern "C" bool isDebugServicesEnabled(void) {
+        if (!g_DeviceUtilsMock) {
+            cout << "isDebugServicesEnabled g_DeviceUtilsMock object is NULL" << endl;
+	    return false; 
+        }
+        return g_DeviceUtilsMock->isDebugServicesEnabled();
+    }
 extern "C" size_t GetHwMacAddress( char *iface, char *pMac, size_t szBufSize )
 {
     if (!g_DeviceUtilsMock)

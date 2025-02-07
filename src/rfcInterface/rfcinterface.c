@@ -265,7 +265,7 @@ bool isDebugServicesEnabled(void)
     char rfc_data[RFC_VALUE_BUF_SIZE];
 
     *rfc_data = 0;
-    ret = read_RFCProperty("DIRECTCDN", RFC_DEBUGSRV, rfc_data, sizeof(rfc_data));
+    ret = read_RFCProperty("DEBUGSRV", RFC_DEBUGSRV, rfc_data, sizeof(rfc_data));
     if (ret == -1) {
         SWLOG_ERROR("%s: rfc Debug services =%s failed Status %d\n", __FUNCTION__, RFC_DEBUGSRV, ret);
         return status;
