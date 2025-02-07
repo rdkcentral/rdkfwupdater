@@ -253,3 +253,23 @@ bool isMmgbleNotifyEnabled(void)
     }
     return status;
 }
+
+bool isDebugServiceEnabled(void){
+bool status = false;
+    int ret = -1;
+    char rfc_data[RFC_VALUE_BUF_SIZE];
+
+    *rfc_data = 0;
+    ret = read_RFCProperty("DEBUGSRV", RFC_DEBUGSRV, rfc_data, sizeof(rfc_data));
+    if (ret == -1) {
+        SWLOG_ERROR("%s: ManageNotify rfc=%s failed Status %d\n", __FUNCTION__, RFC_MNG_NOTIFY, ret);
+	return status;
+    } else {
+        SWLOG_INFO("%s: rfc ManageNotify= %s\n", __FUNCTION__, rfc_data);
+        if ((strncmp(rfc_data, "true", 4)) == 0) {
+            status = true;
+        }
+    }
+    return status;
+}
+	
