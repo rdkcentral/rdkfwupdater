@@ -57,25 +57,14 @@ echo "-------------> Retrun value $rdkfw_interface"
 
 if [ "$devicestatus" = "0" ] && [ "$deviceutils" = "0" ] && [ "$mainapp" = "0" ] && [ "$rdkfw_interface" = "0" ]; then
     cd ../src/
-
-    lcov --capture --directory . --output-file coverage.info
-
-    lcov --remove coverage.info '/usr/*' --output-file coverage.filtered.info
-
-    genhtml coverage.filtered.info --output-directory out
+    #### Generate the coverage report ####
+    if [ "$ENABLE_COV" = true ]; then
+        echo "Generating coverage report"
+        lcov --capture --directory . --output-file coverage.info
+        lcov --remove coverage.info '/usr/*' --output-file coverage.info
+        lcov --list coverage.info
+    fi
 else
     echo "L1 UNIT TEST FAILED. PLEASE CHECK AND FIX"
     exit 1
-fi
-
-
-#### Generate the coverage report ####
-if [ "$ENABLE_COV" = true ]; then
-    echo "Generating coverage report"
-    lcov --directory . --capture --output-file coverage.info
-    lcov --remove coverage.info "${PWD}/source/test/*" --output-file coverage.info
-
-    lcov --remove coverage.info "$HOME/usr/*" --output-file coverage.info
-    lcov --remove coverage.info "/usr/*" --output-file coverage.info
-    lcov --list coverage.info
 fi

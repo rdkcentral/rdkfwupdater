@@ -2,11 +2,11 @@ name: Unit tests RdkFirmwareUpgrader
 
 on:
   pull_request:
-    branches: [ develop, main ]
+    branches: [ main, develop ]
 
 jobs:
   execute-unit-code-coverage-report-on-release:
-    name: Execute unit tests in gtest test suite
+    name: Test coverage report for release
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/rdkcentral/docker-rdk-ci:latest
