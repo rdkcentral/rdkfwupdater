@@ -590,7 +590,9 @@ TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessSwupdate_Prod_DebugServi
 		len = snprintf(pUrlOut, szBufSize, "%s", "TR181URL" );
                 return strlen(PUrlOut);
         })); 
-    EXPECT_STREQ(GetServURL(output, "TR181URL/xconf/swu/stb"));
+    ret = GetServURL(output , sizeof(output));
+    EXPECT_NE(ret ,0 );
+    EXPECT_STREQ(output, "TR181URL/xconf/swu/stb");
     ret = system("rm -f /tmp/swupdate.conf");
     ret = system("rm -f /tmp/device_gtest.prop");
     printf("Server URL = %s\n", output);
