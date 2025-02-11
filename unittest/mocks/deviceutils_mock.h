@@ -23,6 +23,7 @@
 
 #include "rdkv_cdl_log_wrapper.h"
 #define RDK_API_SUCCESS 0
+
 class DeviceUtilsInterface
 {
     public:
@@ -59,5 +60,6 @@ class DeviceUtilsMock: public DeviceUtilsInterface
 	MOCK_METHOD(bool, isInStateRed, (), ());
 	MOCK_METHOD(bool, isDebugServicesEnabled, (), ());
 	MOCK_METHOD(size_t, GetHwMacAddress, (char *iface, char *pMac, size_t szBufSize), ());
+
 };
 #endif

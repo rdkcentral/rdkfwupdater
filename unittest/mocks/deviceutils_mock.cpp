@@ -183,6 +183,7 @@ extern "C" bool isDebugServicesEnabled(void) {
         }
         return g_DeviceUtilsMock->isDebugServicesEnabled();
     }
+
 extern "C" size_t GetHwMacAddress( char *iface, char *pMac, size_t szBufSize )
 {
     if (!g_DeviceUtilsMock)
