@@ -148,6 +148,13 @@ int write_RFCProperty(char* type, const char* key, const char *value, RFCVALDATA
 int read_RFCProperty(char* type, const char* key, char *out_value, size_t datasize) {
     //TODO: Need to implement for RDK-M
     SWLOG_INFO("%s: Not Applicabe For RDK-M. Need to implement\n", __FUNCTION__);
+    if (out_value != NULL && key != NULL) {
+	if (0 == (strcmp(key, RFC_FW_AUTO_EXCLUDE))) {
+            strcpy(out_value,"false");
+	}else {
+            strcpy(out_value,"true");
+	}
+    }
     return READ_RFC_NOTAPPLICABLE;
 }
 /* Description: Below function should be Writing rfc data For RDk-M
