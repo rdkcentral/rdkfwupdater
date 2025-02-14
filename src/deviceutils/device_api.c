@@ -81,7 +81,7 @@ size_t GetServerUrlFile( char *pServUrl, size_t szBufSize, char *pFileName )
                     pLb = pHttp + 8;    // reuse pLb for parsing, pLb should point to first character after https://
                     while( *pLb )   // convert non-alpha numerics (but not '.') or whitespace to NULL terminator
                     {
-                        if( (!isalnum( *pLb ) && *pLb != '.' && *pLb != '/' && *pLb != '-' && *pLb != '_') || isspace( *pLb ) )
+                        if( (!isalnum( *pLb ) && *pLb != '.' && *pLb != '/' && *pLb != '-' && *pLb != '_' && *pLb != ':') || isspace( *pLb ) )
                         {
                             *pLb = 0;   // NULL terminate at end of URL
                             break;

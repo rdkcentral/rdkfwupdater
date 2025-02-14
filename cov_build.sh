@@ -10,5 +10,5 @@ mkdir -p $INSTALL_DIR
 
 #Build rdkfwupdater
 autoreconf -i
-./configure --prefix=${INSTALL_DIR}
+./configure --prefix=${INSTALL_DIR} CFLAGS="-DRDK_LOGGER"
 make && make install
