@@ -84,7 +84,7 @@ int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_li
     size_t content_len = 0;
     char range[16] = {0};
     int file_size = 0;
-    char headerfile[128];
+    char headerfile[136];
 
     if (pfile_dwnl == NULL || httpcode == NULL) {
         return ret;
@@ -101,7 +101,7 @@ int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_li
             curl_ret_code = CURLE_OK;
             return curl_ret_code;
         } else if (file_size != -1) {
-            sprintf(range, "%d-", file_size);
+            snprintf(range,sizeof(range), "%d-", file_size);
             SWLOG_INFO("chunkDownload() file size=%d and range=%s\n", file_size, range);
         }   else {
             SWLOG_ERROR( "chunkDownload() error getFileSize=%s\n", pfile_dwnl->pathname);

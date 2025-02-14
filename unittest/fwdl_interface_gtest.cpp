@@ -115,14 +115,14 @@ TEST_F(InterfaceTestFixture, TestName_getRFCSettingsSuccess)
 {
     Rfc_t rfcvalue;
     memset(&rfcvalue, '\0', sizeof(rfcvalue));
-    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(5).WillRepeatedly(Return(1));
+    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(4).WillRepeatedly(Return(1));
     EXPECT_EQ(getRFCSettings(&rfcvalue), 0);
 }
 TEST_F(InterfaceTestFixture, TestName_getRFCSettingsFail)
 {
     Rfc_t rfcvalue;
     memset(&rfcvalue, '\0', sizeof(rfcvalue));
-    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(5).WillRepeatedly(Return(-1));
+    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(4).WillRepeatedly(Return(-1));
     EXPECT_EQ(getRFCSettings(&rfcvalue), 0);
 }
 TEST_F(InterfaceTestFixture, TestName_write_RFCPropertySuccess2)

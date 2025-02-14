@@ -69,14 +69,12 @@ typedef enum
 }RFCVALDATATYPE;
 
 typedef struct rfcdetails {
-    char rfc_fw_upgrader[RFC_VALUE_BUF_SIZE];
     char rfc_throttle[RFC_VALUE_BUF_SIZE];
     char rfc_topspeed[RFC_VALUE_BUF_SIZE];
     char rfc_incr_cdl[RFC_VALUE_BUF_SIZE];
     char rfc_mtls[RFC_VALUE_BUF_SIZE];
 }Rfc_t;
 
-#define RFC_FW "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.RDKFirmwareUpgrader.Enable"
 #define RFC_THROTTLE "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLSpLimit.Enable"
 #define RFC_TOPSPEED "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLSpLimit.TopSpeed"
 #define RFC_INCR_CDL "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.IncrementalCDL.Enable"

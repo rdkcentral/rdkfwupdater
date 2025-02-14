@@ -51,7 +51,6 @@ int flashImage(const char *server_url, const char *upgrade_file, const char *reb
     char *uptype = "pci";
     char *file = NULL;
     int flash_status = -1;
-    bool st_notify_flag = false;
     struct FWDownloadStatus fwdls;
     memset(&fwdls, '\0', sizeof(fwdls));
 
@@ -146,11 +145,6 @@ int flashImage(const char *server_url, const char *upgrade_file, const char *reb
 	 }
 	 postFlash(maint, file+1, upgrade_type, reboot_flag);
          updateUpgradeFlag(2);// Remove file TODO: Logic need to change
-    }else {
-	  /* Below code is mainly for AXG1V4 device */
-         snprintf(fwdls.status, sizeof(fwdls.status), "Status|Download complete\n");
-         snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Download complete\n");
-         snprintf(fwdls.failureReason, sizeof(fwdls.failureReason), "FailureReason|");
     }
     if (true == mediaclient && (0 == filePresentCheck(upgrade_file))) {
         unlink(upgrade_file);

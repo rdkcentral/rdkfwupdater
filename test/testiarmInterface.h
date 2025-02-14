@@ -21,11 +21,13 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#if defined(IARM_ENABLED)
 #include "sysMgr.h"
 #include "libIARMCore.h"
 #include "libIBus.h"
 #include "libIBusDaemon.h"
 #include <glib.h>
+#endif
 //#ifdef EN_MAINTENANCE_MANAGER
 //#include "maintenanceMGR.h"
 //#endif
