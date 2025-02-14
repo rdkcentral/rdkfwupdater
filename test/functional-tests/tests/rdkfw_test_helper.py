@@ -177,6 +177,13 @@ def initial_rdkfw_setup():
     
     # /opt/secure/RFC directory
     os.makedirs("/opt/CDL", exist_ok=True)
+    # /opt/secure/RFC directory
+    
+    os.makedirs("/lib/rdk/", exist_ok=True)
+    route_file = Path("/lib/rdk/imageFlasher.sh")
+    route_file.touch(exist_ok=True)
+    write_on_file("/lib/rdk/imageFlasher.sh", "#!/bin/bash\nexit 0")
+    os.chmod(route_file, 0o777)
     
     # RFC Prev FW Version
     #write_on_file(RFC_SEC_DIR+".version", get_FWversion() + "_PREV")
