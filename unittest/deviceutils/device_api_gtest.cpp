@@ -503,7 +503,7 @@ TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessStatered_Prod_DebugServi
     //EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _)).Times(1).WillOnce(Return(1));
     ret = system("echo \"BUILD_TYPE=PROD\" > /tmp/device_gtest.prop");
     //EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(1));
-    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(false));
+    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(true));
     ret = system("echo \"https://www.statered.com\" > /tmp/stateredrecovry.conf");
     EXPECT_NE(GetServURL(output, sizeof(output)), 0);
     ret = system("rm -f /tmp/stateredrecovry.conf");
@@ -518,7 +518,7 @@ TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessStatered_Prod_DebugServi
     //EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _)).Times(1).WillOnce(Return(1));
     ret = system("echo \"BUILD_TYPE=PROD\" > /tmp/device_gtest.prop");
     //EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(1));
-    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(true));
+    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(false));
     ret = system("echo \"https://www.statered.com\" > /tmp/stateredrecovry.conf");
     EXPECT_NE(GetServURL(output, sizeof(output)), 0);
     ret = system("rm -f /tmp/stateredrecovry.conf");
