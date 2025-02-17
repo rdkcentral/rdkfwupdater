@@ -267,8 +267,7 @@ bool isDebugServicesEnabled(void)
     *rfc_data = 0;
     ret = read_RFCProperty("DEBUGSRV", RFC_DEBUGSRV, rfc_data, sizeof(rfc_data));
     if (ret == -1) {
-        SWLOG_ERROR("%s: rfc Debug services =%s failed Status %d\n", __FUNCTION__, RFC_DEBUGSRV, ret);
-        return status;
+        SWLOG_ERROR("%s: rfc Debug services =%s failed Status %d\n", __FUNCTION__, RFC_DEBUGSRV, ret);	
     } else {
         SWLOG_INFO("%s: rfc Debug services = %s\n", __FUNCTION__, rfc_data);
         if ((strncmp(rfc_data, "true", 4)) == 0) {
