@@ -52,7 +52,6 @@
 #include <string.h>
 #include <strings.h>
 
-
 #define JSON_STR_LEN        1000
 
 #define DOWNLOADED_PERIPHERAL_VERSION "/tmp/downloaded_peripheral_versions.txt"
@@ -559,7 +558,7 @@ int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const
         return curl_ret_code;
     }
     
-    memset(&file_dwnl, '\0', sizeof(FileDwnl_t));
+    memset(&file_dwnl, '\0', 10*sizeof(FileDwnl_t));
     file_dwnl.chunk_dwnl_retry_time = 0; // Assign zero because we do not have this support in codebig
 
     if( server_type == HTTP_XCONF_CODEBIG )
@@ -673,7 +672,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
     char headerInfoFile[136] = {0};
 
     app_mode = getAppMode();
-    memset(&sec, '\0', sizeof(MtlsAuth_t));
+    memset(&sec, '\0', 10*sizeof(MtlsAuth_t));
     memset(&file_dwnl, '\0', sizeof(FileDwnl_t));
 
     if (artifactLocationUrl == NULL || localDownloadLocation == NULL || httpCode == NULL) {
@@ -1869,7 +1868,7 @@ int main(int argc, char *argv[]) {
     int json_res = -1;
     int http_code;
     struct sigaction rdkv_newaction;
-    memset(&rdkv_newaction, '\0', sizeof(struct sigaction));
+    memset(&rdkv_newaction, '\0', 10*sizeof(struct sigaction));
     int init_validate_status = INITIAL_VALIDATION_FAIL;
 
     rdkv_newaction.sa_sigaction = handle_signal;
