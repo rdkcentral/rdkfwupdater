@@ -112,6 +112,12 @@ typedef char gchar;
 #define FW_STATE_CRITICAL_REBOOT "8"
 #define FW_STATE_NO_UPGRADE_REQUIRED "9"
 
+//Red Recovery states
+#define RED_RECOVERY_COMPLETED "0"
+#define RED_RECOVERY_STARTED "1"
+#define RED_RECOVERY_DOWNLOADED "2"
+#define RED_RECOVERY_PROGRAMMED "3"
+
 /** Description: Send event to iarm event manager
  *
  *  @param cur_event_name: event name.
