@@ -67,7 +67,6 @@ int getXconfRespData( XCONFRES *pResponse, char *pJsonStr )
 bool validateImage(const char *image_name, const char *model)
 {
     bool status = false;
-    int i;
     if (image_name == NULL || model == NULL) {
         SWLOG_INFO("%s: parameter is NULL\n", __FUNCTION__);
         return status;
@@ -87,7 +86,6 @@ bool validateImage(const char *image_name, const char *model)
  * */
 int processJsonResponse(XCONFRES *response, const char *myfwversion, const char *model, const char *maint)
 {
-    char *pTmp;
     bool valid_img = false;
     bool valid_pdri_img = true;
     bool ret_status = false;
@@ -151,7 +149,9 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
             ret = 0;
         }
         ret_status = lastDwnlImg(last_dwnl_img, sizeof(last_dwnl_img));
+	SWLOG_INFO("last_dwnl_status=%i\n", ret_status);
         ret_status = currentImg(current_img, sizeof(current_img));
+	SWLOG_INFO("current_img_status=%i\n", ret_status);
         SWLOG_INFO("myFWVersion = %s\n", myfwversion);
         SWLOG_INFO("myFWFile = %s\n", current_img);
         SWLOG_INFO("lastDnldFile = %s\n", last_dwnl_img);
