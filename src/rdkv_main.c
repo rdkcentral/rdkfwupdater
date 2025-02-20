@@ -1953,7 +1953,8 @@ int main(int argc, char *argv[]) {
     SWLOG_INFO("init_validate_status = %d\n", init_validate_status);
     if( init_validate_status == INITIAL_VALIDATION_SUCCESS)
     {
-        if( isInStateRed() ) {
+        eventManager(FW_STATE_EVENT, FW_STATE_UNINITIALIZED);
+	if( isInStateRed() ) {
           eventManager(RED_STATE_EVENT, RED_RECOVERY_STARTED);
         }
 	eventManager(FW_STATE_EVENT, FW_STATE_REQUESTING);
