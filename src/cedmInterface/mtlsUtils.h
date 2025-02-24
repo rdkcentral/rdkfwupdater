@@ -37,6 +37,7 @@
 #define CURL_MTLS_LOCAL_CERTPROBLEM 58
 
 typedef enum {
+    MTLS_DISABLE = -3,                     // non mtls case, 
     STATE_RED_CERT_FETCH_FAILURE = -2,     // Indicates failure in state red recovery
     MTLS_CERT_FETCH_FAILURE = -1,          // Indicates general MTLS failure
     MTLS_CERT_FETCH_SUCCESS = 0            // Indicates success
