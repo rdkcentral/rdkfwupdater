@@ -22,7 +22,7 @@
 #include "rdkconfig.h"
 #endif
 
-#ifdef RDKCERTSELECTOR
+#ifdef LIBRDKCERTSELECTOR
 /* Description: Use for get all mtls related certificate and key.
  * @param sec: This is a pointer hold the certificate, key and type of certificate.
  * @return :  MTLS_CERT_FETCH_SUCCESS on success, MTLS_CERT_FETCH_FAILURE on mtls cert failure , STATE_RED_CERT_FETCH_FAILURE on state red cert failure
