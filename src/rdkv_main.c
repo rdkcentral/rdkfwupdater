@@ -662,7 +662,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
 
     int app_mode = 0;
     int ret = -1 ;
-#ifedf LIBRDKCERTSELECTOR
+#ifdef LIBRDKCERTSELECTOR
     MtlsAuthStatus ret = MTLS_CERT_FETCH_SUCCESS;
 #endif	
     MtlsAuth_t sec;
