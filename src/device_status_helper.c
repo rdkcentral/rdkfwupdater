@@ -754,7 +754,7 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
         remainlen = szPostFieldOut - totlen;
         totlen += snprintf( (pTmpPost + totlen), remainlen, "model=%s", tmpbuf );
     }
-    len = GetMFRName( tmpbuf, sizeof(tmpbuf) );
+    len = GetMFRName( tmpbuf, sizeof(tmpbuf) ); 
     if( len )
     {
         if( totlen )
