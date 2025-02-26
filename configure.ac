@@ -65,7 +65,7 @@ AC_ARG_ENABLE([rdkcertselector],
         [
           case "${enableval}" in
            yes) IS_LIBRDKCERTSEL_ENABLED=true
-                LIBRDKCERTSEL_FLAG=" -DLIBRDKCERTSEL_BUILD ";;
+                LIBRDKCERTSEL_FLAG=" -DLIBRDKCERTSELECTOR ";;
            no)  IS_LIBRDKCERTSEL_ENABLED=false ;;
           *) AC_MSG_ERROR([bad value ${enableval} for --enable-rdkcertselector]) ;;
            esac
