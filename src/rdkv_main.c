@@ -680,7 +680,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
 	
     state_red = isInStateRed();
 #ifdef LIBRDKCERTSELECTOR
-    static rdkcertselector_h thisCertSel = NULL;
+    static rdkcertselector_h thisCertSel = NULL
     if (thisCertSel == NULL) {
         const char* certGroup = (state_red == 1) ? "RCVRY" : "MTLS";
         thisCertSel = rdkcertselector_new(DEFAULT_CONFIG, DEFAULT_HROT, certGroup);
