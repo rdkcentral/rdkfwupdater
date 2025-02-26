@@ -23,6 +23,7 @@ AM_LDFLAGS += $(cjson_LIBS) $(curl_LIBS)
 AM_LDFLAGS += -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread
 if IS_LIBRDKCERTSEL_ENABLED
 AM_LDFLAGS += -lRdkCertSelector
+AM_CFLAGS += $(LIBRDKCERTSEL_FLAG)
 endif
 
 bin_PROGRAMS= rdkvfwupgrader
