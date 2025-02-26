@@ -21,10 +21,6 @@ AM_CFLAGS += -Wall -Werror $(cjson_CFLAGS) $(curl_CFLAGS) $(CFLAGS)
 AM_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
 AM_LDFLAGS += $(cjson_LIBS) $(curl_LIBS)
 AM_LDFLAGS += -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread
-if IS_LIBRDKCERTSEL_ENABLED
-AM_LDFLAGS += -lRdkCertSelector
-AM_CFLAGS += $(LIBRDKCERTSEL_FLAG)
-endif
 
 bin_PROGRAMS= rdkvfwupgrader
 bin_PROGRAMS+= testrdkvfwupgrader
@@ -106,4 +102,9 @@ endif
 if IS_LIBRDKCONFIG_ENABLED
 rdkvfwupgrader_CFLAGS += $(LIBRDKCONFIG_FLAG)
 AM_LDFLAGS += -lrdkconfig
+endif
+
+if IS_LIBRDKCERTSEL_ENABLED
+rdkvfwupgrader_CFLAGS += $(LIBRDKCERTSEL_FLAG)
+AM_LDFLAGS += -lRdkCertSelector
 endif
