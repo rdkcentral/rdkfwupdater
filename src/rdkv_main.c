@@ -761,7 +761,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
         chunk_dwnl = isIncremetalCDLEnable(file_dwnl.pathname);
     }
 #ifndef LIBRDKCERTSELECTOR	
-    SWLOG_INFO("Fetching MTLS credential for SSR/XCONF\n");
+    SWLOG_INFO("Fetching MTLS credential for SSR/XCONF\n")
     ret = getMtlscert(&sec);
     if (-1 == ret) {
         SWLOG_ERROR("%s : getMtlscert() Featching MTLS fail. Going For NON MTLS:%d\n", __FUNCTION__, ret);
