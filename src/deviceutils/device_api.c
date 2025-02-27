@@ -81,7 +81,7 @@ size_t GetServerUrlFile( char *pServUrl, size_t szBufSize, char *pFileName )
                     pLb = pHttp + 8;    // reuse pLb for parsing, pLb should point to first character after https://
                     while( *pLb )   // convert non-alpha numerics (but not '.') or whitespace to NULL terminator
                     {
-                        if( (!isalnum( *pLb ) && *pLb != '.' && *pLb != '/' && *pLb != '-' && *pLb != '_') || isspace( *pLb ) )
+                        if( (!isalnum( *pLb ) && *pLb != '.' && *pLb != '/' && *pLb != '-' && *pLb != '_' && *pLb != ':') || isspace( *pLb ) )
                         {
                             *pLb = 0;   // NULL terminate at end of URL
                             break;
@@ -802,7 +802,20 @@ size_t GetModelNum( char *pModelNum, size_t szBufSize )
     if( pModelNum != NULL )
     {
         *pModelNum = 0;
-        if( (fp = fopen( DEVICE_PROPERTIES_FILE, "r" )) != NULL )
+	if( (fp = fopen( "/tmp/.model_number", "r" )) != NULL )
+        {
+	  while ( fgets ( buf, sizeof(buf), fp ) != NULL) {
+             if ( buf[0] != '\n' && buf[0] != '\0') {
+		  for (size_t t = 0; buf[t] != '\0' && i < szBufSize - 1; t++) {
+                    pModelNum[i++] = buf[t];
+            }
+            pModelNum[i] = '\0';
+            break;
+            }
+	  }
+            fclose( fp );
+        }
+	else if( (fp = fopen( DEVICE_PROPERTIES_FILE, "r" )) != NULL )
         {
             while( fgets( buf, sizeof(buf), fp ) != NULL )
             {
