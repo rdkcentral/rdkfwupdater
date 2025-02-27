@@ -660,10 +660,11 @@ int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const
 #ifndef GTEST_BASIC
 int downloadFile( int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode ){
 
-    int app_mode = 0;
-    int ret = -1 ;
+    int app_mode = 0;    
 #ifdef LIBRDKCERTSELECTOR
     MtlsAuthStatus ret = MTLS_CERT_FETCH_SUCCESS;
+#else
+    int ret = -1 ;
 #endif	
     MtlsAuth_t sec;
     int state_red = -1;
@@ -680,7 +681,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
 	
     state_red = isInStateRed();
 #ifdef LIBRDKCERTSELECTOR
-    static rdkcertselector_h thisCertSel = NULL
+    static rdkcertselector_h thisCertSel = NULL;
     if (thisCertSel == NULL) {
         const char* certGroup = (state_red == 1) ? "RCVRY" : "MTLS";
         thisCertSel = rdkcertselector_new(DEFAULT_CONFIG, DEFAULT_HROT, certGroup);
@@ -862,7 +863,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
             }
             SWLOG_INFO("%s : After curl request the curl status = %d and http=%d and chunk download=%d\n", __FUNCTION__, curl_ret_code, *httpCode, chunk_dwnl);
         } while(chunk_dwnl && (CURL_LOW_BANDWIDTH == curl_ret_code || CURLTIMEOUT == curl_ret_code));
-#ifdef LIBRDKCERTSELECTOR	    
+#ifdef LIBRDKCERTSELECTOR
     } while (rdkcertselector_setCurlStatus(thisCertSel, curl_ret_code, file_dwnl.url) == TRY_ANOTHE);
 #endif
     if((filePresentCheck(CURL_PROGRESS_FILE)) == 0) {
