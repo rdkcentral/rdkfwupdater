@@ -40,6 +40,7 @@ AM_PROG_LIBTOOL(libtool)
 
 TRACE_CFLAGS=" "
 TRACE_LIBS==" "
+IS_LIBRDKCERTSEL_ENABLED=" "
 
 # Checks for header files.
 AC_CHECK_HEADERS([stdlib.h string.h unistd.h])
@@ -58,6 +59,20 @@ AM_CONDITIONAL([USE_CPC_CODE], [test "$USE_CPC_CODE" = "yes"])
 if test "$USE_CPC_CODE" = "yes"; then
     AC_DEFINE([USE_CPC_CODE], [1], [Define to enable CPC CODE support])
 fi
+
+AC_ARG_ENABLE([rdkcertselector],
+        AS_HELP_STRING([--enable-rdkcertselector],[enables rdkcertselector replacement (default is no)]),
+        [
+          case "${enableval}" in
+           yes) IS_LIBRDKCERTSEL_ENABLED=true
+                LIBRDKCERTSEL_FLAG=" -DLIBRDKCERTSELECTOR ";;
+           no)  IS_LIBRDKCERTSEL_ENABLED=false ;;
+          *) AC_MSG_ERROR([bad value ${enableval} for --enable-rdkcertselector]) ;;
+           esac
+           ],
+        [echo "rdkcertselector is disabled"])
+AM_CONDITIONAL([IS_LIBRDKCERTSEL_ENABLED], [test x$IS_LIBRDKCERTSEL_ENABLED = xtrue])
+AC_SUBST(LIBRDKCERTSEL_FLAG)
 
 AC_ARG_ENABLE([mountutils],
         AS_HELP_STRING([--enable-mountutils],[enables mountutils replacement (default is no)]),
