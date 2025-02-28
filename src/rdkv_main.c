@@ -24,9 +24,6 @@
 #include <pthread.h>
 #include <signal.h>
 
-#ifdef LIBRDKCERTSELECTOR
-#include "rdkcertselector.h"
-#endif
 #include "rdkv_cdl.h"
 #include "rdkv_cdl_log_wrapper.h"
 #ifndef GTEST_ENABLE
@@ -867,7 +864,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
             SWLOG_INFO("%s : After curl request the curl status = %d and http=%d and chunk download=%d\n", __FUNCTION__, curl_ret_code, *httpCode, chunk_dwnl);
         } while(chunk_dwnl && (CURL_LOW_BANDWIDTH == curl_ret_code || CURLTIMEOUT == curl_ret_code));
 #ifdef LIBRDKCERTSELECTOR
-    } while (rdkcertselector_setCurlStatus(thisCertSel, curl_ret_code, file_dwnl.url) == TRY_ANOTHE);
+    } while (rdkcertselector_setCurlStatus(thisCertSel, curl_ret_code, file_dwnl.url) == TRY_ANOTHER);
 #endif
     if((filePresentCheck(CURL_PROGRESS_FILE)) == 0) {
         SWLOG_INFO("%s : Curl Progress data...\n", __FUNCTION__);
