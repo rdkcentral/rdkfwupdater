@@ -24,6 +24,9 @@
 #include <pthread.h>
 #include <signal.h>
 
+#ifdef LIBRDKCERTSELECTOR
+#include "rdkcertselector.h"
+#endif
 #include "rdkv_cdl.h"
 #include "rdkv_cdl_log_wrapper.h"
 #ifndef GTEST_ENABLE
