@@ -465,61 +465,173 @@ TEST_F(DeviceApiTestFixture, TestName_GetServURL_Nullcheck)
 {
     EXPECT_EQ(GetServURL(NULL, 0), 0);
 }
-TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessStatered)
+TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessStatered_DebugServices_Enabled)
 {
-    char output[16];
+    char output[32];
     int ret;
+    char servUrl[]="https://www.statered.com";
     EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(true));
     //EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _)).Times(1).WillOnce(Return(1));
     ret = system("echo \"BUILD_TYPE=vbn\" > /tmp/device_gtest.prop");
     //EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(1));
+    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(true));
     ret = system("echo \"https://www.statered.com\" > /tmp/stateredrecovry.conf");
-    EXPECT_NE(GetServURL(output, sizeof(output)), 0);
+    ret = GetServURL(output, sizeof(output));
+    EXPECT_EQ(strncmp(output,servUrl,strlen(servUrl)),0);
+    printf("output ====================================== %s \n",output);
+    printf("servUrl ===================================== %s \n" ,servUrl);
     ret = system("rm -f /tmp/stateredrecovry.conf");
     ret = system("rm -f /tmp/device_gtest.prop");
     printf("Server URL = %s\n", output);
 }
-TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessSwupdate)
+TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessStatered_DebugServices_Disabled)
 {
-    char output[16];
+    char output[32];
     int ret;
+    char servUrl[]="https://www.statered.com";
+    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(true));
+    //EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _)).Times(1).WillOnce(Return(1));
+    ret = system("echo \"BUILD_TYPE=vbn\" > /tmp/device_gtest.prop");
+    //EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(1));
+    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(false));
+    ret = system("echo \"https://www.statered.com\" > /tmp/stateredrecovry.conf");
+    ret = GetServURL(output, sizeof(output));
+    EXPECT_EQ(strncmp(output,servUrl,strlen(servUrl)),0);
+    printf("output ====================================== %s \n",output);
+    printf("servUrl ===================================== %s \n" ,servUrl);
+    ret = system("rm -f /tmp/stateredrecovry.conf");
+    ret = system("rm -f /tmp/device_gtest.prop");
+    printf("Server URL = %s\n", output);
+}
+TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessStatered_Prod_DebugServices_Enabled)
+{
+    char output[32];
+    int ret;
+    char servUrl[]="https://www.statered.com";
+    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(true));
+    //EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _)).Times(1).WillOnce(Return(1));
+    ret = system("echo \"BUILD_TYPE=PROD\" > /tmp/device_gtest.prop");
+    //EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(1));
+    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(true));
+    ret = system("echo \"https://www.statered.com\" > /tmp/stateredrecovry.conf");
+    ret = GetServURL(output, sizeof(output));
+    EXPECT_EQ(strncmp(output,servUrl,strlen(servUrl)),0);
+    printf("output ====================================== %s\n ",output);
+    printf("servUrl ===================================== %s \n" ,servUrl);
+    ret = system("rm -f /tmp/stateredrecovry.conf");
+    ret = system("rm -f /tmp/device_gtest.prop");
+    printf("Server URL = %s\n", output);
+}
+TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessStatered_Prod_DebugServices_Disabled)
+{
+    char output[64];
+    int ret;
+    char servUrl[]="https://www.tr181Rfc.com";
+    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(true));
+    //EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _)).Times(1).WillOnce(Return(1));
+    ret = system("echo \"BUILD_TYPE=PROD\" > /tmp/device_gtest.prop");
+    //EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(1));
+    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(false));
+    ret = system("echo \"https://www.statered.com\" > /tmp/stateredrecovry.conf");
+    ret = system("echo \"https://www.autotool.com\" > /tmp/swupdate.conf");
+    EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _))
+                .Times(1)
+                .WillOnce(Invoke([&servUrl]( char* type, const char* key, char *out_value, size_t datasize ) {
+                strncpy(out_value, servUrl , datasize-1);
+                out_value[datasize - 1] = '\0';
+                return strlen(out_value);
+                }));
+
+    ret=GetServURL(output , sizeof(output));
+    EXPECT_EQ(strncmp(output , servUrl , strlen(servUrl)),0);
+    printf("Output ========================= %s\n ", output);
+    printf("servUrl ======================== %s \n ",servUrl);
+    ret = system("rm -f /tmp/stateredrecovry.conf");
+    ret = system("rm -f /tmp/device_gtest.prop");
+    printf("Server URL = %s\n", output);
+}
+TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessSwupdate_DebugServices_Enabled)
+{
+    char output[32];
+    int ret;
+    char servUrl[]="https://www.rdkautotool.com";
     EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(false));
     EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(0));
     //EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _)).Times(1).WillOnce(Return(1));
     ret = system("echo \"BUILD_TYPE=vbn\" > /tmp/device_gtest.prop");
+    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(true));
     ret = system("echo \"https://www.rdkautotool.com\" > /tmp/swupdate.conf");
-    EXPECT_NE(GetServURL(output, sizeof(output)), 0);
+    ret=GetServURL(output , sizeof(output));
+    EXPECT_EQ(strncmp(output , servUrl , strlen(servUrl)),0);
+    printf("Output ========================= %s\n ", output);
+    printf("servUrl ======================== %s \n ",servUrl);
     ret = system("rm -f /tmp/swupdate.conf");
     ret = system("rm -f /tmp/device_gtest.prop");
     printf("Server URL = %s\n", output);
 }
 
-TEST_F(DeviceApiTestFixture, TestName_GetServURL_RfcUrlStatered)
+TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessSwupdate_DebugServices_Disabled)
 {
-    char output[16];
+    char output[32];
     int ret;
-    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(true));
-    EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _)).Times(1).WillOnce(Return(1));
-    //EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(-1));
+    char servUrl[]="https://www.rdkautotool.com";
+    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(false));
+    EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(0));
+    //EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _)).Times(1).WillOnce(Return(1));
     ret = system("echo \"BUILD_TYPE=vbn\" > /tmp/device_gtest.prop");
-    //ret = system("echo \"https://www.statered.com\" > /tmp/stateredrecovry.conf");
-    EXPECT_NE(GetServURL(output, sizeof(output)), 0);
-    //ret = system("rm -f /tmp/stateredrecovry.conf");
+    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(false));
+    ret = system("echo \"https://www.rdkautotool.com\" > /tmp/swupdate.conf");
+    ret=GetServURL(output , sizeof(output));
+    EXPECT_EQ(strncmp(output , servUrl , strlen(servUrl)),0);
+    printf("Output ========================= %s\n ", output);
+    printf("servUrl ======================== %s \n ",servUrl);
+    ret = system("rm -f /tmp/swupdate.conf");
     ret = system("rm -f /tmp/device_gtest.prop");
     printf("Server URL = %s\n", output);
 }
-TEST_F(DeviceApiTestFixture, TestName_GetServURL_RfcUrlSwupdate)
+
+TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessSwupdate_Prod_DebugServices_Enabled)
 {
-    char output[16];
+    char output[32];
     int ret;
+    char servUrl[]="https://www.rdkautotool.com";
     EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(false));
-    EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _)).Times(1).WillOnce(Return(1));
-    EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(-1));
+    EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(0));
+    ret = system("echo \"BUILD_TYPE=PROD\" > /tmp/device_gtest.prop");
+    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(true));
     ret = system("echo \"https://www.rdkautotool.com\" > /tmp/swupdate.conf");
-    ret = system("echo \"BUILD_TYPE=vbn\" > /tmp/device_gtest.prop");
-    EXPECT_NE(GetServURL(output, sizeof(output)), 0);
+    ret=GetServURL(output , sizeof(output));
+    EXPECT_EQ(strncmp(output , servUrl , strlen(servUrl)),0);
+    printf("Output ========================= %s\n ", output);
+    printf("servUrl ======================== %s \n ",servUrl);
     ret = system("rm -f /tmp/swupdate.conf");
-    ret = system("rm -f /tmp/device_gtest.pro");
+    ret = system("rm -f /tmp/device_gtest.prop");
+    printf("Server URL = %s\n", output);
+}
+
+TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessSwupdate_Prod_DebugServices_Disabled)
+{
+    char output[64];
+    int ret;
+    char servUrl[]= "https://www.tr181Rfc.com";
+    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(false));
+    ret = system("echo \"BUILD_TYPE=PROD\" > /tmp/device_gtest.prop");
+    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(false));
+    ret = system("echo \"https://www.rdkautotool.com\" > /tmp/swupdate.conf");
+    EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _))
+	        .Times(1)
+		.WillOnce(Invoke([&servUrl]( char* type, const char* key, char *out_value, size_t datasize ) {
+		strncpy(out_value, servUrl , datasize-1);
+                out_value[datasize - 1] = '\0';
+		return strlen(out_value);
+		}));
+
+    ret=GetServURL(output , sizeof(output));
+    EXPECT_EQ(strncmp(output , "https://www.tr181Rfc.com/xconf/swu/stb", strlen("https://www.tr181Rfc.com/xconf/swu/stb")),0);
+    printf("Output ========================= %s\n ", output);
+    printf("servUrl ======================== %s \n ",servUrl);
+    ret = system("rm -f /tmp/swupdate.conf");
+    ret = system("rm -f /tmp/device_gtest.prop");
     printf("Server URL = %s\n", output);
 }
 TEST_F(DeviceApiTestFixture, TestName_GetBuildType_Success)
