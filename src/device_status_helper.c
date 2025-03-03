@@ -28,6 +28,7 @@
 #include "iarmInterface/iarmInterface.h"
 #include "json_process.h"
 #include "device_api.h"
+#include "common_device_api.h"
 
 extern char * strcasestr(const char * s1, const char * s2);     // removes compiler warning, I can't find prototype
 extern Rfc_t rfc_list;
@@ -742,6 +743,8 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
         remainlen = szPostFieldOut - totlen;
         totlen += snprintf( (pTmpPost + totlen), remainlen, "env=%s", tmpbuf );
     }
+
+    SWLOG_INFO("Calling GetModelNum function\n");
     len = GetModelNum( tmpbuf, sizeof(tmpbuf) );
     if( len )
     {
