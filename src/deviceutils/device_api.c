@@ -740,21 +740,13 @@ size_t GetMFRName( char *pMFRName, size_t szBufSize )
 {
     size_t i = 0;
     FILE *fp;
-    char buf[150];
     if( pMFRName != NULL )
     {
         *pMFRName = 0;
 	if( (fp = fopen( "/tmp/.manufacturer", "r" )) != NULL )
 	{
-	  while ( fgets ( buf, sizeof(buf), fp ) != NULL) {
-            if ( buf[0] != '\n' && buf[0] != '\0') {
-		  for (size_t t = 0; buf[t] != '\0' && i < szBufSize - 1; t++) {
-                    pMFRName[i++] = buf[t];
-            }
-            pMFRName[i] = '\0';
-            break;
-            }
-	  }
+            fgets(pMFRName, szBufSize, fp);
+            i = stripinvalidchar( pMFRName, szBufSize );      // remove newline etc.
             fclose( fp );
 	}
         else
@@ -796,43 +788,14 @@ size_t GetModelNum( char *pModelNum, size_t szBufSize )
 #else
 /* DELIA-60757: Below code need to be implemented for both mdeiaclient and non mediclient device. */
     FILE *fp;
-    char *pTmp;
-    char buf[150];
 
     if( pModelNum != NULL )
     {
         *pModelNum = 0;
 	if( (fp = fopen( "/tmp/.model_number", "r" )) != NULL )
         {
-	  while ( fgets ( buf, sizeof(buf), fp ) != NULL) {
-             if ( buf[0] != '\n' && buf[0] != '\0') {
-		  for (size_t t = 0; buf[t] != '\0' && i < szBufSize - 1; t++) {
-                    pModelNum[i++] = buf[t];
-            }
-            pModelNum[i] = '\0';
-            break;
-            }
-	  }
-            fclose( fp );
-        }
-	else if( (fp = fopen( DEVICE_PROPERTIES_FILE, "r" )) != NULL )
-        {
-            while( fgets( buf, sizeof(buf), fp ) != NULL )
-            {
-                pTmp = strstr( buf, "MODEL_NUM=" );
-                if( pTmp && pTmp == buf )   // if match found and match is first character on line
-                {
-//                    SWLOG_INFO("GetModelNum: Found %s\n", buf );    // TODO: remove, for debugging only
-                    pTmp = strchr( pTmp, '=' );
-                    //CID:330354-Dereference null return value
-                    if(pTmp != NULL)
-                    {
-                    ++pTmp;
-                    i = snprintf( pModelNum, szBufSize, "%s", pTmp );
-                    i = stripinvalidchar( pModelNum, i );
-                    }
-                }
-            }
+            fgets(pModelNum, szBufSize, fp);
+            i = stripinvalidchar( pModelNum, szBufSize );      // remove newline etc.
             fclose( fp );
         }
         else
@@ -1338,6 +1301,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
     BUILDTYPE eBuildType;
     char buf[URL_MAX_LEN];
     bool skip = false;
+    bool dbgServices = isDebugServicesEnabled(); //check debug services enabled
 
     if( pServURL != NULL )
     {
@@ -1345,7 +1309,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
         GetBuildType( buf, sizeof(buf), &eBuildType );
         if( isInStateRed() )
         {
-            if( eBuildType != ePROD )
+            if(( eBuildType != ePROD )  || ( dbgServices == true ))
             {
                 len = GetServerUrlFile( pServURL, szBufSize, STATE_RED_CONF );
             }
@@ -1356,7 +1320,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
         }
         else
         {
-            if( eBuildType != ePROD )
+            if(( eBuildType != ePROD )  || ( dbgServices == true ))
             {
                 if( (filePresentCheck( SWUPDATE_CONF ) == RDK_API_SUCCESS) )    // if the file exists
                 {

@@ -103,7 +103,17 @@ void waitForNtp(void)
 {
     char model[16] = {0};
     int ret = -1;
-    ret = getDevicePropertyData("MODEL_NUM", model, sizeof(model));
+    FILE *fp = NULL;
+    if( (fp = fopen( "/tmp/.model_number", "r" )) != NULL )
+    {
+	if (NULL != fgets ( model, sizeof(model), fp ))
+	{
+           size_t pos = strcspn(model, "\n");
+           model[pos] = '\0';
+           ret = UTILS_SUCCESS;
+	}
+           fclose( fp );
+    }
     if (ret == UTILS_SUCCESS) {
          SWLOG_INFO("model = %s\n", model);
 	 //TODO: Need add some exit logic
@@ -115,7 +125,7 @@ void waitForNtp(void)
              SWLOG_INFO("Received STT flag\n");
 	 }
     }else {
-         SWLOG_ERROR("%s: getDevicePropertyData() for MODEL fail\n", __FUNCTION__);
+         SWLOG_ERROR("%s: Failed to get Data for MODEL\n", __FUNCTION__);
     }
 }
 /* Description: Checking dns nameserver ip is present or not.
@@ -729,7 +739,6 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
             ++totlen;
         }
         remainlen = szPostFieldOut - totlen;
-        tmpbuf[strcspn(tmpbuf, "\n")] = '\0';
         totlen += snprintf( (pTmpPost + totlen), remainlen, "additionalFwVerInfo=%s", tmpbuf );
     }
     len = GetBuildType( tmpbuf, sizeof(tmpbuf), NULL );
@@ -763,7 +772,6 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
             ++totlen;
         }
         remainlen = szPostFieldOut - totlen;
-        tmpbuf[strcspn(tmpbuf, "\n")] = '\0';
         totlen += snprintf( (pTmpPost + totlen), remainlen, "manufacturer=%s", tmpbuf );
     }
     len = GetPartnerId( tmpbuf, sizeof(tmpbuf) );
