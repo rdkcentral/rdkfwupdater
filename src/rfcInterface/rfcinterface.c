@@ -253,3 +253,26 @@ bool isMmgbleNotifyEnabled(void)
     }
     return status;
 }
+
+/* Description: Cheacking notify rfc status
+ * @param type : void
+ * @return bool true : enable and false: disable
+ * */
+bool isDebugServicesEnabled(void)
+{
+    bool status =false;
+    int ret = -1;
+    char rfc_data[RFC_VALUE_BUF_SIZE];
+
+    *rfc_data = 0;
+    ret = read_RFCProperty("DEBUGSRV", RFC_DEBUGSRV, rfc_data, sizeof(rfc_data));
+    if (ret == -1) {
+        SWLOG_ERROR("%s: rfc Debug services =%s failed Status %d\n", __FUNCTION__, RFC_DEBUGSRV, ret);	
+    } else {
+        SWLOG_INFO("%s: rfc Debug services = %s\n", __FUNCTION__, rfc_data);
+        if ((strncmp(rfc_data, "true", 4)) == 0) {
+            status = true;
+        }
+    }
+    return status;
+}
