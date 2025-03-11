@@ -660,7 +660,8 @@ int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const
 #ifndef GTEST_BASIC
 int downloadFile( int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode ){
 
-    int app_mode = 0;    
+    int app_mode = 0;
+#The following compilation LIBRDKCERTSELECTOR is enabled only Comcast proprietary code until the rdk-cert-config(Cert selector) component becomes open-source.	
 #ifdef LIBRDKCERTSELECTOR
     MtlsAuthStatus ret = MTLS_CERT_FETCH_SUCCESS;
 #else
@@ -675,6 +676,10 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
     int mtls_enable = 1; //Setting mtls by default enable
     char headerInfoFile[136] = {0};
 
+    if (artifactLocationUrl == NULL || localDownloadLocation == NULL || httpCode == NULL) {
+        SWLOG_ERROR("%s: Parameter is NULL\n", __FUNCTION__);
+        return ret;
+    }
     app_mode = getAppMode();
     memset(&sec, '\0', sizeof(MtlsAuth_t));
     memset(&file_dwnl, '\0', sizeof(FileDwnl_t));
@@ -695,10 +700,6 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
         SWLOG_INFO("%s, Cert selector already initialized, reusing the existing instance\n", __FUNCTION__);
     }
 #endif
-    if (artifactLocationUrl == NULL || localDownloadLocation == NULL || httpCode == NULL) {
-        SWLOG_ERROR("%s: Parameter is NULL\n", __FUNCTION__);
-        return ret;
-    }
     
     *httpCode = 0;
     file_dwnl.chunk_dwnl_retry_time = (((strncmp(immed_reboot_flag, "false", 5)) == 0) ? 10 : 0);
