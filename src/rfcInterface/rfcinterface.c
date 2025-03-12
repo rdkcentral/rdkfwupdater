@@ -151,8 +151,10 @@ int read_RFCProperty(char* type, const char* key, char *out_value, size_t datasi
     if (out_value != NULL && key != NULL) {
 	if (0 == (strcmp(key, RFC_FW_AUTO_EXCLUDE))) {
             strcpy(out_value,"false");
+	    out_value[5] = '\0';
 	}else {
             strcpy(out_value,"true");
+            out_value[5] = '\0';
 	}
     }
     return READ_RFC_NOTAPPLICABLE;

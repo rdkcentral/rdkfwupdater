@@ -20,6 +20,8 @@ RESULT_DIR="/tmp/l2_test_report"
 mkdir -p "$RESULT_DIR"
 
 # Compile Test binary
-#./cov_build.sh
+./cov_build.sh
+
+cc -o /usr/bin/mfr_util test/functional-tests/tests/mfrutils.c 
 
 pytest --json-report  --json-report-file $RESULT_DIR/rdkfwupdater_report.json test/functional-tests/tests/

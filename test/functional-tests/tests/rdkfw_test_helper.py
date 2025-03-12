@@ -23,6 +23,10 @@ import subprocess
 RDKFW_PATH: str = "/usr/bin/rdkvfwupgrader"
 SWUPDATE_LOG_FILE: str = "/opt/logs/swupdate.txt"
 SWUPDATE_CONF_FILE: str = "/opt/swupdate.conf"
+BKUP_SWUPDATE_CONF_FILE: str = "/opt/bk_swupdate.conf"
+ERR_SWUPDATE_CONF_FILE: str = "/opt/404_swupdate.conf"
+INVALID_SWUPDATE_CONF_FILE: str = "/opt/invalid_swupdate.conf"
+UNRESOLVED_SWUPDATE_CONF_FILE: str = "/opt/UNRESOLVED_swupdate.conf"
 RDKFW_ROUTE_FILE: str = "/tmp/route_available"
 RDKFW_DNS_FILE: str = "/etc/resolv.dnsmasq"
 VERSION_FILE: str = "/version.txt"
@@ -30,6 +34,7 @@ TEST_RFC_PARAM_KEY1: str = "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Bootstrap.OsC
 TEST_RFC_PARAM_VAL1: str = "default"
 RDKFW_XCONF_URL: str = "https://mockxconf:50052/firmwareupdate/getfirmwaredata"
 RDKFW_XCONF_404_URL: str = "https://mockxconf:50052/firmwareupdate404/getfirmwaredata"
+RDKFW_XCONF_INVALID_DATA_URL: str = "https://mockxconf:50052/firmwareupdate/getinvalidfirmwaredata"
 RDKFW_XCONF_UNRESOLVED_URL: str = "https://unmockxconf:50052/featureControl/getSettings"
 
 
@@ -174,6 +179,9 @@ def initial_rdkfw_setup():
     
     #RFC SERVER_URL
     write_on_file(SWUPDATE_CONF_FILE, RDKFW_XCONF_URL)
+    write_on_file(ERR_SWUPDATE_CONF_FILE, RDKFW_XCONF_404_URL)
+    write_on_file(UNRESOLVED_SWUPDATE_CONF_FILE, RDKFW_XCONF_UNRESOLVED_URL)
+    write_on_file(INVALID_SWUPDATE_CONF_FILE, RDKFW_XCONF_INVALID_DATA_URL)
     
     # /opt/secure/RFC directory
     os.makedirs("/opt/CDL", exist_ok=True)
