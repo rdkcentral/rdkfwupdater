@@ -1219,6 +1219,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
     BUILDTYPE eBuildType;
     char buf[URL_MAX_LEN];
     bool skip = false;
+    bool dbgServices = isDebugServicesEnabled(); //check debug services enabled
 
     if( pServURL != NULL )
     {
@@ -1226,7 +1227,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
         GetBuildType( buf, sizeof(buf), &eBuildType );
         if( isInStateRed() )
         {
-            if( eBuildType != ePROD )
+            if(( eBuildType != ePROD )  || ( dbgServices == true ))
             {
                 len = GetServerUrlFile( pServURL, szBufSize, STATE_RED_CONF );
             }
@@ -1237,7 +1238,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
         }
         else
         {
-            if( eBuildType != ePROD )
+            if(( eBuildType != ePROD )  || ( dbgServices == true ))
             {
                 if( (filePresentCheck( SWUPDATE_CONF ) == RDK_API_SUCCESS) )    // if the file exists
                 {
