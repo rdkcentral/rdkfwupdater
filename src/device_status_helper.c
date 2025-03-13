@@ -28,7 +28,9 @@
 #include "iarmInterface/iarmInterface.h"
 #include "json_process.h"
 #include "device_api.h"
+#ifndef GTEST_ENABLE
 #include "common_device_api.h"
+#endif
 
 extern char * strcasestr(const char * s1, const char * s2);     // removes compiler warning, I can't find prototype
 extern Rfc_t rfc_list;
