@@ -22,6 +22,7 @@
 #include <unistd.h>
 
 #include "../mocks/deviceutils_mock.h"
+#include "../mocks/device_status_helper_mock.h"
 extern "C" {
 #include "device_api.h"
 }
