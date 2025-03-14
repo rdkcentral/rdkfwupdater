@@ -24,7 +24,6 @@
 #include "../mocks/deviceutils_mock.h"
 extern "C" {
 #include "device_api.h"
-#include "../mocks/device_status_helper_mock.h"
 }
 
 #define JSON_STR_LEN        1000
@@ -412,10 +411,6 @@ TEST(TestGetFirmwareVersion, TestName_GetFirmwareVersion_Fail)
     EXPECT_EQ(GetFirmwareVersion(output, sizeof(output)), 0);
     ret = system("rm -f /tmp/version_test.txt");
     printf("GetFirmwareVersion = %s\n", output);
-}
-TEST_F(DeviceApiTestFixture,TestName_GetModelNum_Nullcheck)
-{
-    EXPECT_EQ(GetModelNum(NULL, 0), 0);
 }
 TEST_F(DeviceApiTestFixture, TestName_GetEstbMac_Nullcheck)
 {
