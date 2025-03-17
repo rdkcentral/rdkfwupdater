@@ -41,6 +41,7 @@ class DeviceUtilsInterface
 	virtual bool isInStateRed() = 0;
 	virtual bool isDebugServicesEnabled() = 0;
         virtual size_t GetHwMacAddress( char *iface, char *pMac, size_t szBufSize ) = 0;
+        virtual size_t GetModelNum( char *pModelNum, size_t szBufSize ) = 0;
         
 };
 
@@ -61,6 +62,7 @@ class DeviceUtilsMock: public DeviceUtilsInterface
 	MOCK_METHOD(bool, isInStateRed, (), ());
 	MOCK_METHOD(bool, isDebugServicesEnabled, (), ());
 	MOCK_METHOD(size_t, GetHwMacAddress, (char *iface, char *pMac, size_t szBufSize), ());
+        MOCK_METHOD(size_t, GetModelNum, ( char *pModelNum, size_t szBufSize ), ());
 
 };
 #endif
