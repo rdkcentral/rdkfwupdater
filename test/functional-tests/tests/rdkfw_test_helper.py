@@ -26,6 +26,9 @@ SWUPDATE_CONF_FILE: str = "/opt/swupdate.conf"
 BKUP_SWUPDATE_CONF_FILE: str = "/opt/bk_swupdate.conf"
 ERR_SWUPDATE_CONF_FILE: str = "/opt/404_swupdate.conf"
 INVALID_SWUPDATE_CONF_FILE: str = "/opt/invalid_swupdate.conf"
+INVALIDPCI_SWUPDATE_CONF_FILE: str = "/opt/invalidpci_swupdate.conf"
+DELAYDWNL_SWUPDATE_CONF_FILE: str = "/opt/delaydwnl_swupdate.conf"
+REBOOT_SWUPDATE_CONF_FILE: str = "/opt/reboot_swupdate.conf"
 UNRESOLVED_SWUPDATE_CONF_FILE: str = "/opt/UNRESOLVED_swupdate.conf"
 RDKFW_ROUTE_FILE: str = "/tmp/route_available"
 RDKFW_DNS_FILE: str = "/etc/resolv.dnsmasq"
@@ -36,6 +39,9 @@ RDKFW_XCONF_URL: str = "https://mockxconf:50052/firmwareupdate/getfirmwaredata"
 RDKFW_XCONF_404_URL: str = "https://mockxconf:50052/firmwareupdate404/getfirmwaredata"
 RDKFW_XCONF_INVALID_DATA_URL: str = "https://mockxconf:50052/firmwareupdate/getinvalidfirmwaredata"
 RDKFW_XCONF_UNRESOLVED_URL: str = "https://unmockxconf:50052/featureControl/getSettings"
+RDKFW_XCONF_INVALIDPCI_URL: str = "https://mockxconf:50052/firmwareupdate/getinvalidpcifirmwaredata"
+RDKFW_XCONF_DELAYDWNL_URL: str = "https://mockxconf:50052/firmwareupdate/delaydwnlfirmwaredata"
+RDKFW_XCONF_REBOOT_URL: str = "https://mockxconf:50052/firmwareupdate/getreboottruefirmwaredata"
 
 
 def write_on_file(file: str, content: str) -> None:
@@ -182,6 +188,9 @@ def initial_rdkfw_setup():
     write_on_file(ERR_SWUPDATE_CONF_FILE, RDKFW_XCONF_404_URL)
     write_on_file(UNRESOLVED_SWUPDATE_CONF_FILE, RDKFW_XCONF_UNRESOLVED_URL)
     write_on_file(INVALID_SWUPDATE_CONF_FILE, RDKFW_XCONF_INVALID_DATA_URL)
+    write_on_file(INVALIDPCI_SWUPDATE_CONF_FILE, RDKFW_XCONF_INVALIDPCI_URL)
+    write_on_file(DELAYDWNL_SWUPDATE_CONF_FILE, RDKFW_XCONF_DELAYDWNL_URL)
+    write_on_file(REBOOT_SWUPDATE_CONF_FILE, RDKFW_XCONF_REBOOT_URL)
     
     # /opt/secure/RFC directory
     os.makedirs("/opt/CDL", exist_ok=True)

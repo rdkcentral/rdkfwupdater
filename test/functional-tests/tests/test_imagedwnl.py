@@ -133,3 +133,43 @@ def test_no_upgrade():
     remove_file("/opt/cdl_flashed_file_name")
     rename_file("/bk_version.txt", "/version.txt")
     assert result.returncode == 0
+
+@pytest.mark.run(order=8)
+def test_delay_dwnl():
+    remove_file("/tmp/fw_preparing_to_reboot")
+    remove_file("/tmp/pdri_image_file")
+    pdri_file = Path("/tmp/pdri_image_file")
+    pdri_file.touch(exist_ok=True)
+    write_on_file("/tmp/pdri_image_file", "ABCD_PDRI_firmware_test.bin")
+    rename_file(SWUPDATE_CONF_FILE, BKUP_SWUPDATE_CONF_FILE)
+    rename_file(DELAYDWNL_SWUPDATE_CONF_FILE, SWUPDATE_CONF_FILE)
+    result = subprocess.run(['rdkvfwupgrader', '0', '1'], stdout=subprocess.PIPE)
+    rename_file(SWUPDATE_CONF_FILE, DELAYDWNL_SWUPDATE_CONF_FILE)
+    rename_file(BKUP_SWUPDATE_CONF_FILE, SWUPDATE_CONF_FILE)
+    remove_file("/tmp/fw_preparing_to_reboot")
+    remove_file("/tmp/currently_running_image_name")
+    remove_file("/opt/cdl_flashed_file_name")
+    assert result.returncode == 0
+
+@pytest.mark.run(order=9)
+def test_fallback_codebig():
+    ERROR_MSG1 = "isDelayFWDownloadActive: Device configured with download delay of 1 minutes"
+    assert grep_log_file("/opt/logs/swupdate.txt.0", ERROR_MSG1), f"Expected '{ERROR_MSG1}' in log file."
+
+@pytest.mark.run(order=10)
+def test_rebooten_dwnl():
+    remove_file("/tmp/fw_preparing_to_reboot")
+    remove_file("/tmp/pdri_image_file")
+    pdri_file = Path("/tmp/pdri_image_file")
+    pdri_file.touch(exist_ok=True)
+    write_on_file("/tmp/pdri_image_file", "ABCD_PDRI_firmware_test.bin")
+    rename_file(SWUPDATE_CONF_FILE, BKUP_SWUPDATE_CONF_FILE)
+    rename_file(REBOOT_SWUPDATE_CONF_FILE, SWUPDATE_CONF_FILE)
+    result = subprocess.run(['rdkvfwupgrader', '0', '1'], stdout=subprocess.PIPE)
+    rename_file(SWUPDATE_CONF_FILE, REBOOT_SWUPDATE_CONF_FILE)
+    rename_file(BKUP_SWUPDATE_CONF_FILE, SWUPDATE_CONF_FILE)
+    remove_file("/tmp/fw_preparing_to_reboot")
+    remove_file("/tmp/currently_running_image_name")
+    remove_file("/opt/cdl_flashed_file_name")
+    ERROR_MSG1 = "sleep for 2 sec to send reboot pending notification"
+    assert grep_log_file("/opt/logs/swupdate.txt.0", ERROR_MSG1), f"Expected '{ERROR_MSG1}' in log file."
