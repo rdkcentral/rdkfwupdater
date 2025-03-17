@@ -195,3 +195,14 @@ extern "C" size_t GetHwMacAddress( char *iface, char *pMac, size_t szBufSize )
     return g_DeviceUtilsMock->GetHwMacAddress(iface, pMac, szBufSize);
 }
 
+extern "C" size_t GetModelNum( char *pModelNum, size_t szBufSize )
+{
+    if (!g_DeviceUtilsMock)
+    {
+	cout << "GetBuildType  g_DeviceStatusMock object is NULL" << endl;
+        return 0;
+    }
+    printf("Inside Mock Function GetModelNum\n");
+    snprintf(pModelNum, szBufSize, "%s", "12345");
+    return g_DeviceUtilsMock->GetModelNum(pModelNum, szBufSize);
+}
