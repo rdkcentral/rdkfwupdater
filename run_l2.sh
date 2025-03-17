@@ -24,4 +24,6 @@ mkdir -p "$RESULT_DIR"
 
 cc -o /usr/bin/mfr_util test/functional-tests/tests/mfrutils.c 
 
+cp test/functional-tests/tests/rc-proxy-params.json /tmp/rc-proxy-params.json
+
 pytest --json-report  --json-report-file $RESULT_DIR/rdkfwupdater_report.json test/functional-tests/tests/
