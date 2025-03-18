@@ -40,6 +40,7 @@ extern Rfc_t rfc_list;
 bool CurrentRunningInst(const char *file)
 {
     bool status = false;
+    bool httpteststatus = false;
     FILE *fp = NULL;
     char buf[64] = {0};
     char *tmp = NULL;
