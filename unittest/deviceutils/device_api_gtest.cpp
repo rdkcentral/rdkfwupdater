@@ -416,6 +416,10 @@ TEST_F(DeviceApiTestFixture,TestName_GetModelNum_Nullcheck)
 {
     EXPECT_EQ(GetModelNum(NULL, 0), 0);
 }
+TEST_F(DeviceApiTestFixture,TestName_GetMFRName_Nullcheck)
+{
+    EXPECT_EQ(GetMFRName(NULL, 0), 0);
+}
 TEST_F(DeviceApiTestFixture, TestName_GetEstbMac_Nullcheck)
 {
     EXPECT_EQ(GetEstbMac(NULL, 0), 0);
