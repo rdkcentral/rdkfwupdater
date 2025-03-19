@@ -22,9 +22,6 @@
 #ifndef GETRDMMANIFESTVERSION_IN_SCRIPT
     #define GETRDMMANIFESTVERSION_IN_SCRIPT
 #endif
-#ifndef GETMODEL_IN_SCRIPT
-    #define GETMODEL_IN_SCRIPT
-#endif
 
 #ifndef GTEST_ENABLE
 #include "rdk_fwdl_utils.h"
@@ -250,19 +247,6 @@ size_t GetExperience(char *pExperience, size_t szBufSize);
             RETURN - number of characters copied to the output buffer.
 */
 size_t GetAccountID(char *pAccountID, size_t szBufSize);
-
-
-/* function GetModelNum - gets the model number of the device.
- 
-        Usage: size_t GetModelNum <char *pModelNum> <size_t szBufSize>
- 
-            pModelNum - pointer to a char buffer to store the output string.
-
-            szBufSize - the size of the character buffer in argument 1.
-
-            RETURN - number of characters copied to the output buffer.
-*/
-size_t GetModelNum(char *pModelNum, size_t szBufSize);
 
 
 /* function GetBuildType - gets the build type of the device in lowercase. Optionally, sets an enum
