@@ -414,7 +414,7 @@ TEST(TestGetFirmwareVersion, TestName_GetFirmwareVersion_Fail)
 }
 TEST_F(DeviceApiTestFixture,TestName_GetModelNum_Nullcheck)
 {
-    EXPECT_CALL(*g_DeviceUtilsMock, GetModelNum(_)).Times(1).WillOnce(Return(0));
+    EXPECT_CALL(*g_DeviceUtilsMock, GetModelNum(_, _)).Times(1).WillOnce(Return(0));
     EXPECT_EQ(GetModelNum(NULL, 0), 0);
 }
 TEST_F(DeviceApiTestFixture, TestName_GetEstbMac_Nullcheck)
