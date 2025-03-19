@@ -87,16 +87,6 @@ def test_flash_fail():
     os.chmod(route_file, 0o777)
     assert result.returncode == 0
 
-# To implement throttle we need similar type of jsonrpc or python module to create file inside /proc
-#def test_throttle_dwnl():
-#    #/proc/brcm/video_decoder
-#    video_file = Path("/proc/brcm/video_decoder")
-#    video_file.touch(exist_ok=True)
-#    write_on_file("/proc/brcm/video_decoder", "pts=1234")
-#    result = subprocess.run(['rdkvfwupgrader', '0', '1'], stdout=subprocess.PIPE)
-#    remove_file("/tmp/fw_preparing_to_reboot")
-#    assert result.returncode == 0
-
 @pytest.mark.run(order=5)
 def test_http_404():
     remove_file("/tmp/.xconfssrdownloadurl")

@@ -71,6 +71,7 @@ def test_dwnl_all_firmware_test():
     remove_file("/tmp/fw_preparing_to_reboot")
     remove_file("/tmp/pdri_image_file")
     remove_file("/tmp/downloaded_peripheral_versions.txt")
+    remove_file("/opt/CDL/AB11-20_firmware_5103.3.4.tgz")
     pdri_file = Path("/tmp/pdri_image_file")
     pdri_file.touch(exist_ok=True)
     write_on_file("/tmp/pdri_image_file", "ABCD_PDRI_fir_test.bin")
@@ -82,4 +83,11 @@ def test_dwnl_all_firmware_test():
     remove_file("/tmp/fw_preparing_to_reboot")
     remove_file("/tmp/currently_running_image_name")
     remove_file("/opt/cdl_flashed_file_name")
+    remove_file("/tmp/downloaded_peripheral_versions.txt")
+    remove_file("/opt/CDL/AB11-20_firmware_5103.3.4.tgz")
     assert result.returncode == 0
+
+@pytest.mark.run(order=18)
+def test_dwnl_all_firmware_test_verify():
+    ERROR_MSG1 = "Image Flashing is success"
+    assert grep_log_file("/opt/logs/swupdate.txt.0", ERROR_MSG1), f"Expected '{ERROR_MSG1}' in log file."

@@ -32,6 +32,7 @@ REBOOT_SWUPDATE_CONF_FILE: str = "/opt/reboot_swupdate.conf"
 UNRESOLVED_SWUPDATE_CONF_FILE: str = "/opt/UNRESOLVED_swupdate.conf"
 PERIPHERAL_SWUPDATE_CONF_FILE: str = "/opt/peripheral_swupdate.conf"
 PERIPHERAL_SWUPDATE_404CONF_FILE: str = "/opt/peripheral404_swupdate.conf"
+CERTBUNDLE_SWUPDATE_CONF_FILE: str = "/opt/certbundle_swupdate.conf"
 RDKFW_ROUTE_FILE: str = "/tmp/route_available"
 RDKFW_DNS_FILE: str = "/etc/resolv.dnsmasq"
 VERSION_FILE: str = "/version.txt"
@@ -46,6 +47,7 @@ RDKFW_XCONF_DELAYDWNL_URL: str = "https://mockxconf:50052/firmwareupdate/delaydw
 RDKFW_XCONF_REBOOT_URL: str = "https://mockxconf:50052/firmwareupdate/getreboottruefirmwaredata"
 RDKFW_XCONF_PERIPHERAL_URL: str = "https://mockxconf:50052/firmwareupdate/getperipheralfirmwaredata"
 RDKFW_XCONF_404PERIPHERAL_URL: str = "https://mockxconf:50052/firmwareupdate/get404peripheralfirmwaredata"
+RDKFW_XCONF_CERTBUNDLE_URL: str = "https://mockxconf:50052/firmwareupdate/getcertbundlefirmwaredata"
 
 
 def write_on_file(file: str, content: str) -> None:
@@ -197,6 +199,7 @@ def initial_rdkfw_setup():
     write_on_file(REBOOT_SWUPDATE_CONF_FILE, RDKFW_XCONF_REBOOT_URL)
     write_on_file(PERIPHERAL_SWUPDATE_CONF_FILE, RDKFW_XCONF_PERIPHERAL_URL)
     write_on_file(PERIPHERAL_SWUPDATE_404CONF_FILE, RDKFW_XCONF_404PERIPHERAL_URL)
+    write_on_file(CERTBUNDLE_SWUPDATE_CONF_FILE, RDKFW_XCONF_CERTBUNDLE_URL)
     
     # /opt/secure/RFC directory
     os.makedirs("/opt/CDL", exist_ok=True)
