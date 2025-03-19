@@ -248,6 +248,17 @@ size_t GetExperience(char *pExperience, size_t szBufSize);
 */
 size_t GetAccountID(char *pAccountID, size_t szBufSize);
 
+#ifdef GTEST_ENABLE
+/* function GetModelNum - gets the model number of the device.
+
+        Usage: size_t GetModelNum <char *pModelNum> <size_t szBufSize>
+
+            pModelNum - pointer to a char buffer to store the output string.
+            szBufSize - the size of the character buffer in argument 1.
+            RETURN - number of characters copied to the output buffer.
+*/
+size_t GetModelNum(char *pModelNum, size_t szBufSize);
+#endif
 
 /* function GetBuildType - gets the build type of the device in lowercase. Optionally, sets an enum
     indication the build type.
