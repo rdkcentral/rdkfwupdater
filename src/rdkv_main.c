@@ -1439,31 +1439,34 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
                 {
                     snprintf( cTmpCurVerBuf, sizeof(cTmpCurVerBuf), "%s", cCurVerBuf );     // makes a copy again
                     pCurFW = strtok_r( cTmpCurVerBuf, ",", &pSavedDetails );
-                    while( pCurFW != NULL )
-                    {
-                   
-                        // pCurVer == the current version in the device
-                        // pDeviceVer == the version xconf says to load
-                        // the strncmp works as long as versions are equal length
-                        // if they are unequal lengths, pDeviceVer = "1.4.0.0" and pCurVer = "1.4.0", then
-                        // the strncmp will be a positive value causing a peripheral upgrade.
-                        if( strstr( pCurFW, pDeviceName ) && strstr( pCurFW, pDeviceType) )
+		    if( pDeviceName != NULL )
+		    {
+                        while( pCurFW != NULL )
                         {
-                            if( (pCurVer=strrchr( pCurFW, '_' )) != NULL )  // find last underscore char ('_')
+                   
+                            // pCurVer == the current version in the device
+                            // pDeviceVer == the version xconf says to load
+                            // the strncmp works as long as versions are equal length
+                            // if they are unequal lengths, pDeviceVer = "1.4.0.0" and pCurVer = "1.4.0", then
+                            // the strncmp will be a positive value causing a peripheral upgrade.
+                            if( strstr( pCurFW, pDeviceName ) && strstr( pCurFW, pDeviceType) )
                             {
-                                ++pCurVer;          // point to character after '_' 
-                                iVerCmp = strncmp( pDeviceVer, pCurVer, MAX_VER_LEN );
-                                SWLOG_INFO( "%s: Compared pDeviceVer = %s and pCurVer = %s, output = %d\n", __FUNCTION__, pDeviceVer, pCurVer, iVerCmp );
-                                if( iVerCmp <= 0 )     // the version in the device is newer or same, no upgrade needed
+                                if( (pCurVer=strrchr( pCurFW, '_' )) != NULL )  // find last underscore char ('_')
                                 {
-                                    SWLOG_INFO( "%s: The version in the device is newer or same, no upgrade needed\n", __FUNCTION__ );
-                                    bTriggerDL = false;
+                                    ++pCurVer;          // point to character after '_' 
+                                    iVerCmp = strncmp( pDeviceVer, pCurVer, MAX_VER_LEN );
+                                    SWLOG_INFO( "%s: Compared pDeviceVer = %s and pCurVer = %s, output = %d\n", __FUNCTION__, pDeviceVer, pCurVer, iVerCmp );
+                                    if( iVerCmp <= 0 )     // the version in the device is newer or same, no upgrade needed
+                                    {
+                                        SWLOG_INFO( "%s: The version in the device is newer or same, no upgrade needed\n", __FUNCTION__ );
+                                        bTriggerDL = false;
+                                    }
                                 }
                             }
-                        }
-                        pCurFW = strtok_r( NULL, ",", &pSavedDetails );
-                    }                
+			}
+                        pCurFW = strtok_r( NULL, ",", &pSavedDetails );           
                 }
+		}
                 if( bTriggerDL == true )
                 {
                     snprintf( cSourceURL, sizeof(cSourceURL), "%s/%s.tgz", pCloudFWLocation, pFW );
