@@ -95,8 +95,8 @@ void setAppMode(int mode)
 {
     pthread_mutex_lock(&app_mode_status);
     app_mode = mode;
-    pthread_mutex_unlock(&app_mode_status);
     SWLOG_INFO("%s: app mode = %d\n", __FUNCTION__, app_mode);
+    pthread_mutex_unlock(&app_mode_status);
 }
 /* Description: Get App mode
  * @param: void
