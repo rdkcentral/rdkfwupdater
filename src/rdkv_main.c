@@ -1439,8 +1439,7 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
                 {
                     snprintf( cTmpCurVerBuf, sizeof(cTmpCurVerBuf), "%s", cCurVerBuf );     // makes a copy again
                     pCurFW = strtok_r( cTmpCurVerBuf, ",", &pSavedDetails );
-		    if( pDeviceName != NULL )
-		    {
+		    
                         while( pCurFW != NULL )
                         {
                    
@@ -1465,7 +1464,6 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
                             }
 			}
                         pCurFW = strtok_r( NULL, ",", &pSavedDetails );           
-                }
 		}
                 if( bTriggerDL == true )
                 {
