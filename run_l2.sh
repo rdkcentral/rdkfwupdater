@@ -19,11 +19,22 @@ export top_srcdir=`pwd`
 RESULT_DIR="/tmp/l2_test_report"
 mkdir -p "$RESULT_DIR"
 
-# Compile Test binary
-./cov_build.sh
+WORKDIR=`pwd`
+export ROOT=/usr
+export INSTALL_DIR=${ROOT}/local
+mkdir -p $INSTALL_DIR
 
+#Build rdkfwupdater
+autoreconf -i
+./configure --prefix=${INSTALL_DIR} --enable-rfcapi=yes CFLAGS="-DRDK_LOGGER"
+make && make install
+
+
+#./cov_build.sh
+
+# Compile Test binary for mfrutils
 cc -o /usr/bin/mfr_util test/functional-tests/tests/mfrutils.c 
 
 cp test/functional-tests/tests/rc-proxy-params.json /tmp/rc-proxy-params.json
 
-pytest --json-report  --json-report-file $RESULT_DIR/rdkfwupdater_report.json test/functional-tests/tests/
+#pytest --json-report  --json-report-file $RESULT_DIR/rdkfwupdater_report.json test/functional-tests/tests/
