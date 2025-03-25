@@ -2,7 +2,7 @@ name: L2 Integration Tests
 
 on:
   pull_request:
-    branches: [ develop , topic/RDK-48832 ]
+    branches: [ develop , main , topic/RDK-48832 ]
 
 env:
   AUTOMATICS_UNAME: ${{ secrets.AUTOMATICS_UNAME }}
