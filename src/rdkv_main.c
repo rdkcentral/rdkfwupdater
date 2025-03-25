@@ -1461,9 +1461,9 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
                                 }
                             }
                         }
-		}
-                pCurFW = strtok_r( NULL, ",", &pSavedDetails );           
-		}
+			pCurFW = strtok_r( NULL, ",", &pSavedDetails );
+                    }                
+                }
                 if( bTriggerDL == true )
                 {
                     snprintf( cSourceURL, sizeof(cSourceURL), "%s/%s.tgz", pCloudFWLocation, pFW );
