@@ -636,9 +636,7 @@ bool get_system_uptime(double *uptime) {
         }
         fclose(uptime_file);
     }
-    if(uptime_file != NULL)
-    {
-        fclose(uptime_file);
+    fclose(uptime_file);
     }
     return false;
 }
