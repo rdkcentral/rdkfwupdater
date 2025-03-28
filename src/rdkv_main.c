@@ -95,8 +95,8 @@ void setAppMode(int mode)
 {
     pthread_mutex_lock(&app_mode_status);
     app_mode = mode;
-    pthread_mutex_unlock(&app_mode_status);
     SWLOG_INFO("%s: app mode = %d\n", __FUNCTION__, app_mode);
+    pthread_mutex_unlock(&app_mode_status);
 }
 /* Description: Get App mode
  * @param: void
@@ -910,7 +910,7 @@ int retryDownload(int server_type, const char* artifactLocationUrl, const void* 
     if (server_type == HTTP_SSR_DIRECT || server_type == HTTP_XCONF_DIRECT) {
         if( server_type == HTTP_SSR_DIRECT )
         {
-            SWLOG_INFO("%s: servertype=%d, url=%s, loc=%s, httpcode=%d, total retry=%d, delay=%d\n", __FUNCTION__, server_type, artifactLocationUrl, (const char *)localDownloadLocation, *httpCode, retry_cnt, delay);
+            SWLOG_INFO("%s: servertype=%d, url=%s, loc=%p, httpcode=%d, total retry=%d, delay=%d\n", __FUNCTION__, server_type, artifactLocationUrl, (const char *)localDownloadLocation, *httpCode, retry_cnt, delay);
         }
         else
         {
@@ -1441,14 +1441,16 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
                     pCurFW = strtok_r( cTmpCurVerBuf, ",", &pSavedDetails );
                     while( pCurFW != NULL )
                     {
-                   
+
                         // pCurVer == the current version in the device
                         // pDeviceVer == the version xconf says to load
                         // the strncmp works as long as versions are equal length
                         // if they are unequal lengths, pDeviceVer = "1.4.0.0" and pCurVer = "1.4.0", then
                         // the strncmp will be a positive value causing a peripheral upgrade.
+			if(pDeviceName != NULL)
+			{
                         if( strstr( pCurFW, pDeviceName ) && strstr( pCurFW, pDeviceType) )
-                        {
+			{
                             if( (pCurVer=strrchr( pCurFW, '_' )) != NULL )  // find last underscore char ('_')
                             {
                                 ++pCurVer;          // point to character after '_' 
@@ -1461,7 +1463,8 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
                                 }
                             }
                         }
-                        pCurFW = strtok_r( NULL, ",", &pSavedDetails );
+			}
+			pCurFW = strtok_r( NULL, ",", &pSavedDetails );
                     }                
                 }
                 if( bTriggerDL == true )

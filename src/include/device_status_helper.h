@@ -47,7 +47,11 @@ int isOCSPEnable(void);
 int isCodeBigFallBackEnabled(void);
 int isDwnlBlock(int type);
 bool isUpgradeInProgress(void);
+#if defined(__aarch64__)
 time_t getCurrentSysTimeSec(void);
+#else
+int64_t getCurrentSysTimeSec(void);
+#endif
 bool isDelayFWDownloadActive(int DelayDownloadXconf, const char *maint, int trigger_type);
 bool isPDRIEnable(void);
 bool checkPDRIUpgrade(const char *dwnl_pdri_img);
