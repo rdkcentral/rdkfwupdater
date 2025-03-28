@@ -409,7 +409,11 @@ size_t GetInstalledBundles(char *pBundles, size_t szBufSize)
 size_t GetUTCTime( char *pUTCTime, size_t szBufSize )
 {
     struct tm gmttime;
+#if defined(__aarch64__)
+    int64_t seconds;
+#else
     time_t seconds;
+#endif
     size_t i = 0;
 
     if( pUTCTime != NULL )
