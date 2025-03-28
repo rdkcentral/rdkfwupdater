@@ -70,6 +70,7 @@ typedef struct _IARM_BUS_SYSMgr_EventData_t{
 
 #define IARM_BUS_SYSMGR_SYSSTATE_FIRMWARE_UPDATE_STATE 1
 #define IARM_BUS_SYSMGR_SYSSTATE_FIRMWARE_DWNLD 2
+#define IARM_BUS_SYSMGR_SYSSTATE_RED_RECOV_UPDATE_STATE 3
 
 typedef char gchar;
 
@@ -111,6 +112,12 @@ typedef char gchar;
 #define FW_STATE_ONHOLD_FOR_OPTOUT "7"
 #define FW_STATE_CRITICAL_REBOOT "8"
 #define FW_STATE_NO_UPGRADE_REQUIRED "9"
+
+//Red Recovery states
+#define RED_RECOVERY_COMPLETED "0"
+#define RED_RECOVERY_STARTED "1"
+#define RED_RECOVERY_DOWNLOADED "2"
+#define RED_RECOVERY_PROGRAMMED "3"
 
 /** Description: Send event to iarm event manager
  *
