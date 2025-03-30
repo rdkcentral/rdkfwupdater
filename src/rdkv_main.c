@@ -1441,7 +1441,7 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
                     pCurFW = strtok_r( cTmpCurVerBuf, ",", &pSavedDetails );
                     while( pCurFW != NULL )
                     {
-
+                   
                         // pCurVer == the current version in the device
                         // pDeviceVer == the version xconf says to load
                         // the strncmp works as long as versions are equal length
