@@ -1451,7 +1451,7 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
 			{
                         if( strstr( pCurFW, pDeviceName ) && strstr( pCurFW, pDeviceType) )
 			{
-                            if( (pCurVer=strrchr( pCurFW, '_' )) != NULL )  // find last underscore char ('_')
+			    if( (pCurVer=strrchr( pCurFW, '_' )) != NULL )  // find last underscore char ('_')
                             {
                                 ++pCurVer;          // point to character after '_' 
                                 iVerCmp = strncmp( pDeviceVer, pCurVer, MAX_VER_LEN );
