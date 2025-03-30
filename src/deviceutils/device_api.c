@@ -35,7 +35,6 @@
 #include "deviceutils.h"
 #include "device_status_helper.h"
 #include "../rfcInterface/rfcinterface.h"
-#include <stdint.h>
 
 #define MAC_ADDRESS_LEN 17
 
