@@ -728,6 +728,39 @@ size_t GetAccountID( char *pAccountID, size_t szBufSize )
     return i;
 }
 
+/* function GetMFRName - gets the  manufacturer name of the device.
+        Usage: size_t GetMFRName <char *pMFRName> <size_t szBufSize>
+            pMFRName - pointer to a char buffer to store the output string.
+
+            szBufSize - the size of the character buffer in argument 1.
+
+            RETURN - number of characters copied to the output buffer.
+*/
+size_t GetMFRName( char *pMFRName, size_t szBufSize )
+{
+    size_t i = 0;
+    FILE *fp;
+    if( pMFRName != NULL )
+    {
+        *pMFRName = 0;
+	if( (fp = fopen( "/tmp/.manufacturer", "r" )) != NULL )
+	{
+            fgets(pMFRName, szBufSize, fp);
+            i = stripinvalidchar( pMFRName, szBufSize );      // remove newline etc.
+            fclose( fp );
+	}
+        else
+        {
+            SWLOG_ERROR( "GetMFRName: Cannot open %s for reading\n", "/tmp/.manufacturer" );
+        }
+    }
+    else
+    {
+        SWLOG_ERROR( "GetMFRName: Error, input argument NULL\n" );
+    }
+    return i;
+
+}
 /* function GetModelNum - gets the model number of the device.
  
         Usage: size_t GetModelNum <char *pModelNum> <size_t szBufSize>

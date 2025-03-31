@@ -2,7 +2,7 @@ name: Unit tests RdkFirmwareUpgrader
 
 on:
   pull_request:
-    branches: [ develop, main, topic/RDK-45219 ]
+    branches: [ develop, main ]
 
 env:
   AUTOMATICS_UNAME: ${{ secrets.AUTOMATICS_UNAME }}
