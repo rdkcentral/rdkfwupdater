@@ -629,16 +629,16 @@ metaDataFileList_st * mergeLists(metaDataFileList_st *nvmList, metaDataFileList_
 
 bool get_system_uptime(double *uptime) {
     FILE* uptime_file = fopen("/proc/uptime", "r");
+    if (uptime_file == NULL) 
+    {
+        return false;
+    }
     if ((uptime_file != NULL) && (uptime != NULL)) {
         if (fscanf(uptime_file, "%lf", uptime) == 1) {
             fclose(uptime_file);
             return true;
         }
-        fclose(uptime_file);
     }
-    if(uptime_file != NULL)
-    {
-        fclose(uptime_file);
-    }    
+    fclose(uptime_file);   
     return false;
 }
