@@ -101,10 +101,12 @@
 #define HTTP_CODE_FILE "/opt/xconf_curl_httpcode"
 #define CURL_PROGRESS_FILE "/opt/curl_progress"
 #define DWNL_URL_VALUE "/opt/.dnldURL"
+#define RED_STATE_REBOOT        "/opt/red_state_reboot"
 
 #define IARM_EVENT_BINARY_LOCATION "/usr/bin/IARM_event_sender"
 #define IMG_DWL_EVENT "ImageDwldEvent"
 #define FW_STATE_EVENT "FirmwareStateEvent"
+#define RED_STATE_EVENT "RedStateEvent"
 
 #define HTTP_SUCCESS 200
 #define HTTP_CHUNK_SUCCESS 206

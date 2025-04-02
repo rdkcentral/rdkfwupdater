@@ -49,7 +49,8 @@ void eventManager(const char *cur_event_name, const char *event_status) {
         unsigned char sys_state_event;
     } event_list[] = { 
         { "ImageDwldEvent", IARM_BUS_SYSMGR_SYSSTATE_FIRMWARE_DWNLD },
-        { "FirmwareStateEvent", IARM_BUS_SYSMGR_SYSSTATE_FIRMWARE_UPDATE_STATE }
+        { "FirmwareStateEvent", IARM_BUS_SYSMGR_SYSSTATE_FIRMWARE_UPDATE_STATE },
+	{ "RedStateEvent", IARM_BUS_SYSMGR_SYSSTATE_RED_RECOV_UPDATE_STATE }
     };
     IARM_Bus_SYSMgr_EventData_t event_data;
     int i;

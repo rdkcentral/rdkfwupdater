@@ -447,9 +447,11 @@ TEST_F(CreateJsonTestFixture, TestName_checkAndEnterStateRed_notinstatered)
 {
     int ret = 0;
     ret = system("touch /tmp/stateSupport");
+    ret = system("touch /opt/red_state_reboot");
     EXPECT_CALL(*g_DeviceStatusMock, filePresentCheck (_)).WillRepeatedly(Return(0));
     checkAndEnterStateRed(50, "true");
     ret = system("rm /tmp/stateSupport");
+    ret = system("rm /opt/red_state_reboot");
     EXPECT_EQ(0, 0);
 }
 TEST(TestcheckVideoStatus, TestName_NullCheck) 
