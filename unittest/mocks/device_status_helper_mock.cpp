@@ -101,12 +101,24 @@ extern "C" size_t GetModelNum( char *pModelNum, size_t szBufSize )
 {
     if (!g_DeviceStatusMock)
     {
-	cout << "GetBuildType  g_DeviceStatusMock object is NULL" << endl;
+	cout << "GetModelNum g_DeviceStatusMock object is NULL" << endl;
         return 0;
     }
     printf("Inside Mock Function GetModelNum\n");
     snprintf(pModelNum, szBufSize, "%s", "12345");
     return g_DeviceStatusMock->GetModelNum(pModelNum, szBufSize);
+}
+
+extern "C" size_t GetMFRName( char *pMFRName, size_t szBufSize )
+{
+    if (!g_DeviceStatusMock)
+    {
+	cout << "GetMFRName  g_DeviceStatusMock object is NULL" << endl;
+        return 0;
+    }
+    printf("Inside Mock Function GetMFRName\n");
+    snprintf(pMFRName, szBufSize, "%s", "unknown");
+    return g_DeviceStatusMock->GetMFRName(pMFRName, szBufSize);
 }
 
 extern "C" size_t GetPartnerId( char *pPartnerId, size_t szBufSize )

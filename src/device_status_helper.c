@@ -768,6 +768,17 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
         remainlen = szPostFieldOut - totlen;
         totlen += snprintf( (pTmpPost + totlen), remainlen, "model=%s", tmpbuf );
     }
+    len = GetMFRName( tmpbuf, sizeof(tmpbuf) ); 
+    if( len )
+    {
+        if( totlen )
+        {
+            *(pTmpPost + totlen) = '&';
+            ++totlen;
+        }
+        remainlen = szPostFieldOut - totlen;
+        totlen += snprintf( (pTmpPost + totlen), remainlen, "manufacturer=%s", tmpbuf );
+    }
     len = GetPartnerId( tmpbuf, sizeof(tmpbuf) );
     if( len )
     {
