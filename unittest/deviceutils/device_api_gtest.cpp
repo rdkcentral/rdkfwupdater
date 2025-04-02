@@ -417,6 +417,25 @@ TEST_F(DeviceApiTestFixture,TestName_GetModelNum_Nullcheck)
     EXPECT_CALL(*g_DeviceUtilsMock, GetModelNum(_, _)).Times(1).WillOnce(Return(0));
     EXPECT_EQ(GetModelNum(NULL, 0), 0);
 }
+TEST_F(DeviceApiTestFixture,TestName_GetMFRName_Nullcheck)
+{
+    EXPECT_EQ(GetMFRName(NULL, 0), 0);
+}
+TEST_F(DeviceApiTestFixture, GetMFRName_file_found)
+{
+    int ret;
+    char data[32];
+    ret = system("echo \"03272025\" > /tmp/.manufacturer");
+    EXPECT_NE(GetMFRName(data, 9),0);
+    EXPECT_EQ(strcmp(data, "03272025"), 0);
+    ret = system("rm -f /tmp/.manufacturer");
+}
+TEST_F(DeviceApiTestFixture, GetMFRName_file_not_found)
+{
+    int ret;
+    char data[32];
+    EXPECT_EQ(GetMFRName(data, 7),0);
+}
 TEST_F(DeviceApiTestFixture, TestName_GetEstbMac_Nullcheck)
 {
     EXPECT_EQ(GetEstbMac(NULL, 0), 0);

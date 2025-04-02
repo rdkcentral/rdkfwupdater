@@ -277,6 +277,16 @@ size_t GetModelNum(char *pModelNum, size_t szBufSize);
 */
 size_t GetBuildType(char *pBuildType, size_t szBufSize, BUILDTYPE *peBuildTypeOut);
 
+/* function GetMFRName - gets the  manufacturer name of the device.
+        Usage: size_t GetMFRName <char *pMFRName> <size_t szBufSize>
+            pMFRName - pointer to a char buffer to store the output string.
+
+            szBufSize - the size of the character buffer in argument 1.
+
+            RETURN - number of characters copied to the output buffer.
+*/
+size_t GetMFRName(char *pMFRName, size_t szBufSize);
+
 
 /* function GetFirmwareVersion - gets the firmware version of the device.
  
