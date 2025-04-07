@@ -48,7 +48,6 @@ int isCodeBigFallBackEnabled(void);
 int isDwnlBlock(int type);
 bool isUpgradeInProgress(void);
 time_t getCurrentSysTimeSec(void);
-
 bool isDelayFWDownloadActive(int DelayDownloadXconf, const char *maint, int trigger_type);
 bool isPDRIEnable(void);
 bool checkPDRIUpgrade(const char *dwnl_pdri_img);
