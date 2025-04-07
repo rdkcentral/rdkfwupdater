@@ -153,6 +153,7 @@ TEST_F(CreateJsonTestFixture, TestName) {
     	}));
     EXPECT_CALL(*g_DeviceStatusMock, GetBuildType (_, _, _)).Times(1).WillOnce(Return(4));
     EXPECT_CALL(*g_DeviceStatusMock, GetModelNum (_, _)).Times(1).WillOnce(Return(5));
+    EXPECT_CALL(*g_DeviceStatusMock, GetMFRName (_, _)).Times(1).WillOnce(Return(7));
     EXPECT_CALL(*g_DeviceStatusMock, GetPartnerId (_, _)).Times(1).WillOnce(Return(6));
     EXPECT_CALL(*g_DeviceStatusMock, GetOsClass (_, _)).Times(1).WillOnce(Return(2));
     EXPECT_CALL(*g_DeviceStatusMock, GetExperience (_, _)).Times(1).WillOnce(Return(2));
