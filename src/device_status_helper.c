@@ -558,19 +558,6 @@ unsigned int getFileLastModifyTime(char *file_name)
  * @return: int Success: return time and 0: fail
  * */
 
-#if defined(__aarch64__)
-int64_t getCurrentSysTimeSec(void)
-{
-    int64_t curtime = time(0);
-    if (curtime == ((int64_t) -1)) {
-        SWLOG_INFO("%s : time return error\n", __FUNCTION__);
-        return 0;
-    } else {
-        SWLOG_INFO("%s : current system time=%lu\n", __FUNCTION__, curtime);
-    }
-    return curtime;
-}
-#else
 time_t getCurrentSysTimeSec(void)
 {
     time_t curtime = time(0);
