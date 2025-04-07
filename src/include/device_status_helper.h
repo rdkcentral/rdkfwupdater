@@ -21,7 +21,6 @@
 
 #include <stdbool.h>
 #include <time.h>
-#include <stdint.h>
 
 #define DNS_RESOLV_FILE "/etc/resolv.dnsmasq"
 #define IP_ROUTE_FLAG "/tmp/route_available"
@@ -48,11 +47,8 @@ int isOCSPEnable(void);
 int isCodeBigFallBackEnabled(void);
 int isDwnlBlock(int type);
 bool isUpgradeInProgress(void);
-#if defined(__aarch64__)
-int64_t getCurrentSysTimeSec(void);
-#else
 time_t getCurrentSysTimeSec(void);
-#endif
+
 bool isDelayFWDownloadActive(int DelayDownloadXconf, const char *maint, int trigger_type);
 bool isPDRIEnable(void);
 bool checkPDRIUpgrade(const char *dwnl_pdri_img);
