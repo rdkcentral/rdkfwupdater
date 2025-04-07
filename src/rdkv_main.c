@@ -1447,7 +1447,7 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
                         // the strncmp works as long as versions are equal length
                         // if they are unequal lengths, pDeviceVer = "1.4.0.0" and pCurVer = "1.4.0", then
                         // the strncmp will be a positive value causing a peripheral upgrade.
-                        if( (pDeviceName != NUL) && strstr( pCurFW, pDeviceName ) && strstr( pCurFW, pDeviceType) )
+                        if( (pDeviceName != NULL) && strstr( pCurFW, pDeviceName ) && strstr( pCurFW, pDeviceType) )
                         {
                             if( (pCurVer=strrchr( pCurFW, '_' )) != NULL )  // find last underscore char ('_')
                             {
@@ -1460,8 +1460,8 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
                                     bTriggerDL = false;
                                 }
                             }
-			}
-			pCurFW = strtok_r( NULL, ",", &pSavedDetails );
+                        }
+                        pCurFW = strtok_r( NULL, ",", &pSavedDetails );
                     }                
                 }
                 if( bTriggerDL == true )
