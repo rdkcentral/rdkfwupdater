@@ -557,7 +557,6 @@ unsigned int getFileLastModifyTime(char *file_name)
  * @param : void:
  * @return: int Success: return time and 0: fail
  * */
-
 time_t getCurrentSysTimeSec(void)
 {
     time_t curtime = time(0);
@@ -569,7 +568,6 @@ time_t getCurrentSysTimeSec(void)
     }
     return curtime;
 }
-#endif
 
 /* Description: Check either any download is block or nor
  * @param : type: request type to check which download is block
