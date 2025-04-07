@@ -910,7 +910,7 @@ int retryDownload(int server_type, const char* artifactLocationUrl, const void* 
     if (server_type == HTTP_SSR_DIRECT || server_type == HTTP_XCONF_DIRECT) {
         if( server_type == HTTP_SSR_DIRECT )
         {
-            SWLOG_INFO("%s: servertype=%d, url=%s, loc=%p, httpcode=%d, total retry=%d, delay=%d\n", __FUNCTION__, server_type, artifactLocationUrl, (const char *)localDownloadLocation, *httpCode, retry_cnt, delay);
+            SWLOG_INFO("%s: servertype=%d, url=%s, loc=%s, httpcode=%d, total retry=%d, delay=%d\n", __FUNCTION__, server_type, artifactLocationUrl, (const char *)localDownloadLocation, *httpCode, retry_cnt, delay);
         }
         else
         {
