@@ -109,6 +109,7 @@ int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_li
         }
     }else {
         SWLOG_ERROR( "chunkDownload() Error to proceed for chunk download due to below reason.\nContent length not present=%d or Partial image file not present.\n", content_len);
+        t2_event_d("SYST_ERR_FWCTNFetch", 1);
         return curl_code_header_req;
     }
     if (httpcode != NULL) {
