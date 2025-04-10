@@ -1073,6 +1073,7 @@ bool checkForValidPCIUpgrade(int trigger_type, const char *myfwversion, const ch
     SWLOG_INFO("myfwversion:%s\n", myfwversion);
     SWLOG_INFO("cloudFWVersion:%s\n", cloudFWVersion);
     SWLOG_INFO("cloudFWFile:%s\n",cloudFWFile);
+    t2_event_s("cloudFWFile_split", cloudFWFile);
     SWLOG_INFO("lastdwnlfile:%s\n", last_dwnl_img);
     SWLOG_INFO("currentImg:%s\n", current_img);
     if (trigger_type == 1 || trigger_type == 4) {
