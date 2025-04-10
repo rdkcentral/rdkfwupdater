@@ -129,8 +129,7 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
         }
         if (response->dlCertBundle[0] != 0) {
             SWLOG_INFO("Calling rdm Versioned_app download to process bundle update\n");
-	    v_secure_system("rdm -v \"%s\" \"%s\" >> /opt/logs/rdm_status.log 2>&1", response->dlCertBundle, response->cloudFWLocation);
-            //v_secure_system("sh /etc/rdm/rdmBundleMgr.sh '%s' '%s' >> /opt/logs/rdm_status.log 2>&1", response->dlCertBundle, response->cloudFWLocation);
+	    v_secure_system("rdm -v \"%s\" >> /opt/logs/rdm_status.log 2>&1", response->dlCertBundle);
             SWLOG_INFO("RDM Versioned app Download started and completed\n");
         }
         valid_img = validateImage(response->cloudFWFile, model);
