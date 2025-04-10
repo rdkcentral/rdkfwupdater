@@ -107,11 +107,11 @@ int flashImage(const char *server_url, const char *upgrade_file, const char *reb
     }
     if (flash_status == 0 && (upgrade_type != PDRI_UPGRADE)) {
         SWLOG_INFO("doCDL success.\n");
-        t2_event_d("SYST_INFO_CDLSuccess", 1);
+        t2CountNotify("SYST_INFO_CDLSuccess", 1);
     }
     if (flash_status != 0) {
          SWLOG_INFO("Image Flashing failed\n");
-         t2_event_d("SYST_ERR_imageflsfail", 1);
+         t2CountNotify("SYST_ERR_imageflsfail", 1);
  	 if (false == mediaclient) {
 	     failureReason = "RCDL Upgrade Failed";
 	     if ((strncmp(cpu_arch, "x86", 3)) == 0) {
@@ -133,7 +133,7 @@ int flashImage(const char *server_url, const char *upgrade_file, const char *reb
          updateUpgradeFlag(2);// Remove file TODO: Logic need to change
     } else if (true == mediaclient) {
          SWLOG_INFO("Image Flashing is success\n");
-         t2_event_d("SYST_INFO_ImgFlashOK", 1);
+         t2CountNotify("SYST_INFO_ImgFlashOK", 1);
 	 //updateFWDownloadStatus "$cloudProto" "Success" "$cloudImmediateRebootFlag" "" "$dnldVersion" "$cloudFWFile" "$runtime" "Validation complete" "$DelayDownloadXconf"
          snprintf(fwdls.status, sizeof(fwdls.status), "Status|Success\n");
          snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Validation complete\n");

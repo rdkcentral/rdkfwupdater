@@ -311,7 +311,7 @@ size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
         if( len && ((pTmp = strcasestr( pPDRIFilename, "failed" )) == NULL) )   // if "failed" is not found
         {
             SWLOG_INFO( "GetPDRIFileName: PDRI Version = %s\n", pPDRIFilename );
-            t2_event_s("PDRI_Version_split", pPDRIFilename);
+            t2ValNotify("PDRI_Version_split", pPDRIFilename);
         }
         else
         {
@@ -1281,7 +1281,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
                     if( !len )  // then didn't find a valid URL
                     {
                          SWLOG_INFO( "Device configured with an invalid overriden URL!!! Exiting from Image Upgrade process..!\n" );
-                         t2_event_s("SYST_WARN_UPGD_SKIP", pServURL);
+                         t2ValNotify("SYST_WARN_UPGD_SKIP", pServURL);
                          skip = true;   // the only time to skip further checks is when not Prod build
                     }
                 }

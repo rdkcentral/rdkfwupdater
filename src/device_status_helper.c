@@ -77,7 +77,7 @@ bool CurrentRunningInst(const char *file)
 		        if ((strstr(arg, "rdkvfwupgrader")) || (strstr(arg,"deviceInitiatedFWDnld"))) {
 		            SWLOG_INFO("proc entry cmdline and process name matched.\nDevice initiated CDL is in progress..\n");
 		            SWLOG_INFO("Exiting without triggering device initiated firmware download.\n");
-                            t2_event_d("SYST_INFO_FWUpgrade_Exit", 1);
+                            t2CountNotify("SYST_INFO_FWUpgrade_Exit", 1);
 		            status = true;
 			    break;
 		        }
@@ -365,7 +365,7 @@ void checkAndEnterStateRed(int curlret, const char *disableStatsUpdate) {
     ret = isInStateRed();
     if(ret == 1) {
         SWLOG_INFO("RED checkAndEnterStateRed: device state red recovery flag already set\n");
-        t2_event_d("SYST_INFO_RedstateSet", 1);
+        t2CountNotify("SYST_INFO_RedstateSet", 1);
         return;
     }
     if((curlret == 35) || (curlret == 51) || (curlret == 53) || (curlret == 54) || (curlret == 58) || (curlret == 59) || (curlret == 60)
@@ -1073,6 +1073,7 @@ bool checkForValidPCIUpgrade(int trigger_type, const char *myfwversion, const ch
     SWLOG_INFO("myfwversion:%s\n", myfwversion);
     SWLOG_INFO("cloudFWVersion:%s\n", cloudFWVersion);
     SWLOG_INFO("cloudFWFile:%s\n",cloudFWFile);
+    t2ValNotify("cloudFWFile_split", cloudFWFile);
     SWLOG_INFO("lastdwnlfile:%s\n", last_dwnl_img);
     SWLOG_INFO("currentImg:%s\n", current_img);
     if (trigger_type == 1 || trigger_type == 4) {
