@@ -1100,7 +1100,7 @@ bool checkForValidPCIUpgrade(int trigger_type, const char *myfwversion, const ch
                 pci_valid_status = true;
 	    } else {
             SWLOG_INFO("FW version of the standby image and the image to be upgraded are the same. No upgrade required.\n");
-            t2CountNotify("fwupgrade_failed");
+            t2CountNotify("SYST_INFO_swdlSameImg_Stndby");
             //updateFWDownloadStatus "$cloudProto" "No upgrade needed" "$cloudImmediateRebootFlag" "Versions Match" "$dnldVersion" "$cloudFWFile" "$runtime" "No upgrade needed" "$DelayDownloadXconf"
             eventManager(FW_STATE_EVENT, FW_STATE_NO_UPGRADE_REQUIRED);
             updateUpgradeFlag(2);

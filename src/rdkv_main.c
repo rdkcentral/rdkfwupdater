@@ -253,14 +253,14 @@ void getPidStore(const char *device, const char *maint_window) {
  * */
 void t2CountNotify(char *marker) {
 #ifdef T2_EVENT_ENABLED
-    t2CountNotify(marker, 1);
+    t2_event_d(marker, 1);
 #endif
 }
 
 void t2ValNotify( char *marker, char *val )
 {
 #ifdef T2_EVENT_ENABLED
-    t2ValNotify(marker, val);
+    t2_event_s(marker, val);
 #endif
 }
 
