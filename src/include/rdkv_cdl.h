@@ -149,8 +149,8 @@ int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocati
 int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint);
 int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, const char *reboot_flag);
 void updateUpgradeFlag(int action);
-void t2CountNotify(char *marker);
-void t2ValNotify(char *marker, char *val);
+void T2_EVENT_D(char *marker, int val);
+void T2_EVENT_S(char *marker, char *val);
 void setAppMode(int mode);
 int getAppMode(void);
 void setDwnlState(int state);

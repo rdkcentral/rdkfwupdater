@@ -92,13 +92,13 @@ int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_li
     snprintf(headerfile, sizeof(headerfile), "%s.header", pfile_dwnl->pathname);
     content_len = getContentLength(headerfile);
     SWLOG_INFO("content_len = %d featched from headerfile=%s\n", content_len, headerfile);
-    t2CountNotify("SYST_INFO_FetchFWCTN", 1);
+    T2_EVENT_D("SYST_INFO_FetchFWCTN", 1);
     if (((filePresentCheck(pfile_dwnl->pathname)) == 0) && (content_len > 0)) {
         file_size = getFileSize(pfile_dwnl->pathname);
         /* Already Full File Downloaded*/
         if (file_size == content_len) {
             SWLOG_INFO("chunkDownload() Existing file_size=%d and content_len=%d are same\n", file_size, content_len);
-            t2CountNotify("SYST_INFO_SAME_FWCTN", 1);
+            T2_EVENT_D("SYST_INFO_SAME_FWCTN", 1);
             *httpcode = 200;
             curl_ret_code = CURLE_OK;
             return curl_ret_code;
@@ -111,7 +111,7 @@ int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_li
         }
     }else {
         SWLOG_ERROR( "chunkDownload() Error to proceed for chunk download due to below reason.\nContent length not present=%d or Partial image file not present.\n", content_len);
-        t2CountNotify("SYST_ERR_FWCTNFetch", 1);
+        T2_EVENT_D("SYST_ERR_FWCTNFetch", 1);
         return curl_code_header_req;
     }
     if (httpcode != NULL) {
@@ -172,7 +172,7 @@ int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_li
             setDwnlState(RDKV_FWDNLD_DOWNLOAD_COMPLETE);
         } else {
             SWLOG_ERROR( "chunkDownload() Downloaded File Size and content length fetch from header are not same. So Go For Full Download\n");
-            t2CountNotify("SYST_ERR_DiffFWCTN_FLdnld, 1);
+            T2_EVENT_D("SYST_ERR_DiffFWCTN_FLdnld, 1);
             SWLOG_ERROR( "chunkDownload() File Size=%d and content len=%d\n", file_size, content_len);
             setDwnlState(RDKV_FWDNLD_DOWNLOAD_INIT);
             curl = doCurlInit();
