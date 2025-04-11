@@ -1274,9 +1274,9 @@ int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocati
             }
             if (upgrade_type == PDRI_UPGRADE) {
                 SWLOG_INFO("PDRI image upgrade failure !!!\n");
-                T2_EVENT_D("SYST_ERR_PDRIUpg_failure");
+                T2_EVENT_D("SYST_ERR_PDRIUpg_failure", 1);
             } else if (upgrade_type == XCONF_UPGRADE && ret_curl_code == 6) {
-                T2_EVENT_D("xconf_couldnt_resolve"); 
+                T2_EVENT_D("xconf_couldnt_resolve", 1); 
             } else if (upgrade_type == PCI_UPGRADE) {
                 SWLOG_ERROR("doCDL failed\n");
                 T2_EVENT_D("SYST_ERR_CDLFail", 1);
