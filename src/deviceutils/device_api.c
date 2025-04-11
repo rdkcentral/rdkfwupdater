@@ -29,6 +29,7 @@
 #include "system_utils.h"
 #endif
 
+#include "rdkv_cdl.h"
 #include "json_parse.h"
 #include "rdkv_cdl_log_wrapper.h"
 #include "device_api.h"

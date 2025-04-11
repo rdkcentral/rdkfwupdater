@@ -336,3 +336,14 @@ extern "C" void t2CountNotify(char *marker)
     printf("Inside Mock Function t2CountNotify\n");
     return g_DeviceStatusMock->t2CountNotify(marker);
 }
+
+extern "C" void t2ValNotify(char *marker, char *val)
+{
+    if (!g_DeviceStatusMock)
+    {
+	cout << "t2ValNotify  g_DeviceStatusMock object is NULL" << endl;
+        return ;
+    }
+    printf("Inside Mock Function t2ValNotify\n");
+    return g_DeviceStatusMock->t2ValNotify(marker, val);
+}
