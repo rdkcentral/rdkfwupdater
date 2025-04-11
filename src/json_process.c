@@ -52,7 +52,7 @@ int getXconfRespData( XCONFRES *pResponse, char *pJsonStr )
             t2ValNotify("SYST_INFO_PRXR_Ver", pResponse->peripheralFirmwares);
             GetJsonVal( pJson, "dlCertBundle", pResponse->dlCertBundle, sizeof(pResponse->dlCertBundle) );
         SWLOG_INFO("pResponse->dlCertBundle = %s\n", pResponse->dlCertBundle);
-            strncmp(pResponse->dlCertBundle, "lxyupdate-bundle:"i, 17)?1:t2ValNotify("lxybundleversion_split", pResponse->dlCertBundle + 17);
+            strncmp(pResponse->dlCertBundle, "lxyupdate-bundle:", 17)?1:t2ValNotify("lxybundleversion_split", pResponse->dlCertBundle + 17);
             GetJsonVal( pJson, "rdmCatalogueVersion", pResponse->rdmCatalogueVersion, sizeof(pResponse->rdmCatalogueVersion) );
             GetJsonVal( pJson, "ipv6FirmwareLocation", pResponse->ipv6cloudFWLocation, sizeof(pResponse->ipv6cloudFWLocation) );
 
