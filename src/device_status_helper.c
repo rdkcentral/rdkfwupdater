@@ -77,7 +77,7 @@ bool CurrentRunningInst(const char *file)
 		        if ((strstr(arg, "rdkvfwupgrader")) || (strstr(arg,"deviceInitiatedFWDnld"))) {
 		            SWLOG_INFO("proc entry cmdline and process name matched.\nDevice initiated CDL is in progress..\n");
 		            SWLOG_INFO("Exiting without triggering device initiated firmware download.\n");
-                            T2_EVENT_D("SYST_INFO_FWUpgrade_Exit", 1);
+                            t2CountNotify("SYST_INFO_FWUpgrade_Exit", 1);
 		            status = true;
 			    break;
 		        }
@@ -365,14 +365,14 @@ void checkAndEnterStateRed(int curlret, const char *disableStatsUpdate) {
     ret = isInStateRed();
     if(ret == 1) {
         SWLOG_INFO("RED checkAndEnterStateRed: device state red recovery flag already set\n");
-        T2_EVENT_D("SYST_INFO_RedstateSet", 1);
+        t2CountNotify("SYST_INFO_RedstateSet", 1);
         return;
     }
     if((curlret == 35) || (curlret == 51) || (curlret == 53) || (curlret == 54) || (curlret == 58) || (curlret == 59) || (curlret == 60)
             || (curlret == 64) || (curlret == 66) || (curlret == 77) || (curlret == 80) || (curlret == 82) || (curlret == 83) || (curlret == 90)
             || (curlret == 91)|| (curlret == 495)) {
         SWLOG_INFO("RED checkAndEnterStateRed: Curl SSL/TLS error %d. Set State Red Recovery Flag and Exit!!!", curlret);
-        T2_EVENT_D("CDLrdkportal_split", curlret);
+        t2CountNotify("CDLrdkportal_split", curlret);
         //CID:280507-Unchecked return value
 	if(remove(DIRECT_BLOCK_FILENAME) != 0){
 		perror("Error deleting DIRECT_BLOCK_FAILURE");
@@ -1073,7 +1073,7 @@ bool checkForValidPCIUpgrade(int trigger_type, const char *myfwversion, const ch
     SWLOG_INFO("myfwversion:%s\n", myfwversion);
     SWLOG_INFO("cloudFWVersion:%s\n", cloudFWVersion);
     SWLOG_INFO("cloudFWFile:%s\n",cloudFWFile);
-    T2_EVENT_S("cloudFWFile_split", cloudFWFile);
+    t2ValNotify("cloudFWFile_split", cloudFWFile);
     SWLOG_INFO("lastdwnlfile:%s\n", last_dwnl_img);
     SWLOG_INFO("currentImg:%s\n", current_img);
     if (trigger_type == 1 || trigger_type == 4) {
@@ -1100,14 +1100,14 @@ bool checkForValidPCIUpgrade(int trigger_type, const char *myfwversion, const ch
                 pci_valid_status = true;
 	    } else {
             SWLOG_INFO("FW version of the standby image and the image to be upgraded are the same. No upgrade required.\n");
-            T2_EVENT_D("SYST_INFO_swdlSameImg_Stndby", 1);
+            t2CountNotify("SYST_INFO_swdlSameImg_Stndby", 1);
             //updateFWDownloadStatus "$cloudProto" "No upgrade needed" "$cloudImmediateRebootFlag" "Versions Match" "$dnldVersion" "$cloudFWFile" "$runtime" "No upgrade needed" "$DelayDownloadXconf"
             eventManager(FW_STATE_EVENT, FW_STATE_NO_UPGRADE_REQUIRED);
             updateUpgradeFlag(2);
 	    }
 	} else {
           SWLOG_INFO("FW version of the active image and the image to be upgraded are the same. No upgrade required.\n");
-          T2_EVENT_D("SYST_INFO_swdlSameImg", 1);
+          t2CountNotify("SYST_INFO_swdlSameImg", 1);
 	      //updateFWDownloadStatus "$cloudProto" "No upgrade needed" "$cloudImmediateRebootFlag" "Versions Match" "$dnldVersion" "$cloudFWFile" "$runtime" "No upgrade needed" "$DelayDownloadXconf
 	      eventManager(FW_STATE_EVENT, FW_STATE_NO_UPGRADE_REQUIRED);
           updateUpgradeFlag(2);
