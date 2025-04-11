@@ -172,7 +172,7 @@ int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_li
             setDwnlState(RDKV_FWDNLD_DOWNLOAD_COMPLETE);
         } else {
             SWLOG_ERROR( "chunkDownload() Downloaded File Size and content length fetch from header are not same. So Go For Full Download\n");
-            T2_EVENT_D("SYST_ERR_DiffFWCTN_FLdnld, 1);
+            T2_EVENT_D("SYST_ERR_DiffFWCTN_FLdnld", 1);
             SWLOG_ERROR( "chunkDownload() File Size=%d and content len=%d\n", file_size, content_len);
             setDwnlState(RDKV_FWDNLD_DOWNLOAD_INIT);
             curl = doCurlInit();
