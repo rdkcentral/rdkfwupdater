@@ -364,7 +364,7 @@ void dwnlError(int curl_code, int http_code, int server_type)
         t2CountNotify(telemetry_data);
     }else {
         *telemetry_data = 0;
-        SWLOG_ERROR("%s : CDL is suspended due to Curl %d Error\n", __FUNCTION__, curl_code);
+        SWLOG_ERROR("%s : CDL is suspended due to Curl %d Error\n", curl_code);
     }
     checkForTlsErrors(curl_code, type);
     snprintf( device_type, sizeof(device_type), "%s", device_info.dev_type );
