@@ -348,7 +348,7 @@ void dwnlError(int curl_code, int http_code, int server_type)
         t2CountNotify(telemetry_data, 1);
     }else {
         *telemetry_data = 0;
-        SWLOG_ERROR("%s : CDL is suspended due to Curl %d Error\n", __FUNCTION__, curl_code);
+        SWLOG_ERROR("%s : CDL is suspended due to Curl %d Error\n", curl_code);
         t2CountNotify("CDLsuspended_split", curl_code);
     }
     checkForTlsErrors(curl_code, type);
