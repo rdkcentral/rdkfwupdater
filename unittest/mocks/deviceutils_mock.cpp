@@ -206,3 +206,25 @@ extern "C" size_t GetModelNum( char *pModelNum, size_t szBufSize )
     snprintf(pModelNum, szBufSize, "%s", "12345");
     return g_DeviceUtilsMock->GetModelNum(pModelNum, szBufSize);
 }
+
+extern "C" void t2CountNotify(char *marker)
+{
+    if (!g_DeviceUtilsMock)
+    {
+        cout << "t2CountNotify  g_DeviceUtilsMock object is NULL" << endl;
+        return ;
+    }
+    printf("Inside Mock Function t2CountNotify\n");
+    return g_DeviceUtilsMock->t2CountNotify(marker);
+}
+
+extern "C" void t2ValNotify(char *marker, char *val)
+{
+    if (!g_DeviceUtilsMock)
+    {
+        cout << "t2ValNotify g_DeviceUtilsMock object is NULL" << endl;
+        return ;
+    }
+    printf("Inside Mock Function t2ValNotify\n");
+    return g_DeviceUtilsMock->t2ValNotify(marker, val);
+}
