@@ -52,6 +52,7 @@
 #include <string.h>
 #include <strings.h>
 
+
 #define JSON_STR_LEN        1000
 
 #define DOWNLOADED_PERIPHERAL_VERSION "/tmp/downloaded_peripheral_versions.txt"
