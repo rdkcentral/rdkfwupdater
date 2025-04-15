@@ -52,6 +52,7 @@ public:
     MOCK_METHOD(int, doInteruptDwnl, (void*, unsigned int), ());
     MOCK_METHOD(void, setForceStop, (int), ());
     MOCK_METHOD(T2ERROR, t2_event_s, (char*, char*), ());
+    MOCK_METHOD(T2ERROR, t2_event_d, (char*, int), ());
     MOCK_METHOD(void, t2_init, (char*), ());
     MOCK_METHOD(int, getDeviceProperties, (DeviceProperty_t*), ());
     MOCK_METHOD(int, getImageDetails, (ImageDetails_t*), ());
@@ -127,6 +128,13 @@ extern "C" {
             return T2ERROR_SUCCESS; // Return default value if global_mockexternal_ptr is NULL
         }
         return global_mockexternal_ptr->t2_event_s(marker, value);
+    }
+
+    T2ERROR t2_event_d(char* marker, int value) {
+        if (global_mockexternal_ptr == nullptr) {
+            return T2ERROR_SUCCESS; // Return default value if global_mockexternal_ptr is NULL
+        }
+        return global_mockexternal_ptr->t2_event_d(marker, value);
     }
 
     void t2_init(char *component) {
