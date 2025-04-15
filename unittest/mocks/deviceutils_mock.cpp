@@ -207,6 +207,7 @@ extern "C" size_t GetModelNum( char *pModelNum, size_t szBufSize )
     return g_DeviceUtilsMock->GetModelNum(pModelNum, szBufSize);
 }
 
+#ifdef DEVICE_API
 extern "C" void t2CountNotify(char *marker)
 {
     if (!g_DeviceUtilsMock)
@@ -228,3 +229,4 @@ extern "C" void t2ValNotify(char *marker, char *val)
     printf("Inside Mock Function t2ValNotify\n");
     return g_DeviceUtilsMock->t2ValNotify(marker, val);
 }
+#endif
