@@ -251,7 +251,6 @@ void getPidStore(const char *device, const char *maint_window) {
  * @param marker: use for send marker details
  * @return : void
  * */
-#ifndef GTEST_ENABLE
 void t2CountNotify(char *marker, int val) {
 #ifdef T2_EVENT_ENABLED
     t2_event_d(marker, val);
@@ -264,7 +263,6 @@ void t2ValNotify( char *marker, char *val )
     t2_event_s(marker, val);
 #endif
 }
-#endif
 
 // TODO: Use following function for all types of downloads when needed for telemetry v2 logs
 bool checkt2ValNotify( int iCurlCode, int iUpgradeType, char *Url  )
