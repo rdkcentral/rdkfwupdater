@@ -45,5 +45,5 @@ def test_dwnl_certbundle():
 
 @pytest.mark.run(order=20)
 def test_dwnl_certbundle_verify():
-    ERROR_MSG1 = "Calling /etc/rdm/rdmBundleMgr.sh to process bundle update"
+    ERROR_MSG1 = "Calling rdm Versioned_app download to process bundle update"
     assert grep_log_file("/opt/logs/swupdate.txt.0", ERROR_MSG1), f"Expected '{ERROR_MSG1}' in log file."
