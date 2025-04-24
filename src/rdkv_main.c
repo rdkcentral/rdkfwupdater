@@ -356,17 +356,10 @@ void dwnlError(int curl_code, int http_code, int server_type)
     if(curl_code != 0 || (http_code != 200 && http_code != 206) || http_code == 495) {
         if (server_type == HTTP_SSR_DIRECT) {
             SWLOG_ERROR("%s : Failed to download image from normal SSR code download server with ret:%d, httpcode:%d\n", __FUNCTION__, curl_code, http_code);
-	    if (curl_code == 28)
-	    {
-                t2CountNotify("SYST_ERR_ImageFail", 1);
-	    }
-	    else if (http_code == 302)
+	    t2CountNotify("SYST_ERR_cdl_ssr", 1);
+            if (http_code == 302)
 	    {
                 t2CountNotify("SYST_INFO_Http302", 1);
-	    }
-	    else
-	    {
-	        t2CountNotify("SYST_ERR_cdl_ssr", 1);
 	    }
         }
         if((strcmp(device_type, "mediaclient")) == 0) {
