@@ -95,8 +95,8 @@ void setAppMode(int mode)
 {
     pthread_mutex_lock(&app_mode_status);
     app_mode = mode;
-    pthread_mutex_unlock(&app_mode_status);
     SWLOG_INFO("%s: app mode = %d\n", __FUNCTION__, app_mode);
+    pthread_mutex_unlock(&app_mode_status);
 }
 /* Description: Get App mode
  * @param: void
@@ -1447,7 +1447,7 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
                         // the strncmp works as long as versions are equal length
                         // if they are unequal lengths, pDeviceVer = "1.4.0.0" and pCurVer = "1.4.0", then
                         // the strncmp will be a positive value causing a peripheral upgrade.
-                        if( strstr( pCurFW, pDeviceName ) && strstr( pCurFW, pDeviceType) )
+                        if( (pDeviceName != NULL) && strstr( pCurFW, pDeviceName ) && strstr( pCurFW, pDeviceType) )
                         {
                             if( (pCurVer=strrchr( pCurFW, '_' )) != NULL )  // find last underscore char ('_')
                             {
