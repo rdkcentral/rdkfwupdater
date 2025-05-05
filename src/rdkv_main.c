@@ -1314,6 +1314,7 @@ int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocati
                 if (upgrade_type == PCI_UPGRADE) {
                     if (flash_status != 0 && upgrade_type == PCI_UPGRADE) {
                         SWLOG_ERROR("doCDL failed\n");
+			t2CountNotify("SYST_ERR_CDLFail", 1);
                         setDwnlState(RDKV_FWDNLD_FLASH_FAILED);
                         cmd_args = "FWDNLD_FAILED";
                         logMilestone(cmd_args);
