@@ -980,6 +980,22 @@ TEST(MainHelperFunctionTest,flashImageTest){
     EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "false", "2", 0, "false"), 0);
     global_mockexternal_ptr = NULL;
 }
+TEST(MainHelperFunctionTest,flashImageTestRedState){
+    MockExternal mockexternal;
+    global_mockexternal_ptr = &mockexternal;
+    DeviceUtilsMock DeviceMock;
+    g_DeviceUtilsMock = &DeviceMock;
+
+    EXPECT_CALL(mockexternal,isMediaClientDevice()).WillOnce(Return(true));
+    EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal,eventManager(_,_)).WillRepeatedly(Return());
+    EXPECT_CALL(mockexternal,updateFWDownloadStatus(_,_)).Times(1);
+    EXPECT_CALL(DeviceMock, getDevicePropertyData(_,_,_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(DeviceMock, isInStateRed()).Times(1).WillOnce(Return(true));
+    //int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint)
+    EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "false", "2", 0, "false"), 0);
+    global_mockexternal_ptr = NULL;
+}
 TEST(MainHelperFunctionTest,flashImageTestFail){
     MockExternal mockexternal;
     global_mockexternal_ptr = &mockexternal;

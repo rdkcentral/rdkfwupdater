@@ -403,6 +403,13 @@ void checkAndEnterStateRed(int curlret, const char *disableStatsUpdate) {
             fclose(fp);
         }
         exit(1);
+    } else {
+        //Recovery completed event send for the failure case but not due to fatal error
+        if( (filePresentCheck( RED_STATE_REBOOT ) == RDK_API_SUCCESS) ) {
+             SWLOG_INFO("%s : RED Recovery completed\n", __FUNCTION__);
+             eventManager(RED_STATE_EVENT, RED_RECOVERY_COMPLETED);
+             unlink(RED_STATE_REBOOT);
+        }
     }
 }
 
