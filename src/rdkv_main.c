@@ -1296,6 +1296,10 @@ int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocati
             if (strncmp(cpu_arch, "x86", 3)) {
                 eventManager(IMG_DWL_EVENT, IMAGE_FWDNLD_DOWNLOAD_COMPLETE);
             }
+	    if( isInStateRed() ) {
+                 SWLOG_INFO("RED recovery download complete\n");
+                 eventManager(RED_STATE_EVENT, RED_RECOVERY_DOWNLOADED);
+            }
             SWLOG_INFO("Downloaded %s of size %d\n", dwlpath_filename, getFileSize(dwlpath_filename));
             t2CountNotify("Filesize_split", getFileSize(dwlpath_filename));
             *md5_sum = 0;
@@ -1755,6 +1759,12 @@ static int MakeXconfComms( XCONFRES *pResponse, int server_type, int *pHttp_code
                     {
                         SWLOG_INFO( "MakeXconfComms: Calling getXconfRespData with input = %s\n", (char *)DwnLoc.pvOut );
                         ret = getXconfRespData( pResponse, (char *)DwnLoc.pvOut );
+                        //Recovery completed event send for the success case
+                        if( (filePresentCheck( RED_STATE_REBOOT ) == RDK_API_SUCCESS) ) {
+                             SWLOG_INFO("%s : RED Recovery completed\n", __FUNCTION__);
+                             eventManager(RED_STATE_EVENT, RED_RECOVERY_COMPLETED);
+                             unlink(RED_STATE_REBOOT);
+                        }
                     }
                 }
                 else
@@ -2014,7 +2024,10 @@ int main(int argc, char *argv[]) {
     SWLOG_INFO("init_validate_status = %d\n", init_validate_status);
     if( init_validate_status == INITIAL_VALIDATION_SUCCESS)
     {
-	eventManager(FW_STATE_EVENT, FW_STATE_UNINITIALIZED);
+        eventManager(FW_STATE_EVENT, FW_STATE_UNINITIALIZED);
+	if( isInStateRed() ) {
+          eventManager(RED_STATE_EVENT, RED_RECOVERY_STARTED);
+        }
 	eventManager(FW_STATE_EVENT, FW_STATE_REQUESTING);
         ret_curl_code = MakeXconfComms( &response, server_type, &http_code );
 
