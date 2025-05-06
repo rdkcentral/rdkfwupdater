@@ -632,6 +632,35 @@ size_t GetSerialNum( char *pSerialNum, size_t szBufSize )
     return i;
 }
 
+/* function GetMigrationReady - gets the migration readiness status.
+         Usage: size_t GetMigrationReady <char *pMRComponents> <size_t szBufSize>
+             pMRComponents - pointer to a char buffer to store the output string.
+             szBufSize - the size of the character buffer in argument 1.
+             RETURN - number of characters copied to the output buffer.
+ */
+ size_t GetMigrationReady( char *pMRComponents, size_t szBufSize )
+ {
+     size_t i = 0;
+ 
+     if( pMRComponents != NULL )
+     {
+         i = read_RFCProperty( "MigrationReady", MR_ID, pMRComponents, szBufSize );
+         if( i == READ_RFC_FAILURE )
+         {
+             i = 0;
+             SWLOG_ERROR( "GetMigrationReady: read_RFCProperty() failed Status %d\n", i );
+         }
+         else
+         {
+             i = strnlen( pMRComponents, szBufSize );
+         }
+     }
+     else
+     {
+         SWLOG_ERROR( "GetMigrationReady: Error, input argument NULL\n" );
+     }
+     return i;
+ }
 
 /* function GetExperience - gets the experience of the device.
  
