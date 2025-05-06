@@ -29,6 +29,7 @@
 #include "system_utils.h"
 #endif
 
+#include "rdkv_cdl.h"
 #include "json_parse.h"
 #include "rdkv_cdl_log_wrapper.h"
 #include "device_api.h"
@@ -224,6 +225,7 @@ size_t GetTimezone( char *pTimezone, const char *cpuArch, size_t szBufSize )
                             }
                             *pTmp = 0;                  // either we're pointing to the end " character or a 0
                             SWLOG_INFO("%s: Got timezone using %s successfully, value:%s\n", __FUNCTION__, timezonefile, pTimezone );
+                            t2ValNotify("TimeZone_split", pTimezone);
                             break;
                         }
                     }
@@ -310,6 +312,7 @@ size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
         if( len && ((pTmp = strcasestr( pPDRIFilename, "failed" )) == NULL) )   // if "failed" is not found
         {
             SWLOG_INFO( "GetPDRIFileName: PDRI Version = %s\n", pPDRIFilename );
+            t2ValNotify("PDRI_Version_split", pPDRIFilename);
         }
         else
         {
@@ -1279,6 +1282,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
                     if( !len )  // then didn't find a valid URL
                     {
                          SWLOG_INFO( "Device configured with an invalid overriden URL!!! Exiting from Image Upgrade process..!\n" );
+                         t2ValNotify("SYST_WARN_UPGD_SKIP", pServURL);
                          skip = true;   // the only time to skip further checks is when not Prod build
                     }
                 }
