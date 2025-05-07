@@ -48,7 +48,9 @@ int getXconfRespData( XCONFRES *pResponse, char *pJsonStr )
             GetJsonVal( pJson, "additionalFwVerInfo", pResponse->cloudPDRIVersion, sizeof(pResponse->cloudPDRIVersion) );
             GetJsonVal( pJson, "delayDownload", pResponse->cloudDelayDownload, sizeof(pResponse->cloudDelayDownload) );
             GetJsonValContaining( pJson, "remCtrl", pResponse->peripheralFirmwares, sizeof(pResponse->peripheralFirmwares) );
+            t2ValNotify("SYST_INFO_PRXR_Ver_split", pResponse->peripheralFirmwares);
             GetJsonVal( pJson, "dlCertBundle", pResponse->dlCertBundle, sizeof(pResponse->dlCertBundle) );
+            strncmp(pResponse->dlCertBundle, "lxyupdate-bundle:", 17)?1:t2ValNotify("lxybundleversion_split", pResponse->dlCertBundle + 17);
             GetJsonVal( pJson, "rdmCatalogueVersion", pResponse->rdmCatalogueVersion, sizeof(pResponse->rdmCatalogueVersion) );
             GetJsonVal( pJson, "ipv6FirmwareLocation", pResponse->ipv6cloudFWLocation, sizeof(pResponse->ipv6cloudFWLocation) );
 
