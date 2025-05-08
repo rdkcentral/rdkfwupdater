@@ -251,32 +251,16 @@ void getPidStore(const char *device, const char *maint_window) {
  * @param marker: use for send marker details
  * @return : void
  * */
-void t2CountNotify(char *marker) {
+void t2CountNotify(char *marker, int val) {
 #ifdef T2_EVENT_ENABLED
-    T2ERROR t2_ret = -1;
-    if(marker != NULL) {
-        t2_ret = t2_event_s(marker, "1");
-        SWLOG_INFO("t2CountNotify() send marker=%s,ret=%d\n", marker, t2_ret);
-    }else {
-        SWLOG_INFO("t2CountNotify() marker is NULL\n");
-    }
+    t2_event_d(marker, val);
 #endif
 }
 
 void t2ValNotify( char *marker, char *val )
 {
 #ifdef T2_EVENT_ENABLED
-    T2ERROR t2_ret;
-
-    if( marker != NULL && val != NULL )
-    {
-        t2_ret = t2_event_s(marker, val);
-        SWLOG_INFO("t2CountNotify() send marker = %s, val = %s,ret = %d\n", marker, val, t2_ret);
-    }
-    else
-    {
-        SWLOG_INFO("t2CountNotify() Error: one or more input args is NULL\n");
-    }
+    t2_event_s(marker, val);
 #endif
 }
 
@@ -358,19 +342,25 @@ void dwnlError(int curl_code, int http_code, int server_type)
     *failureReason = 0;
     if(curl_code == 22) {
         snprintf(telemetry_data, sizeof(telemetry_data), "swdl_failed");
-        t2CountNotify(telemetry_data);
+        t2CountNotify(telemetry_data, 1);
     }else if(curl_code == 18 || curl_code == 7) {
         snprintf(telemetry_data, sizeof(telemetry_data), "swdl_failed_%d", curl_code);
-        t2CountNotify(telemetry_data);
+        t2CountNotify(telemetry_data, 1);
     }else {
         *telemetry_data = 0;
         SWLOG_ERROR("%s : CDL is suspended due to Curl %d Error\n", __FUNCTION__, curl_code);
+        t2CountNotify("CDLsuspended_split", curl_code);
     }
     checkForTlsErrors(curl_code, type);
     snprintf( device_type, sizeof(device_type), "%s", device_info.dev_type );
     if(curl_code != 0 || (http_code != 200 && http_code != 206) || http_code == 495) {
         if (server_type == HTTP_SSR_DIRECT) {
             SWLOG_ERROR("%s : Failed to download image from normal SSR code download server with ret:%d, httpcode:%d\n", __FUNCTION__, curl_code, http_code);
+	    t2CountNotify("SYST_ERR_cdl_ssr", 1);
+            if (http_code == 302)
+	    {
+                t2CountNotify("SYST_INFO_Http302", 1);
+	    }
         }
         if((strcmp(device_type, "mediaclient")) == 0) {
             if(http_code == 0) {
@@ -548,6 +538,7 @@ int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const
     }
 
     SWLOG_INFO("Using Codebig Image upgrade connection\nCheck if codebig is applicable for the Device\n");
+    t2CountNotify("SYST_INFO_cb_xconf", 1);
     /* checkCodebigAccess check is required only for xconf communication. Detail mention in ticket LLAMA-10049 */
     if ((server_type == HTTP_XCONF_CODEBIG) && (false == (checkCodebigAccess()))) {
         SWLOG_ERROR("%s:  Codebig Image upgrade is not supported.\n", __FUNCTION__);
@@ -639,6 +630,7 @@ int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const
         if ((curl_ret_code == 0) && (*httpCode == 200 || *httpCode == 206)) {
             setDwnlState(RDKV_FWDNLD_DOWNLOAD_COMPLETE); 
             SWLOG_INFO("%s : Codebig firmware download Success - ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *httpCode);
+            t2CountNotify("SYS_INFO_CodBPASS", 1);
         }
     }
     else
@@ -731,11 +723,13 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
     }
     if (server_type == HTTP_SSR_DIRECT) {
         SWLOG_INFO("%s :Trying to communicate with SSR via TLS server\n", __FUNCTION__);
+        t2CountNotify("SYST_INFO_TLS_xconf", 1);
     }
     if ((1 == (isThrottleEnabled(device_info.dev_name, immed_reboot_flag, app_mode)))) {
         if (0 == (strncmp(rfc_list.rfc_throttle, "true", 4))) {
             max_dwnl_speed = atoi(rfc_list.rfc_topspeed);
             SWLOG_INFO("%s : Throttle feature is Enable\n", __FUNCTION__);
+            t2CountNotify("SYST_INFO_Thrtl_Enable", 1);
             if (max_dwnl_speed == 0) {
                 SWLOG_INFO("%s : Throttle speed set to 0. So exiting the download process\n", __FUNCTION__);
                 if (!(strncmp(device_info.maint_status, "true", 4))) {
@@ -770,6 +764,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
         mtls_enable = -1;//If certificate or key featching fail try with non mtls
     }else {
         SWLOG_INFO("MTLS is enable\nMTLS creds for SSR fetched ret=%d\n", ret);
+        t2CountNotify("SYS_INFO_MTLS_enable", 1);
     }
 #endif	
     (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_INIT) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_INIT);
@@ -789,6 +784,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
             return curl_ret_code;
         } else {
             SWLOG_INFO("MTLS is enabled\nMTLS creds for SSR fetched ret=%d\n", ret);
+            t2CountNotify("SYS_INFO_MTLS_enable", 1);
 	}
 #endif
         do {
@@ -796,6 +792,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
                 SWLOG_INFO("RED:state red recovery attempting MTLS connection to XCONF server\n");
                 if (CHUNK_DWNL_ENABLE == chunk_dwnl) {
 	            SWLOG_INFO("RED: Calling  chunkDownload() in state red recovery\n");
+                    t2CountNotify("SYST_INFO_RedStateRecovery", 1);
 	            curl_ret_code = chunkDownload(&file_dwnl, &sec, max_dwnl_speed, httpCode);
 	            break;
 	        }else {
@@ -874,7 +871,15 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
     }
     if ((curl_ret_code == CURL_SUCCESS) && (*httpCode == HTTP_SUCCESS || *httpCode == HTTP_CHUNK_SUCCESS)) {
         (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_COMPLETE) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_COMPLETE);
-        (server_type == HTTP_SSR_DIRECT) ? SWLOG_INFO("%s : Direct Image upgrade Success: curl ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *httpCode) : SWLOG_INFO("%s : Direct Image upgrade connection success: curl ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *httpCode);
+        if(server_type == HTTP_SSR_DIRECT)
+        {
+            SWLOG_INFO("%s : Direct Image upgrade Success: curl ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *httpCode);
+            t2CountNotify("SYS_INFO_DirectSuccess", 1);
+        }
+        else
+        {
+            SWLOG_INFO("%s : Direct Image upgrade connection success: curl ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *httpCode);
+        }
     }else {
         SWLOG_ERROR("%s : Direct Image upgrade Fail: curl ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *httpCode);
         (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_FAILED) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_FAILED);
@@ -920,7 +925,15 @@ int retryDownload(int server_type, const char* artifactLocationUrl, const void* 
             sleep(delay);
             curl_ret_code = downloadFile(server_type, artifactLocationUrl, localDownloadLocation, pPostFields, httpCode);
             if ((curl_ret_code == CURL_SUCCESS) && (*httpCode == HTTP_SUCCESS || *httpCode == HTTP_CHUNK_SUCCESS)) {
-                (server_type == HTTP_SSR_DIRECT) ? SWLOG_INFO("%s : Direct Image upgrade Success: ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *httpCode) : SWLOG_INFO("%s : Direct Image upgrade connection success: ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *httpCode);
+	        if(server_type == HTTP_SSR_DIRECT)
+	        {
+	            SWLOG_INFO("%s : Direct Image upgrade Success: ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *httpCode);
+	            t2CountNotify("SYS_INFO_DirectSuccess", 1);
+	        }
+	        else
+	        {
+	            SWLOG_INFO("%s : Direct Image upgrade connection success: ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *httpCode);
+	        }
                 break;
             } else if (*httpCode == HTTP_PAGE_NOT_FOUND) {
                 (server_type == HTTP_SSR_DIRECT) ? SWLOG_INFO("%s : Received 404 response for Direct Image upgrade, Retry logic not needed\n", __FUNCTION__) : SWLOG_INFO("%s : Received 404 response Direct Image upgrade from xconf, Retry logic not needed\n", __FUNCTION__);
@@ -1058,6 +1071,7 @@ int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocati
     }
     if (upgrade_type == XCONF_UPGRADE) {
         SWLOG_INFO("Trying to communicate with XCONF server");
+        t2CountNotify("SYST_INFO_XCONFConnect", 1);
     }
     *pHttp_code = 0;
 
@@ -1113,10 +1127,12 @@ int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocati
 
         if (upgrade_type == PDRI_UPGRADE) {
             SWLOG_INFO("Triggering the Image Download ...\n");
+            t2CountNotify("SYS_INFO_swdltriggered", 1);
             SWLOG_INFO("PDRI Download in Progress for %s\n", dwlpath_filename);
             eventManager(IMG_DWL_EVENT, IMAGE_FWDNLD_UNINITIALIZED);
         }else if(upgrade_type == PCI_UPGRADE) {
             SWLOG_INFO("Triggering the Image Download ...\n");
+            t2CountNotify("SYS_INFO_swdltriggered", 1);
             SWLOG_INFO("PCI Download in Progress for %s\n", dwlpath_filename);
             eventManager(IMG_DWL_EVENT, IMAGE_FWDNLD_UNINITIALIZED);
         }else if(upgrade_type == PERIPHERAL_UPGRADE) {
@@ -1251,11 +1267,12 @@ int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocati
             }
             if (upgrade_type == PDRI_UPGRADE) {
                 SWLOG_INFO("PDRI image upgrade failure !!!\n");
-                t2CountNotify("SYST_ERR_PDRIUpg_failure");
+                t2CountNotify("SYST_ERR_PDRIUpg_failure", 1);
             } else if (upgrade_type == XCONF_UPGRADE && ret_curl_code == 6) {
-                t2CountNotify("xconf_couldnt_resolve"); 
+                t2CountNotify("xconf_couldnt_resolve", 1); 
             } else if (upgrade_type == PCI_UPGRADE) {
                 SWLOG_ERROR("doCDL failed\n");
+                t2CountNotify("SYST_ERR_CDLFail", 1);
                 cmd_args = "FWDNLD_FAILED";
                 logMilestone(cmd_args);
             } else if (upgrade_type == PERIPHERAL_UPGRADE) {
@@ -1266,6 +1283,7 @@ int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocati
             updateUpgradeFlag(2);//Removing flag file in case of download fail
         } else if ((0 == filePresentCheck(dwlpath_filename)) && (upgrade_type != XCONF_UPGRADE)) {
             SWLOG_INFO("%s Local Image Download Completed using HTTPS TLS protocol!\n", dwlpath_filename);
+            t2CountNotify("SYST_INFO_FWCOMPLETE", 1);
             eventManager(FW_STATE_EVENT, FW_STATE_DOWNLOAD_COMPLETE);
 
             strncpy(fwdls.FwUpdateState, "FwUpdateState|Download complete\n", sizeof(fwdls.FwUpdateState)-1);
@@ -1278,12 +1296,18 @@ int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocati
             if (strncmp(cpu_arch, "x86", 3)) {
                 eventManager(IMG_DWL_EVENT, IMAGE_FWDNLD_DOWNLOAD_COMPLETE);
             }
+	    if( isInStateRed() ) {
+                 SWLOG_INFO("RED recovery download complete\n");
+                 eventManager(RED_STATE_EVENT, RED_RECOVERY_DOWNLOADED);
+            }
             SWLOG_INFO("Downloaded %s of size %d\n", dwlpath_filename, getFileSize(dwlpath_filename));
+            t2CountNotify("Filesize_split", getFileSize(dwlpath_filename));
             *md5_sum = 0;
             RunCommand( eMD5Sum, dwlpath_filename, md5_sum, sizeof(md5_sum) );
             SWLOG_INFO("md5sum of %s : %s\n", dwlpath_filename, md5_sum);
             if (upgrade_type == PDRI_UPGRADE) {
                 SWLOG_INFO("PDRI image upgrade successful.\n");
+                t2CountNotify("SYST_INFO_PDRIUpgSuccess", 1);
             }
             if (upgrade_type == PCI_UPGRADE || upgrade_type == PDRI_UPGRADE) {
                 setDwnlState(RDKV_FWDNLD_FLASH_INPROGRESS);
@@ -1294,6 +1318,7 @@ int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocati
                 if (upgrade_type == PCI_UPGRADE) {
                     if (flash_status != 0 && upgrade_type == PCI_UPGRADE) {
                         SWLOG_ERROR("doCDL failed\n");
+			t2CountNotify("SYST_ERR_CDLFail", 1);
                         setDwnlState(RDKV_FWDNLD_FLASH_FAILED);
                         cmd_args = "FWDNLD_FAILED";
                         logMilestone(cmd_args);
@@ -1583,6 +1608,7 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
                     SWLOG_INFO("OptOut: Event sent for on hold for OptOut\n");
                     eventManager("MaintenanceMGR" ,MAINT_FWDOWNLOAD_COMPLETE);
                     SWLOG_INFO("OptOut: Consent Required from User\n");
+                    t2CountNotify("SYST_INFO_NoConsentFlash", 1);
                     uninitialize(INITIAL_VALIDATION_SUCCESS);
                     exit(1);//TODO
                 }
@@ -1733,6 +1759,12 @@ static int MakeXconfComms( XCONFRES *pResponse, int server_type, int *pHttp_code
                     {
                         SWLOG_INFO( "MakeXconfComms: Calling getXconfRespData with input = %s\n", (char *)DwnLoc.pvOut );
                         ret = getXconfRespData( pResponse, (char *)DwnLoc.pvOut );
+                        //Recovery completed event send for the success case
+                        if( (filePresentCheck( RED_STATE_REBOOT ) == RDK_API_SUCCESS) ) {
+                             SWLOG_INFO("%s : RED Recovery completed\n", __FUNCTION__);
+                             eventManager(RED_STATE_EVENT, RED_RECOVERY_COMPLETED);
+                             unlink(RED_STATE_REBOOT);
+                        }
                     }
                 }
                 else
@@ -1938,6 +1970,7 @@ int main(int argc, char *argv[]) {
     *response.dlCertBundle = 0;
     *response.cloudPDRIVersion = 0;
     SWLOG_INFO("Starting c method rdkvfwupgrader\n");
+    t2CountNotify("SYST_INFO_C_CDL", 1);
     
     snprintf(disableStatsUpdate, sizeof(disableStatsUpdate), "%s","no");
 
@@ -1970,6 +2003,7 @@ int main(int argc, char *argv[]) {
         SWLOG_INFO("Image Upgrade During Bootup ..!\n");
     }else if (trigger_type == 2) {
         SWLOG_INFO("Scheduled Image Upgrade using cron ..!\n");
+        t2CountNotify("SYST_INFO_SWUpgrdChck", 1);
     }else if(trigger_type == 3){
         SWLOG_INFO("TR-69/SNMP triggered Image Upgrade ..!\n");
     }else if(trigger_type == 4){
@@ -1990,7 +2024,10 @@ int main(int argc, char *argv[]) {
     SWLOG_INFO("init_validate_status = %d\n", init_validate_status);
     if( init_validate_status == INITIAL_VALIDATION_SUCCESS)
     {
-	eventManager(FW_STATE_EVENT, FW_STATE_UNINITIALIZED);
+        eventManager(FW_STATE_EVENT, FW_STATE_UNINITIALIZED);
+	if( isInStateRed() ) {
+          eventManager(RED_STATE_EVENT, RED_RECOVERY_STARTED);
+        }
 	eventManager(FW_STATE_EVENT, FW_STATE_REQUESTING);
         ret_curl_code = MakeXconfComms( &response, server_type, &http_code );
 
@@ -2009,6 +2046,7 @@ int main(int argc, char *argv[]) {
                 char *msg = printCurlError(ret_curl_code);
                 if (msg != NULL) {
                     SWLOG_INFO("curl return code =%d and error message=%s\n", ret_curl_code, msg);
+                    t2CountNotify("CurlRet_split", ret_curl_code);
                 }
                 SWLOG_INFO("rdkvfwupgrader daemon exit curl code: %d\n", ret_curl_code);
             } else if (proto == 0) {    // tftp = 0

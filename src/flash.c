@@ -107,9 +107,11 @@ int flashImage(const char *server_url, const char *upgrade_file, const char *reb
     }
     if (flash_status == 0 && (upgrade_type != PDRI_UPGRADE)) {
         SWLOG_INFO("doCDL success.\n");
+        t2CountNotify("SYST_INFO_CDLSuccess", 1);
     }
     if (flash_status != 0) {
          SWLOG_INFO("Image Flashing failed\n");
+         t2CountNotify("SYST_ERR_imageflsfail", 1);
  	 if (false == mediaclient) {
 	     failureReason = "RCDL Upgrade Failed";
 	     if ((strncmp(cpu_arch, "x86", 3)) == 0) {
@@ -131,6 +133,7 @@ int flashImage(const char *server_url, const char *upgrade_file, const char *reb
          updateUpgradeFlag(2);// Remove file TODO: Logic need to change
     } else if (true == mediaclient) {
          SWLOG_INFO("Image Flashing is success\n");
+         t2CountNotify("SYST_INFO_ImgFlashOK", 1);
 	 //updateFWDownloadStatus "$cloudProto" "Success" "$cloudImmediateRebootFlag" "" "$dnldVersion" "$cloudFWFile" "$runtime" "Validation complete" "$DelayDownloadXconf"
          snprintf(fwdls.status, sizeof(fwdls.status), "Status|Success\n");
          snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Validation complete\n");
@@ -260,6 +263,14 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
     st_notify_flag = isMmgbleNotifyEnabled();
     eventManager(FW_STATE_EVENT, FW_STATE_VALIDATION_COMPLETE);
     eventManager(IMG_DWL_EVENT, IMAGE_FWDNLD_FLASH_COMPLETE);
+    if( isInStateRed() ) {
+	    eventManager(RED_STATE_EVENT, RED_RECOVERY_PROGRAMMED);
+	    SWLOG_INFO("Creating red_state_reboot file\n");
+	    fp = fopen(RED_STATE_REBOOT, "w");
+	    if (fp != NULL) {
+		    fclose(fp);
+	    }
+    }
     if ((strncmp(device_type, "broadband", 9)) && (0 == (strncmp(maint, "true", 4)))) {
 	eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_COMPLETE);
     }

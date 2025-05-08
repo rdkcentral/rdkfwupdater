@@ -43,7 +43,7 @@ rdkfw_device_status_gtest_LDADD = $(COMMON_LDADD)
 rdkfw_device_status_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
 rdkfw_device_status_gtest_CFLAGS = $(COMMON_CXXFLAGS)
 
-rdkfw_deviceutils_gtest_CPPFLAGS = $(COMMON_CPPFLAGS)
+rdkfw_deviceutils_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -DDEVICE_API
 rdkfw_deviceutils_gtest_LDADD = $(COMMON_LDADD)
 rdkfw_deviceutils_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
 rdkfw_deviceutils_gtest_CFLAGS = $(COMMON_CXXFLAGS)
