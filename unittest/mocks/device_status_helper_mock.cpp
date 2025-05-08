@@ -157,6 +157,18 @@ extern "C" size_t GetExperience( char *pExperience, size_t szBufSize )
     return g_DeviceStatusMock->GetExperience(pExperience, szBufSize);
 }
 
+extern "C" size_t GetMigrationReady( char *pMigrationReady, size_t szBufSize )
+ {
+     if (!g_DeviceStatusMock)
+     {
+ 	cout << "GetMigrationReady  g_DeviceStatusMock object is NULL" << endl;
+         return 0;
+     }
+     printf("Inside Mock Function GetMigrationReady\n");
+     snprintf(pMigrationReady, szBufSize, "%s", "NO");
+     return g_DeviceStatusMock->GetMigrationReady(pMigrationReady, szBufSize);
+ }
+
 extern "C" size_t GetAccountID( char *pAccountID, size_t szBufSize )
 {
     if (!g_DeviceStatusMock)
