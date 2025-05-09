@@ -1120,6 +1120,7 @@ int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocati
 	SWLOG_INFO("Delayed Trigger Image Upgrade ..!\n");
         if (upgrade_type == PCI_UPGRADE) {
             logMilestone(cmd_args);
+            t2CountNotify("FwDwld_split", 1);
         }else if(upgrade_type == XCONF_UPGRADE) {
             cmd_args = "CONNECT_TO_XCONF_CDL";
             logMilestone(cmd_args);
