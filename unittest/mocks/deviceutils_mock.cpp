@@ -176,6 +176,14 @@ extern "C" bool isInStateRed()
     return g_DeviceUtilsMock->isInStateRed();
 }
 
+extern "C" bool isDebugServicesEnabled(void) {
+        if (!g_DeviceUtilsMock) {
+            cout << "isDebugServicesEnabled g_DeviceUtilsMock object is NULL" << endl;
+	    return false; 
+        }
+        return g_DeviceUtilsMock->isDebugServicesEnabled();
+    }
+
 extern "C" size_t GetHwMacAddress( char *iface, char *pMac, size_t szBufSize )
 {
     if (!g_DeviceUtilsMock)
@@ -186,3 +194,39 @@ extern "C" size_t GetHwMacAddress( char *iface, char *pMac, size_t szBufSize )
     printf("Inside Mock Function GetHwMacAddress\n");
     return g_DeviceUtilsMock->GetHwMacAddress(iface, pMac, szBufSize);
 }
+
+extern "C" size_t GetModelNum( char *pModelNum, size_t szBufSize )
+{
+    if (!g_DeviceUtilsMock)
+    {
+	cout << "GetBuildType  g_DeviceStatusMock object is NULL" << endl;
+        return 0;
+    }
+    printf("Inside Mock Function GetModelNum\n");
+    snprintf(pModelNum, szBufSize, "%s", "12345");
+    return g_DeviceUtilsMock->GetModelNum(pModelNum, szBufSize);
+}
+
+#ifdef DEVICE_API
+extern "C" void t2CountNotify(char *marker)
+{
+    if (!g_DeviceUtilsMock)
+    {
+        cout << "t2CountNotify  g_DeviceUtilsMock object is NULL" << endl;
+        return ;
+    }
+    printf("Inside Mock Function t2CountNotify\n");
+    return g_DeviceUtilsMock->t2CountNotify(marker);
+}
+
+extern "C" void t2ValNotify(char *marker, char *val)
+{
+    if (!g_DeviceUtilsMock)
+    {
+        cout << "t2ValNotify g_DeviceUtilsMock object is NULL" << endl;
+        return ;
+    }
+    printf("Inside Mock Function t2ValNotify\n");
+    return g_DeviceUtilsMock->t2ValNotify(marker, val);
+}
+#endif

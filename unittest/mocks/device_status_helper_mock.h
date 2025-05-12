@@ -36,6 +36,7 @@ class DeviceStatusInterface
 	virtual size_t GetAdditionalFwVerInfo( char *pAdditionalFwVerInfo, size_t szBufSize ) = 0;
 	virtual size_t GetBuildType( char *pBuildType, size_t szBufSize, BUILDTYPE *peBuildTypeOut ) = 0;
 	virtual size_t GetModelNum( char *pModelNum, size_t szBufSize ) = 0;
+	virtual size_t GetMFRName( char *pMFRName, size_t szBufSize ) = 0;
 	virtual size_t GetPartnerId( char *pPartnerId, size_t szBufSize ) = 0;
 	virtual size_t GetOsClass( char *pOsClass, size_t szBufSize ) = 0;
 	virtual size_t GetExperience( char *pExperience, size_t szBufSize ) = 0;
@@ -55,6 +56,7 @@ class DeviceStatusInterface
 	virtual size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize ) = 0;
 	virtual void updateUpgradeFlag(int action) = 0;
 	virtual void t2CountNotify(char *marker) = 0;
+	virtual void t2ValNotify(char *marker, char *val) = 0;
 	virtual int v_secure_system(const char *str ) = 0;
 };
 
@@ -69,6 +71,7 @@ class DeviceStatusMock: public DeviceStatusInterface
     	MOCK_METHOD(size_t, GetAdditionalFwVerInfo, ( char *pAdditionalFwVerInfo, size_t szBufSize ), ());
     	MOCK_METHOD(size_t, GetBuildType, ( char *pBuildType, size_t szBufSize, BUILDTYPE *peBuildTypeOut ), ());
     	MOCK_METHOD(size_t, GetModelNum, ( char *pModelNum, size_t szBufSize ), ());
+	MOCK_METHOD(size_t, GetMFRName, ( char *pMFRName, size_t szBufSize ), ());
     	MOCK_METHOD(size_t, GetPartnerId, ( char *pPartnerId, size_t szBufSize ), ());
     	MOCK_METHOD(size_t, GetOsClass, ( char *pOsClass, size_t szBufSize ), ());
     	MOCK_METHOD(size_t, GetExperience, ( char *pExperience, size_t szBufSize ), ());
@@ -89,5 +92,6 @@ class DeviceStatusMock: public DeviceStatusInterface
     	MOCK_METHOD(size_t, GetPDRIFileName, ( char *pPDRIFilename, size_t szBufSize ), ());
     	MOCK_METHOD(void, updateUpgradeFlag, (int action), ());
     	MOCK_METHOD(void, t2CountNotify, (char *marker), ());
+    	MOCK_METHOD(void, t2ValNotify, (char *marker, char *val), ());
 };
 #endif

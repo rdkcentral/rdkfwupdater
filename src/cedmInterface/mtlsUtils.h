@@ -30,9 +30,10 @@
 #include "urlHelper.h"
 //#include <secure_wrapper.h>
 #endif
+#ifdef LIBRDKCERTSELECTOR
+#include "rdkcertselector.h"
+#endif
 
-#define MTLS_SUCCESS 1
-#define MTLS_FAILURE -1
 // Below both Macro should be filled with proper value
 #define RDKSSACLI                       "GetKey %s"
 #define GETCONFIGFILE_STATERED          "GetConfigFile"
@@ -41,14 +42,28 @@
 #define DEVXCONFDEFAULT     "defaulturl"
 #define XCONFDEFAULT        "xconf"
 
+#ifdef LIBRDKCERTSELECTOR
+// Below macro is invoked if the getMtlscert API fails to retrieve all MTLS certificates.
+#define CURL_MTLS_LOCAL_CERTPROBLEM 58
+
+typedef enum {
+    STATE_RED_CERT_FETCH_FAILURE = -2,     // Indicates failure in state red recovery
+    MTLS_CERT_FETCH_FAILURE = -1,          // Indicates general MTLS failure
+    MTLS_CERT_FETCH_SUCCESS = 0            // Indicates success
+} MtlsAuthStatus;
+
+MtlsAuthStatus getMtlscert(MtlsAuth_t *sec, rdkcertselector_h* pthisCertSel);
+#else
+#define MTLS_SUCCESS 1
+#define MTLS_FAILURE -1
+
+int getMtlscert(MtlsAuth_t *sec);
+#endif
+
 /*typedef struct credential {
         char cert_name[64];
         char cert_type[16];
         char key_pas[32];
 }MtlsAuth_t;*/
-
-
-int getMtlscert(MtlsAuth_t *sec);
-
 
 #endif /* VIDEO_CORE_MTLSUTILS_H_ */

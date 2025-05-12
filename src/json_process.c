@@ -48,7 +48,9 @@ int getXconfRespData( XCONFRES *pResponse, char *pJsonStr )
             GetJsonVal( pJson, "additionalFwVerInfo", pResponse->cloudPDRIVersion, sizeof(pResponse->cloudPDRIVersion) );
             GetJsonVal( pJson, "delayDownload", pResponse->cloudDelayDownload, sizeof(pResponse->cloudDelayDownload) );
             GetJsonValContaining( pJson, "remCtrl", pResponse->peripheralFirmwares, sizeof(pResponse->peripheralFirmwares) );
+            t2ValNotify("SYST_INFO_PRXR_Ver_split", pResponse->peripheralFirmwares);
             GetJsonVal( pJson, "dlCertBundle", pResponse->dlCertBundle, sizeof(pResponse->dlCertBundle) );
+            strncmp(pResponse->dlCertBundle, "lxyupdate-bundle:", 17)?1:t2ValNotify("lxybundleversion_split", pResponse->dlCertBundle + 17);
             GetJsonVal( pJson, "rdmCatalogueVersion", pResponse->rdmCatalogueVersion, sizeof(pResponse->rdmCatalogueVersion) );
             GetJsonVal( pJson, "ipv6FirmwareLocation", pResponse->ipv6cloudFWLocation, sizeof(pResponse->ipv6cloudFWLocation) );
 
@@ -128,9 +130,21 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
             fclose( fp );
         }
         if (response->dlCertBundle[0] != 0) {
-            SWLOG_INFO("Calling /etc/rdm/rdmBundleMgr.sh to process bundle update\n");
-            v_secure_system("sh /etc/rdm/rdmBundleMgr.sh '%s' '%s' >> /opt/logs/rdm_status.log 2>&1", response->dlCertBundle, response->cloudFWLocation);
-            SWLOG_INFO("/etc/rdm/rdmBundleMgr.sh started and completed\n");
+            SWLOG_INFO("Calling rdm Versioned_app download to process bundle update\n");
+	    if (access("/usr/bin/rdm", F_OK) == 0) {
+    	        // file exists
+		SWLOG_INFO("RDM binary is present\n");
+		v_secure_system("rdm -v \"%s\" >> /opt/logs/rdm_status.log 2>&1", response->dlCertBundle);
+		SWLOG_INFO("RDM Versioned app Download started and completed\n");
+	    } else  if (access("/etc/rdm/rdmBundleMgr.sh", F_OK) == 0) {
+    		// Script file exist
+		SWLOG_INFO("RDM binary is not present, using scripts\n");
+		v_secure_system("sh /etc/rdm/rdmBundleMgr.sh '%s' '%s' >> /opt/logs/rdm_status.log 2>&1", response->dlCertBundle, response->cloudFWLocation);
+		SWLOG_INFO("RDM Versioned app Download started and completed\n");
+	    } else {
+                // file doesn't exist
+		SWLOG_INFO(" File Not Present .. Download Failed \n");
+            }
         }
         valid_img = validateImage(response->cloudFWFile, model);
 	if ((*(response->cloudPDRIVersion)) != 0) {

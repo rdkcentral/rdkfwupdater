@@ -28,6 +28,9 @@
 #include "iarmInterface/iarmInterface.h"
 #include "json_process.h"
 #include "device_api.h"
+#ifndef GTEST_ENABLE
+#include "common_device_api.h"
+#endif
 
 extern char * strcasestr(const char * s1, const char * s2);     // removes compiler warning, I can't find prototype
 extern Rfc_t rfc_list;
@@ -74,6 +77,7 @@ bool CurrentRunningInst(const char *file)
 		        if ((strstr(arg, "rdkvfwupgrader")) || (strstr(arg,"deviceInitiatedFWDnld"))) {
 		            SWLOG_INFO("proc entry cmdline and process name matched.\nDevice initiated CDL is in progress..\n");
 		            SWLOG_INFO("Exiting without triggering device initiated firmware download.\n");
+                            t2CountNotify("SYST_INFO_FWUpgrade_Exit", 1);
 		            status = true;
 			    break;
 		        }
@@ -361,12 +365,14 @@ void checkAndEnterStateRed(int curlret, const char *disableStatsUpdate) {
     ret = isInStateRed();
     if(ret == 1) {
         SWLOG_INFO("RED checkAndEnterStateRed: device state red recovery flag already set\n");
+        t2CountNotify("SYST_INFO_RedstateSet", 1);
         return;
     }
     if((curlret == 35) || (curlret == 51) || (curlret == 53) || (curlret == 54) || (curlret == 58) || (curlret == 59) || (curlret == 60)
             || (curlret == 64) || (curlret == 66) || (curlret == 77) || (curlret == 80) || (curlret == 82) || (curlret == 83) || (curlret == 90)
             || (curlret == 91)|| (curlret == 495)) {
         SWLOG_INFO("RED checkAndEnterStateRed: Curl SSL/TLS error %d. Set State Red Recovery Flag and Exit!!!", curlret);
+        t2CountNotify("CDLrdkportal_split", curlret);
         //CID:280507-Unchecked return value
 	if(remove(DIRECT_BLOCK_FILENAME) != 0){
 		perror("Error deleting DIRECT_BLOCK_FAILURE");
@@ -400,6 +406,13 @@ void checkAndEnterStateRed(int curlret, const char *disableStatsUpdate) {
             fclose(fp);
         }
         exit(1);
+    } else {
+        //Recovery completed event send for the failure case but not due to fatal error
+        if( (filePresentCheck( RED_STATE_REBOOT ) == RDK_API_SUCCESS) ) {
+             SWLOG_INFO("%s : RED Recovery completed\n", __FUNCTION__);
+             eventManager(RED_STATE_EVENT, RED_RECOVERY_COMPLETED);
+             unlink(RED_STATE_REBOOT);
+        }
     }
 }
 
@@ -742,6 +755,7 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
         remainlen = szPostFieldOut - totlen;
         totlen += snprintf( (pTmpPost + totlen), remainlen, "env=%s", tmpbuf );
     }
+    SWLOG_INFO("Calling GetModelNum function\n");
     len = GetModelNum( tmpbuf, sizeof(tmpbuf) );
     if( len )
     {
@@ -752,6 +766,17 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
         }
         remainlen = szPostFieldOut - totlen;
         totlen += snprintf( (pTmpPost + totlen), remainlen, "model=%s", tmpbuf );
+    }
+    len = GetMFRName( tmpbuf, sizeof(tmpbuf) ); 
+    if( len )
+    {
+        if( totlen )
+        {
+            *(pTmpPost + totlen) = '&';
+            ++totlen;
+        }
+        remainlen = szPostFieldOut - totlen;
+        totlen += snprintf( (pTmpPost + totlen), remainlen, "manufacturer=%s", tmpbuf );
     }
     len = GetPartnerId( tmpbuf, sizeof(tmpbuf) );
     if( len )
@@ -1059,6 +1084,7 @@ bool checkForValidPCIUpgrade(int trigger_type, const char *myfwversion, const ch
     SWLOG_INFO("myfwversion:%s\n", myfwversion);
     SWLOG_INFO("cloudFWVersion:%s\n", cloudFWVersion);
     SWLOG_INFO("cloudFWFile:%s\n",cloudFWFile);
+    t2ValNotify("cloudFWFile_split", (char *)cloudFWFile);
     SWLOG_INFO("lastdwnlfile:%s\n", last_dwnl_img);
     SWLOG_INFO("currentImg:%s\n", current_img);
     if (trigger_type == 1 || trigger_type == 4) {
@@ -1085,13 +1111,14 @@ bool checkForValidPCIUpgrade(int trigger_type, const char *myfwversion, const ch
                 pci_valid_status = true;
 	    } else {
             SWLOG_INFO("FW version of the standby image and the image to be upgraded are the same. No upgrade required.\n");
-            t2CountNotify("fwupgrade_failed");
+            t2CountNotify("SYST_INFO_SwdlSameImg_Stndby", 1);
             //updateFWDownloadStatus "$cloudProto" "No upgrade needed" "$cloudImmediateRebootFlag" "Versions Match" "$dnldVersion" "$cloudFWFile" "$runtime" "No upgrade needed" "$DelayDownloadXconf"
             eventManager(FW_STATE_EVENT, FW_STATE_NO_UPGRADE_REQUIRED);
             updateUpgradeFlag(2);
 	    }
 	} else {
           SWLOG_INFO("FW version of the active image and the image to be upgraded are the same. No upgrade required.\n");
+          t2CountNotify("SYST_INFO_swdlSameImg", 1);
 	      //updateFWDownloadStatus "$cloudProto" "No upgrade needed" "$cloudImmediateRebootFlag" "Versions Match" "$dnldVersion" "$cloudFWFile" "$runtime" "No upgrade needed" "$DelayDownloadXconf
 	      eventManager(FW_STATE_EVENT, FW_STATE_NO_UPGRADE_REQUIRED);
           updateUpgradeFlag(2);

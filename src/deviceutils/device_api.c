@@ -29,6 +29,7 @@
 #include "system_utils.h"
 #endif
 
+#include "rdkv_cdl.h"
 #include "json_parse.h"
 #include "rdkv_cdl_log_wrapper.h"
 #include "device_api.h"
@@ -81,7 +82,7 @@ size_t GetServerUrlFile( char *pServUrl, size_t szBufSize, char *pFileName )
                     pLb = pHttp + 8;    // reuse pLb for parsing, pLb should point to first character after https://
                     while( *pLb )   // convert non-alpha numerics (but not '.') or whitespace to NULL terminator
                     {
-                        if( (!isalnum( *pLb ) && *pLb != '.' && *pLb != '/' && *pLb != '-' && *pLb != '_') || isspace( *pLb ) )
+                        if( (!isalnum( *pLb ) && *pLb != '.' && *pLb != '/' && *pLb != '-' && *pLb != '_' && *pLb != ':') || isspace( *pLb ) )
                         {
                             *pLb = 0;   // NULL terminate at end of URL
                             break;
@@ -224,6 +225,7 @@ size_t GetTimezone( char *pTimezone, const char *cpuArch, size_t szBufSize )
                             }
                             *pTmp = 0;                  // either we're pointing to the end " character or a 0
                             SWLOG_INFO("%s: Got timezone using %s successfully, value:%s\n", __FUNCTION__, timezonefile, pTimezone );
+                            t2ValNotify("TimeZone_split", pTimezone);
                             break;
                         }
                     }
@@ -314,6 +316,7 @@ size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
         if ((len > 0) && (pPDRIFilename[0] != '\0') && (pPDRIFilename[0] != '\n') && ((pTmp = strcasestr(pPDRIFilename, "failed")) == NULL))
         {
             SWLOG_INFO( "GetPDRIFileName: PDRI Version = %s\n", pPDRIFilename );
+            t2ValNotify("PDRI_Version_split", pPDRIFilename);
         }
         else
         {
@@ -732,70 +735,38 @@ size_t GetAccountID( char *pAccountID, size_t szBufSize )
     return i;
 }
 
-/* function GetModelNum - gets the model number of the device.
- 
-        Usage: size_t GetModelNum <char *pModelNum> <size_t szBufSize>
- 
-            pModelNum - pointer to a char buffer to store the output string.
+/* function GetMFRName - gets the  manufacturer name of the device.
+        Usage: size_t GetMFRName <char *pMFRName> <size_t szBufSize>
+            pMFRName - pointer to a char buffer to store the output string.
 
             szBufSize - the size of the character buffer in argument 1.
 
             RETURN - number of characters copied to the output buffer.
 */
-size_t GetModelNum( char *pModelNum, size_t szBufSize )
+size_t GetMFRName( char *pMFRName, size_t szBufSize )
 {
     size_t i = 0;
-
-#ifdef GETMODEL_IN_SCRIPT
-    if( pModelNum != NULL )
-    {
-        i = RunCommand( eGetModelNum, NULL, pModelNum, szBufSize );
-        SWLOG_INFO("GetModelNum: model number:%s and ret=%d\n",pModelNum, i);
-    }
-    else
-    {
-        SWLOG_INFO( "GetModelNum: Error, input argument NULL\n" );
-    }
-#else
-/* DELIA-60757: Below code need to be implemented for both mdeiaclient and non mediclient device. */
     FILE *fp;
-    char *pTmp;
-    char buf[150];
-
-    if( pModelNum != NULL )
+    if( pMFRName != NULL )
     {
-        *pModelNum = 0;
-        if( (fp = fopen( DEVICE_PROPERTIES_FILE, "r" )) != NULL )
-        {
-            while( fgets( buf, sizeof(buf), fp ) != NULL )
-            {
-                pTmp = strstr( buf, "MODEL_NUM=" );
-                if( pTmp && pTmp == buf )   // if match found and match is first character on line
-                {
-//                    SWLOG_INFO("GetModelNum: Found %s\n", buf );    // TODO: remove, for debugging only
-                    pTmp = strchr( pTmp, '=' );
-                    //CID:330354-Dereference null return value
-                    if(pTmp != NULL)
-                    {
-                    ++pTmp;
-                    i = snprintf( pModelNum, szBufSize, "%s", pTmp );
-                    i = stripinvalidchar( pModelNum, i );
-                    }
-                }
-            }
+        *pMFRName = 0;
+	if( (fp = fopen( "/tmp/.manufacturer", "r" )) != NULL )
+	{
+            fgets(pMFRName, szBufSize, fp);
+            i = stripinvalidchar( pMFRName, szBufSize );      // remove newline etc.
             fclose( fp );
-        }
+	}
         else
         {
-            SWLOG_ERROR( "GetModelNum: Cannot open %s for reading\n", DEVICE_PROPERTIES_FILE );
+            SWLOG_ERROR( "GetMFRName: Cannot open %s for reading\n", "/tmp/.manufacturer" );
         }
     }
     else
     {
-        SWLOG_ERROR( "GetModelNum: Error, input argument NULL\n" );
+        SWLOG_ERROR( "GetMFRName: Error, input argument NULL\n" );
     }
-#endif
     return i;
+
 }
 
 /* function GetBuildType - gets the build type of the device in lowercase. Optionally, sets an enum
@@ -1288,6 +1259,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
     BUILDTYPE eBuildType;
     char buf[URL_MAX_LEN];
     bool skip = false;
+    bool dbgServices = isDebugServicesEnabled(); //check debug services enabled
 
     if( pServURL != NULL )
     {
@@ -1295,7 +1267,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
         GetBuildType( buf, sizeof(buf), &eBuildType );
         if( isInStateRed() )
         {
-            if( eBuildType != ePROD )
+            if(( eBuildType != ePROD )  || ( dbgServices == true ))
             {
                 len = GetServerUrlFile( pServURL, szBufSize, STATE_RED_CONF );
             }
@@ -1306,7 +1278,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
         }
         else
         {
-            if( eBuildType != ePROD )
+            if(( eBuildType != ePROD )  || ( dbgServices == true ))
             {
                 if( (filePresentCheck( SWUPDATE_CONF ) == RDK_API_SUCCESS) )    // if the file exists
                 {
@@ -1314,6 +1286,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
                     if( !len )  // then didn't find a valid URL
                     {
                          SWLOG_INFO( "Device configured with an invalid overriden URL!!! Exiting from Image Upgrade process..!\n" );
+                         t2ValNotify("SYST_WARN_UPGD_SKIP", pServURL);
                          skip = true;   // the only time to skip further checks is when not Prod build
                     }
                 }

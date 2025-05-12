@@ -28,9 +28,6 @@
 #ifndef GETRDMMANIFESTVERSION_IN_SCRIPT
     #define GETRDMMANIFESTVERSION_IN_SCRIPT
 #endif
-#ifndef GETMODEL_IN_SCRIPT
-    #define GETMODEL_IN_SCRIPT
-#endif
 
 typedef enum {
     eMD5Sum,
@@ -39,9 +36,6 @@ typedef enum {
     eWpeFrameworkSecurityUtility
 #ifdef GETRDMMANIFESTVERSION_IN_SCRIPT
     ,eGetInstalledRdmManifestVersion
-#endif
-#ifdef GETMODEL_IN_SCRIPT
-    ,eGetModelNum
 #endif
 } SYSCMD;
 
@@ -120,7 +114,6 @@ int MemDLAlloc(DownloadData *pDwnData, size_t szDataSize);
             "/lib/rdk/cdlSupport.sh getRemoteInfo"                      eGetRemoteInfo
             "/lib/rdk/cdlSupport.sh getInstalledBundleList"             eGetInstalledBundleList
             "/lib/rdk/cdlSupport.sh getInstalledRdmManifestVersion"     eGetInstalledRdmManifestVersion
-            "/lib/rdk/cdlSupport.sh getModel"     			eGetModelNum
  
             %s in the command string indicates an argument (pArgs) is required
 */

@@ -153,6 +153,7 @@ TEST_F(CreateJsonTestFixture, TestName) {
     	}));
     EXPECT_CALL(*g_DeviceStatusMock, GetBuildType (_, _, _)).Times(1).WillOnce(Return(4));
     EXPECT_CALL(*g_DeviceStatusMock, GetModelNum (_, _)).Times(1).WillOnce(Return(5));
+    EXPECT_CALL(*g_DeviceStatusMock, GetMFRName (_, _)).Times(1).WillOnce(Return(7));
     EXPECT_CALL(*g_DeviceStatusMock, GetPartnerId (_, _)).Times(1).WillOnce(Return(6));
     EXPECT_CALL(*g_DeviceStatusMock, GetOsClass (_, _)).Times(1).WillOnce(Return(2));
     EXPECT_CALL(*g_DeviceStatusMock, GetExperience (_, _)).Times(1).WillOnce(Return(2));
@@ -446,9 +447,11 @@ TEST_F(CreateJsonTestFixture, TestName_checkAndEnterStateRed_notinstatered)
 {
     int ret = 0;
     ret = system("touch /tmp/stateSupport");
+    ret = system("touch /opt/red_state_reboot");
     EXPECT_CALL(*g_DeviceStatusMock, filePresentCheck (_)).WillRepeatedly(Return(0));
     checkAndEnterStateRed(50, "true");
     ret = system("rm /tmp/stateSupport");
+    ret = system("rm /opt/red_state_reboot");
     EXPECT_EQ(0, 0);
 }
 TEST(TestcheckVideoStatus, TestName_NullCheck) 

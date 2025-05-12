@@ -101,12 +101,24 @@ extern "C" size_t GetModelNum( char *pModelNum, size_t szBufSize )
 {
     if (!g_DeviceStatusMock)
     {
-	cout << "GetBuildType  g_DeviceStatusMock object is NULL" << endl;
+	cout << "GetModelNum g_DeviceStatusMock object is NULL" << endl;
         return 0;
     }
     printf("Inside Mock Function GetModelNum\n");
     snprintf(pModelNum, szBufSize, "%s", "12345");
     return g_DeviceStatusMock->GetModelNum(pModelNum, szBufSize);
+}
+
+extern "C" size_t GetMFRName( char *pMFRName, size_t szBufSize )
+{
+    if (!g_DeviceStatusMock)
+    {
+	cout << "GetMFRName  g_DeviceStatusMock object is NULL" << endl;
+        return 0;
+    }
+    printf("Inside Mock Function GetMFRName\n");
+    snprintf(pMFRName, szBufSize, "%s", "unknown");
+    return g_DeviceStatusMock->GetMFRName(pMFRName, szBufSize);
 }
 
 extern "C" size_t GetPartnerId( char *pPartnerId, size_t szBufSize )
@@ -323,4 +335,15 @@ extern "C" void t2CountNotify(char *marker)
     }
     printf("Inside Mock Function t2CountNotify\n");
     return g_DeviceStatusMock->t2CountNotify(marker);
+}
+
+extern "C" void t2ValNotify(char *marker, char *val)
+{
+    if (!g_DeviceStatusMock)
+    {
+	cout << "t2ValNotify  g_DeviceStatusMock object is NULL" << endl;
+        return ;
+    }
+    printf("Inside Mock Function t2ValNotify\n");
+    return g_DeviceStatusMock->t2ValNotify(marker, val);
 }

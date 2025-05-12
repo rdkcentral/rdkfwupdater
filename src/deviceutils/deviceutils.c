@@ -47,9 +47,6 @@
 #ifdef GETRDMMANIFESTVERSION_IN_SCRIPT
 #define GETINSTALLEDRDMMANIFESTVERSIONSCRIPT    "/lib/rdk/cdlSupport.sh getInstalledRdmManifestVersion"
 #endif
-#ifdef GETMODEL_IN_SCRIPT
-#define GETMODELSCRIPT    "/lib/rdk/cdlSupport.sh getModel"
-#endif
 
 #define MAX_PERIPHERAL_ITEMS 4
 
@@ -236,7 +233,6 @@ int MemDLAlloc( DownloadData *pDwnData, size_t szDataSize )
             "/lib/rdk/cdlSupport.sh getRemoteInfo"                      eGetRemoteInfo
             "/lib/rdk/cdlSupport.sh getInstalledBundleList"             eGetInstalledBundleList
             "/lib/rdk/cdlSupport.sh getInstalledRdmManifestVersion"     eGetInstalledRdmManifestVersion
-	        "/lib/rdk/cdlSupport.sh getModel"                           eGetModelNum
  
             %s in the command string indicates an argument (pArgs) is required
 */
@@ -294,11 +290,6 @@ size_t RunCommand( SYSCMD eSysCmd, const char *pArgs, char *pResult, size_t szRe
 #ifdef GETRDMMANIFESTVERSION_IN_SCRIPT
            case eGetInstalledRdmManifestVersion :
                fp = v_secure_popen( "r", GETINSTALLEDRDMMANIFESTVERSIONSCRIPT );
-               break;
-#endif
-#ifdef GETMODEL_IN_SCRIPT 
-           case eGetModelNum :
-               fp = v_secure_popen( "r", GETMODELSCRIPT );
                break;
 #endif
 
@@ -634,7 +625,10 @@ bool get_system_uptime(double *uptime) {
             fclose(uptime_file);
             return true;
         }
-        fclose(uptime_file);
+    }
+    if( uptime_file != NULL)
+    {
+        fclose(uptime_file); 
     }
     return false;
 }

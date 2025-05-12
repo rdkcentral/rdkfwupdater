@@ -101,10 +101,12 @@
 #define HTTP_CODE_FILE "/opt/xconf_curl_httpcode"
 #define CURL_PROGRESS_FILE "/opt/curl_progress"
 #define DWNL_URL_VALUE "/opt/.dnldURL"
+#define RED_STATE_REBOOT        "/opt/red_state_reboot"
 
 #define IARM_EVENT_BINARY_LOCATION "/usr/bin/IARM_event_sender"
 #define IMG_DWL_EVENT "ImageDwldEvent"
 #define FW_STATE_EVENT "FirmwareStateEvent"
+#define RED_STATE_EVENT "RedStateEvent"
 
 #define HTTP_SUCCESS 200
 #define HTTP_CHUNK_SUCCESS 206
@@ -149,7 +151,7 @@ int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocati
 int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint);
 int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, const char *reboot_flag);
 void updateUpgradeFlag(int action);
-void t2CountNotify(char *marker);
+void t2CountNotify(char *marker, int val);
 void t2ValNotify(char *marker, char *val);
 void setAppMode(int mode);
 int getAppMode(void);

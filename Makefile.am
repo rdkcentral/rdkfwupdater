@@ -103,3 +103,8 @@ if IS_LIBRDKCONFIG_ENABLED
 rdkvfwupgrader_CFLAGS += $(LIBRDKCONFIG_FLAG)
 AM_LDFLAGS += -lrdkconfig
 endif
+
+if IS_LIBRDKCERTSEL_ENABLED
+rdkvfwupgrader_CFLAGS += $(LIBRDKCERTSEL_FLAG)
+AM_LDFLAGS += -lRdkCertSelector
+endif
