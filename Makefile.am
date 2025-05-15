@@ -108,3 +108,8 @@ if IS_LIBRDKCERTSEL_ENABLED
 rdkvfwupgrader_CFLAGS += $(LIBRDKCERTSEL_FLAG)
 AM_LDFLAGS += -lRdkCertSelector
 endif
+
+
+if IS_MTLS_ENABLED
+rdkvfwupgrader_CFLAGS += $(MTLS_FLAG)
+endif
