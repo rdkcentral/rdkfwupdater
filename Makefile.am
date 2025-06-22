@@ -15,6 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+AM_CONDITIONAL([INSTALL_TEST_FWUPGRADER], [test "x$INSTALL_TEST_FWUPGRADER" = "xyes"])
 AM_CFLAGS = $(TRACE_CFLAGS)
 
 AM_CFLAGS += -Wall -Werror $(cjson_CFLAGS) $(curl_CFLAGS) $(CFLAGS)
@@ -23,7 +24,7 @@ AM_LDFLAGS += $(cjson_LIBS) $(curl_LIBS)
 AM_LDFLAGS += -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread
 
 bin_PROGRAMS= rdkvfwupgrader
-bin_PROGRAMS+= testrdkvfwupgrader
+
 
 rdkvfwupgrader_SOURCES = \
     ${top_srcdir}/src/rdkv_main.c \
@@ -74,6 +75,9 @@ endif
 
 rdkvfwupgrader_includedir = ${includedir}
 
+if INSTALL_TEST_FWUPGRADER
+bin_PROGRAMS += testrdkvfwupgrader
+
 testrdkvfwupgrader_SOURCES = \
      ${top_srcdir}/test/testiarmInterface.c
 
@@ -81,6 +85,7 @@ testrdkvfwupgrader_include_HEADERS = \
     ${top_srcdir}/test/testiarmInterface.h
 
 testrdkvfwupgrader_includedir = ${includedir}
+endif
 
 
 if IS_TELEMETRY2_ENABLED
