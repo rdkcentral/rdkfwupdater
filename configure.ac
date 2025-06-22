@@ -116,6 +116,14 @@ AC_ARG_ENABLE([t2api],
 AM_CONDITIONAL([IS_TELEMETRY2_ENABLED], [test x$IS_TELEMETRY2_ENABLED = xtrue])
 AC_SUBST(T2_EVENT_FLAG)
 
+# Default to yes if variable not set
+AC_ARG_ENABLE([test-fwupgrader],
+  [AS_HELP_STRING([--enable-test-fwupgrader],[Build testrdkvfwupgrader (default: yes)])],
+  [enable_test_fwupgrader=$enableval],
+  [enable_test_fwupgrader=yes])
+
+AM_CONDITIONAL([INSTALL_TEST_FWUPGRADER], [test "x$enable_test_fwupgrader" = "xyes"])
+
 AC_ARG_ENABLE([iarmevent],
         AS_HELP_STRING([--enable-iarmevent],[enables IARM event]),
         [
