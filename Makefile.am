@@ -15,7 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-AM_CONDITIONAL([INSTALL_TEST_FWUPGRADER], [test "x$INSTALL_TEST_FWUPGRADER" = "xyes"])
+
 AM_CFLAGS = $(TRACE_CFLAGS)
 
 AM_CFLAGS += -Wall -Werror $(cjson_CFLAGS) $(curl_CFLAGS) $(CFLAGS)
