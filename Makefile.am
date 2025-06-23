@@ -81,6 +81,8 @@ bin_PROGRAMS += testrdkvfwupgrader
 testrdkvfwupgrader_SOURCES = \
      ${top_srcdir}/test/testiarmInterface.c
 
+testrdkvfwupgrader_CFLAGS = $(AM_CFLAGS) $(TEST_FWUPGRADER_CFLAGS)
+
 testrdkvfwupgrader_include_HEADERS = \
     ${top_srcdir}/test/testiarmInterface.h
 
