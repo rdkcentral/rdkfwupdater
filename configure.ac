@@ -129,7 +129,7 @@ AC_ARG_ENABLE([test-fwupgrader],
       *) AC_MSG_ERROR([bad value ${enableval} for --enable-test-fwupgrader]) ;;
     esac
   ],
-  [IS_TEST_FWUPGRADER_ENABLED=true
+  [IS_TEST_FWUPGRADER_ENABLED=false
    TEST_FWUPGRADER_CFLAGS="-DENABLE_TEST_FWUPGRADER"
   ])
 AM_CONDITIONAL([INSTALL_TEST_FWUPGRADER], [test x$IS_TEST_FWUPGRADER_ENABLED = xtrue])
