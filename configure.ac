@@ -116,6 +116,13 @@ AC_ARG_ENABLE([t2api],
 AM_CONDITIONAL([IS_TELEMETRY2_ENABLED], [test x$IS_TELEMETRY2_ENABLED = xtrue])
 AC_SUBST(T2_EVENT_FLAG)
 
+AC_ARG_ENABLE([test-fwupgrader],
+  [AS_HELP_STRING([--enable-test-fwupgrader], [Enable Test FW Upgrader])],
+  [INSTALL_TEST_FWUPGRADER=$enableval],
+  [INSTALL_TEST_FWUPGRADER=no])
+
+AM_CONDITIONAL([INSTALL_TEST_FWUPGRADER], [test "x$INSTALL_TEST_FWUPGRADER" = "xyes"])
+
 AC_ARG_ENABLE([iarmevent],
         AS_HELP_STRING([--enable-iarmevent],[enables IARM event]),
         [
