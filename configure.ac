@@ -116,13 +116,24 @@ AC_ARG_ENABLE([t2api],
 AM_CONDITIONAL([IS_TELEMETRY2_ENABLED], [test x$IS_TELEMETRY2_ENABLED = xtrue])
 AC_SUBST(T2_EVENT_FLAG)
 
-# Default to yes if variable not set
 AC_ARG_ENABLE([test-fwupgrader],
-  [AS_HELP_STRING([--enable-test-fwupgrader],[Build testrdkvfwupgrader (default: yes)])],
-  [enable_test_fwupgrader=$enableval],
-  [enable_test_fwupgrader=yes])
-
-AM_CONDITIONAL([INSTALL_TEST_FWUPGRADER], [test "x$enable_test_fwupgrader" = "xyes"])
+  AS_HELP_STRING([--enable-test-fwupgrader], [Build testrdkvfwupgrader (default: yes)]),
+  [
+    case "${enableval}" in
+      yes) IS_TEST_FWUPGRADER_ENABLED=true
+           TEST_FWUPGRADER_CFLAGS="-DENABLE_TEST_FWUPGRADER"
+           ;;
+      no)  IS_TEST_FWUPGRADER_ENABLED=false
+           TEST_FWUPGRADER_CFLAGS=""
+           ;;
+      *) AC_MSG_ERROR([bad value ${enableval} for --enable-test-fwupgrader]) ;;
+    esac
+  ],
+  [IS_TEST_FWUPGRADER_ENABLED=true
+   TEST_FWUPGRADER_CFLAGS="-DENABLE_TEST_FWUPGRADER"
+  ])
+AM_CONDITIONAL([INSTALL_TEST_FWUPGRADER], [test x$IS_TEST_FWUPGRADER_ENABLED = xtrue])
+AC_SUBST([TEST_FWUPGRADER_CFLAGS])
 
 AC_ARG_ENABLE([iarmevent],
         AS_HELP_STRING([--enable-iarmevent],[enables IARM event]),
