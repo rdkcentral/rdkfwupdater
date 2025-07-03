@@ -834,6 +834,11 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
                       }
                   }
             } else {
+#ifdef ENABLE_MTLS
+		SWLOG_INFO("doHttpFileDownload() non-mtls disabled for FW Download...exiting!!\n");
+                uninitialize(INITIAL_VALIDATION_SUCCESS);
+		exit(1);
+#else
 	        if (CHUNK_DWNL_ENABLE == chunk_dwnl) {
 	            SWLOG_INFO("Calling  chunkDownload() with cert mTlsXConfDownload disable\n");
 	            curl_ret_code = chunkDownload(&file_dwnl, NULL, max_dwnl_speed, httpCode);
@@ -855,6 +860,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
                         }
                     }
                 }
+#endif
             }
             if (strcmp(disableStatsUpdate, "yes") && (CHUNK_DWNL_ENABLE != chunk_dwnl)) {
                 chunk_dwnl = isIncremetalCDLEnable(file_dwnl.pathname);
