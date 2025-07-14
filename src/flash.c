@@ -39,7 +39,7 @@
 #define T2_UPLOAD "Device.X_RDKCENTRAL-COM_T2.UploadDCMReport"
 rbusHandle_t    rdkfwRbusHandle;
 extern int getTriggerType();
-extern void t2CountNotify(char *marker);
+extern void t2CountNotify(char *marker, int val);
 
 /* Description:Use for Flashing the image
  * @param: server_url : server url
@@ -343,7 +343,7 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
 
             if(0 == strcasecmp("ON", res_val->valuestring)) {
                 SWLOG_INFO("Defer Reboot for Canary Firmware Upgrade since power state is ON\n");
-                t2CountNotify("SYS_INFO_DEFER_CANARY_REBOOT");
+                t2CountNotify("SYS_INFO_DEFER_CANARY_REBOOT", 1);
             }
             else {
                 // Call rbus method - Device.X_RDKCENTRAL-COM_T2.UploadDCMReport
@@ -374,7 +374,7 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
                 }
 
                 SWLOG_INFO("Rebooting from RDK for Canary Firmware Upgrade\n");
-                t2CountNotify("SYS_INFO_CANARY_Update");
+                t2CountNotify("SYS_INFO_CANARY_Update", 1);
                 v_secure_system("sh /rebootNow.sh -s '%s' -o '%s'","CANARY_Update", "Rebooting the box from RDK for Pending Canary Firmware Upgrade...");
             }
             if( DwnLoc.pvOut != NULL ) {
