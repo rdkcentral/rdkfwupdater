@@ -18,7 +18,9 @@
 
 #include <sys/stat.h>
 #include <curl/curl.h>
+#ifndef GTEST_ENABLE
 #include "rbus/rbus.h"
+#endif
 #include "rdkv_cdl.h"
 #include "rdkv_cdl_log_wrapper.h"
 #include "download_status_helper.h"
@@ -37,7 +39,9 @@
 #define RFC_XCONF_CHECK_NOW "Device.X_COMCAST-COM_Xcalibur.Client.xconfCheckNow"
 #define RDKFWUPGRADER_RBUS_HANDLE_NAME "rdkfwRbus"
 #define T2_UPLOAD "Device.X_RDKCENTRAL-COM_T2.UploadDCMReport"
+#ifndef GTEST_ENABLE
 rbusHandle_t    rdkfwRbusHandle;
+#endif
 extern int getTriggerType();
 extern void t2CountNotify(char *marker, int val);
 
@@ -362,6 +366,7 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
                     SWLOG_INFO("Defer Reboot for Canary Firmware Upgrade since power state is ON\n");
                     t2CountNotify("SYS_INFO_DEFER_CANARY_REBOOT", 1);
                 }
+#ifndef GTEST_ENABLE
                 else {
                     // Call rbus method - Device.X_RDKCENTRAL-COM_T2.UploadDCMReport
                     // Wait for ACK from above
@@ -394,6 +399,7 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
                     t2CountNotify("SYS_INFO_CANARY_Update", 1);
                     v_secure_system("sh /rebootNow.sh -s '%s' -o '%s'","CANARY_Update", "Rebooting the box from RDK for Pending Canary Firmware Upgrade...");
 		}
+#endif
 	    }
             if( DwnLoc.pvOut != NULL ) {
                 free( DwnLoc.pvOut );
