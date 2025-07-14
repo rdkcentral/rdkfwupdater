@@ -17,6 +17,8 @@
  */ 
 
 #include <sys/stat.h>
+#include <curl/curl.h>
+#include "rbus/rbus.h"
 #include "rdkv_cdl.h"
 #include "rdkv_cdl_log_wrapper.h"
 #include "download_status_helper.h"
@@ -29,6 +31,15 @@
 #include "rfcInterface/rfcinterface.h"
 #include <sys/wait.h>
 #include "deviceutils.h"
+#include "urlHelper.h"
+#include "json_parse.h"
+
+#define RFC_XCONF_CHECK_NOW "Device.X_COMCAST-COM_Xcalibur.Client.xconfCheckNow"
+#define RDKFWUPGRADER_RBUS_HANDLE_NAME "rdkfwRbus"
+#define T2_UPLOAD "Device.X_RDKCENTRAL-COM_T2.UploadDCMReport"
+rbusHandle_t    rdkfwRbusHandle;
+extern int getTriggerType();
+extern void t2CountNotify(char *marker);
 
 /* Description:Use for Flashing the image
  * @param: server_url : server url
@@ -295,7 +306,86 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
             fprintf(fp, "%s\n", upgrade_file);
             fclose(fp);
         }
-        if (0 == (strncmp(maint, "true", 4))) {
+        char *pXconfCheckNow = malloc(10); // WHAT SIZE TO ACTUALLY GIVE HERE
+        //size_t res = read_RFCProperty("XconfCheckNow", RFC_XCONF_CHECK_NOW, pXconfCheckNow, szBufSize);
+        FILE *file = fopen("/tmp/xconfchecknow_val", "r");
+        if (file != NULL) {
+            fscanf(file, "%99s", pXconfCheckNow);
+            fclose(file);
+        }
+        else {
+            SWLOG_INFO("Device_X_COMCAST_COM_Xcalibur_Client_xconfCheckNow: Error opening file for read\n");
+        }
+	if ((0 == strcasecmp("CANARY", pXconfCheckNow)) && (getTriggerType() == 3)) {
+
+            char post_data[] = "{\"jsonrpc\":\"2.0\",\"id\":\"42\",\"method\": \"org.rdk.System.getPowerState\"}";
+            DownloadData DwnLoc;
+            JSON *pJson = NULL;
+            JSON *pItem = NULL;
+            JSON *res_val = NULL;
+            char status[20];
+
+            if( MemDLAlloc( &DwnLoc, DEFAULT_DL_ALLOC ) == 0 ) {
+              if (0 != getJsonRpc(post_data, &DwnLoc)) {
+                  SWLOG_INFO("%s :: isconnected JsonRpc call failed\n",__FUNCTION__);
+                  return ret;
+              }
+              pJson = ParseJsonStr( (char *)DwnLoc.pvOut );
+              if( pJson != NULL ) {
+                  pItem = GetJsonItem( pJson, "result" );
+                  res_val = GetJsonItem( pItem, "powerState" );
+              }
+              else {
+                  SWLOG_INFO("%s :: isconnected JsonRpc response is empty\n",__FUNCTION__);
+                  return ret;
+              }
+            }
+
+            if(0 == strcasecmp("ON", res_val->valuestring)) {
+                SWLOG_INFO("Defer Reboot for Canary Firmware Upgrade since power state is ON\n");
+                t2CountNotify("SYS_INFO_DEFER_CANARY_REBOOT");
+            }
+            else {
+                // Call rbus method - Device.X_RDKCENTRAL-COM_T2.UploadDCMReport
+                // Wait for ACK from above
+                rbusObject_t inParams;
+                rbusObject_t outParams;
+                rbusObject_Init(&inParams, NULL);
+                if (RBUS_ERROR_SUCCESS == rbus_open(&rdkfwRbusHandle, RDKFWUPGRADER_RBUS_HANDLE_NAME)) {
+                    if (RBUS_ERROR_SUCCESS != rbusMethod_Invoke(rdkfwRbusHandle, T2_UPLOAD, inParams, &outParams)) {
+                        SWLOG_ERROR("Error in calling Device.X_RDKCENTRAL-COM_T2.UploadDCMReport\n");
+                    }
+                    else {
+                        rbusProperty_t outProps = rbusObject_GetProperties(outParams);
+                        rbusValue_t value;
+                        if (outProps) {
+                            value = rbusProperty_GetValue(outProps);
+                            SWLOG_INFO("Device.X_RDKCENTRAL-COM_T2.UploadDCMReport Upload Status = %s\n", rbusValue_GetString(value, NULL));
+                        }
+                        else {
+                            SWLOG_ERROR("Failed to retrieve properties of Device.X_RDKCENTRAL-COM_T2.UploadDCMReport response\n");
+                        }
+                    }
+                    rbusObject_Release(inParams);
+                    rbusObject_Release(outParams);
+                }
+                else {
+                    SWLOG_ERROR("Error in opening rbus handle\n");
+                }
+
+                SWLOG_INFO("Rebooting from RDK for Canary Firmware Upgrade\n");
+                t2CountNotify("SYS_INFO_CANARY_Update");
+                v_secure_system("sh /rebootNow.sh -s '%s' -o '%s'","CANARY_Update", "Rebooting the box from RDK for Pending Canary Firmware Upgrade...");
+            }
+            if( DwnLoc.pvOut != NULL ) {
+                free( DwnLoc.pvOut );
+            }
+            if( pJson != NULL ) {
+                FreeJson( pJson );
+            }
+            free(pXconfCheckNow);
+        }
+        else if (0 == (strncmp(maint, "true", 4))) {
 	    eventManager("MaintenanceMGR", MAINT_REBOOT_REQUIRED);
 	    if (0 == (strncmp(device_name, "PLATCO", 6)) && (0 == (strncmp(reboot_flag, "true", 4)))) {
 		SWLOG_INFO("Send notification to reboot in 10mins due to critical upgrade\n");
