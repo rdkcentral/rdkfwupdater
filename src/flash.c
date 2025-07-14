@@ -18,23 +18,21 @@
 
 #include <sys/stat.h>
 #include <curl/curl.h>
-#ifndef GTEST_ENABLE
-#include "rbus/rbus.h"
-#endif
 #include "rdkv_cdl.h"
 #include "rdkv_cdl_log_wrapper.h"
 #include "download_status_helper.h"
 #include "device_status_helper.h"
 #include "iarmInterface/iarmInterface.h"
 #ifndef GTEST_ENABLE
+#include "rbus/rbus.h"
+#include "urlHelper.h"
+#include "json_parse.h"
 #include "rdk_fwdl_utils.h"
 #include "system_utils.h"
 #endif
 #include "rfcInterface/rfcinterface.h"
 #include <sys/wait.h>
 #include "deviceutils.h"
-#include "urlHelper.h"
-#include "json_parse.h"
 
 #define RFC_XCONF_CHECK_NOW "Device.X_COMCAST-COM_Xcalibur.Client.xconfCheckNow"
 #define RDKFWUPGRADER_RBUS_HANDLE_NAME "rdkfwRbus"
