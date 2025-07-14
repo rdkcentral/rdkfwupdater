@@ -307,6 +307,7 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
             fclose(fp);
         }
         char* pXconfCheckNow =malloc(10); // WHAT SIZE TO ACTUALLY GIVE HERE
+	memset(pXconfCheckNow, 0, 10);
         //size_t res = read_RFCProperty("XconfCheckNow", RFC_XCONF_CHECK_NOW, pXconfCheckNow, szBufSize);
         FILE *file = fopen("/tmp/xconfchecknow_val", "r");
         if (file != NULL) {
