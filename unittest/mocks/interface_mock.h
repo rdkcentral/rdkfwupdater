@@ -26,7 +26,33 @@
 extern "C" {
 #include "rfcinterface.h"
 }
+/* --------- RBUS MACROS ------------*/
+typedef enum _rbusError
+{
+    RBUS_ERROR_SUCCESS,
+    RBUS_ERROR_NOT_INITIALIZED,
+    RBUS_ERROR_BUS_ERROR,
+} rbusError_t;
 
+char const * rbusError_ToString(rbusError_t e);
+
+struct _rbusHandle
+{
+};
+
+typedef struct _rbusHandle *rbusHandle_t;
+
+struct _rbusObject
+{
+};
+typedef struct _rbusObject *rbusObject_t;
+
+struct _rbusValue
+{
+};
+typedef struct _rbusValue *rbusValue_t;
+
+typedef void (*rbusMethodAsyncRespHandler_t)(rbusHandle_t handle, char const *methodName, rbusError_t error, rbusObject_t params);
 class FwDlInterface
 {
     public:
