@@ -53,6 +53,52 @@ struct _rbusValue
 typedef struct _rbusValue *rbusValue_t;
 
 typedef void (*rbusMethodAsyncRespHandler_t)(rbusHandle_t handle, char const *methodName, rbusError_t error, rbusObject_t params);
+
+
+/* ------------------- RBUS Impl--------------- */
+class RBusApiInterface
+{
+public:
+    virtual ~RBusApiInterface() = default;
+    virtual rbusError_t rbus_open(rbusHandle_t *handle, char const *componentName) = 0;
+    virtual rbusError_t rbus_close(rbusHandle_t handle) = 0;
+    virtual rbusError_t rbusValue_Init(rbusValue_t *value) = 0;
+    virtual rbusError_t rbusValue_SetString(rbusValue_t value, char const *str) = 0;
+    virtual rbusError_t rbus_set(rbusHandle_t handle, char const *objectName, rbusValue_t value, rbusMethodAsyncRespHandler_t respHandler) = 0;
+};
+
+class RBusApiWrapper
+{
+protected:
+    static RBusApiInterface *impl;
+
+public:
+    RBusApiWrapper();
+    static void setImpl(RBusApiInterface *newImpl);
+    static void clearImpl();
+    static rbusError_t rbus_open(rbusHandle_t *handle, char const *componentName);
+    static rbusError_t rbus_close(rbusHandle_t handle);
+    static rbusError_t rbusValue_Init(rbusValue_t *value);
+    static rbusError_t rbusValue_SetString(rbusValue_t value, char const *str);
+    static rbusError_t rbus_set(rbusHandle_t handle, char const *objectName, rbusValue_t value, rbusMethodAsyncRespHandler_t respHandler);
+};
+
+extern rbusError_t (*rbus_open)(rbusHandle_t *, char const *);
+extern rbusError_t (*rbus_close)(rbusHandle_t);
+extern rbusError_t (*rbusValue_Init)(rbusValue_t *);
+extern rbusError_t (*rbusValue_SetString)(rbusValue_t, char const *);
+extern rbusError_t (*rbus_set)(rbusHandle_t, char const *, rbusValue_t, rbusMethodAsyncRespHandler_t);
+
+class MockRBusApi : public RBusApiInterface
+{
+public:
+    MOCK_METHOD2(rbus_open, rbusError_t(rbusHandle_t *, char const *));
+    MOCK_METHOD1(rbus_close, rbusError_t(rbusHandle_t));
+    MOCK_METHOD1(rbusValue_Init, rbusError_t(rbusValue_t *));
+    MOCK_METHOD2(rbusValue_SetString, rbusError_t(rbusValue_t, char const *));
+    MOCK_METHOD4(rbus_set, rbusError_t(rbusHandle_t, char const *, rbusValue_t, rbusMethodAsyncRespHandler_t));
+};
+
 class FwDlInterface
 {
     public:
