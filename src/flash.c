@@ -339,7 +339,6 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
             JSON *pJson = NULL;
             JSON *pItem = NULL;
             JSON *res_val = NULL;
-            char status[20];
 
             if( MemDLAlloc( &DwnLoc, DEFAULT_DL_ALLOC ) == 0 ) {
               if (0 != getJsonRpc(post_data, &DwnLoc)) {
