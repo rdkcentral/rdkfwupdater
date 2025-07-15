@@ -46,6 +46,8 @@
 #include "json_process.h"
 #include "device_api.h"
 #include "deviceutils.h"
+#include "mfr/mfrTypes.h"
+#include "mfrlib/platform_hardware.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -1970,6 +1972,18 @@ int main(int argc, char *argv[]) {
     *response.dlCertBundle = 0;
     *response.cloudPDRIVersion = 0;
     SWLOG_INFO("Starting c method rdkvfwupgrader\n");
+
+    mfrError_t ret = mfrERR_GENERAL;
+    bool isBoardSecure = false;
+    ret = mfrIsSecureBootEnabled();
+        if (ret == mfrERR_NONE) {
+                isBoardSecure = true;
+        } else if (ret == mfrERR_GENERAL) {
+                isBoardSecure = false;
+        } else {
+                MFR_ERR("Failed to get box secure OTP value!!!");
+                return mfrERR_GENERAL;
+        }
     t2CountNotify("SYST_INFO_C_CDL", 1);
     
     snprintf(disableStatsUpdate, sizeof(disableStatsUpdate), "%s","no");
