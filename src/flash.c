@@ -442,7 +442,7 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
 	    }
 	}
     if ( pXconfCheckNow != NULL ) {
-    free(pXconfCheckNow);
+        free(pXconfCheckNow);
     }
     return 0;
 }
