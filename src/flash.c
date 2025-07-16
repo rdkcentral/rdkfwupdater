@@ -409,9 +409,6 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
             if( pJson != NULL ) {
                 FreeJson( pJson );
             }
-	    if ( pXconfCheckNow != NULL ) {
-	        free(pXconfCheckNow);
-	    }
         }
         else if (0 == (strncmp(maint, "true", 4))) {
 	    eventManager("MaintenanceMGR", MAINT_REBOOT_REQUIRED);
@@ -440,6 +437,9 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
 		//sh /rebootNow.sh -s UpgradeReboot_"`basename $0`" -o "Rebooting the box after Firmware Image Upgrade..."
 		v_secure_system("sh /rebootNow.sh -s '%s' -o '%s'", "UpgradeReboot_rdkvfwupgrader", "Rebooting the box after Firmware Image Upgrade...");
 	    }
+	}
+	if ( pXconfCheckNow != NULL ) {
+	    free(pXconfCheckNow);
 	}
     }
     return 0;
