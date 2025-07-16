@@ -86,7 +86,7 @@ static pthread_mutex_t app_mode_status = PTHREAD_MUTEX_INITIALIZER;
 static int app_mode = 1; // 1: fore ground and 0: background
 int force_exit = 0; //This use when rdkvfwupgrader rcv appmode background and thottle speed is set to zero.
 
-/* Description: Get trigger type.
+/* Description: Get trigger type info.
  * @param: NA
  * @return: int
  * */
