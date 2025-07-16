@@ -309,7 +309,7 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
 	}
         FILE *file = fopen("/tmp/xconfchecknow_val", "r");
         if (file != NULL) {
-            if (fscanf(file, "%99s", pXconfCheckNow) == EOF) {
+            if (fscanf(file, "%9s", pXconfCheckNow) == EOF) {
 	        SWLOG_ERROR("Device_X_COMCAST_COM_Xcalibur_Client_xconfCheckNow: Error reading file\n");
 	    }
             fclose(file);
