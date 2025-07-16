@@ -18,7 +18,7 @@
 
 #ifndef GTEST_ENABLE
 
-#include "rbusInterface/rbusInterface.h"
+#include "rbusInterface.h"
 
 void uploadDCMReport()
 {
