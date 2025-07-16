@@ -308,7 +308,7 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
             fprintf(fp, "%s\n", upgrade_file);
             fclose(fp);
         }
-        char* pXconfCheckNow =malloc(10); // WHAT SIZE TO ACTUALLY GIVE HERE
+        char* pXconfCheckNow =malloc(10);
 	if (pXconfCheckNow != NULL) {
 	    memset(pXconfCheckNow, 0, 10);
 	}
@@ -316,7 +316,6 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
 	    SWLOG_ERROR("Device_X_COMCAST_COM_Xcalibur_Client_xconfCheckNow: MALLOC failure\n");
 	    return ret;
 	}
-        //size_t res = read_RFCProperty("XconfCheckNow", RFC_XCONF_CHECK_NOW, pXconfCheckNow, szBufSize);
         FILE *file = fopen("/tmp/xconfchecknow_val", "r");
         if (file != NULL) {
             if (fscanf(file, "%99s", pXconfCheckNow) == EOF) {
@@ -335,7 +334,7 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
 	if ((0 == strcasecmp("CANARY", pXconfCheckNow)) && (getTriggerType() == 3)) {
 
             char post_data[] = "{\"jsonrpc\":\"2.0\",\"id\":\"42\",\"method\": \"org.rdk.System.getPowerState\"}";
-            DownloadData DwnLoc;
+            DownloadData DwnLoc = {NULL, 0, 0};
             JSON *pJson = NULL;
             JSON *pItem = NULL;
             JSON *res_val = NULL;
@@ -344,6 +343,9 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
               if (0 != getJsonRpc(post_data, &DwnLoc)) {
                   SWLOG_INFO("%s :: isconnected JsonRpc call failed\n",__FUNCTION__);
 		  free(pXconfCheckNow);
+		  if (DwnLoc.pvOut != NULL) {
+		      free(DwnLoc.pvOut);
+		  }
                   return ret;
               }
               pJson = ParseJsonStr( (char *)DwnLoc.pvOut );
@@ -354,6 +356,9 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
               else {
                   SWLOG_INFO("%s :: isconnected JsonRpc response is empty\n",__FUNCTION__);
 		  free(pXconfCheckNow);
+		  if (DwnLoc.pvOut != NULL) {
+		      free(DwnLoc.pvOut);
+		  }
                   return ret;
               }
             }
@@ -404,6 +409,9 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
             if( pJson != NULL ) {
                 FreeJson( pJson );
             }
+	    if ( pXconfCheckNow != NULL ) {
+	        free(pXconfCheckNow);
+	    }
         }
         else if (0 == (strncmp(maint, "true", 4))) {
 	    eventManager("MaintenanceMGR", MAINT_REBOOT_REQUIRED);
