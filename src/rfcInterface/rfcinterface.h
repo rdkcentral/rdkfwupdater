@@ -87,6 +87,9 @@ typedef struct rfcdetails {
 #define RFC_FW_AUTO_EXCLUDE "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.FWUpdate.AutoExcluded.Enable"
 #define RFC_DEBUGSRV "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Identity.DbgServices.Enable"
 
+#define RFC_XCONF_CHECK_NOW "Device.X_COMCAST-COM_Xcalibur.Client.xconfCheckNow"
+#define T2_UPLOAD "Device.X_RDKCENTRAL-COM_T2.UploadDCMReport"
+
 int getRFCSettings(Rfc_t *rfc_list);
 
 int read_RFCProperty(char* type, const char* key, char *data, size_t datasize);

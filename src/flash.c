@@ -24,22 +24,16 @@
 #include "device_status_helper.h"
 #include "iarmInterface/iarmInterface.h"
 #ifndef GTEST_ENABLE
-#include "rbus/rbus.h"
 #include "urlHelper.h"
 #include "json_parse.h"
 #include "rdk_fwdl_utils.h"
 #include "system_utils.h"
+#include "rbusInterface/rbusInterface.h"
 #endif
 #include "rfcInterface/rfcinterface.h"
 #include <sys/wait.h>
 #include "deviceutils.h"
 
-#define RFC_XCONF_CHECK_NOW "Device.X_COMCAST-COM_Xcalibur.Client.xconfCheckNow"
-#define RDKFWUPGRADER_RBUS_HANDLE_NAME "rdkfwRbus"
-#define T2_UPLOAD "Device.X_RDKCENTRAL-COM_T2.UploadDCMReport"
-#ifndef GTEST_ENABLE
-rbusHandle_t    rdkfwRbusHandle;
-#endif
 extern int getTriggerType();
 extern void t2CountNotify(char *marker, int val);
 
@@ -308,12 +302,9 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
             fprintf(fp, "%s\n", upgrade_file);
             fclose(fp);
         }
-        char* pXconfCheckNow =malloc(10);
-	if (pXconfCheckNow != NULL) {
-	    memset(pXconfCheckNow, 0, 10);
-	}
-	else {
-	    SWLOG_ERROR("Device_X_COMCAST_COM_Xcalibur_Client_xconfCheckNow: MALLOC failure\n");
+        char* pXconfCheckNow = calloc(10, sizeof(char));
+	if (pXconfCheckNow == NULL) {
+	    SWLOG_ERROR("Device_X_COMCAST_COM_Xcalibur_Client_xconfCheckNow: CALLOC failure\n");
 	    return ret;
 	}
         FILE *file = fopen("/tmp/xconfchecknow_val", "r");
@@ -371,31 +362,7 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
 #ifndef GTEST_ENABLE
                 else {
                     // Call rbus method - Device.X_RDKCENTRAL-COM_T2.UploadDCMReport
-                    // Wait for ACK from above
-                    rbusObject_t inParams;
-                    rbusObject_t outParams;
-                    rbusObject_Init(&inParams, NULL);
-                    if (RBUS_ERROR_SUCCESS == rbus_open(&rdkfwRbusHandle, RDKFWUPGRADER_RBUS_HANDLE_NAME)) {
-                        if (RBUS_ERROR_SUCCESS != rbusMethod_Invoke(rdkfwRbusHandle, T2_UPLOAD, inParams, &outParams)) {
-                            SWLOG_ERROR("Error in calling Device.X_RDKCENTRAL-COM_T2.UploadDCMReport\n");
-                        }
-                        else {
-                            rbusProperty_t outProps = rbusObject_GetProperties(outParams);
-                            rbusValue_t value;
-                            if (outProps) {
-                                value = rbusProperty_GetValue(outProps);
-                                SWLOG_INFO("Device.X_RDKCENTRAL-COM_T2.UploadDCMReport Upload Status = %s\n", rbusValue_GetString(value, NULL));
-                            }
-                            else {
-                                SWLOG_ERROR("Failed to retrieve properties of Device.X_RDKCENTRAL-COM_T2.UploadDCMReport response\n");
-                            }
-                        }
-                        rbusObject_Release(inParams);
-                        rbusObject_Release(outParams);
-                    }
-                    else {
-                        SWLOG_ERROR("Error in opening rbus handle\n");
-                    }
+                    uploadDCMReport();
 
                     SWLOG_INFO("Rebooting from RDK for Canary Firmware Upgrade\n");
                     t2CountNotify("SYS_INFO_CANARY_Update", 1);

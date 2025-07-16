@@ -35,12 +35,14 @@ rdkvfwupgrader_SOURCES = \
     ${top_srcdir}/src/download_status_helper.c \
     ${top_srcdir}/src/iarmInterface/iarmInterface.c \
     ${top_srcdir}/src/rfcInterface/rfcinterface.c \
+    ${top_srcdir}/src/rbusInterface/rbusInterface.c \
     ${top_srcdir}/src/deviceutils/device_api.c \
     ${top_srcdir}/src/deviceutils/deviceutils.c
 
 rdkvfwupgrader_include_HEADERS = \
     ${top_srcdir}/src/rfcInterface/rfcinterface.h \
     ${top_srcdir}/src/iarmInterface/iarmInterface.h \
+    ${top_srcdir}/src/rbusInterface/rbusInterface.h \
     ${top_srcdir}/src/deviceutils/device_api.h \
     ${top_srcdir}/src/deviceutils/deviceutils.h \
     ${top_srcdir}/src/include/device_status_helper.h
