@@ -438,7 +438,7 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
 		v_secure_system("sh /rebootNow.sh -s '%s' -o '%s'", "UpgradeReboot_rdkvfwupgrader", "Rebooting the box after Firmware Image Upgrade...");
 	    }
 	}
+        free(pXconfCheckNow);
     }
-    free(pXconfCheckNow);
     return 0;
 }
