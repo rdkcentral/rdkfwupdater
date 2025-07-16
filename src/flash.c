@@ -409,9 +409,6 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
             if( pJson != NULL ) {
                 FreeJson( pJson );
             }
-	    if ( pXconfCheckNow != NULL ) {
-	        free(pXconfCheckNow);
-	    }
         }
         else if (0 == (strncmp(maint, "true", 4))) {
 	    eventManager("MaintenanceMGR", MAINT_REBOOT_REQUIRED);
@@ -442,5 +439,6 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
 	    }
 	}
     }
+    free(pXconfCheckNow);
     return 0;
 }
