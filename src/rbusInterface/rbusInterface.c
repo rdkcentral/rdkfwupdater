@@ -22,6 +22,7 @@
 
 void uploadDCMReport()
 {
+    rbusHandle_t rdkfwRbusHandle;
     rbusObject_t inParams;
     rbusObject_t outParams;
     rbusObject_Init(&inParams, NULL);
