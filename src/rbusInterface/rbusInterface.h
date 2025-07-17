@@ -23,5 +23,5 @@
 #define RDKFWUPGRADER_RBUS_HANDLE_NAME "rdkfwRbus"
 #define T2_UPLOAD "Device.X_RDKCENTRAL-COM_T2.UploadDCMReport"
 
-void uploadDCMReport();
+rbusError_t invokeRbusDCMReport();
 #endif
