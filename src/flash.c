@@ -364,6 +364,15 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
                     // Call rbus method - Device.X_RDKCENTRAL-COM_T2.UploadDCMReport
                     if( RBUS_ERROR_SUCCESS != invokeRbusDCMReport()) {
 		        SWLOG_ERROR("Error in uploading telemetry report\n");
+			if( DwnLoc.pvOut != NULL ) {
+                            free( DwnLoc.pvOut );
+                        }
+                        if( pJson != NULL ) {
+                            FreeJson( pJson );
+                        }
+			if ( pXconfCheckNow != NULL ) {
+	                    free(pXconfCheckNow);
+	                }
 			return ret;
 		    }
 
