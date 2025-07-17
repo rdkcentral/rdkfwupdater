@@ -20,7 +20,7 @@
 
 #include "rbusInterface.h"
 
-void uploadDCMReport()
+rbusError_t invokeRbusDCMReport()
 {
     rbusHandle_t rdkfwRbusHandle;
     rbusObject_t inParams;
@@ -29,6 +29,8 @@ void uploadDCMReport()
     if (RBUS_ERROR_SUCCESS == rbus_open(&rdkfwRbusHandle, RDKFWUPGRADER_RBUS_HANDLE_NAME)) {
 	if (RBUS_ERROR_SUCCESS != rbusMethod_Invoke(rdkfwRbusHandle, T2_UPLOAD, inParams, &outParams)) {
             SWLOG_ERROR("Error in calling Device.X_RDKCENTRAL-COM_T2.UploadDCMReport\n");
+	    rbusObject_Release(inParams);
+	    return RBUS_ERROR_BUS_ERROR;
 	}
         else {
 	    rbusProperty_t outProps = rbusObject_GetProperties(outParams);
@@ -39,6 +41,9 @@ void uploadDCMReport()
 	    }
 	    else {
 		SWLOG_ERROR("Failed to retrieve properties of Device.X_RDKCENTRAL-COM_T2.UploadDCMReport response\n");
+		rbusObject_Release(inParams);
+		rbusObject_Release(outParams);
+		return RBUS_ERROR_BUS_ERROR;
 	    }
 	}
 	rbusObject_Release(inParams);
@@ -46,9 +51,12 @@ void uploadDCMReport()
     }
     else {
 	SWLOG_ERROR("Error in opening rbus handle\n");
+	rbusObject_Release(inParams);
+        return RBUS_ERROR_BUS_ERROR;
     }
     if (RBUS_ERROR_SUCCESS != rbus_close(rdkfwRbusHandle)) {
         SWLOG_ERROR("Rbus termination failed\n");
+	return RBUS_ERROR_BUS_ERROR;
     }
 }
 #endif
