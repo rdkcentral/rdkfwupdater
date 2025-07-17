@@ -58,5 +58,6 @@ rbusError_t invokeRbusDCMReport()
         SWLOG_ERROR("Rbus termination failed\n");
 	return RBUS_ERROR_BUS_ERROR;
     }
+    return RBUS_ERROR_SUCCESS;
 }
 #endif
