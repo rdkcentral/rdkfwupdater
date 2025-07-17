@@ -35,6 +35,9 @@ make && make install
 # Compile Test binary for mfrutils
 cc -o /usr/bin/mfr_util test/functional-tests/tests/mfrutils.c 
 
+rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLSpLimit.Enable boolean true
+rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLSpLimit.TopSpeed int 1280000
+rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Identity.DbgServices.Enable boolean true
 cp test/functional-tests/tests/rc-proxy-params.json /tmp/rc-proxy-params.json
 
 pytest --json-report  --json-report-file $RESULT_DIR/rdkfwupdater_report.json test/functional-tests/tests/
