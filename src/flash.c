@@ -362,7 +362,10 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
 #ifndef GTEST_ENABLE
                 else {
                     // Call rbus method - Device.X_RDKCENTRAL-COM_T2.UploadDCMReport
-                    uploadDCMReport();
+                    if( RBUS_ERROR_SUCCESS != invokeRbusDCMReport()) {
+		        SWLOG_ERROR("Error in uploading telemetry report\n");
+			return ret;
+		    }
 
                     SWLOG_INFO("Rebooting from RDK for Canary Firmware Upgrade\n");
                     t2CountNotify("SYS_INFO_CANARY_Update", 1);
