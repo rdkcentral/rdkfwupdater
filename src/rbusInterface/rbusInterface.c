@@ -17,7 +17,7 @@
  */ 
 
 #ifndef GTEST_ENABLE
-
+#include <unistd.h>
 #include "rbusInterface.h"
 
 /* Description:Use for Rbus callback
