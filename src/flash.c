@@ -145,10 +145,22 @@ int flashImage(const char *server_url, const char *upgrade_file, const char *reb
          snprintf(fwdls.status, sizeof(fwdls.status), "Status|Success\n");
          snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Validation complete\n");
          snprintf(fwdls.failureReason, sizeof(fwdls.failureReason), "FailureReason|");
-	 if (((strncmp(maint, "true", 4)) == 0) && (0 == (strncmp(reboot_flag, "true", 4)))) {
+	 char *pXconfCheckNow = calloc(10, sizeof(char));
+         FILE *file = fopen("/tmp/xconfchecknow_val", "r");
+         if (file != NULL) {
+             fscanf(file, "%9s", pXconfCheckNow);
+             fclose(file);
+         }
+         else {
+             SWLOG_INFO("Device_X_COMCAST_COM_Xcalibur_Client_xconfCheckNow: Error opening file for read\n");
+         }
+	 if (((strncmp(maint, "true", 4)) == 0) && (0 == (strncmp(reboot_flag, "true", 4))) && ((0 != strcasecmp("CANARY", pXconfCheckNow)) || (getTriggerType() != 3))) {
              eventManager("MaintenanceMGR", MAINT_CRITICAL_UPDATE);
 	     SWLOG_INFO("Posting Critical update");
 	 }
+	 if( pXconfCheckNow != NULL ) {
+             free(pXconfCheckNow);
+         }
 	 if (0 == filePresentCheck(upgrade_file)) {
              SWLOG_INFO("flashImage: Flashing completed. Deleting File:%s\n", upgrade_file);
              unlink(upgrade_file);
