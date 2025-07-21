@@ -298,6 +298,21 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
     }
     sleep(5);
     sync();
+    char* pXconfCheckNow = calloc(10, sizeof(char));
+    if (pXconfCheckNow == NULL) {
+        SWLOG_ERROR("Device_X_COMCAST_COM_Xcalibur_Client_xconfCheckNow: CALLOC failure\n");
+	return ret;
+    }
+    FILE *file = fopen("/tmp/xconfchecknow_val", "r");
+    if (file != NULL) {
+        if (fscanf(file, "%9s", pXconfCheckNow) == EOF) {
+	    SWLOG_ERROR("Device_X_COMCAST_COM_Xcalibur_Client_xconfCheckNow: Error reading file\n");
+	}
+        fclose(file);
+    }
+    else {
+        SWLOG_INFO("Device_X_COMCAST_COM_Xcalibur_Client_xconfCheckNow: Error opening file for read\n");
+    }
     if (0 != (filePresentCheck("/tmp/fw_preparing_to_reboot"))) {
 	fp = fopen("/tmp/fw_preparing_to_reboot", "w");
 	if (fp == NULL) {
@@ -306,7 +321,9 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
 	    SWLOG_INFO("Creating flag for preparing to reboot event sent to AS/EPG\n");
 	    fclose(fp);
 	}
-        eventManager(FW_STATE_EVENT,FW_STATE_PREPARING_TO_REBOOT);
+        if ((0 != strcasecmp("CANARY", pXconfCheckNow)) || (getTriggerType() != 3)) {
+            eventManager(FW_STATE_EVENT,FW_STATE_PREPARING_TO_REBOOT);
+	}
     }
     if (upgrade_type == PDRI_UPGRADE) {
         SWLOG_INFO("Reboot Not Needed after PDRI Upgrade..!\n");
@@ -317,26 +334,6 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
             fprintf(fp, "%s\n", upgrade_file);
             fclose(fp);
         }
-        char* pXconfCheckNow = calloc(10, sizeof(char));
-	if (pXconfCheckNow == NULL) {
-	    SWLOG_ERROR("Device_X_COMCAST_COM_Xcalibur_Client_xconfCheckNow: CALLOC failure\n");
-	    return ret;
-	}
-        FILE *file = fopen("/tmp/xconfchecknow_val", "r");
-        if (file != NULL) {
-            if (fscanf(file, "%9s", pXconfCheckNow) == EOF) {
-	        SWLOG_ERROR("Device_X_COMCAST_COM_Xcalibur_Client_xconfCheckNow: Error reading file\n");
-	    }
-            fclose(file);
-        }
-        else {
-            SWLOG_INFO("Device_X_COMCAST_COM_Xcalibur_Client_xconfCheckNow: Error opening file for read\n");
-        }
-	if (pXconfCheckNow == NULL)
-	{
-	    SWLOG_ERROR("Device_X_COMCAST_COM_Xcalibur_Client_xconfCheckNow: Empty value\n");
-	    return ret;
-	}
 	if ((0 == strcasecmp("CANARY", pXconfCheckNow)) && (getTriggerType() == 3)) {
 
             char post_data[] = "{\"jsonrpc\":\"2.0\",\"id\":\"42\",\"method\": \"org.rdk.System.getPowerState\"}";
@@ -432,9 +429,9 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
 		v_secure_system("sh /rebootNow.sh -s '%s' -o '%s'", "UpgradeReboot_rdkvfwupgrader", "Rebooting the box after Firmware Image Upgrade...");
 	    }
 	}
-	if ( pXconfCheckNow != NULL ) {
-	    free(pXconfCheckNow);
-	}
+    }
+    if( pXconfCheckNow != NULL ) {
+        free(pXconfCheckNow);
     }
     return 0;
 }
