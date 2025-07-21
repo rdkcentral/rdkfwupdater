@@ -146,13 +146,16 @@ int flashImage(const char *server_url, const char *upgrade_file, const char *reb
          snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Validation complete\n");
          snprintf(fwdls.failureReason, sizeof(fwdls.failureReason), "FailureReason|");
 	 char *pXconfCheckNow = calloc(10, sizeof(char));
-         FILE *file = fopen("/tmp/xconfchecknow_val", "r");
-         if (file != NULL) {
-             fscanf(file, "%9s", pXconfCheckNow);
-             fclose(file);
+         FILE *canFile = fopen("/tmp/xconfchecknow_val", "r");
+         if (canFile != NULL) {
+             int fret = fscanf(canFile, "%9s", pXconfCheckNow);
+	     if (fret <= 0) {
+	         SWLOG_ERROR("Device_X_COMCAST_COM_Xcalibur_Client_xconfCheckNow: Error reading from file\n");
+	     }
+             fclose(canFile);
          }
          else {
-             SWLOG_INFO("Device_X_COMCAST_COM_Xcalibur_Client_xconfCheckNow: Error opening file for read\n");
+             SWLOG_INFO("Device_X_COMCAST_COM_Xcalibur_Client_xconfCheckNow: File does not exist\n");
          }
 	 if (((strncmp(maint, "true", 4)) == 0) && (0 == (strncmp(reboot_flag, "true", 4))) && ((0 != strcasecmp("CANARY", pXconfCheckNow)) || (getTriggerType() != 3))) {
              eventManager("MaintenanceMGR", MAINT_CRITICAL_UPDATE);
