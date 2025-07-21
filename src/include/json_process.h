@@ -32,7 +32,10 @@ typedef struct xconf_response {
 	char peripheralFirmwares[256];
 	char dlCertBundle[64];
 	char cloudPDRIVersion[64];
-    char rdmCatalogueVersion[512];
+        char rdmCatalogueVersion[512];
+        char firmwareUrl[CLD_URL_MAX_LEN];
+	char remCtrlUrl[CLD_URL_MAX_LEN];
+	char pdriUrl[CLD_URL_MAX_LEN];
 } XCONFRES;
 
 int processJsonResponse(XCONFRES *response, const char *myfwversion, const char *model, const char *maint);
