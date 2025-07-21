@@ -20,38 +20,44 @@
 
 #include "rbusInterface.h"
 
+/* Description:Use for Rbus callback
+ * @param: handle : rbus handle
+ * @param: methodName : Method name
+ * @param: error : rbus return value type
+ * @param: param : rbus object
+ * @return void : NA
+ * */
+static void t2EventHandler(rbusHandle_t handle, char const* methodName, rbusError_t error, rbusObject_t param)
+{
+    SWLOG_INFO("Got %s rbus callback\n", methodName);
+    if (RBUS_ERROR_SUCCESS == error)
+    {
+        rbusValue_t uploadStatus = rbusObject_GetValue(param, "UPLOAD_STATUS");
+        if(uploadStatus)
+        {
+            SWLOG_INFO("Device.X_RDKCENTRAL-COM_T2.UploadDCMReport Upload Status = %s\n", rbusValue_GetString(uploadStatus, NULL));
+        }
+    }
+}
+
+/* Description: Trigger T2 upload
+ * @return rbusError_t : Return SUCCESS/FAILURE
+ * */
 rbusError_t invokeRbusDCMReport()
 {
     rbusHandle_t rdkfwRbusHandle;
-    rbusObject_t inParams;
-    rbusObject_t outParams;
-    rbusObject_Init(&inParams, NULL);
     if (RBUS_ERROR_SUCCESS == rbus_open(&rdkfwRbusHandle, RDKFWUPGRADER_RBUS_HANDLE_NAME)) {
-	if (RBUS_ERROR_SUCCESS != rbusMethod_Invoke(rdkfwRbusHandle, T2_UPLOAD, inParams, &outParams)) {
-            SWLOG_ERROR("Error in calling Device.X_RDKCENTRAL-COM_T2.UploadDCMReport\n");
-	    rbusObject_Release(inParams);
-	    return RBUS_ERROR_BUS_ERROR;
-	}
+        if (RBUS_ERROR_SUCCESS == rbusMethod_InvokeAsync(rdkfwRbusHandle, T2_UPLOAD, NULL, t2EventHandler, 0)) {
+            SWLOG_INFO("Waiting 60 sec to complete upload from Device.X_RDKCENTRAL-COM_T2.UploadDCMReport\n");
+            sleep(60);
+        }
         else {
-	    rbusProperty_t outProps = rbusObject_GetProperties(outParams);
-	    rbusValue_t value;
-	    if (outProps) {
-		value = rbusProperty_GetValue(outProps);
-		SWLOG_INFO("Device.X_RDKCENTRAL-COM_T2.UploadDCMReport Upload Status = %s\n", rbusValue_GetString(value, NULL));
-	    }
-	    else {
-		SWLOG_ERROR("Failed to retrieve properties of Device.X_RDKCENTRAL-COM_T2.UploadDCMReport response\n");
-		rbusObject_Release(inParams);
-		rbusObject_Release(outParams);
-		return RBUS_ERROR_BUS_ERROR;
-	    }
-	}
-	rbusObject_Release(inParams);
-	rbusObject_Release(outParams);
+            SWLOG_ERROR("Error in calling Device.X_RDKCENTRAL-COM_T2.UploadDCMReport\n");
+	    return RBUS_ERROR_BUS_ERROR;
+        }
     }
     else {
 	SWLOG_ERROR("Error in opening rbus handle\n");
-	rbusObject_Release(inParams);
         return RBUS_ERROR_BUS_ERROR;
     }
     if (RBUS_ERROR_SUCCESS != rbus_close(rdkfwRbusHandle)) {
