@@ -387,10 +387,11 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
 	                }
 			return ret;
 		    }
-
-                    SWLOG_INFO("Rebooting from RDK for Canary Firmware Upgrade\n");
-                    t2CountNotify("SYS_INFO_CANARY_Update", 1);
-                    v_secure_system("sh /rebootNow.sh -s '%s' -o '%s'","CANARY_Update", "Rebooting the box from RDK for Pending Canary Firmware Upgrade...");
+                    if (0 == (strncmp(reboot_flag, "true", 4))) {
+                        SWLOG_INFO("Rebooting from RDK for Canary Firmware Upgrade\n");
+                        t2CountNotify("SYS_INFO_CANARY_Update", 1);
+                        v_secure_system("sh /rebootNow.sh -s '%s' -o '%s'","CANARY_Update", "Rebooting the box from RDK for Pending Canary Firmware Upgrade...");
+		    }
 		}
 #endif
 	    }
