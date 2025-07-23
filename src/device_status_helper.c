@@ -868,21 +868,25 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
         totlen += snprintf( (pTmpPost + totlen), remainlen, "localtime=%s", tmpbuf );
     }
     len = GetInstalledBundles( tmpbuf, sizeof(tmpbuf) );
-    if( totlen )
-    {
-        *(pTmpPost + totlen) = '&';
-        ++totlen;
+    if (len) {
+        if( totlen )
+        {
+            *(pTmpPost + totlen) = '&';
+            ++totlen;
+        }
+        remainlen = szPostFieldOut - totlen;
+        totlen += snprintf( (pTmpPost + totlen), remainlen, "dlCertBundle=%s", tmpbuf );
     }
-    remainlen = szPostFieldOut - totlen;
-    totlen += snprintf( (pTmpPost + totlen), remainlen, "dlCertBundle=%s", tmpbuf );
     len = GetRdmManifestVersion( tmpbuf, sizeof(tmpbuf) );
-    if( totlen )
-    {
-        *(pTmpPost + totlen) = '&';
-        ++totlen;
+    if (len) {
+        if( totlen )
+        {
+            *(pTmpPost + totlen) = '&';
+            ++totlen;
+        }
+        remainlen = szPostFieldOut - totlen;
+        totlen += snprintf( (pTmpPost + totlen), remainlen, "rdmCatalogueVersion=%s", tmpbuf );
     }
-    remainlen = szPostFieldOut - totlen;
-    totlen += snprintf( (pTmpPost + totlen), remainlen, "rdmCatalogueVersion=%s", tmpbuf );
     //TODO: WAREHOUSE_ENV="$RAMDISK_PATH/warehouse_mode_active" this is not present then call
     len = GetTimezone( tmpbuf, cpuarch, sizeof(tmpbuf) );
     if( len )
