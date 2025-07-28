@@ -74,6 +74,7 @@ int getRFCSettings(Rfc_t *rfc_list) {
         SWLOG_ERROR("getRFCSettings() rfc= %s failed Status %d\n", RFC_DIRECTCDN, ret);
     }else {
         strncpy(rfc_list->rfc_directcdn, data, RFC_VALUE_BUF_SIZE - 1);
+	rfc_list->rfc_directcdn[RFC_VALUE_BUF_SIZE - 1] = '\0';
         SWLOG_INFO("getRFCSettings() rfc direct_CDN= %s\n", rfc_list->rfc_directcdn);
     }
     return 0;
