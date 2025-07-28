@@ -16,6 +16,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */ 
 
+#ifndef GTEST_ENABLE
 #include "rbus/rbus.h"
 #include "rdkv_cdl_log_wrapper.h"
 
@@ -23,3 +24,6 @@
 #define T2_UPLOAD "Device.X_RDKCENTRAL-COM_T2.UploadDCMReport"
 
 rbusError_t invokeRbusDCMReport();
+#else
+#include "mock_rbus.h"
+#endif

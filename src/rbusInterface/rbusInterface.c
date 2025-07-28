@@ -19,7 +19,8 @@
 #ifndef GTEST_ENABLE
 #include <unistd.h>
 #include "rbusInterface.h"
-
+#else
+#include "mock_rbus.h"
 /* Description:Use for Rbus callback
  * @param: handle : rbus handle
  * @param: methodName : Method name

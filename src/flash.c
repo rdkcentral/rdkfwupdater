@@ -28,7 +28,9 @@
 #include "json_parse.h"
 #include "rdk_fwdl_utils.h"
 #include "system_utils.h"
-//#include "rbusInterface/rbusInterface.h"
+#include "rbusInterface/rbusInterface.h"
+#else
+#include "mock_rbus.h"
 #endif
 #include "rfcInterface/rfcinterface.h"
 #include <sys/wait.h>
