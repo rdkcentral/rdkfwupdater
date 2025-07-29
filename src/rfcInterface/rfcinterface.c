@@ -69,6 +69,7 @@ int getRFCSettings(Rfc_t *rfc_list) {
 	rfc_list->rfc_mtls[RFC_VALUE_BUF_SIZE - 1] = '\0';
         SWLOG_INFO("getRFCSettings() rfc mtls= %s\n", rfc_list->rfc_mtls);
     }
+    SWLOG_INFO("getRFCSettings() rfc for direct CDN");
     ret = read_RFCProperty("DIRECTCDN", RFC_DIRECTCDN, data, sizeof(data));
     if(ret == -1) {
         SWLOG_ERROR("getRFCSettings() rfc= %s failed Status %d\n", RFC_DIRECTCDN, ret);
@@ -96,8 +97,9 @@ int read_RFCProperty(char* type, const char* key, char *out_value, size_t datasi
         SWLOG_ERROR("read_RFCProperty() one or more input values are invalid\n");
         return ret;
     }
-    //SWLOG_INFO("key=%s\n", key);
+    SWLOG_INFO("read_RFCProperty: type=%s key=%s\n", type, key);
     WDMP_STATUS status = getRFCParameter(type, key, &param);
+    SWLOG_INFO("read_RFCProperty: status =%d\n", status);
     if(status == WDMP_SUCCESS || status == WDMP_ERR_DEFAULT_VALUE) {
         data_len = strlen(param.value);
         if(data_len >= 2 && (param.value[0] == '"') && (param.value[data_len - 1] == '"')) {
