@@ -21,6 +21,7 @@
 #include "rbusInterface.h"
 #else
 #include "mock_rbus.h"
+#endif
 /* Description:Use for Rbus callback
  * @param: handle : rbus handle
  * @param: methodName : Method name
@@ -67,4 +68,3 @@ rbusError_t invokeRbusDCMReport()
     }
     return RBUS_ERROR_SUCCESS;
 }
-#endif
