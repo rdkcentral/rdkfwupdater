@@ -48,9 +48,6 @@ typedef void (*rbusMethodAsyncRespHandler_t)(void);
 
 //typedef void (*rbusMethodAsyncRespHandler_t)(rbusHandle_t handle, char const *methodName, rbusError_t error, rbusObject_t params);
 
-// Constants
-#define RBUS_ERROR_SUCCESS 0
-
 rbusError_t rbus_open(rbusHandle_t *handle, const char* componentName);
 rbusError_t rbus_close(rbusHandle_t handle);
 rbusError_t rbusMethod_InvokeAsync(rbusHandle_t handle, const char* method, rbusObject_t input, rbusMethodAsyncRespHandler_t handler, int timeout);
