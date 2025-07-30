@@ -24,7 +24,7 @@ bin_PROGRAMS = rdkfw_device_status_gtest rdkfw_deviceutils_gtest rdkfw_main_gtes
 COMMON_CPPFLAGS = -std=c++11 -I/usr/include/cjson -I../src -I../src/cedmInterface -I../src/deviceutils/ -I../src/rfcInterface/ -I../src/iarmInterface/ -I../src/include/ -I./mocks/ -I./deviceutils/ -I/usr/local/include/rbus -DGTEST_ENABLE -DGTEST_BASIC -DIARM_ENABLED -DRFC_API_ENABLED -DT2_EVENT_ENABLED
 
 # Define the libraries to link against
-COMMON_LDADD =  -lgtest -lgtest_main -lgmock_main -lgmock -lcjson -lgcov -lrbus
+COMMON_LDADD =  -lgtest -lgtest_main -lgmock_main -lgmock -lcjson -lgcov
 
 # Define the compiler flags
 COMMON_CXXFLAGS = -frtti -fprofile-arcs -ftest-coverage -fpermissive
