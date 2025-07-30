@@ -2010,6 +2010,7 @@ int main(int argc, char *argv[]) {
     trigger_type = atoi(argv[2]);
     if (trigger_type == 1) {
         SWLOG_INFO("Image Upgrade During Bootup ..!\n");
+	SWLOG_INFO("This is a custom image generated for practice..!\n");
     }else if (trigger_type == 2) {
         SWLOG_INFO("Scheduled Image Upgrade using cron ..!\n");
         t2CountNotify("SYST_INFO_SWUpgrdChck", 1);
