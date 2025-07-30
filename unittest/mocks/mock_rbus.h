@@ -19,7 +19,6 @@
 #ifndef MOCK_RBUS_H
 #define MOCK_RBUS_H
 
-#include <rbus.h>
 
 class rbusInterface
 {
