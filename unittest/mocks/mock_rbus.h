@@ -26,7 +26,7 @@ extern "C" {
 #define RBUS_ERROR_SUCCESS 0
 #define RBUS_ERROR_BUS_ERROR 1
 
-typedef void* rbusHandle_t;
+typedef int rbusError_t;
 
 struct _rbusHandle
 {
