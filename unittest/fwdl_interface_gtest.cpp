@@ -27,6 +27,7 @@ extern "C" {
 void DwnlStopEventHandler(const char *owner, IARM_EventId_t eventId, void *data, size_t len);
 }
 #include "./mocks/interface_mock.h"
+#include "./mocks/mock_rbus.h"
 
 #define IMG_DWL_EVENT "ImageDwldEvent"
 #define FW_STATE_EVENT "FirmwareStateEvent"
@@ -264,6 +265,11 @@ TEST_F(InterfaceTestFixture, TestName_eventManagerFail)
     EXPECT_CALL(*g_InterfaceMock, IARM_Bus_BroadcastEvent(_,_,_,_)).WillOnce(Return(1));
     eventManager(IMG_DWL_EVENT, "2");
     EXPECT_EQ(0, 0);
+}
+TEST(TestisDnsResolve, invokeRbusDCMReport)
+{
+    rbusError_t status = invokeRbusDCMReport();
+    EXPECT_EQ(status, RBUS_ERROR_SUCCESS);
 }
 
 GTEST_API_ int main(int argc, char *argv[]){
