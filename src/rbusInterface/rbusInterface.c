@@ -21,6 +21,7 @@
 #include "rbusInterface.h"
 #else
 #include "mock_rbus.h"
+#include <stddef.h>
 #endif
 /* Description:Use for Rbus callback
  * @param: handle : rbus handle
