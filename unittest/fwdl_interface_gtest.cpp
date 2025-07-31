@@ -26,6 +26,8 @@ extern "C" {
 #include "iarmInterface.h"
 #include "rbusInterface.h"
 void DwnlStopEventHandler(const char *owner, IARM_EventId_t eventId, void *data, size_t len);
+typedef void (*T2EventHandlerType)(rbusHandle_t handle, const char* methodName, rbusError_t error, rbusObject_t param);
+T2EventHandlerType getT2EventHandler(void);
 }
 #include "./mocks/interface_mock.h"
 #include "./mocks/mock_rbus.h"
@@ -274,10 +276,13 @@ TEST_F(InterfaceTestFixture, TestName_invokeRbusDCMReport)
 }
 TEST_F(InterfaceTestFixture, TestName_t2EventHandler)
 {
+    T2EventHandlerType handler = getT2EventHandler();
+    EXPECT_NE(handler, nullptr);
+
     rbusHandle_t testHandle = nullptr;
     const char* testName = "TestMethod";
     rbusObject_t testParam = (rbusObject_t)0x123;
-    t2EventHandler(testHandle, testName, RBUS_ERROR_SUCCESS, testParam);
+    handler(testHandle, testName, RBUS_ERROR_SUCCESS, testParam);
     EXPECT_EQ(0, 0);
 }
 

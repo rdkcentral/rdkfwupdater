@@ -69,3 +69,10 @@ rbusError_t invokeRbusDCMReport()
     }
     return RBUS_ERROR_SUCCESS;
 }
+
+#ifdef GTEST_ENABLE
+void (*getT2EventHandler(void))(rbusHandle_t handle, const char* methodName, rbusError_t error, rbusObject_t param)
+{
+    return &t2EventHandler;
+}
+#endif
