@@ -35,7 +35,7 @@ rdkfw_deviceutils_gtest_SOURCES = deviceutils/device_api_gtest.cpp deviceutils/d
 
 rdkfw_main_gtest_SOURCES = basic_rdkv_main_gtest.cpp ../src/rdkv_main.c ../src/chunk.c ../src/flash.c ../src/json_process.c ../src/deviceutils/device_api.c  deviceutils/json_parse.c ./mocks/deviceutils_mock.cpp  ../src/deviceutils/deviceutils.c
 
-rdkfw_interface_gtest_SOURCES = fwdl_interface_gtest.cpp ./mocks/interface_mock.cpp ../src/rfcInterface/rfcinterface.c ../src/iarmInterface/iarmInterface.c ../src/rbusInterface/rbusInterface.c deviceutils/json_parse.c
+rdkfw_interface_gtest_SOURCES = fwdl_interface_gtest.cpp ./mocks/interface_mock.cpp ../src/rfcInterface/rfcinterface.c ../src/iarmInterface/iarmInterface.c ./mocks/mock_rbus.c ../src/rbusInterface/rbusInterface.c deviceutils/json_parse.c
 
 # Apply common properties to each program
 rdkfw_device_status_gtest_CPPFLAGS = $(COMMON_CPPFLAGS)

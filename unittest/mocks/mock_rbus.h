@@ -19,6 +19,8 @@
 #ifndef MOCK_RBUS_H
 #define MOCK_RBUS_H
 
+#include "../rdkv_cdl_log_wrapper.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
