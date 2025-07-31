@@ -35,3 +35,9 @@ rbusValue_t rbusObject_GetValue(rbusObject_t obj, const char* name) {
     return NULL;
 }
 
+const char* rbusValue_GetString(rbusValue_t value, void* unused)
+{
+    (void)unused; // unused parameter
+
+    return "MockedUploadStatus";
+}

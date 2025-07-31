@@ -57,6 +57,7 @@ rbusError_t rbus_open(rbusHandle_t *handle, const char* componentName);
 rbusError_t rbus_close(rbusHandle_t handle);
 rbusError_t rbusMethod_InvokeAsync(rbusHandle_t handle, const char* method, rbusObject_t input, rbusMethodAsyncRespHandler_t handler, int timeout);
 rbusValue_t rbusObject_GetValue(rbusObject_t obj, const char* name);
+const char* rbusValue_GetString(rbusValue_t value, void* unused);
 
 #ifdef __cplusplus
 }
