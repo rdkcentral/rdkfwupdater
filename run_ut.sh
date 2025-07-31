@@ -24,20 +24,20 @@ autoreconf --install
 
 make
 
-#./rdkfw_device_status_gtest
+./rdkfw_device_status_gtest
 
-#devicestatus=$?
-#echo "*********** Return value $devicestatus"
+devicestatus=$?
+echo "*********** Return value $devicestatus"
 
-#./rdkfw_deviceutils_gtest
+./rdkfw_deviceutils_gtest
 
-#deviceutils=$?
-#echo "==========> Return value $deviceutils"
+deviceutils=$?
+echo "==========> Return value $deviceutils"
 
-#./rdkfw_main_gtest
+./rdkfw_main_gtest
 
-#mainapp=$?
-#echo "-------------> Retrun value $mainapp"
+mainapp=$?
+echo "-------------> Retrun value $mainapp"
 
 ./rdkfw_interface_gtest
 
