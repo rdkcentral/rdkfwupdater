@@ -1719,10 +1719,10 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, bool directCdn, 
 	        upgrade_status = -1; //Error pdri upgrade So retry should happen
 	    }
         } else {
-          upgrade_type = PERI_UPGRADE;
+          upgrade_type = PERIPHERAL_UPGRADE;
         }
     }
-    if (upgrade_type == PERI_UPGRADE) {
+    if (upgrade_type == PERIPHERAL_UPGRADE) {
         if ((0 == (filePresentCheck("/etc/os-release"))) && (*pResponse->peripheralFirmwares != 0)) {
              strncat(pResponse->peripheralFirmwares, ",", sizeof(pResponse->peripheralFirmwares) - 1);
              pResponse->peripheralFirmwares[sizeof(pResponse->peripheralFirmwares) - 1] = '\0';
