@@ -24,6 +24,7 @@
 extern "C" {
 #include "rfcinterface.h"
 #include "iarmInterface.h"
+#include "rbusInterface.h"
 void DwnlStopEventHandler(const char *owner, IARM_EventId_t eventId, void *data, size_t len);
 }
 #include "./mocks/interface_mock.h"
