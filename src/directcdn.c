@@ -28,8 +28,8 @@
 #include "download_status_helper.h"
 #include "device_status_helper.h"
 #include "iarmInterface/iarmInterface.h"
-#include "cedmInterface/codebigUtils.h"
-#include "cedmInterface/mtlsUtils.h"
+#include "codebigUtils.h"
+#include "mtlsUtils.h"
 #include "rdk_fwdl_utils.h"
 #include "system_utils.h"
 #include "rfcInterface/rfcinterface.h"
@@ -113,7 +113,7 @@ int DirectCDNDownload( XCONFRES *response, char *cur_img_name, DeviceProperty_t 
                                 SWLOG_INFO("DirectCDNDownload: pdri_upgrade_status %d\n", pdri_upgrade_status);
 			    }
 			    if (peri_upgrade_status != 0) {
-                                peri_upgrade_status = checkTriggerUpgrade(response, device_info->model, true, PERI_UPGRADE);
+                                peri_upgrade_status = checkTriggerUpgrade(response, device_info->model, true, PERIPHERAL_UPGRADE);
                                 SWLOG_INFO("DirectCDNDownload: peri_upgrade_status %d\n", peri_upgrade_status);
 			    }
 			    if ((pci_upgrade_status == 0) && (pdri_upgrade_status == 0)) {
