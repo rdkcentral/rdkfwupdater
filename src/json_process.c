@@ -22,6 +22,11 @@
 #include "download_status_helper.h"
 #include "device_status_helper.h"
 #include "iarmInterface/iarmInterface.h"
+#include "rdm_types.h"
+#include "rdm.h"
+#include "rdm_utils.h"
+#include "rdm_jsonquery.h"
+#include "rdm_download.h"
 #ifndef GTEST_ENABLE
 #include "rdk_fwdl_utils.h"
 #include "system_utils.h"
@@ -99,6 +104,10 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
     last_dwnl_img[0] = 0;
     current_img[0] = 0;
 
+    RDMAPPDetails *pApp_det = malloc(sizeof(RDMAPPDetails));
+    RDMHandle *prdmHandle = malloc(sizeof(RDMHandle));
+    int ret, download_status = 0;
+
     if( response != NULL && myfwversion != NULL && model != NULL )
     {
         makeHttpHttps( response->cloudFWLocation, sizeof(response->cloudFWLocation) );
@@ -131,20 +140,35 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
         }
         if (response->dlCertBundle[0] != 0) {
             SWLOG_INFO("Calling rdm Versioned_app download to process bundle update\n");
-	    if (access("/usr/bin/rdm", F_OK) == 0) {
-    	        // file exists
-		SWLOG_INFO("RDM binary is present\n");
-		v_secure_system("rdm -v \"%s\" >> /opt/logs/rdm_status.log 2>&1", response->dlCertBundle);
-		SWLOG_INFO("RDM Versioned app Download started and completed\n");
-	    } else  if (access("/etc/rdm/rdmBundleMgr.sh", F_OK) == 0) {
-    		// Script file exist
-		SWLOG_INFO("RDM binary is not present, using scripts\n");
-		v_secure_system("sh /etc/rdm/rdmBundleMgr.sh '%s' '%s' >> /opt/logs/rdm_status.log 2>&1", response->dlCertBundle, response->cloudFWLocation);
-		SWLOG_INFO("RDM Versioned app Download started and completed\n");
-	    } else {
-                // file doesn't exist
-		SWLOG_INFO(" File Not Present .. Download Failed \n");
-            }
+	    char *app_name = response->dlCertBundle;
+            char result[20];
+            char *ver = strchr(app_name, ':');
+            if (ver != NULL) {
+                strncpy(pApp_det->pkg_ver, ver + 1, sizeof(pApp_det->pkg_ver) - 1);
+                pApp_det->pkg_ver[sizeof(pApp_det->pkg_ver) - 1] = '\0';
+             }
+            sscanf(app_name, "%[^:]", result);
+            strncpy(pApp_det->app_name, result, sizeof(pApp_det->app_name) - 1);
+            pApp_det->app_name[sizeof(pApp_det->app_name) - 1] = '\0';
+            snprintf(pApp_det->pkg_name, sizeof(pApp_det->pkg_name), "%s_%s-signed.tar", result, pApp_det->pkg_ver);
+            pApp_det->is_versioned_app = 1;
+            //Initialize RDM handle
+            ret = rdmInit(prdmHandle);
+            // Update App paths
+            rdmUpdateAppDetails(prdmHandle, pApp_det, 0);
+            // Print App details
+            rdmPrintAppDetails(pApp_det);
+            // Download the app
+            ret = rdmDownloadApp(pApp_det, &download_status);
+            if (!ret) {
+               t2ValNotify("RDM_INFO_AppDownloadComplete", pApp_det->app_name );
+             }
+           // Cleanup
+           rdmUnInit(prdmHandle);
+           free(prdmHandle);
+           free(pApp_det); 
+           SWLOG_INFO("RDM Versioned app Download started and completed\n");
+
         }
         valid_img = validateImage(response->cloudFWFile, model);
 	if ((*(response->cloudPDRIVersion)) != 0) {
