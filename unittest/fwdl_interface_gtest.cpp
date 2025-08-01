@@ -24,9 +24,13 @@
 extern "C" {
 #include "rfcinterface.h"
 #include "iarmInterface.h"
+#include "rbusInterface.h"
 void DwnlStopEventHandler(const char *owner, IARM_EventId_t eventId, void *data, size_t len);
+typedef void (*T2EventHandlerType)(rbusHandle_t handle, const char* methodName, rbusError_t error, rbusObject_t param);
+T2EventHandlerType getT2EventHandler(void);
 }
 #include "./mocks/interface_mock.h"
+#include "./mocks/mock_rbus.h"
 
 #define IMG_DWL_EVENT "ImageDwldEvent"
 #define FW_STATE_EVENT "FirmwareStateEvent"
@@ -263,6 +267,22 @@ TEST_F(InterfaceTestFixture, TestName_eventManagerFail)
 {
     EXPECT_CALL(*g_InterfaceMock, IARM_Bus_BroadcastEvent(_,_,_,_)).WillOnce(Return(1));
     eventManager(IMG_DWL_EVENT, "2");
+    EXPECT_EQ(0, 0);
+}
+TEST_F(InterfaceTestFixture, TestName_invokeRbusDCMReport)
+{
+    rbusError_t status = invokeRbusDCMReport();
+    EXPECT_EQ(status, RBUS_ERROR_SUCCESS);
+}
+TEST_F(InterfaceTestFixture, TestName_t2EventHandler)
+{
+    T2EventHandlerType handler = getT2EventHandler();
+    EXPECT_NE(handler, nullptr);
+
+    rbusHandle_t testHandle = nullptr;
+    const char* testName = "TestMethod";
+    rbusObject_t testParam = (rbusObject_t)0x123;
+    handler(testHandle, testName, RBUS_ERROR_SUCCESS, testParam);
     EXPECT_EQ(0, 0);
 }
 
