@@ -1947,7 +1947,7 @@ int initialValidation(void)
 #ifndef GTEST_ENABLE
 
 int main(int argc, char *argv[]) {
-    static XCONFRES response;
+    static XCONFRES response // to check the component compilation introducing a compilation error
     int ret = -1;
     int ret_sig = -1;
     int i;
