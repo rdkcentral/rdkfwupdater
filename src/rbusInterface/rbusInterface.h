@@ -19,10 +19,8 @@
 #ifndef GTEST_ENABLE
 #include "rbus/rbus.h"
 #include "rdkv_cdl_log_wrapper.h"
-#else
-#include "rbus_mock.h"
-#endif
 #define RDKFWUPGRADER_RBUS_HANDLE_NAME "rdkfwRbus"
 #define T2_UPLOAD "Device.X_RDKCENTRAL-COM_T2.UploadDCMReport"
 
 rbusError_t invokeRbusDCMReport();
+#endif

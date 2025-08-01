@@ -50,14 +50,13 @@ typedef struct _rbusValue *rbusValue_t;
 
 typedef void (*rbusMethodAsyncRespHandler_t)(void);
 
-//typedef void (*rbusMethodAsyncRespHandler_t)(rbusHandle_t handle, char const *methodName, rbusError_t error, rbusObject_t params);
-
 rbusError_t rbus_open(rbusHandle_t *handle, const char* componentName);
 rbusError_t rbus_close(rbusHandle_t handle);
 rbusError_t rbusMethod_InvokeAsync(rbusHandle_t handle, const char* method, rbusObject_t input, rbusMethodAsyncRespHandler_t handler, int timeout);
 rbusValue_t rbusObject_GetValue(rbusObject_t obj, const char* name);
 const char* rbusValue_GetString(rbusValue_t value, void* unused);
-
+rbusError_t invokeRbusDCMReport();
+void (*getT2EventHandler(void))(rbusHandle_t, const char*, rbusError_t, rbusObject_t);
 #ifdef __cplusplus
 }
 #endif

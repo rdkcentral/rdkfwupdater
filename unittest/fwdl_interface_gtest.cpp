@@ -24,13 +24,10 @@
 extern "C" {
 #include "rfcinterface.h"
 #include "iarmInterface.h"
-#include "rbusInterface.h"
+#include "./mocks/rbus_mock.h"
 void DwnlStopEventHandler(const char *owner, IARM_EventId_t eventId, void *data, size_t len);
-typedef void (*T2EventHandlerType)(rbusHandle_t handle, const char* methodName, rbusError_t error, rbusObject_t param);
-T2EventHandlerType getT2EventHandler(void);
 }
 #include "./mocks/interface_mock.h"
-#include "./mocks/rbus_mock.h"
 
 #define IMG_DWL_EVENT "ImageDwldEvent"
 #define FW_STATE_EVENT "FirmwareStateEvent"
@@ -276,7 +273,7 @@ TEST_F(InterfaceTestFixture, TestName_invokeRbusDCMReport)
 }
 TEST_F(InterfaceTestFixture, TestName_t2EventHandler)
 {
-    T2EventHandlerType handler = getT2EventHandler();
+    auto handler = getT2EventHandler();
     EXPECT_NE(handler, nullptr);
 
     rbusHandle_t testHandle = nullptr;
