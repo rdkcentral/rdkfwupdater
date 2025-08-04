@@ -51,7 +51,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
-
+#include "cap.h"
+static cap_user appcaps;
 #define JSON_STR_LEN        1000
 
 #define DOWNLOADED_PERIPHERAL_VERSION "/tmp/downloaded_peripheral_versions.txt"
@@ -86,6 +87,31 @@ static pthread_mutex_t app_mode_status = PTHREAD_MUTEX_INITIALIZER;
 static int app_mode = 1; // 1: fore ground and 0: background
 int force_exit = 0; //This use when rdkvfwupgrader rcv appmode background and thottle speed is set to zero.
 
+/*Description: this enum is used to represent the state of the deamon at any given point of time */
+
+typedef enum {
+    STATE_INIT,
+    STATE_IDLE,
+    STATE_CHECK_UPDATE,
+    STATE_DOWNLOAD_UPDATE,
+    STATE_UPGRADE
+} FwUpgraderState;
+
+FwUpgraderState currentState;
+static bool isDebugEnabled = true;
+
+static void drop_root()
+{
+    appcaps.caps = NULL;
+    appcaps.user_name = NULL;
+    T2Info("NonRoot feature is enabled, dropping root privileges for rdkvfwupgrader Process\n");
+    init_capability();
+    drop_root_caps(&appcaps);
+    if(update_process_caps(&appcaps) != -1)//CID 281096: Unchecked return value (CHECKED_RETURN)
+    {
+        read_capability(&appcaps);
+    }
+}
 /* Description: Get trigger type info.
  * @param: NA
  * @return: int
@@ -1946,7 +1972,48 @@ int initialValidation(void)
 
 #ifndef GTEST_ENABLE
 
-int main(int argc, char *argv[]) {
+int main() {
+
+    pid_t process_id = 0;
+    pid_t sid = 0;
+    log_init();
+    process_id = fork();
+
+    if (process_id < 0)
+    {
+        SWLOG_ERROR("fork failed!\n");
+        return 1;
+    }
+    else if (process_id > 0)
+    {
+        return 0;
+    }
+
+    //unmask the file mode
+    umask(0);
+
+    //set new session
+    sid = setsid();
+    if (sid < 0)
+    {
+        SWLOG_ERROR("setsid failed!\n");
+    }
+
+    // Change the current working directory to root.
+    if (chdir("/") < 0)
+    {
+        SWLOG_ERROR("chdir failed!\n");
+	return 1;
+    }
+
+     if (isDebugEnabled != true){
+	     // Close stdin. stdout and stderr
+	       close(STDIN_FILENO);
+	       close(STDOUT_FILENO);
+	       close(STDERR_FILENO);
+      }
+
+
     static XCONFRES response;
     int ret = -1;
     int ret_sig = -1;
@@ -1962,12 +2029,23 @@ int main(int argc, char *argv[]) {
     rdkv_newaction.sa_sigaction = handle_signal;
     rdkv_newaction.sa_flags = SA_ONSTACK | SA_SIGINFO;
     log_init();
-    ret_sig = sigaction(SIGUSR1, &rdkv_newaction, NULL);
+
+    //Signal handling 
+    SWLOG_ERROR("I'm here\n");
+    ret_sig = sigaction(SIGINT, &rdkv_newaction, NULL);
     if (ret_sig == -1) {
-        SWLOG_ERROR( "SIGUSR1 handler install fail\n");
+        SWLOG_ERROR( "SIGINT handler install fail\n");
     }else {
-        SWLOG_INFO( "SIGUSR1 handler install success\n");
+        SWLOG_INFO( "SIGINT handler install success\n");
     }
+    ret_sig = sigaction(SIGTERM, &rdkv_newaction, NULL);
+    if (ret_sig == -1) {
+	    SWLOG_ERROR( "SIGTERM handler install fail\n");
+    }else {
+	    SWLOG_INFO( "SIGTERM handler install success\n");
+    }
+
+    //initialization
     *response.cloudFWFile = 0;
     *response.cloudFWLocation = 0;
     *response.ipv6cloudFWLocation = 0;
@@ -1989,6 +2067,7 @@ int main(int argc, char *argv[]) {
         log_exit();
         exit(ret_curl_code);
     }
+    /*
     if(argc < 3) {
         SWLOG_ERROR( "Provide 2 arguments. Less than 2 arguments received\n");
         SWLOG_ERROR("Retry Count (1) argument will not be parsed as we will use hardcoded fallback mechanism added \
@@ -2002,11 +2081,12 @@ int main(int argc, char *argv[]) {
         log_exit();
         exit(ret_curl_code);
     }
-    for( i = 0; i < argc; i++ ) {
-        SWLOG_INFO("[%d] = %s\n", i, argv[i]);
-    }
+    */
+    //for( i = 0; i < argc; i++ ) {
+      //  SWLOG_INFO("[%d] = %s\n", i, argv[i]);
+    //}
 
-
+/*
     trigger_type = atoi(argv[2]);
     if (trigger_type == 1) {
         SWLOG_INFO("Image Upgrade During Bootup ..!\n");
@@ -2029,8 +2109,14 @@ int main(int argc, char *argv[]) {
 	log_exit();
         exit(ret_curl_code);
     }
-    init_validate_status = initialValidation();
+
+  */
+    init_validate_status = initialValidation(); 
     SWLOG_INFO("init_validate_status = %d\n", init_validate_status);
+    currentState = STATE_INIT;
+/*---------------Init done here --------------*/
+
+    /*
     if( init_validate_status == INITIAL_VALIDATION_SUCCESS)
     {
         eventManager(FW_STATE_EVENT, FW_STATE_UNINITIALIZED);
@@ -2088,7 +2174,37 @@ int main(int argc, char *argv[]) {
     }
 
     uninitialize(init_validate_status);
-    exit(ret_curl_code);
+    exit(ret_curl_code); */
+
+   while (1) {
+	    switch (currentState) {
+            case STATE_INIT:
+                // Transition to IDLE after setup
+                currentState = STATE_IDLE;
+                break;
+            case STATE_IDLE:
+                // Wait for DBus events
+                // On event, set currentState = STATE_CHECK_UPDATE / etc.
+                break;
+            case STATE_CHECK_UPDATE:
+                SWLOG_INFO("Received request for checking the update\n");
+                currentState = STATE_IDLE;
+                break;
+            case STATE_DOWNLOAD_UPDATE:
+                SWLOG_INFO("Recieved request for downloading the FW\n");
+                currentState = STATE_IDLE;
+                break;
+            case STATE_UPGRADE:
+                SWLOG_INFO("Received request for flashing the image.This will reboot the device\n");
+                break;
+   }
+}
+
+	    // Cleanup the resources if loop exists. 
+	    log_exit();
+	    exit(ret_curl_code);
+  
 }
 
 #endif
+
