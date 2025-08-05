@@ -27,6 +27,7 @@
 #include "rdm_utils.h"
 #include "rdm_jsonquery.h"
 #include "rdm_download.h"
+#include "rdm_downloadutils.h"
 #ifndef GTEST_ENABLE
 #include "rdk_fwdl_utils.h"
 #include "system_utils.h"
