@@ -107,7 +107,7 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
 
     RDMAPPDetails *pApp_det = malloc(sizeof(RDMAPPDetails));
     RDMHandle *prdmHandle = malloc(sizeof(RDMHandle));
-    int ret, download_status = 0;
+    int download_status = 0;
 
     if( response != NULL && myfwversion != NULL && model != NULL )
     {
