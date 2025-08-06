@@ -89,7 +89,7 @@ char *pPeripheralName[MAX_PERIPHERAL_ITEMS] = {
     "KwModelVer"
 };
 
-static char pProuductNumber[100] = { 0 };
+static char pProuductNumber[128] = { 0 };
 
 /* function getPeripheralProduct - get peripheral device model number
 
