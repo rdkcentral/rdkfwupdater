@@ -37,7 +37,7 @@ int getXconfRespData( XCONFRES *pResponse, char *pJsonStr )
     JSON *pJson = NULL;
     int ret = -1;
     char peripheral_product[64] = { 0 };
-    char peripheral_product_url[64] = { 0 };
+    char peripheral_product_url[100] = { 0 };
 
     ret = getPeripheralProduct(peripheral_product, sizeof(peripheral_product));
     if (ret != -1) {
