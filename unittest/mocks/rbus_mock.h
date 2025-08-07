@@ -56,7 +56,6 @@ rbusError_t rbusMethod_InvokeAsync(rbusHandle_t handle, const char* method, rbus
 rbusValue_t rbusObject_GetValue(rbusObject_t obj, const char* name);
 const char* rbusValue_GetString(rbusValue_t value, void* unused);
 rbusError_t invokeRbusDCMReport();
-void (*getT2EventHandler(void))(rbusHandle_t, const char*, rbusError_t, rbusObject_t);
 #ifdef __cplusplus
 }
 #endif
