@@ -29,6 +29,8 @@
 #include "rdk_fwdl_utils.h"
 #include "system_utils.h"
 #include "rbusInterface/rbusInterface.h"
+#else
+#include "rbus_mock.h"
 #endif
 #include "rfcInterface/rfcinterface.h"
 #include <sys/wait.h>

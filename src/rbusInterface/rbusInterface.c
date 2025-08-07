@@ -19,7 +19,10 @@
 #ifndef GTEST_ENABLE
 #include <unistd.h>
 #include "rbusInterface.h"
-
+#else
+#include "rbus_mock.h"
+#include <stddef.h>
+#endif
 /* Description:Use for Rbus callback
  * @param: handle : rbus handle
  * @param: methodName : Method name
@@ -66,4 +69,4 @@ rbusError_t invokeRbusDCMReport()
     }
     return RBUS_ERROR_SUCCESS;
 }
-#endif
+
