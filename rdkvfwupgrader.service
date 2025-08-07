@@ -29,5 +29,5 @@ ExecStop=/usr/bin/killall rdkvfwupgrader
 Restart=always
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=ntp-time-sync.target
 
