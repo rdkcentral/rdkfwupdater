@@ -2028,11 +2028,11 @@ int main() {
 	pid_t sid = 0;
 	log_init();
 	/* Abort if another instance of rdkvfwupgrader is already running */
-  //  if (checkAnotherFWUpgraderInstance())
-   // {
-//	    SWLOG_INFO("Another instance of this process is running\n");
-//	    return 1;
-  //  }
+      if (checkAnotherFWUpgraderInstance())
+    {
+	    SWLOG_INFO("Another instance of this process is running\n");
+	    return 1;
+    }
 	process_id = fork();
 
 	if (process_id < 0)
