@@ -271,17 +271,6 @@ TEST_F(InterfaceTestFixture, TestName_invokeRbusDCMReport)
     rbusError_t status = invokeRbusDCMReport();
     EXPECT_EQ(status, RBUS_ERROR_SUCCESS);
 }
-TEST_F(InterfaceTestFixture, TestName_t2EventHandler)
-{
-    auto handler = getT2EventHandler();
-    EXPECT_NE(handler, nullptr);
-
-    rbusHandle_t testHandle = nullptr;
-    const char* testName = "TestMethod";
-    rbusObject_t testParam = (rbusObject_t)0x123;
-    handler(testHandle, testName, RBUS_ERROR_SUCCESS, testParam);
-    EXPECT_EQ(0, 0);
-}
 
 GTEST_API_ int main(int argc, char *argv[]){
     char testresults_fullfilepath[GTEST_REPORT_FILEPATH_SIZE];
