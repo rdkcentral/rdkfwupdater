@@ -92,6 +92,7 @@ int force_exit = 0; //This use when rdkvfwupgrader rcv appmode background and th
 
 typedef enum {
 	STATE_INIT,
+	STATE_INIT_VALIDATION,
 	STATE_IDLE,
 	STATE_CHECK_UPDATE,
 	STATE_DOWNLOAD_UPDATE,
@@ -2027,11 +2028,11 @@ int main() {
 	pid_t sid = 0;
 	log_init();
 	/* Abort if another instance of rdkvfwupgrader is already running */
-    if (checkAnotherFWUpgraderInstance())
-    {
-	    SWLOG_INFO("Another instance of this process is running\n");
-	    return 1;
-    }
+  //  if (checkAnotherFWUpgraderInstance())
+   // {
+//	    SWLOG_INFO("Another instance of this process is running\n");
+//	    return 1;
+  //  }
 	process_id = fork();
 
 	if (process_id < 0)
@@ -2113,27 +2114,54 @@ int main() {
 	t2CountNotify("SYST_INFO_C_CDL", 1);
 
 	snprintf(disableStatsUpdate, sizeof(disableStatsUpdate), "%s","no");
-
+/*
 	ret = initialize();
 	if (1 != ret) {
 		SWLOG_ERROR( "initialize(): Fail:%d\n", ret);
 		log_exit();
 		exit(ret_curl_code);
 	}
+
 	init_validate_status = initialValidation(); 
 	SWLOG_INFO("init_validate_status = %d\n", init_validate_status);
 	if( init_validate_status == INITIAL_VALIDATION_SUCCESS) {
 		SWLOG_INFO("Initial validation success.\n");
-		currentState = STATE_INIT;
 	}
 
+*/
 
+// Init the Current state into STATE_INIT
+currentState = STATE_INIT;
 while (1) {
 	switch (currentState) {
 		case STATE_INIT:
 			// Transition to IDLE after setup
-			currentState = STATE_IDLE;
+			SWLOG_INFO("In STATE_INIT\n");
+			ret = initialize();
+        		if (1 != ret) {
+                		SWLOG_ERROR( "initialize(): Fail:%d\n", ret);
+                		log_exit();
+                		exit(ret_curl_code);
+			}else {
+				SWLOG_ERROR( "initialize(): Success:%d ; Entering into STATE_INTI_VALIDATION\n", ret);
+			currentState = STATE_INIT_VALIDATION;
+			}
 			break;
+		case STATE_INIT_VALIDATION:
+			//Do the initial validation
+			 SWLOG_INFO("In STATE_INIT_VALIDATION\n");
+			 init_validate_status = initialValidation();
+			 SWLOG_INFO("init_validate_status = %d\n", init_validate_status);
+			 if( init_validate_status == INITIAL_VALIDATION_SUCCESS) {
+				SWLOG_INFO("Initial validation success.Entering into STATE_IDLE\n");
+				currentState = STATE_IDLE;
+			 }
+			 else{
+				 SWLOG_ERROR("Initial validation failed\n");
+				 // do we have to retry here  ?  what action to be taken ?
+				 currentState = STATE_INIT_VALIDATION;
+			 }
+
 		case STATE_IDLE:
 			// Wait for DBus events
 			// On event, set currentState = STATE_CHECK_UPDATE / etc.
