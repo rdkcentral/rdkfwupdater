@@ -100,9 +100,9 @@ typedef enum {
 } FwUpgraderState;
 
 FwUpgraderState currentState;
-//static bool isDebugEnabled = true;
+static bool isDebugEnabled = true;
 static pid_t DAEMONPID;
-/*
+
 static int checkAnotherFWUpgraderInstance (void)
 {
 	SWLOG_ERROR("Checking if another instance is running \n");
@@ -124,7 +124,7 @@ static int checkAnotherFWUpgraderInstance (void)
 
 	return 0;
 }
-*/
+
 /*
    static void drop_root()
    {
@@ -2027,13 +2027,13 @@ int initialValidation(void)
 
 int main() {
 
-/*	
+	
 	pid_t process_id = 0;
 	pid_t sid = 0;
 	log_init();
-*/	
+	
 	/* Abort if another instance of rdkvfwupgrader is already running */
-/*	
+	
       if (checkAnotherFWUpgraderInstance())
     {
 	    SWLOG_INFO("Another instance of this process is running\n");
@@ -2074,7 +2074,7 @@ int main() {
 		close(STDOUT_FILENO);
 		close(STDERR_FILENO);
 	}
-*/
+
 
 //	 Commenting to pass the CI 
 	static XCONFRES response;
