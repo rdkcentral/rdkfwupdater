@@ -100,9 +100,9 @@ typedef enum {
 } FwUpgraderState;
 
 FwUpgraderState currentState;
-static bool isDebugEnabled = true;
+//static bool isDebugEnabled = true;
 static pid_t DAEMONPID;
-
+/*
 static int checkAnotherFWUpgraderInstance (void)
 {
 	SWLOG_ERROR("Checking if another instance is running \n");
@@ -121,9 +121,10 @@ static int checkAnotherFWUpgraderInstance (void)
 	}
 
     /* OK to proceed (lock will be released and file descriptor will be closed on exit) */
-	return 0;
-}
 
+/*	return 0;
+}
+*/
 /*
    static void drop_root()
    {
