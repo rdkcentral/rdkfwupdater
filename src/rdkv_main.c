@@ -120,9 +120,9 @@ static int checkAnotherFWUpgraderInstance (void)
 		return 1;
 	}
 
-    /* OK to proceed (lock will be released and file descriptor will be closed on exit) */
+    // OK to proceed (lock will be released and file descriptor will be closed on exit) 
 
-/*	return 0;
+	return 0;
 }
 */
 /*
