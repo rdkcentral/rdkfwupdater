@@ -2024,10 +2024,13 @@ int initialValidation(void)
 
 int main() {
 
+	/*
 	pid_t process_id = 0;
 	pid_t sid = 0;
 	log_init();
+	*/
 	/* Abort if another instance of rdkvfwupgrader is already running */
+	/*
       if (checkAnotherFWUpgraderInstance())
     {
 	    SWLOG_INFO("Another instance of this process is running\n");
@@ -2068,7 +2071,7 @@ int main() {
 		close(STDOUT_FILENO);
 		close(STDERR_FILENO);
 	}
-
+*/
 	static XCONFRES response;
 	int ret = -1;
 	int ret_sig = -1;
