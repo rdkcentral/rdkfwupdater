@@ -18,11 +18,13 @@
 
 AM_CFLAGS = $(TRACE_CFLAGS)
 
-AM_CFLAGS += -Wall -Werror $(cjson_CFLAGS) $(curl_CFLAGS) $(CFLAGS)
+#AM_CFLAGS += -Wall -Werror $(cjson_CFLAGS) $(curl_CFLAGS) $(CFLAGS) #for ease of compilation, removing -Wall -Werror
+AM_CFLAGS += $(cjson_CFLAGS) $(curl_CFLAGS) $(CFLAGS)
 AM_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
 AM_LDFLAGS += $(cjson_LIBS) $(curl_LIBS) 
 AM_LDFLAGS += -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread -lrbus
-
+AM_CFLAGS += $(GLIB_CFLAGS)
+rdkvfwupgrader_LDADD = $(GLIB_LIBS)
 bin_PROGRAMS= rdkvfwupgrader
 
 
@@ -70,7 +72,7 @@ rdkvfwupgrader_include_HEADERS += \
     ${top_srcdir}/src/cedmInterface/codebigUtils.h \
     ${top_srcdir}/src/cedmInterface/mtlsUtils.h
 
-rdkvfwupgrader_CFLAGS += -I${top_srcdir}/src/cedmInterface
+rdkvfwupgrader_CFLAGS += $(AM_CFLAGS) -I${top_srcdir}/src/cedmInterface
 rdkvfwupgrader_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
 
 endif

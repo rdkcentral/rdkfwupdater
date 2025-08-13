@@ -23,7 +23,9 @@
 #include <sys/stat.h>
 #include <pthread.h>
 #include <signal.h>
-
+//#include <gio/gio.h>
+#include <glib.h>
+#include <gio/gio.h>
 #include "rdkv_cdl.h"
 #include "rdkv_cdl_log_wrapper.h"
 #ifndef GTEST_ENABLE
