@@ -1101,7 +1101,7 @@ bool checkForValidPCIUpgrade(int trigger_type, const char *myfwversion, const ch
     t2ValNotify("cloudFWFile_split", (char *)cloudFWFile);
     SWLOG_INFO("lastdwnlfile:%s\n", last_dwnl_img);
     SWLOG_INFO("currentImg:%s\n", current_img);
-    if (trigger_type == 1 || trigger_type == 4) {
+    if (trigger_type == 1 || trigger_type == 3 || trigger_type == 4) {
         if ((false == current_img_status) || (false == last_dwnl_status)) {
             SWLOG_INFO("Unable to fetch current running image file name or last download file\n");
             SWLOG_INFO("Error identified with image file comparison !!! Proceeding with firmware version check.\n");

@@ -24,6 +24,7 @@
 extern "C" {
 #include "rfcinterface.h"
 #include "iarmInterface.h"
+#include "./mocks/rbus_mock.h"
 void DwnlStopEventHandler(const char *owner, IARM_EventId_t eventId, void *data, size_t len);
 }
 #include "./mocks/interface_mock.h"
@@ -264,6 +265,11 @@ TEST_F(InterfaceTestFixture, TestName_eventManagerFail)
     EXPECT_CALL(*g_InterfaceMock, IARM_Bus_BroadcastEvent(_,_,_,_)).WillOnce(Return(1));
     eventManager(IMG_DWL_EVENT, "2");
     EXPECT_EQ(0, 0);
+}
+TEST_F(InterfaceTestFixture, TestName_invokeRbusDCMReport)
+{
+    rbusError_t status = invokeRbusDCMReport();
+    EXPECT_EQ(status, RBUS_ERROR_SUCCESS);
 }
 
 GTEST_API_ int main(int argc, char *argv[]){
