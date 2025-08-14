@@ -681,6 +681,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
     FileDwnl_t file_dwnl;
     int chunk_dwnl = 0;
     int mtls_enable = 1; //Setting mtls by default enable
+    bool direct_cdn_image_download = false;
     char headerInfoFile[136] = {0};
 
     if (artifactLocationUrl == NULL || localDownloadLocation == NULL || httpCode == NULL) {
@@ -788,35 +789,69 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
     }	
 #endif	
     (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_INIT) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_INIT);
-#ifdef LIBRDKCERTSELECTOR
     do {
-        SWLOG_INFO("Fetching MTLS credential for SSR/XCONF\n");
-        ret = getMtlscert(&sec, &thisCertSel);
-        SWLOG_INFO("%s, getMtlscert function ret value = %d\n", __FUNCTION__, ret);
-
-        if (ret == MTLS_CERT_FETCH_FAILURE) {
-            SWLOG_ERROR("%s : ret=%d\n", __FUNCTION__, ret);
-            SWLOG_ERROR("%s : All MTLS certs are failed. Falling back to state red.\n", __FUNCTION__);
-            checkAndEnterStateRed(CURL_MTLS_LOCAL_CERTPROBLEM, disableStatsUpdate);
-            return curl_ret_code;
-        } else if (ret == STATE_RED_CERT_FETCH_FAILURE) {
-            SWLOG_ERROR("%s : State red cert failed.\n", __FUNCTION__);
-            return curl_ret_code;
-        } else {
-            SWLOG_INFO("MTLS is enabled\nMTLS creds for SSR fetched ret=%d\n", ret);
-            t2CountNotify("SYS_INFO_MTLS_enable", 1);
-	}
-#endif
+	       if ((0 == (strncmp(rfc_list.rfc_directcdn, "true", 4))) && (server_type == HTTP_SSR_DIRECT) && (state_red != 1)) {
+                          SWLOG_INFO("Disabling MTLS credential for Direct CDN\n");
+			  direct_cdn_image_download = true;
+			  if (CHUNK_DWNL_ENABLE == chunk_dwnl) {
+				  SWLOG_INFO("Calling  chunkDownload() with cert mTlsXConfDownload disable\n");
+				  curl_ret_code = chunkDownload(&file_dwnl, NULL, max_dwnl_speed, httpCode);
+				  break;
+			  } else {
+				  SWLOG_INFO("Calling doHttpFileDownload() with cert mTlsXConfDownload disable\n");
+				  curl = doCurlInit();
+				  if (curl != NULL) {
+                                     setDwnlState(RDKV_FWDNLD_DOWNLOAD_INPROGRESS);
+                                    /* For direct CDN download use case, the XConf returns the URL and token and the Cert is not required to be passed as a parameter to the Download URL */
+                                     curl_ret_code = doHttpFileDownload(curl, &file_dwnl, NULL, max_dwnl_speed, NULL, httpCode);
+                                     setDwnlState(RDKV_FWDNLD_DOWNLOAD_EXIT);
+                                     if (curl != NULL) {
+                                            doStopDownload(curl);
+                                            curl = NULL;
+                                     }
+                                     if (force_exit == 1 && (curl_ret_code == 23)) {
+                                            uninitialize(INITIAL_VALIDATION_SUCCESS);
+                                            exit(1);
+                                     }
+                             }
+                      }
+	       } else {
+	       #ifdef LIBRDKCERTSELECTOR	       
+		      SWLOG_INFO("Fetching MTLS credential for SSR/XCONF\n");
+                      ret = getMtlscert(&sec, &thisCertSel);
+                      SWLOG_INFO("%s, getMtlscert function ret value = %d\n", __FUNCTION__, ret);
+                      if (ret == MTLS_CERT_FETCH_FAILURE) {
+                            SWLOG_ERROR("%s : ret=%d\n", __FUNCTION__, ret);
+                            SWLOG_ERROR("%s : All MTLS certs are failed. Falling back to state red.\n", __FUNCTION__);
+                            /*  The function is forcing state red by curl exit code 58(define) as the mtls cert fetch is failed. Introduced as part of RDK-47502 as a fallback.
+                                Dev+QA must make sure that the device is not entering the state red from here  */
+                            checkAndEnterStateRed(CURL_MTLS_LOCAL_CERTPROBLEM , disableStatsUpdate);
+                            return curl_ret_code;
+                      }else if (ret == STATE_RED_CERT_FETCH_FAILURE) {
+                            SWLOG_ERROR("%s : State red cert failed.\n", __FUNCTION__);
+                            return curl_ret_code;
+                      }else {
+                            SWLOG_INFO("MTLS is enable\nMTLS creds for SSR fetched ret=%d\n", ret);
+                      }
+	       #endif
+               }
         do {
-            if ((1 == state_red)) {
-                SWLOG_INFO("RED:state red recovery attempting MTLS connection to XCONF server\n");
+	       if(direct_cdn_image_download != true) {
+                  if ((1 == state_red)) {
+                         SWLOG_INFO("RED:state red recovery attempting MTLS connection to XCONF server\n");
+		  }
                 if (CHUNK_DWNL_ENABLE == chunk_dwnl) {
-	            SWLOG_INFO("RED: Calling  chunkDownload() in state red recovery\n");
-                    t2CountNotify("SYST_INFO_RedStateRecovery", 1);
+	            if (state_red ==1 ) {
+	                SWLOG_INFO("RED: Calling  chunkDownload() in state red recovery\n");
+                        t2CountNotify("SYST_INFO_RedStateRecovery", 1);
+		    } else {
+			SWLOG_INFO("Calling  chunkDownload() with cert mTlsXConfDownload enable\n");
+		    }
 	            curl_ret_code = chunkDownload(&file_dwnl, &sec, max_dwnl_speed, httpCode);
 	            break;
 	        }else {
-                curl = doCurlInit();
+		    SWLOG_INFO("Calling  doHttpFileDownload() with cert mTlsXConfDownload enable\n");
+                    curl = doCurlInit();
 	            if (curl != NULL) {
 	                (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_INPROGRESS) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_INPROGRESS);
                     curl_ret_code = doHttpFileDownload(curl, &file_dwnl, &sec, max_dwnl_speed, NULL, httpCode);
@@ -831,55 +866,17 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
 	                }
 	            }
 	        }
-            } else if(1 == mtls_enable) {
+            } else  {
                   if (CHUNK_DWNL_ENABLE == chunk_dwnl) {
 	              SWLOG_INFO("Calling  chunkDownload() with cert mTlsXConfDownload enable\n");
 	              curl_ret_code = chunkDownload(&file_dwnl, &sec, max_dwnl_speed, httpCode);
 	              break;
-                  } else {
-                      SWLOG_INFO("Calling  doHttpFileDownload() with cert mTlsXConfDownload enable\n");
-                      curl = doCurlInit();
-                      if (curl != NULL) {
-                          (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_INPROGRESS) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_INPROGRESS);
-                          curl_ret_code = doHttpFileDownload(curl, &file_dwnl, &sec, max_dwnl_speed, NULL, httpCode);
-                          (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_EXIT) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_EXIT);
-                          if (curl != NULL) {
-                            doStopDownload(curl);
-                            curl = NULL;
-                          }
-	                  if (force_exit == 1 && (curl_ret_code == 23)) {
-	                      uninitialize(INITIAL_VALIDATION_SUCCESS);
-	                      exit(1);
-                          }
-                      }
-                  }
-            } else {
-	        if (CHUNK_DWNL_ENABLE == chunk_dwnl) {
-	            SWLOG_INFO("Calling  chunkDownload() with cert mTlsXConfDownload disable\n");
-	            curl_ret_code = chunkDownload(&file_dwnl, NULL, max_dwnl_speed, httpCode);
-	            break;
-                } else {
-                    SWLOG_INFO("Calling doHttpFileDownload() with cert mTlsXConfDownload disable\n");
-                    curl = doCurlInit();
-                    if (curl != NULL) {
-                        (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_INPROGRESS) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_INPROGRESS);
-                        curl_ret_code = doHttpFileDownload(curl, &file_dwnl, NULL, max_dwnl_speed, NULL, httpCode);
-                        (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_EXIT) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_EXIT);
-                        if (curl != NULL) {
-                            doStopDownload(curl);
-                            curl = NULL;
-                        }
-	                if (force_exit == 1 && (curl_ret_code == 23)) {
-	                    uninitialize(INITIAL_VALIDATION_SUCCESS);
-	                    exit(1);
-                        }
-                    }
-                }
-            }
-            if (strcmp(disableStatsUpdate, "yes") && (CHUNK_DWNL_ENABLE != chunk_dwnl)) {
+		  }
+           }
+           if (strcmp(disableStatsUpdate, "yes") && (CHUNK_DWNL_ENABLE != chunk_dwnl)) {
                 chunk_dwnl = isIncremetalCDLEnable(file_dwnl.pathname);
-            }
-            SWLOG_INFO("%s : After curl request the curl status = %d and http=%d and chunk download=%d\n", __FUNCTION__, curl_ret_code, *httpCode, chunk_dwnl);
+           }
+           SWLOG_INFO("%s : After curl request the curl status = %d and http=%d and chunk download=%d\n", __FUNCTION__, curl_ret_code, *httpCode, chunk_dwnl);
         } while(chunk_dwnl && (CURL_LOW_BANDWIDTH == curl_ret_code || CURLTIMEOUT == curl_ret_code));
 #ifdef LIBRDKCERTSELECTOR
     } while (rdkcertselector_setCurlStatus(thisCertSel, curl_ret_code, file_dwnl.url) == TRY_ANOTHER);
