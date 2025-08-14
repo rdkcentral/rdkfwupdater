@@ -151,11 +151,11 @@ int getDwnlState(void)
  * */
 void interuptDwnl(int app_mode)
 {
-    int dwnl_state = 0;
-    int curl_ret = 99;
-    unsigned int speed = 0;
-    unsigned int bytes_dwnled = 0;
-    SWLOG_INFO("Checking Interupt download\n");
+	int dwnl_state = 0;
+	int curl_ret = 99;
+	unsigned int speed = 0;
+	unsigned int bytes_dwnled = 0;
+	SWLOG_INFO("Checking Interupt download\n");
     setAppMode(app_mode);
     dwnl_state = getDwnlState();
     if ((0 == (strncmp(rfc_list.rfc_throttle, "true", 4))) && (dwnl_state == RDKV_FWDNLD_DOWNLOAD_INPROGRESS)) {
