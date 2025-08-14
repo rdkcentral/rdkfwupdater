@@ -98,7 +98,7 @@ typedef enum {
 } FwUpgraderState;
 
 FwUpgraderState currentState;
-static bool isDebugEnabled = true;
+//static bool isDebugEnabled = true;
 //static pid_t DAEMONPID;
 
 /*
@@ -1819,6 +1819,7 @@ int startFactoryProtectService(void)
  
             PITFALLS - input arguments are not checked for NULL. Call the function correctly!
 */
+/*
 static int MakeXconfComms( XCONFRES *pResponse, int server_type, int *pHttp_code )
 {
     DownloadData DwnLoc;
@@ -1878,6 +1879,7 @@ static int MakeXconfComms( XCONFRES *pResponse, int server_type, int *pHttp_code
     }
     return ret;
 }
+*/
 /* function copyFile() - copy one file data to another file
         RETURN - 0 on success, -1 on fail
 */
@@ -2077,11 +2079,11 @@ int main() {
     static XCONFRES response;
     int ret = -1;
     int ret_sig = -1;
-    int i;
+    //int i;
     int ret_curl_code = 1;
-    int server_type = HTTP_XCONF_DIRECT;
-    int json_res = -1;
-    int http_code;
+    //int server_type = HTTP_XCONF_DIRECT;
+    //int json_res = -1;
+    //int http_code;
     struct sigaction rdkv_newaction;
     memset(&rdkv_newaction, '\0', sizeof(struct sigaction));
     int init_validate_status = INITIAL_VALIDATION_FAIL;
