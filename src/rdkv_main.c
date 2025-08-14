@@ -46,7 +46,8 @@
 #include "json_process.h"
 #include "device_api.h"
 #include "deviceutils.h"
-
+#include <glib.h>
+#include <gio/gio.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>

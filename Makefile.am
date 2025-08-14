@@ -22,7 +22,8 @@ AM_CFLAGS += -Wall -Werror $(cjson_CFLAGS) $(curl_CFLAGS) $(CFLAGS)
 AM_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
 AM_LDFLAGS += $(cjson_LIBS) $(curl_LIBS) 
 AM_LDFLAGS += -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread -lrbus
-
+AM_CFLAGS += $(GLIB_CFLAGS)
+rdkvfwupgrader_LDADD = $(GLIB_LIBS)
 bin_PROGRAMS= rdkvfwupgrader
 
 
@@ -47,7 +48,7 @@ rdkvfwupgrader_include_HEADERS = \
     ${top_srcdir}/src/deviceutils/deviceutils.h \
     ${top_srcdir}/src/include/device_status_helper.h
 
-rdkvfwupgrader_CFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
+rdkvfwupgrader_CFLAGS =  $(GLIB_CFLAGS) -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
 rdkvfwupgrader_CPPFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
 
 if USE_CPC_CODE
