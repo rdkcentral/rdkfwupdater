@@ -89,8 +89,8 @@ int force_exit = 0; //This use when rdkvfwupgrader rcv appmode background and th
 /*Description: this enum is used to represent the state of the deamon at any given point of time */
 
 typedef enum {
-    STATE_INIT,
     STATE_INIT_VALIDATION,
+    STATE_INIT,
     STATE_IDLE,
     STATE_CHECK_UPDATE,
     STATE_DOWNLOAD_UPDATE,
@@ -2139,6 +2139,22 @@ int main() {
    currentState = STATE_INIT;
    while (1) {
 	    switch (currentState) {
+	    case STATE_INIT_VALIDATION:
+		//Do the initial validation
+		SWLOG_INFO("In STATE_INIT_VALIDATION\n");
+		init_validate_status = initialValidation();
+		SWLOG_INFO("init_validate_status = %d\n", init_validate_status);
+		if( init_validate_status == INITIAL_VALIDATION_SUCCESS) {
+			SWLOG_INFO("Initial validation success.Entering into STATE_IDLE\n");
+			currentState = STATE_INIT;
+		}
+		else{
+			SWLOG_ERROR("Initial validation failed\n");
+			uninitialize(init_validate_status);
+			log_exit();
+			exit(ret_curl_code);
+		}
+		break;
             case STATE_INIT:
                 // Transition to IDLE after setup
 		SWLOG_INFO("In STATE_INIT\n");
@@ -2149,28 +2165,14 @@ int main() {
 			exit(ret_curl_code);
 		}else {
 			SWLOG_ERROR( "initialize(): Success:%d ; Entering into STATE_INTI_VALIDATION\n", ret);
-			currentState = STATE_INIT_VALIDATION;
-		}
-                break;
-	    case STATE_INIT_VALIDATION:
-		//Do the initial validation
-		SWLOG_INFO("In STATE_INIT_VALIDATION\n");
-		init_validate_status = initialValidation();
-		SWLOG_INFO("init_validate_status = %d\n", init_validate_status);
-		if( init_validate_status == INITIAL_VALIDATION_SUCCESS) {
-			SWLOG_INFO("Initial validation success.Entering into STATE_IDLE\n");
 			currentState = STATE_IDLE;
 		}
-		else{
-			SWLOG_ERROR("Initial validation failed\n");
-			uninitialize(init_validate_status);
-			log_exit();
-			exit(ret_curl_code);
-		}
-		break;
+                break;
             case STATE_IDLE:
                 // Wait for DBus events
                 // On event, set currentState = STATE_CHECK_UPDATE / etc.
+		SWLOG_INFO("Hmmm I'm Patiently waiting for dbus calls\n");
+		sleep(50);
                 break;
             case STATE_CHECK_UPDATE:
                 SWLOG_INFO("Received request for checking the update\n");
