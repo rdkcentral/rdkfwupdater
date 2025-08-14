@@ -680,7 +680,6 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
     int curl_ret_code = -1;
     FileDwnl_t file_dwnl;
     int chunk_dwnl = 0;
-    int mtls_enable = 1; //Setting mtls by default enable
     bool direct_cdn_image_download = false;
     char headerInfoFile[136] = {0};
 
@@ -772,22 +771,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
     if ((strcmp(disableStatsUpdate, "yes")) && (server_type == HTTP_SSR_DIRECT)) {
         chunk_dwnl = isIncremetalCDLEnable(file_dwnl.pathname);
     }
-#ifndef LIBRDKCERTSELECTOR
-    if ((0 == (strncmp(rfc_list.rfc_directcdn, "true", 4))) && (server_type == HTTP_SSR_DIRECT) && (state_red != 1)) {
-        SWLOG_INFO("Disabling MTLS credential for Direct CDN\n");
-        mtls_enable = -1;
-    } else {    
-        SWLOG_INFO("Fetching MTLS credential for SSR/XCONF\n");
-        ret = getMtlscert(&sec);
-        if (-1 == ret) {
-             SWLOG_ERROR("%s : getMtlscert() Featching MTLS fail. Going For NON MTLS:%d\n", __FUNCTION__, ret);
-             mtls_enable = -1;//If certificate or key featching fail try with non mtls
-        }else {
-             SWLOG_INFO("MTLS is enable\nMTLS creds for SSR fetched ret=%d\n", ret);
-             t2CountNotify("SYS_INFO_MTLS_enable", 1);
-        } 
-    }	
-#endif	
+
     (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_INIT) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_INIT);
     do {
 	       if ((0 == (strncmp(rfc_list.rfc_directcdn, "true", 4))) && (server_type == HTTP_SSR_DIRECT) && (state_red != 1)) {
