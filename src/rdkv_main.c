@@ -51,7 +51,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
-
+#include <sys/file.h>
 #define JSON_STR_LEN        1000
 
 #define DOWNLOADED_PERIPHERAL_VERSION "/tmp/downloaded_peripheral_versions.txt"
@@ -86,6 +86,39 @@ static pthread_mutex_t app_mode_status = PTHREAD_MUTEX_INITIALIZER;
 static int app_mode = 1; // 1: fore ground and 0: background
 int force_exit = 0; //This use when rdkvfwupgrader rcv appmode background and thottle speed is set to zero.
 
+/*Description: this enum is used to represent the state of the deamon at any given point of time */
+
+typedef enum {
+    STATE_INIT,
+    STATE_INIT_VALIDATION,
+    STATE_IDLE,
+    STATE_CHECK_UPDATE,
+    STATE_DOWNLOAD_UPDATE,
+    STATE_UPGRADE
+} FwUpgraderState;
+
+FwUpgraderState currentState;
+static bool isDebugEnabled = true;
+static pid_t DAEMONPID;
+
+static int checkAnotherFWUpgraderInstance (void){
+	SWLOG_ERROR("Checking if another instance is running \n");
+	int fd;
+	fd = open("/var/run/rdkvfwupgrader.lock", O_CREAT | O_RDWR, 0666);
+	if (fd == -1)
+	{
+		SWLOG_ERROR("Failed to open lock file\n");
+		return 0;
+	}
+	if (flock(fd, LOCK_EX | LOCK_NB) != 0)
+	{
+		SWLOG_ERROR("Failed to acquire lock file\n");
+		close(fd);
+		return 1;
+	}
+	/* OK to proceed (lock will be released and file descriptor will be closed on exit) */
+	return 0;
+}
 /* Description: Get trigger type info.
  * @param: NA
  * @return: int
@@ -198,9 +231,9 @@ void interuptDwnl(int app_mode)
     }
 }
 
-void handle_signal(int no, siginfo_t* info, void* uc)
+void handle_signal(int sig, siginfo_t* info, void* uc)
 {
-
+/*
     SWLOG_INFO("Raise SIGUSR1 signal\n");
     force_exit = 1;
     setForceStop(1);
@@ -210,6 +243,40 @@ void handle_signal(int no, siginfo_t* info, void* uc)
     eventManager(FW_STATE_EVENT, FW_STATE_FAILED);
     SWLOG_INFO("Download is going to stop and aborted\n");
     updateUpgradeFlag(2);
+*/
+    SWLOG_ERROR("[%s][%u] Signal number: %d\n", __FUNCTION__, __LINE__, info->si_signo);
+    if(DAEMONPID == getpid())
+    {
+	    int fd;
+	    if ( sig == SIGINT )
+	    {
+		SWLOG_INFO("SIGINT received!\n");
+		exit(0);
+	    }
+	    else if ( sig == SIGTERM || sig == SIGKILL )
+	    {
+		exit(0);
+	    }
+	    else 
+	    {   
+		/* get stack trace first */
+		//_print_stack_backtrace();
+		SWLOG_ERROR("[%s][%u] Signal number: %d\n", __FUNCTION__, __LINE__, info->si_signo);
+		SWLOG_INFO("[%s][%u] Signal error: %d\n", __FUNCTION__, __LINE__, info->si_errno);
+		SWLOG_INFO("[%s][%u] Signal code: %d\n", __FUNCTION__, __LINE__, info->si_code);
+		SWLOG_INFO("[%s][%u] Signal value: %d\n", __FUNCTION__, __LINE__, info->si_value.sival_int);
+		(void)uc;
+		exit(0);
+	    }
+    }
+    else
+    {
+	// This logic is added to terminate child imediately if we get terminate signals eg:SIGTERM / SIGKILL ...
+	if(!(sig == SIGUSR1 || sig == SIGCHLD || sig == SIGPIPE || sig == SIGUSR2 || sig == SIGALRM ))
+	{
+		exit(0);
+	}
+    }
 }
 
 /* Description: Use for save process id and store inside file.
@@ -1946,7 +2013,53 @@ int initialValidation(void)
 
 #ifndef GTEST_ENABLE
 
-int main(int argc, char *argv[]) {
+int main() {
+
+    pid_t process_id = 0;
+    pid_t sid = 0;
+    log_init();
+    /* Abort if another instance of rdkvfwupgrader is already running */
+    if (checkAnotherFWUpgraderInstance()){
+        SWLOG_ERROR("fork failed!\n");
+        return 1;
+    }
+    process_id = fork();
+
+    if (process_id < 0)
+    {
+        SWLOG_ERROR("fork failed!\n");
+        return 1;
+    }
+    else if (process_id > 0)
+    {
+        return 0;
+    }
+
+    //unmask the file mode
+    umask(0);
+
+    //set new session
+    sid = setsid();
+    if (sid < 0)
+    {
+        SWLOG_ERROR("setsid failed!\n");
+    }
+
+    // Change the current working directory to root.
+    if (chdir("/") < 0)
+    {
+        SWLOG_ERROR("chdir failed!\n");
+	return 1;
+    }
+
+     if (isDebugEnabled != true){
+	     // Close stdin. stdout and stderr
+	       close(STDIN_FILENO);
+	       close(STDOUT_FILENO);
+	       close(STDERR_FILENO);
+      }
+
+
     static XCONFRES response;
     int ret = -1;
     int ret_sig = -1;
@@ -1962,12 +2075,22 @@ int main(int argc, char *argv[]) {
     rdkv_newaction.sa_sigaction = handle_signal;
     rdkv_newaction.sa_flags = SA_ONSTACK | SA_SIGINFO;
     log_init();
-    ret_sig = sigaction(SIGUSR1, &rdkv_newaction, NULL);
+
+    //Signal handling 
+    ret_sig = sigaction(SIGINT, &rdkv_newaction, NULL);
     if (ret_sig == -1) {
-        SWLOG_ERROR( "SIGUSR1 handler install fail\n");
+        SWLOG_ERROR( "SIGINT handler install fail\n");
     }else {
-        SWLOG_INFO( "SIGUSR1 handler install success\n");
+        SWLOG_INFO( "SIGINT handler install success\n");
     }
+    ret_sig = sigaction(SIGTERM, &rdkv_newaction, NULL);
+    if (ret_sig == -1) {
+	    SWLOG_ERROR( "SIGTERM handler install fail\n");
+    }else {
+	    SWLOG_INFO( "SIGTERM handler install success\n");
+    }
+
+    //initialization
     *response.cloudFWFile = 0;
     *response.cloudFWLocation = 0;
     *response.ipv6cloudFWLocation = 0;
@@ -1983,12 +2106,15 @@ int main(int argc, char *argv[]) {
     
     snprintf(disableStatsUpdate, sizeof(disableStatsUpdate), "%s","no");
 
+    /*
     ret = initialize();
     if (1 != ret) {
         SWLOG_ERROR( "initialize(): Fail:%d\n", ret);
         log_exit();
         exit(ret_curl_code);
     }
+    */
+    /*
     if(argc < 3) {
         SWLOG_ERROR( "Provide 2 arguments. Less than 2 arguments received\n");
         SWLOG_ERROR("Retry Count (1) argument will not be parsed as we will use hardcoded fallback mechanism added \
@@ -2002,11 +2128,12 @@ int main(int argc, char *argv[]) {
         log_exit();
         exit(ret_curl_code);
     }
-    for( i = 0; i < argc; i++ ) {
-        SWLOG_INFO("[%d] = %s\n", i, argv[i]);
-    }
+    */
+    //for( i = 0; i < argc; i++ ) {
+      //  SWLOG_INFO("[%d] = %s\n", i, argv[i]);
+    //}
 
-
+/*
     trigger_type = atoi(argv[2]);
     if (trigger_type == 1) {
         SWLOG_INFO("Image Upgrade During Bootup ..!\n");
@@ -2029,8 +2156,16 @@ int main(int argc, char *argv[]) {
 	log_exit();
         exit(ret_curl_code);
     }
-    init_validate_status = initialValidation();
+
+  
+    
+    init_validate_status = initialValidation(); 
     SWLOG_INFO("init_validate_status = %d\n", init_validate_status);
+    currentState = STATE_INIT;
+   */
+/*---------------Init done here --------------*/
+
+    /*
     if( init_validate_status == INITIAL_VALIDATION_SUCCESS)
     {
         eventManager(FW_STATE_EVENT, FW_STATE_UNINITIALIZED);
@@ -2088,7 +2223,63 @@ int main(int argc, char *argv[]) {
     }
 
     uninitialize(init_validate_status);
-    exit(ret_curl_code);
+    exit(ret_curl_code); */
+
+   // Init the Current state into STATE_INIT
+   currentState = STATE_INIT;
+   while (1) {
+	    switch (currentState) {
+            case STATE_INIT:
+                // Transition to IDLE after setup
+		SWLOG_INFO("In STATE_INIT\n");
+		ret = initialize();
+		if (1 != ret) {
+			SWLOG_ERROR( "initialize(): Fail:%d\n", ret);
+			log_exit();
+			exit(ret_curl_code);
+		}else {
+			SWLOG_ERROR( "initialize(): Success:%d ; Entering into STATE_INTI_VALIDATION\n", ret);
+			currentState = STATE_INIT_VALIDATION;
+		}
+                break;
+	    case STATE_INIT_VALIDATION:
+		//Do the initial validation
+		SWLOG_INFO("In STATE_INIT_VALIDATION\n");
+		init_validate_status = initialValidation();
+		SWLOG_INFO("init_validate_status = %d\n", init_validate_status);
+		if( init_validate_status == INITIAL_VALIDATION_SUCCESS) {
+			SWLOG_INFO("Initial validation success.Entering into STATE_IDLE\n");
+			currentState = STATE_IDLE;
+		}
+		else{
+			SWLOG_ERROR("Initial validation failed\n");
+			// do we have to retry here  ?  what action to be taken ?
+			currentState = STATE_INIT_VALIDATION;
+		}
+		break;
+            case STATE_IDLE:
+                // Wait for DBus events
+                // On event, set currentState = STATE_CHECK_UPDATE / etc.
+                break;
+            case STATE_CHECK_UPDATE:
+                SWLOG_INFO("Received request for checking the update\n");
+                currentState = STATE_IDLE;
+                break;
+            case STATE_DOWNLOAD_UPDATE:
+                SWLOG_INFO("Recieved request for downloading the FW\n");
+                currentState = STATE_IDLE;
+                break;
+            case STATE_UPGRADE:
+                SWLOG_INFO("Received request for flashing the image.This will reboot the device\n");
+                break;
+   }
+}
+
+	    // Cleanup the resources if loop exists. 
+	    log_exit();
+	    exit(ret_curl_code);
+  
 }
 
 #endif
+
