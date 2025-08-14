@@ -25,7 +25,6 @@ Requires=network-online.target dbus.service tr69hostif.service
 Type=simple
 ExecStart=/usr/bin/rdkvfwupgrader 0 1
 ExecStop=/usr/bin/killall rdkvfwupgrader
-#ExecStopPost=/bin/rm -rf /tmp/.t2ReadyToReceiveEvents /tmp/telemetry_initialized_bootup /tmp/.t2ConfigReady
 Restart=always
 
 [Install]

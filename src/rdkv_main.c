@@ -99,8 +99,9 @@ typedef enum {
 
 FwUpgraderState currentState;
 static bool isDebugEnabled = true;
-static pid_t DAEMONPID;
+//static pid_t DAEMONPID;
 
+/*
 static int checkAnotherFWUpgraderInstance (void){
 	SWLOG_ERROR("Checking if another instance is running \n");
 	int fd;
@@ -116,9 +117,10 @@ static int checkAnotherFWUpgraderInstance (void){
 		close(fd);
 		return 1;
 	}
-	/* OK to proceed (lock will be released and file descriptor will be closed on exit) */
+	// OK to proceed (lock will be released and file descriptor will be closed on exit) 
 	return 0;
 }
+*/
 /* Description: Get trigger type info.
  * @param: NA
  * @return: int
@@ -231,35 +233,44 @@ void interuptDwnl(int app_mode)
     }
 }
 
-void handle_signal(int sig, siginfo_t* info, void* uc)
+void handle_signal(int no, siginfo_t* info, void* uc)
 {
-/*
+
     SWLOG_INFO("Raise SIGUSR1 signal\n");
     force_exit = 1;
     setForceStop(1);
+    /*
     if (!(strncmp(device_info.maint_status, "true", 4))) {
         eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR);
     }
     eventManager(FW_STATE_EVENT, FW_STATE_FAILED);
     SWLOG_INFO("Download is going to stop and aborted\n");
     updateUpgradeFlag(2);
-*/
+    */
+
+/*
     SWLOG_ERROR("[%s][%u] Signal number: %d\n", __FUNCTION__, __LINE__, info->si_signo);
     if(DAEMONPID == getpid())
     {
 	    int fd;
-	    if ( sig == SIGINT )
+	    if ( no == SIGINT )
 	    {
 		SWLOG_INFO("SIGINT received!\n");
 		exit(0);
 	    }
-	    else if ( sig == SIGTERM || sig == SIGKILL )
+	    if ( no == SIGUSR1 )
+	    {
+		    SWLOG_INFO("Raise SIGUSR1 signal\n");
+		    force_exit = 1;
+		    setForceStop(1);
+	    }
+	    else if ( no == SIGTERM || no == SIGKILL )
 	    {
 		exit(0);
 	    }
 	    else 
 	    {   
-		/* get stack trace first */
+		//get stack trace first 
 		//_print_stack_backtrace();
 		SWLOG_ERROR("[%s][%u] Signal number: %d\n", __FUNCTION__, __LINE__, info->si_signo);
 		SWLOG_INFO("[%s][%u] Signal error: %d\n", __FUNCTION__, __LINE__, info->si_errno);
@@ -272,11 +283,12 @@ void handle_signal(int sig, siginfo_t* info, void* uc)
     else
     {
 	// This logic is added to terminate child imediately if we get terminate signals eg:SIGTERM / SIGKILL ...
-	if(!(sig == SIGUSR1 || sig == SIGCHLD || sig == SIGPIPE || sig == SIGUSR2 || sig == SIGALRM ))
+	if(!(sig == SIGCHLD || sig == SIGPIPE || sig == SIGUSR2 || sig == SIGALRM ))
 	{
 		exit(0);
 	}
     }
+    */
 }
 
 /* Description: Use for save process id and store inside file.
@@ -2015,10 +2027,13 @@ int initialValidation(void)
 
 int main() {
 
+/*
     pid_t process_id = 0;
     pid_t sid = 0;
     log_init();
+*/
     /* Abort if another instance of rdkvfwupgrader is already running */
+/*
     if (checkAnotherFWUpgraderInstance()){
         SWLOG_ERROR("fork failed!\n");
         return 1;
@@ -2058,8 +2073,7 @@ int main() {
 	       close(STDOUT_FILENO);
 	       close(STDERR_FILENO);
       }
-
-
+*/
     static XCONFRES response;
     int ret = -1;
     int ret_sig = -1;
@@ -2072,11 +2086,14 @@ int main() {
     memset(&rdkv_newaction, '\0', sizeof(struct sigaction));
     int init_validate_status = INITIAL_VALIDATION_FAIL;
 
+    
     rdkv_newaction.sa_sigaction = handle_signal;
     rdkv_newaction.sa_flags = SA_ONSTACK | SA_SIGINFO;
     log_init();
 
+
     //Signal handling 
+    /*
     ret_sig = sigaction(SIGINT, &rdkv_newaction, NULL);
     if (ret_sig == -1) {
         SWLOG_ERROR( "SIGINT handler install fail\n");
@@ -2088,6 +2105,13 @@ int main() {
 	    SWLOG_ERROR( "SIGTERM handler install fail\n");
     }else {
 	    SWLOG_INFO( "SIGTERM handler install success\n");
+    }
+*/
+    ret_sig = sigaction(SIGUSR1, &rdkv_newaction, NULL);
+    if (ret_sig == -1) {
+        SWLOG_ERROR( "SIGUSR1 handler install fail\n");
+    }else {
+        SWLOG_INFO( "SIGUSR1 handler install success\n");
     }
 
     //initialization
@@ -2106,124 +2130,8 @@ int main() {
     
     snprintf(disableStatsUpdate, sizeof(disableStatsUpdate), "%s","no");
 
-    /*
-    ret = initialize();
-    if (1 != ret) {
-        SWLOG_ERROR( "initialize(): Fail:%d\n", ret);
-        log_exit();
-        exit(ret_curl_code);
-    }
-    */
-    /*
-    if(argc < 3) {
-        SWLOG_ERROR( "Provide 2 arguments. Less than 2 arguments received\n");
-        SWLOG_ERROR("Retry Count (1) argument will not be parsed as we will use hardcoded fallback mechanism added \
-                     triggerType=2 # Set the Image Upgrade trigger Type \
-                     Usage: rdkvfwupgrader <failure retry count> <Image trigger Type> \
-                     failure retry count: This value from DCM settings file, if not  \
-                     Image trigger Type : Bootup(1)/scheduled(2)/tr69 or SNMP triggered upgrade(3)/App triggered upgrade(4)/(5) Delayed Download\n");
-        if (0 == (strncmp(device_info.maint_status, "true", 4))) {
-            eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR);
-        }
-        log_exit();
-        exit(ret_curl_code);
-    }
-    */
-    //for( i = 0; i < argc; i++ ) {
-      //  SWLOG_INFO("[%d] = %s\n", i, argv[i]);
-    //}
 
-/*
-    trigger_type = atoi(argv[2]);
-    if (trigger_type == 1) {
-        SWLOG_INFO("Image Upgrade During Bootup ..!\n");
-    }else if (trigger_type == 2) {
-        SWLOG_INFO("Scheduled Image Upgrade using cron ..!\n");
-        t2CountNotify("SYST_INFO_SWUpgrdChck", 1);
-    }else if(trigger_type == 3){
-        SWLOG_INFO("TR-69/SNMP triggered Image Upgrade ..!\n");
-    }else if(trigger_type == 4){
-        SWLOG_INFO("App triggered Image Upgrade ..!\n");
-    }else if(trigger_type == 5){
-        SWLOG_INFO("Delayed Trigger Image Upgrade ..!\n");
-    }else if(trigger_type == 6){
-        SWLOG_INFO("State Red Image Upgrade ..!\n");
-    }else{
-        SWLOG_INFO("Invalid trigger type Image Upgrade ..!\n");
-        if (0 == (strncmp(device_info.maint_status, "true", 4))) {
-	    eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR);
-	}
-	log_exit();
-        exit(ret_curl_code);
-    }
-
-  
     
-    init_validate_status = initialValidation(); 
-    SWLOG_INFO("init_validate_status = %d\n", init_validate_status);
-    currentState = STATE_INIT;
-   */
-/*---------------Init done here --------------*/
-
-    /*
-    if( init_validate_status == INITIAL_VALIDATION_SUCCESS)
-    {
-        eventManager(FW_STATE_EVENT, FW_STATE_UNINITIALIZED);
-	if( isInStateRed() ) {
-          eventManager(RED_STATE_EVENT, RED_RECOVERY_STARTED);
-        }
-	eventManager(FW_STATE_EVENT, FW_STATE_REQUESTING);
-        ret_curl_code = MakeXconfComms( &response, server_type, &http_code );
-
-        SWLOG_INFO("XCONF Download completed with curl code:%d\n", ret_curl_code);
-        if( ret_curl_code == 0 && http_code == 200)
-        {
-            SWLOG_INFO("XCONF Download Success\n");
-            json_res = processJsonResponse(&response, cur_img_detail.cur_img_name, device_info.model, device_info.maint_status);
-            SWLOG_INFO("processJsonResponse returned %d\n", json_res);
-            if (0 == (strncmp(response.cloudProto, "tftp", 4))) {
-                proto = 0;
-            }
-            if ((proto == 1) && (json_res == 0)) {
-                ret_curl_code = checkTriggerUpgrade(&response, device_info.model);
-
-                char *msg = printCurlError(ret_curl_code);
-                if (msg != NULL) {
-                    SWLOG_INFO("curl return code =%d and error message=%s\n", ret_curl_code, msg);
-                    t2CountNotify("CurlRet_split", ret_curl_code);
-                }
-                SWLOG_INFO("rdkvfwupgrader daemon exit curl code: %d\n", ret_curl_code);
-            } else if (proto == 0) {    // tftp = 0
-               SWLOG_INFO("tftp protocol support not present.\n");
-            }
-            else {
-               SWLOG_INFO("Invalid JSON Response.\n");
-            }
-	}else {
-            SWLOG_INFO("XCONF Download Fail\n");
-	}
-    }
-    if (init_validate_status == INITIAL_VALIDATION_DWNL_INPROGRESS){
-        if (!(strncmp(device_info.maint_status, "true", 4))) {
-            eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_INPROGRESS); //Sending status to maintenance manager
-        }
-    }else if(init_validate_status == INITIAL_VALIDATION_DWNL_COMPLETED) {
-	SWLOG_INFO("Software Update is completed by AS/EPG, Exiting from firmware download.\n");
-    }else if ((ret_curl_code != 0) || (json_res != 0)) {
-        if (!(strncmp(device_info.maint_status, "true", 4))) {
-            eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR); //Sending status to maintenance manager
-        }
-	if (trigger_type == 6) {
-            unsetStateRed();
-	}
-    }else {
-        if (!(strncmp(device_info.maint_status, "true", 4))) {
-            eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_COMPLETE); //Sending status to maintenance manager
-        }
-    }
-
-    uninitialize(init_validate_status);
-    exit(ret_curl_code); */
 
    // Init the Current state into STATE_INIT
    currentState = STATE_INIT;
@@ -2253,8 +2161,9 @@ int main() {
 		}
 		else{
 			SWLOG_ERROR("Initial validation failed\n");
-			// do we have to retry here  ?  what action to be taken ?
-			currentState = STATE_INIT_VALIDATION;
+			uninitialize(init_validate_status);
+			log_exit();
+			exit(ret_curl_code);
 		}
 		break;
             case STATE_IDLE:
@@ -2277,6 +2186,7 @@ int main() {
 
 	    // Cleanup the resources if loop exists. 
 	    log_exit();
+	    uninitialize(init_validate_status);
 	    exit(ret_curl_code);
   
 }
