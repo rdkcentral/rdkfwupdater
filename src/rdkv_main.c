@@ -87,8 +87,12 @@ static pthread_mutex_t app_mode_status = PTHREAD_MUTEX_INITIALIZER;
 static int app_mode = 1; // 1: fore ground and 0: background
 int force_exit = 0; //This use when rdkvfwupgrader rcv appmode background and thottle speed is set to zero.
 
-/*Description: this enum is used to represent the state of the deamon at any given point of time */
+/******************************************************************************
+ * D-BUS TYPE DEFINITIONS - DECLARE BEFORE GLOBAL VARIABLES
+ ******************************************************************************/
 
+// State machine definitions
+/*Description: this enum is used to represent the state of the deamon at any given point of time */
 typedef enum {
     STATE_INIT_VALIDATION,
     STATE_INIT,
@@ -98,7 +102,464 @@ typedef enum {
     STATE_UPGRADE
 } FwUpgraderState;
 
+// Simple structure to track registered processes
+typedef struct {
+    guint64 handler_id;
+    gchar *process_name;
+    gchar *lib_version;
+    gchar *sender_id;
+    gint64 registration_time;
+} SimpleProcessInfo;
+
+
 FwUpgraderState currentState;
+
+// Task context for async operations
+typedef struct {
+    gchar *process_name;           // App name (e.g., "AppB", "AppC")
+    gchar *lib_version;           // Library version
+    gchar *sender_id;             // D-Bus sender ID (e.g., ":1.50")
+    GDBusMethodInvocation *invocation; // Response ticket to send back to app
+    gint64 start_time;            // When task started
+} TaskContext;
+
+/******************************************************************************
+ * D-BUS GLOBAL VARIABLES
+ ******************************************************************************/
+// Global variables for D-Bus 
+static GDBusConnection *connection = NULL;
+static GMainLoop *main_loop = NULL;
+static guint registration_id = 0;
+
+// Task tracking system
+static GHashTable *active_tasks = NULL;      // Tracks running async tasks (task_id -> TaskContext)
+static guint next_task_id = 1;              // Unique task IDs
+
+// Basic process tracking
+static GHashTable *registered_processes = NULL;  // handler_id -> SimpleProcessInfo
+
+// D-Bus service information
+#define BUS_NAME "com.rdkfwupgrader.Service"
+#define OBJECT_PATH "/com/rdkfwupgrader/Service"
+#define INTERFACE_NAME "com.rdkfwupgrader.Interface"
+
+
+// D-Bus introspection data (this defines our interface)
+static const gchar introspection_xml[] =
+"<node>"
+"  <interface name='com.rdkfwupgrader.Interface'>"
+"    <method name='CheckForUpdate'>"
+"      <arg type='s' name='processName' direction='in'/>"
+"      <arg type='s' name='libVersion' direction='in'/>"
+"      <arg type='b' name='success' direction='out'/>"
+"      <arg type='s' name='message' direction='out'/>"
+"    </method>"
+"    <method name='DownloadFirmware'>"
+"      <arg type='s' name='processName' direction='in'/>"
+"      <arg type='b' name='success' direction='out'/>"
+"      <arg type='s' name='message' direction='out'/>"
+"    </method>"
+"    <method name='UpdateFirmware'>"
+"      <arg type='s' name='processName' direction='in'/>"
+"      <arg type='b' name='success' direction='out'/>"
+"      <arg type='s' name='message' direction='out'/>"
+"    </method>"
+"    <method name='RegisterProcess'>"
+"      <arg type='s' name='processName' direction='in'/>"
+"      <arg type='s' name='libVersion' direction='in'/>"
+"      <arg type='t' name='handler' direction='out'/>"
+"    </method>"
+"    <method name='UnregisterProcess'>"
+"      <arg type='t' name='handler' direction='in'/>"
+"      <arg type='b' name='success' direction='out'/>"
+"    </method>"
+"  </interface>"
+"</node>";
+
+
+******************************************************************************
+ * D-BUS FUNCTION DECLARATIONS
+ ******************************************************************************/
+static void handle_method_call(GDBusConnection *connection,
+                             const gchar *sender,
+                             const gchar *object_path,
+                             const gchar *interface_name,
+                             const gchar *method_name,
+                             GVariant *parameters,
+                             GDBusMethodInvocation *invocation,
+                             gpointer user_data);
+
+/******************************************************************************
+ * BASIC PROCESS TRACKING SYSTEM
+ ******************************************************************************/
+
+// Initialize basic tracking
+static void init_basic_tracking()
+{
+    registered_processes = g_hash_table_new_full(g_int64_hash, g_int64_equal,
+                                               g_free, (GDestroyNotify)g_free);
+    SWLOG_INFO("[TRACKING] Basic process tracking initialized\n");
+}
+
+// Add process to tracking
+static guint64 add_process_to_tracking(const gchar *process_name,
+                                      const gchar *lib_version,
+                                      const gchar *sender_id)
+{
+    SimpleProcessInfo *info = g_malloc0(sizeof(SimpleProcessInfo));
+
+    info->handler_id = g_get_monotonic_time();
+    info->process_name = g_strdup(process_name);
+    info->lib_version = g_strdup(lib_version);
+    info->sender_id = g_strdup(sender_id);
+    info->registration_time = g_get_monotonic_time();
+
+    guint64 *key = g_malloc(sizeof(guint64));
+    *key = info->handler_id;
+    g_hash_table_insert(registered_processes, key, info);
+
+    SWLOG_INFO("[TRACKING] ✅ Added: %s (handler: %lu, sender: %s)\n",
+           process_name, info->handler_id, sender_id);
+    SWLOG_INFO("[TRACKING] Total registered: %d\n", g_hash_table_size(registered_processes));
+
+    return info->handler_id;
+}
+
+// Remove process from tracking
+static gboolean remove_process_from_tracking(guint64 handler_id)
+{
+    SimpleProcessInfo *info = g_hash_table_lookup(registered_processes, &handler_id);
+    if (!info) {
+        SWLOG_INFO("[TRACKING] ❌ Handler %lu not found\n", handler_id);
+        return FALSE;
+    }
+
+    SWLOG_INFO("[TRACKING] 🗑️ Removing: %s (handler: %lu)\n",
+           info->process_name, handler_id);
+
+    g_hash_table_remove(registered_processes, &handler_id);
+
+    SWLOG_INFO("[TRACKING] Total registered: %d\n", g_hash_table_size(registered_processes));
+    return TRUE;
+}
+
+// Free tracking resources
+static void cleanup_basic_tracking()
+{
+    if (registered_processes) {
+        SWLOG_INFO("[TRACKING] Cleaning up %d registered processes\n",
+               g_hash_table_size(registered_processes));
+        g_hash_table_destroy(registered_processes);
+        registered_processes = NULL;
+    }
+}
+
+/******************************************************************************
+ * TASK MANAGEMENT FUNCTIONS
+ ******************************************************************************/
+
+// Initialize the async task tracking system
+static void init_task_system()
+{
+    active_tasks = g_hash_table_new_full(g_direct_hash, g_direct_equal,
+                                        NULL, (GDestroyNotify)g_free);
+    SWLOG_INFO("[TASK-SYSTEM] Initialized task tracking system\n");
+
+    // Also initialize basic process tracking
+    init_basic_tracking();
+}
+
+// Create context for each app's request
+static TaskContext* create_task_context(const gchar* process_name,
+                                       const gchar* lib_version,
+                                       const gchar* sender_id,
+                                       GDBusMethodInvocation *invocation)
+{
+    TaskContext *ctx = g_malloc0(sizeof(TaskContext));
+    ctx->process_name = g_strdup(process_name);
+    ctx->lib_version = lib_version ? g_strdup(lib_version) : NULL;
+    ctx->sender_id = g_strdup(sender_id);
+    ctx->invocation = invocation;  // This is the "response ticket"
+    ctx->start_time = g_get_monotonic_time();
+    return ctx;
+}
+
+// Free task context when done
+static void free_task_context(TaskContext *ctx)
+{
+    if (!ctx) return;
+    g_free(ctx->process_name);
+    g_free(ctx->lib_version);
+    g_free(ctx->sender_id);
+    g_free(ctx);
+}
+
+/******************************************************************************
+ * D-BUS METHOD HANDLER - ENTRY POINT FOR ALL REQUESTS
+ ******************************************************************************/
+static void handle_method_call(GDBusConnection *connection,
+                             const gchar *sender,
+                             const gchar *object_path,
+                             const gchar *interface_name,
+                             const gchar *method_name,
+                             GVariant *parameters,
+                             GDBusMethodInvocation *invocation,
+                             gpointer user_data)
+{
+    SWLOG_INFO("\n==== [D-BUS] INCOMING REQUEST: %s from %s ====\n", method_name, sender);
+
+    // ============================================================================
+    // CHECK UPDATE REQUEST - Fast operation (2-3 seconds)
+    // ============================================================================
+    if (g_strcmp0(method_name, "CheckForUpdate") == 0) {
+        gchar *process_name, *lib_version;
+        g_variant_get(parameters, "(ss)", &process_name, &lib_version);
+
+        SWLOG_INFO("[D-BUS] CheckForUpdate request: process='%s', lib='%s', sender='%s'\n",
+               process_name, lib_version, sender);
+
+        // Create task context (stores all request info)
+        TaskContext *ctx = create_task_context(process_name, lib_version, sender, invocation);
+
+        // Assign unique task ID and track it
+        guint task_id = next_task_id++;
+        g_hash_table_insert(active_tasks, GUINT_TO_POINTER(task_id), ctx);
+
+        SWLOG_INFO("[D-BUS] ✓ Spawning ASYNC CheckUpdate task-%d - RETURNING IMMEDIATELY\n", task_id);
+
+        // Start async task (returns immediately, doesn't block!)
+        g_timeout_add(100, check_update_task, ctx);
+
+        g_free(process_name);
+        g_free(lib_version);
+    }
+
+    // ============================================================================
+    // DOWNLOAD REQUEST - Slow operation (10+ seconds with progress)
+    // ============================================================================
+    else if (g_strcmp0(method_name, "DownloadFirmware") == 0) {
+        gchar *process_name;
+        g_variant_get(parameters, "(s)", &process_name);
+
+        SWLOG_INFO("[D-BUS] DownloadFirmware request: process='%s', sender='%s'\n",
+               process_name, sender);
+
+        TaskContext *ctx = create_task_context(process_name, NULL, sender, invocation);
+        guint task_id = next_task_id++;
+        g_hash_table_insert(active_tasks, GUINT_TO_POINTER(task_id), ctx);
+
+        SWLOG_INFO("[D-BUS] ✓ Spawning ASYNC Download task-%d - RETURNING IMMEDIATELY\n", task_id);
+
+        // Start download with progress updates every 2 seconds
+        g_timeout_add(2000, download_task_step, ctx);
+
+        g_free(process_name);
+    }
+
+    // ============================================================================
+    // UPGRADE REQUEST - Critical operation (30+ seconds, can reboot system)
+    // ============================================================================
+    else if (g_strcmp0(method_name, "UpdateFirmware") == 0) {
+        gchar *process_name;
+        g_variant_get(parameters, "(s)", &process_name);
+
+        SWLOG_INFO("[D-BUS] UpdateFirmware request: process='%s', sender='%s'\n",
+               process_name, sender);
+        SWLOG_INFO("[D-BUS] ⚠️  WARNING: This will flash firmware and reboot system!\n");
+
+        TaskContext *ctx = create_task_context(process_name, NULL, sender, invocation);
+        guint task_id = next_task_id++;
+        g_hash_table_insert(active_tasks, GUINT_TO_POINTER(task_id), ctx);
+
+        SWLOG_INFO("[D-BUS] ✓ Spawning ASYNC Upgrade task-%d - RETURNING IMMEDIATELY\n", task_id);
+
+        g_timeout_add(100, upgrade_task, ctx);
+
+        g_free(process_name);
+    }
+
+    // ============================================================================
+    // REGISTER PROCESS - Immediate response (no async task needed)
+    // ============================================================================
+    else if (g_strcmp0(method_name, "RegisterProcess") == 0) {
+        gchar *process_name, *lib_version;
+        g_variant_get(parameters, "(ss)", &process_name, &lib_version);
+
+        SWLOG_INFO("[D-BUS] RegisterProcess: process='%s', lib='%s', sender='%s'\n",
+               process_name, lib_version, sender);
+
+        // Add to basic tracking system
+        guint64 handler_id = add_process_to_tracking(process_name, lib_version, sender);
+
+        SWLOG_INFO("[D-BUS] ✓ Process registered with handler ID: %lu\n", handler_id);
+
+        // Send immediate response (no async task needed)
+        g_dbus_method_invocation_return_value(invocation,
+            g_variant_new("(t)", handler_id));
+
+        g_free(process_name);
+        g_free(lib_version);
+    }
+
+    // ============================================================================
+    // UNREGISTER PROCESS - Immediate response (no async task needed)
+    // ============================================================================
+    else if (g_strcmp0(method_name, "UnregisterProcess") == 0) {
+        guint64 handler;
+        g_variant_get(parameters, "(t)", &handler);
+
+        SWLOG_INFO("[D-BUS] UnregisterProcess: handler=%lu, sender='%s'\n", handler, sender);
+
+        // Remove from basic tracking system
+        if (remove_process_from_tracking(handler)) {
+            SWLOG_INFO("[D-BUS] ✅ Process unregistered successfully\n");
+            g_dbus_method_invocation_return_value(invocation,
+                g_variant_new("(b)", TRUE));
+        } else {
+            SWLOG_INFO("[D-BUS] ❌ Failed to unregister process\n");
+            g_dbus_method_invocation_return_value(invocation,
+                g_variant_new("(b)", FALSE));
+        }
+    }
+
+    // ============================================================================
+    // UNKNOWN METHOD
+    // ============================================================================
+    else {
+        SWLOG_INFO("[D-BUS] ❌ Unknown method: %s\n", method_name);
+        g_dbus_method_invocation_return_error(invocation,
+            G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD,
+            "Unknown method: %s", method_name);
+    }
+    SWLOG_INFO("==== [D-BUS] Request handling complete - Active tasks: %d ====\n\n",
+           g_hash_table_size(active_tasks));
+}
+
+
+// D-Bus interface vtable
+static const GDBusInterfaceVTable interface_vtable = {
+    handle_method_call,
+    NULL, // get_property
+    NULL  // set_property
+};
+
+
+
+/******************************************************************************
+ * D-BUS SERVER SETUP FUNCTIONS
+ ******************************************************************************/
+
+// Initialize D-Bus server
+static int setup_dbus_server()
+{
+    GError *error = NULL;
+    GDBusNodeInfo *introspection_data = NULL;
+
+    SWLOG_INFO("[D-BUS SETUP] Setting up D-Bus server...\n");
+
+    // Parse the introspection XML
+    introspection_data = g_dbus_node_info_new_for_xml(introspection_xml, &error);
+    if (!introspection_data) {
+        SWLOG_ERROR("[D-BUS SETUP] Error parsing introspection XML: %s\n", error->message);
+        g_error_free(error);
+        return 0;
+    }
+
+    // Get connection to the system bus
+    connection = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
+    if (!connection) {
+        SWLOG_ERROR("[D-BUS SETUP] Error connecting to D-Bus: %s\n", error->message);
+        g_error_free(error);
+        g_dbus_node_info_unref(introspection_data);
+        return 0;
+    }
+
+    // Register the object
+    registration_id = g_dbus_connection_register_object(
+        connection,
+        OBJECT_PATH,
+        introspection_data->interfaces[0],
+        &interface_vtable,
+        NULL,  // user_data
+        NULL,  // user_data_free_func
+        &error);
+
+    if (registration_id == 0) {
+        SWLOG_ERROR("[D-BUS SETUP] Error registering object: %s\n", error->message);
+        g_error_free(error);
+        g_dbus_node_info_unref(introspection_data);
+        return 0;
+    }
+
+    // Request the bus name
+    guint owner_id = g_bus_own_name_on_connection(
+        connection,
+        BUS_NAME,
+        G_BUS_NAME_OWNER_FLAGS_NONE,
+        NULL, // name_acquired_callback
+        NULL, // name_lost_callback
+        NULL, // user_data
+        NULL  // user_data_free_func
+    );
+
+    SWLOG_INFO("[D-BUS SETUP] Server setup complete. Service name: %s\n", BUS_NAME);
+    SWLOG_INFO("[D-BUS SETUP] Object path: %s\n", OBJECT_PATH);
+
+    g_dbus_node_info_unref(introspection_data);
+    return 1;
+}
+
+// Cleanup D-Bus resources
+static void cleanup_dbus()
+{
+    SWLOG_INFO("[CLEANUP] Starting D-Bus cleanup...\n");
+
+    // Clean up all active tasks
+    if (active_tasks) {
+        SWLOG_INFO("[CLEANUP] Cleaning up %d active tasks...\n", g_hash_table_size(active_tasks));
+
+        GHashTableIter iter;
+        gpointer key, value;
+
+        g_hash_table_iter_init(&iter, active_tasks);
+        while (g_hash_table_iter_next(&iter, &key, &value)) {
+            TaskContext *ctx = (TaskContext*)value;
+            SWLOG_INFO("[CLEANUP] Freeing task for process: %s\n", ctx->process_name);
+            free_task_context(ctx);
+        }
+        g_hash_table_destroy(active_tasks);
+        active_tasks = NULL;
+    }
+
+    // Clean up basic tracking system
+    cleanup_basic_tracking();
+
+    // Unregister D-Bus object
+    if (registration_id > 0) {
+        SWLOG_INFO("[CLEANUP] Unregistering D-Bus object...\n");
+        g_dbus_connection_unregister_object(connection, registration_id);
+        registration_id = 0;
+    }
+
+    // Release D-Bus connection
+    if (connection) {
+        SWLOG_INFO("[CLEANUP] Releasing D-Bus connection...\n");
+        g_object_unref(connection);
+        connection = NULL;
+    }
+
+    // Free main loop
+    if (main_loop) {
+        SWLOG_INFO("[CLEANUP] Freeing main loop...\n");
+        g_main_loop_unref(main_loop);
+        main_loop = NULL;
+    }
+
+    SWLOG_INFO("[CLEANUP] D-Bus cleanup complete\n");
+}
+
+
+
 //static bool isDebugEnabled = true;
 //static pid_t DAEMONPID;
 
