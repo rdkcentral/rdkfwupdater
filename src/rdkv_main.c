@@ -257,7 +257,7 @@ static void cleanup_basic_tracking()
 /******************************************************************************
  * TASK MANAGEMENT FUNCTIONS
  ******************************************************************************/
-
+/*
 // Initialize the async task tracking system
 static void init_task_system()
 {
@@ -268,7 +268,7 @@ static void init_task_system()
     // Also initialize basic process tracking
     init_basic_tracking();
 }
-
+*/
 // Create context for each app's request
 static TaskContext* create_task_context(const gchar* process_name,
                                        const gchar* lib_version,
@@ -588,7 +588,7 @@ static int setup_dbus_server()
     }
 
     // Request the bus name
-    guint owner_id = g_bus_own_name_on_connection(
+/*    guint owner_id = g_bus_own_name_on_connection(
         connection,
         BUS_NAME,
         G_BUS_NAME_OWNER_FLAGS_NONE,
@@ -597,7 +597,7 @@ static int setup_dbus_server()
         NULL, // user_data
         NULL  // user_data_free_func
     );
-
+*/
     SWLOG_INFO("[D-BUS SETUP] Server setup complete. Service name: %s\n", BUS_NAME);
     SWLOG_INFO("[D-BUS SETUP] Object path: %s\n", OBJECT_PATH);
 
