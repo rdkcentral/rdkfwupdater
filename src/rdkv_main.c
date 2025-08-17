@@ -194,13 +194,14 @@ static void handle_method_call(GDBusConnection *connection,
  ******************************************************************************/
 
 // Initialize basic tracking
+/*
 static void init_basic_tracking()
 {
     registered_processes = g_hash_table_new_full(g_int64_hash, g_int64_equal,
                                                g_free, (GDestroyNotify)g_free);
     SWLOG_INFO("[TRACKING] Basic process tracking initialized\n");
 }
-
+*/
 // Add process to tracking
 static guint64 add_process_to_tracking(const gchar *process_name,
                                       const gchar *lib_version,
