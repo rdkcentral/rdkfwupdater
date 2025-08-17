@@ -2695,7 +2695,7 @@ int main() {
     
 
    // Init the Current state into STATE_INIT
-   currentState = STATE_INIT;
+   currentState = STATE_INIT_VALIDATION;
    while (1) {
 	    switch (currentState) {
 	    case STATE_INIT_VALIDATION:
@@ -2704,7 +2704,7 @@ int main() {
 		init_validate_status = initialValidation();
 		SWLOG_INFO("init_validate_status = %d\n", init_validate_status);
 		if( init_validate_status == INITIAL_VALIDATION_SUCCESS) {
-			SWLOG_INFO("Initial validation success.Entering into STATE_IDLE\n");
+			SWLOG_INFO("Initial validation success.Entering into STATE_INIT\n");
 			currentState = STATE_INIT;
 		}
 		else{
@@ -2726,6 +2726,10 @@ int main() {
 			log_exit();
 			exit(ret_curl_code);
 		}
+		// Create the main loop
+		SWLOG_INFO("Creating g_main_loop for dbus\n");
+
+    		main_loop = g_main_loop_new(NULL, FALSE);
 		ret = initialize();
 		if (1 != ret) {
 			SWLOG_ERROR( "initialize(): Fail:%d\n", ret);
