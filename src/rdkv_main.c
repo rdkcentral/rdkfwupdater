@@ -113,7 +113,7 @@ typedef struct {
 
 
 FwUpgraderState currentState;
-
+static guint owner_id = 0;
 // Task context for async operations
 typedef struct {
     gchar *process_name;           // App name (e.g., "AppB", "AppC")
@@ -589,7 +589,7 @@ static int setup_dbus_server()
     }
 
     // Request the bus name
-    guint owner_id = g_bus_own_name_on_connection(
+    owner_id = g_bus_own_name_on_connection(
         connection,
         BUS_NAME,
         G_BUS_NAME_OWNER_FLAGS_NONE,
@@ -643,6 +643,12 @@ static void cleanup_dbus()
         SWLOG_INFO("[CLEANUP] Releasing D-Bus connection...\n");
         g_object_unref(connection);
         connection = NULL;
+    }
+
+    
+    if (owner_id != 0) {
+	    SWLOG_ERROR("Failed to own bus name\n");
+	    g_bus_unown_name(owner_id);
     }
 
     // Free main loop
