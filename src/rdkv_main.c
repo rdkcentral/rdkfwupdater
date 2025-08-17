@@ -589,7 +589,7 @@ static int setup_dbus_server()
     }
 
     // Request the bus name
-/*    guint owner_id = g_bus_own_name_on_connection(
+    guint owner_id = g_bus_own_name_on_connection(
         connection,
         BUS_NAME,
         G_BUS_NAME_OWNER_FLAGS_NONE,
@@ -598,7 +598,7 @@ static int setup_dbus_server()
         NULL, // user_data
         NULL  // user_data_free_func
     );
-*/
+
     SWLOG_INFO("[D-BUS SETUP] Server setup complete. Service name: %s\n", BUS_NAME);
     SWLOG_INFO("[D-BUS SETUP] Object path: %s\n", OBJECT_PATH);
 
