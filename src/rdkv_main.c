@@ -2028,54 +2028,6 @@ int initialValidation(void)
 #ifndef GTEST_ENABLE
 
 int main() {
-
-/*
-    pid_t process_id = 0;
-    pid_t sid = 0;
-    log_init();
-*/
-    /* Abort if another instance of rdkvfwupgrader is already running */
-/*
-    if (checkAnotherFWUpgraderInstance()){
-        SWLOG_ERROR("fork failed!\n");
-        return 1;
-    }
-    process_id = fork();
-
-    if (process_id < 0)
-    {
-        SWLOG_ERROR("fork failed!\n");
-        return 1;
-    }
-    else if (process_id > 0)
-    {
-        return 0;
-    }
-
-    //unmask the file mode
-    umask(0);
-
-    //set new session
-    sid = setsid();
-    if (sid < 0)
-    {
-        SWLOG_ERROR("setsid failed!\n");
-    }
-
-    // Change the current working directory to root.
-    if (chdir("/") < 0)
-    {
-        SWLOG_ERROR("chdir failed!\n");
-	return 1;
-    }
-
-     if (isDebugEnabled != true){
-	     // Close stdin. stdout and stderr
-	       close(STDIN_FILENO);
-	       close(STDOUT_FILENO);
-	       close(STDERR_FILENO);
-      }
-*/
     static XCONFRES response;
     int ret = -1;
     int ret_sig = -1;
@@ -2095,20 +2047,7 @@ int main() {
 
 
     //Signal handling 
-    /*
-    ret_sig = sigaction(SIGINT, &rdkv_newaction, NULL);
-    if (ret_sig == -1) {
-        SWLOG_ERROR( "SIGINT handler install fail\n");
-    }else {
-        SWLOG_INFO( "SIGINT handler install success\n");
-    }
-    ret_sig = sigaction(SIGTERM, &rdkv_newaction, NULL);
-    if (ret_sig == -1) {
-	    SWLOG_ERROR( "SIGTERM handler install fail\n");
-    }else {
-	    SWLOG_INFO( "SIGTERM handler install success\n");
-    }
-*/
+    
     ret_sig = sigaction(SIGUSR1, &rdkv_newaction, NULL);
     if (ret_sig == -1) {
         SWLOG_ERROR( "SIGUSR1 handler install fail\n");
@@ -2132,9 +2071,6 @@ int main() {
     
     snprintf(disableStatsUpdate, sizeof(disableStatsUpdate), "%s","no");
 
-
-    
-
    // Init the Current state into STATE_INIT_VALIDATION
    currentState = STATE_INIT_VALIDATION;
    while (1) {
@@ -2145,7 +2081,7 @@ int main() {
 		init_validate_status = initialValidation();
 		SWLOG_INFO("init_validate_status = %d\n", init_validate_status);
 		if( init_validate_status == INITIAL_VALIDATION_SUCCESS) {
-			SWLOG_INFO("Initial validation success.Entering into STATE_IDLE\n");
+			SWLOG_INFO("Initial validation success.Entering into STATE_INIT\n");
 			currentState = STATE_INIT;
 		}
 		else{
@@ -2171,8 +2107,8 @@ int main() {
             case STATE_IDLE:
                 // Wait for DBus events
                 // On event, set currentState = STATE_CHECK_UPDATE / etc.
-		SWLOG_INFO("Hmmm I'm Patiently waiting for dbus calls\n");
-		sleep(50);
+		SWLOG_INFO(" Waiting for dbus Requests from apps\n");
+		sleep(60);
                 break;
             case STATE_CHECK_UPDATE:
                 SWLOG_INFO("Received request for checking the update\n");
