@@ -2135,8 +2135,8 @@ int main() {
 
     
 
-   // Init the Current state into STATE_INIT
-   currentState = STATE_INIT;
+   // Init the Current state into STATE_INIT_VALIDATION
+   currentState = STATE_INIT_VALIDATION;
    while (1) {
 	    switch (currentState) {
 	    case STATE_INIT_VALIDATION:
