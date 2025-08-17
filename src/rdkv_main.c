@@ -92,7 +92,7 @@ int force_exit = 0; //This use when rdkvfwupgrader rcv appmode background and th
  ******************************************************************************/
 
 // State machine definitions
-/*Description: this enum is used to represent the state of the deamon at any given point of time */
+/*Description: this enum is used to represent the state of the rdkvfwupgrader at any given point of time */
 typedef enum {
     STATE_INIT_VALIDATION,
     STATE_INIT,
@@ -219,7 +219,7 @@ static guint64 add_process_to_tracking(const gchar *process_name,
     *key = info->handler_id;
     g_hash_table_insert(registered_processes, key, info);
 
-    SWLOG_INFO("[TRACKING] ✅ Added: %s (handler: %lu, sender: %s)\n",
+    SWLOG_INFO("[TRACKING] Added: %s (handler: %lu, sender: %s)\n",
            process_name, info->handler_id, sender_id);
     SWLOG_INFO("[TRACKING] Total registered: %d\n", g_hash_table_size(registered_processes));
 
@@ -231,11 +231,11 @@ static gboolean remove_process_from_tracking(guint64 handler_id)
 {
     SimpleProcessInfo *info = g_hash_table_lookup(registered_processes, &handler_id);
     if (!info) {
-        SWLOG_INFO("[TRACKING] ❌ Handler %lu not found\n", handler_id);
+        SWLOG_INFO("[TRACKING] Handler %lu not found\n", handler_id);
         return FALSE;
     }
 
-    SWLOG_INFO("[TRACKING] 🗑️ Removing: %s (handler: %lu)\n",
+    SWLOG_INFO("[TRACKING] Removing: %s (handler: %lu)\n",
            info->process_name, handler_id);
 
     g_hash_table_remove(registered_processes, &handler_id);
@@ -422,7 +422,7 @@ static void handle_method_call(GDBusConnection *connection,
         guint task_id = next_task_id++;
         g_hash_table_insert(active_tasks, GUINT_TO_POINTER(task_id), ctx);
 
-        SWLOG_INFO("[D-BUS] ✓ Spawning ASYNC CheckUpdate task-%d - RETURNING IMMEDIATELY\n", task_id);
+        SWLOG_INFO("[D-BUS] Spawning ASYNC CheckUpdate task-%d - RETURNING IMMEDIATELY\n", task_id);
 
         // Start async task (returns immediately, doesn't block!)
         g_timeout_add(100, check_update_task, ctx);
@@ -445,7 +445,7 @@ static void handle_method_call(GDBusConnection *connection,
         guint task_id = next_task_id++;
         g_hash_table_insert(active_tasks, GUINT_TO_POINTER(task_id), ctx);
 
-        SWLOG_INFO("[D-BUS] ✓ Spawning ASYNC Download task-%d - RETURNING IMMEDIATELY\n", task_id);
+        SWLOG_INFO("[D-BUS] Spawning ASYNC Download task-%d - RETURNING IMMEDIATELY\n", task_id);
 
         // Start download with progress updates every 2 seconds
         g_timeout_add(2000, download_task_step, ctx);
@@ -462,13 +462,13 @@ static void handle_method_call(GDBusConnection *connection,
 
         SWLOG_INFO("[D-BUS] UpdateFirmware request: process='%s', sender='%s'\n",
                process_name, sender);
-        SWLOG_INFO("[D-BUS] ⚠️  WARNING: This will flash firmware and reboot system!\n");
+        SWLOG_INFO("[D-BUS] WARNING: This will flash firmware and reboot system!\n");
 
         TaskContext *ctx = create_task_context(process_name, NULL, sender, invocation);
         guint task_id = next_task_id++;
         g_hash_table_insert(active_tasks, GUINT_TO_POINTER(task_id), ctx);
 
-        SWLOG_INFO("[D-BUS] ✓ Spawning ASYNC Upgrade task-%d - RETURNING IMMEDIATELY\n", task_id);
+        SWLOG_INFO("[D-BUS] Spawning ASYNC Upgrade task-%d - RETURNING IMMEDIATELY\n", task_id);
 
         g_timeout_add(100, upgrade_task, ctx);
 
@@ -488,7 +488,7 @@ static void handle_method_call(GDBusConnection *connection,
         // Add to basic tracking system
         guint64 handler_id = add_process_to_tracking(process_name, lib_version, sender);
 
-        SWLOG_INFO("[D-BUS] ✓ Process registered with handler ID: %lu\n", handler_id);
+        SWLOG_INFO("[D-BUS] Process registered with handler ID: %lu\n", handler_id);
 
         // Send immediate response (no async task needed)
         g_dbus_method_invocation_return_value(invocation,
@@ -509,11 +509,11 @@ static void handle_method_call(GDBusConnection *connection,
 
         // Remove from basic tracking system
         if (remove_process_from_tracking(handler)) {
-            SWLOG_INFO("[D-BUS] ✅ Process unregistered successfully\n");
+            SWLOG_INFO("[D-BUS] Process unregistered successfully\n");
             g_dbus_method_invocation_return_value(invocation,
                 g_variant_new("(b)", TRUE));
         } else {
-            SWLOG_INFO("[D-BUS] ❌ Failed to unregister process\n");
+            SWLOG_INFO("[D-BUS]Failed to unregister process\n");
             g_dbus_method_invocation_return_value(invocation,
                 g_variant_new("(b)", FALSE));
         }
@@ -523,7 +523,7 @@ static void handle_method_call(GDBusConnection *connection,
     // UNKNOWN METHOD
     // ============================================================================
     else {
-        SWLOG_INFO("[D-BUS] ❌ Unknown method: %s\n", method_name);
+        SWLOG_INFO("[D-BUS] Unknown method: %s\n", method_name);
         g_dbus_method_invocation_return_error(invocation,
             G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD,
             "Unknown method: %s", method_name);
