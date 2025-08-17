@@ -144,7 +144,7 @@ static GHashTable *registered_processes = NULL;  // handler_id -> SimpleProcessI
 #define INTERFACE_NAME "com.rdkfwupgrader.Interface"
 
 
-// D-Bus introspection data (this defines our interface)
+// D-Bus introspection data (this defines the interface)
 static const gchar introspection_xml[] =
 "<node>"
 "  <interface name='com.rdkfwupgrader.Interface'>"
@@ -177,7 +177,7 @@ static const gchar introspection_xml[] =
 "</node>";
 
 
-******************************************************************************
+/******************************************************************************
  * D-BUS FUNCTION DECLARATIONS
  ******************************************************************************/
 static void handle_method_call(GDBusConnection *connection,
@@ -293,7 +293,103 @@ static void free_task_context(TaskContext *ctx)
     g_free(ctx->sender_id);
     g_free(ctx);
 }
+// =============================================================================
+// ASYNC TASK IMPLEMENTATIONS
+// =============================================================================
 
+// Async Check Update Task - calls your existing firmware check logic
+static gboolean check_update_task(gpointer user_data)
+{
+    TaskContext *ctx = (TaskContext*)user_data;
+    guint task_id = GPOINTER_TO_UINT(g_hash_table_lookup(active_tasks, ctx));
+    
+    printf("[TASK-%d] Starting CheckUpdate for %s (sender: %s)\n", 
+           task_id, ctx->process_name, ctx->sender_id);
+    
+    // TODO: Call your existing check update logic here
+    // Example: ret = your_check_update_function(ctx->process_name);
+    
+    // For now, simulate the work
+    printf("[TASK-%d] Contacting xconf server for %s...\n", task_id, ctx->process_name);
+    sleep(2);  // Replace with your actual check logic
+    printf("[TASK-%d] Update check completed for %s\n", task_id, ctx->process_name);
+    
+    // Send response back to the specific app
+    g_dbus_method_invocation_return_value(ctx->invocation,
+        g_variant_new("(bs)", TRUE, "Update check completed successfully"));
+    
+    // Cleanup
+    g_hash_table_remove(active_tasks, GUINT_TO_POINTER(task_id));
+    free_task_context(ctx);
+    
+    return G_SOURCE_REMOVE;
+}
+
+// Async Download Task - calls your existing download logic
+static gboolean download_task_step(gpointer user_data)
+{
+    TaskContext *ctx = (TaskContext*)user_data;
+    static GHashTable *download_progress = NULL;
+    
+    if (!download_progress) {
+        download_progress = g_hash_table_new(g_direct_hash, g_direct_equal);
+    }
+    
+    guint task_id = GPOINTER_TO_UINT(g_hash_table_lookup(active_tasks, ctx));
+    gint progress = GPOINTER_TO_INT(g_hash_table_lookup(download_progress, ctx));
+    
+    printf("[TASK-%d] Download progress for %s: %d%%\n", 
+           task_id, ctx->process_name, progress);
+    
+    // TODO: Call your existing download logic here
+    // Example: ret = your_download_chunk_function(ctx->process_name, progress);
+    
+    progress += 20;  // Simulate progress increment
+    
+    if (progress <= 100) {
+        g_hash_table_insert(download_progress, ctx, GINT_TO_POINTER(progress));
+        return G_SOURCE_CONTINUE;  // Continue downloading
+    } else {
+        printf("[TASK-%d] Download completed for %s\n", task_id, ctx->process_name);
+        
+        g_dbus_method_invocation_return_value(ctx->invocation,
+            g_variant_new("(bs)", TRUE, "Download completed successfully"));
+        
+        // Cleanup
+        g_hash_table_remove(download_progress, ctx);
+        g_hash_table_remove(active_tasks, GUINT_TO_POINTER(task_id));
+        free_task_context(ctx);
+        
+        return G_SOURCE_REMOVE;
+    }
+}
+
+// Async Upgrade Task - calls your existing upgrade logic
+static gboolean upgrade_task(gpointer user_data)
+{
+    TaskContext *ctx = (TaskContext*)user_data;
+    guint task_id = GPOINTER_TO_UINT(g_hash_table_lookup(active_tasks, ctx));
+    
+    printf("[TASK-%d] Starting Upgrade for %s (sender: %s)\n", 
+           task_id, ctx->process_name, ctx->sender_id);
+    
+    // TODO: Call your existing upgrade logic here
+    // Example: ret = your_upgrade_function(ctx->process_name);
+    
+    printf("[TASK-%d] Flashing firmware for %s...\n", task_id, ctx->process_name);
+    sleep(3);  // Replace with your actual upgrade logic
+    printf("[TASK-%d] Upgrade completed for %s - SYSTEM WILL REBOOT\n", 
+           task_id, ctx->process_name);
+    
+    g_dbus_method_invocation_return_value(ctx->invocation,
+        g_variant_new("(bs)", TRUE, "Upgrade completed - system will reboot"));
+    
+    // Cleanup
+    g_hash_table_remove(active_tasks, GUINT_TO_POINTER(task_id));
+    free_task_context(ctx);
+    
+    return G_SOURCE_REMOVE;
+}
 /******************************************************************************
  * D-BUS METHOD HANDLER - ENTRY POINT FOR ALL REQUESTS
  ******************************************************************************/
@@ -2620,6 +2716,13 @@ int main() {
             case STATE_INIT:
                 // Transition to IDLE after setup
 		SWLOG_INFO("In STATE_INIT\n");
+		// Initialize D-Bus server as part of process initialization
+		if (!setup_dbus_server()) {
+			SWLOG_ERROR("Failed to setup D-Bus server\n");
+			cleanup_dbus();
+			log_exit();
+			exit(ret_curl_code);
+		}
 		ret = initialize();
 		if (1 != ret) {
 			SWLOG_ERROR( "initialize(): Fail:%d\n", ret);
@@ -2631,11 +2734,25 @@ int main() {
 		}
                 break;
             case STATE_IDLE:
-                // Wait for DBus events
-                // On event, set currentState = STATE_CHECK_UPDATE / etc.
-		SWLOG_INFO("Hmmm I'm Patiently waiting for dbus calls\n");
-		sleep(50);
-                break;
+		// Listen for D-Bus events 
+		SWLOG_INFO("\n [STATE_IDLE] rdkvfwupgrader READY FOR D-BUS REQUESTS \n");
+		SWLOG_INFO("=======================================================\n");
+		SWLOG_INFO("D-Bus Service: %s\n", BUS_NAME);
+		SWLOG_INFO("Object Path: %s\n", OBJECT_PATH);
+		SWLOG_INFO("Active Tasks: %d\n", g_hash_table_size(active_tasks));
+		SWLOG_INFO("=======================================================\n");
+		SWLOG_INFO("All requests will be processed ASYNCHRONOUSLY!\n");
+		SWLOG_INFO("Multiple apps can send requests simultaneously!\n");
+		SWLOG_INFO("Waiting for D-Bus requests...\n\n");
+
+		// Run the main loop - this blocks and waits for D-Bus requests
+		// When requests come in, they're handled asynchronously by tasks
+		g_main_loop_run(main_loop);
+
+		// This line only reached if main_loop is quit (shutdown signal)
+		SWLOG_INFO("Main loop exited - rdkvfwupgrader shutting down\n");
+		goto cleanup_and_exit;
+		/*
             case STATE_CHECK_UPDATE:
                 SWLOG_INFO("Received request for checking the update\n");
                 currentState = STATE_IDLE;
@@ -2647,14 +2764,21 @@ int main() {
             case STATE_UPGRADE:
                 SWLOG_INFO("Received request for flashing the image.This will reboot the device\n");
                 break;
+		*/
+	    default:
+		SWLOG_INFO("Unknown state: %d\n",currentState);
+		currentState = STATE_IDLE;
+		goto cleanup_and_exit;
+
    }
 }
 
-	    // Cleanup the resources if loop exists. 
-	    log_exit();
-	    uninitialize(init_validate_status);
-	    exit(ret_curl_code);
-  
+cleanup_and_exit:
+    // Cleanup the resources if loop exits
+    cleanup_dbus();
+    log_exit();
+    uninitialize(init_validate_status);
+    return 0; 
 }
 
 #endif
