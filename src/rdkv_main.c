@@ -98,7 +98,6 @@ typedef enum {
 } FwUpgraderState;
 
 FwUpgraderState currentState;
-
 /* Description: Get trigger type info.
  * @param: NA
  * @return: int
@@ -219,7 +218,6 @@ void handle_signal(int no, siginfo_t* info, void* uc)
     setForceStop(1);
 
 }
-
 /* Description: Use for save process id and store inside file.
  * @param: file: file name to save pid
  * @param: data: data to save inside file.
