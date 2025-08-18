@@ -216,6 +216,12 @@ void handle_signal(int no, siginfo_t* info, void* uc)
     SWLOG_INFO("Raise SIGUSR1 signal\n");
     force_exit = 1;
     setForceStop(1);
+    if (!(strncmp(device_info.maint_status, "true", 4))) {
+        eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR);
+    }
+    eventManager(FW_STATE_EVENT, FW_STATE_FAILED);
+    SWLOG_INFO("Download is going to stop and aborted\n");
+    updateUpgradeFlag(2);
 
 }
 /* Description: Use for save process id and store inside file.
@@ -1998,8 +2004,8 @@ int main() {
     
     snprintf(disableStatsUpdate, sizeof(disableStatsUpdate), "%s","no");
 
-   // Init the Current state into STATE_INIT_VALIDATION
-   currentState = STATE_INIT_VALIDATION;
+   // Init the Current state into STATE_INIT
+   currentState = STATE_INIT
    while (1) {
 	    switch (currentState) {
 	    case STATE_INIT_VALIDATION:
@@ -2008,8 +2014,8 @@ int main() {
 		init_validate_status = initialValidation();
 		SWLOG_INFO("init_validate_status = %d\n", init_validate_status);
 		if( init_validate_status == INITIAL_VALIDATION_SUCCESS) {
-			SWLOG_INFO("Initial validation success.Entering into STATE_INIT\n");
-			currentState = STATE_INIT;
+			SWLOG_INFO("Initial validation success.Entering into STATE_IDLE\n");
+			currentState = STATE_IDLE;
 		}
 		else{
 			SWLOG_ERROR("Initial validation failed\n");
@@ -2019,17 +2025,55 @@ int main() {
 		}
 		break;
             case STATE_INIT:
-                // Transition to IDLE after setup
+                // Transition to INIT_VALIDATION after setup
 		SWLOG_INFO("In STATE_INIT\n");
 		ret = initialize();
 		if (1 != ret) {
 			SWLOG_ERROR( "initialize(): Fail:%d\n", ret);
 			log_exit();
 			exit(ret_curl_code);
-		}else {
-			SWLOG_ERROR( "initialize(): Success:%d ; Entering into STATE_INTI_VALIDATION\n", ret);
-			currentState = STATE_IDLE;
 		}
+
+		if(argc < 3) {
+			SWLOG_ERROR( "Provide 2 arguments. Less than 2 arguments received\n");
+			SWLOG_ERROR("Retry Count (1) argument will not be parsed as we will use hardcoded fallback mechanism added \
+					triggerType=2 # Set the Image Upgrade trigger Type \
+					Usage: rdkvfwupgrader <failure retry count> <Image trigger Type> \
+					failure retry count: This value from DCM settings file, if not  \
+					Image trigger Type : Bootup(1)/scheduled(2)/tr69 or SNMP triggered upgrade(3)/App triggered upgrade(4)/(5) Delayed Download\n");
+			if (0 == (strncmp(device_info.maint_status, "true", 4))) {
+				eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR);
+			}
+			log_exit();
+			exit(ret_curl_code);
+		}
+		for( i = 0; i < argc; i++ ) {
+			SWLOG_INFO("[%d] = %s\n", i, argv[i]);
+		}
+		trigger_type = atoi(argv[2]);
+		if (trigger_type == 1) {
+			SWLOG_INFO("Image Upgrade During Bootup ..!\n");
+		}else if (trigger_type == 2) {
+			SWLOG_INFO("Scheduled Image Upgrade using cron ..!\n");
+			t2CountNotify("SYST_INFO_SWUpgrdChck", 1);
+		}else if(trigger_type == 3){
+			SWLOG_INFO("TR-69/SNMP triggered Image Upgrade ..!\n");
+		}else if(trigger_type == 4){
+			SWLOG_INFO("App triggered Image Upgrade ..!\n");
+		}else if(trigger_type == 5){
+			SWLOG_INFO("Delayed Trigger Image Upgrade ..!\n");
+		}else if(trigger_type == 6){
+			SWLOG_INFO("State Red Image Upgrade ..!\n");
+		}else{
+			SWLOG_INFO("Invalid trigger type Image Upgrade ..!\n");
+			if (0 == (strncmp(device_info.maint_status, "true", 4))) {
+				eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR);
+			}
+			log_exit();
+			exit(ret_curl_code);
+		}
+		SWLOG_ERROR( "initialize(): Success:%d ; Entering into STATE_INTI_VALIDATION\n", ret);
+		currentState = STATE_INIT_VALIDATION;
                 break;
             case STATE_IDLE:
                 // Wait for DBus events
