@@ -36,6 +36,10 @@
 #include "urlHelper.h"
 #endif
 
+#ifdef GTEST_ENABLE
+#include "miscellaneous.h"
+#endif
+
 #include "mtlsUtils.h"
 #include "json_process.h"
 

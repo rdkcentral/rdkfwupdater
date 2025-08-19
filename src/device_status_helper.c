@@ -282,7 +282,7 @@ bool updateOPTOUTFile(const char *optout_file_name)
         fclose(fp_write);
     }
     unlink(MAINTENANCE_MGR_RECORD_UPDATE_FILE);
-    return opt_status;
+return opt_status;
 }
 
 /* Description: Checking either device is having codebig access or not
@@ -294,7 +294,9 @@ bool checkCodebigAccess(void)
     bool codebigEnable = false;
     bool directCdn = false;
 
+#ifndef GTEST_ENABLE
     directCdn = isDirectCDNEnabled();
+#endif
     if (directCdn == false) {
         ret = v_secure_system("GetServiceUrl 2 temp");
         SWLOG_INFO("Exit code for codebigcheck:%d\n", ret);

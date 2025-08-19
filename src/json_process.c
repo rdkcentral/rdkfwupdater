@@ -36,11 +36,12 @@ int getXconfRespData( XCONFRES *pResponse, char *pJsonStr )
 {
     JSON *pJson = NULL;
     int ret = -1;
+    int peri_ret = -1;
     char peripheral_product[64] = { 0 };
     char peripheral_product_url[100] = { 0 };
 
-    ret = getPeripheralProduct(peripheral_product, sizeof(peripheral_product));
-    if (ret != -1) {
+    peri_ret = getPeripheralProduct(peripheral_product, sizeof(peripheral_product));
+    if (peri_ret != -1) {
         snprintf(peripheral_product_url, sizeof(peripheral_product_url), "%s_URL", peripheral_product);
     } else {
         SWLOG_INFO("getXconfRespData:PeripheralProduct is NULL\n");

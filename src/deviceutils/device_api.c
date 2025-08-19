@@ -1286,7 +1286,10 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
     char buf[URL_MAX_LEN];
     bool skip = false;
     bool dbgServices = isDebugServicesEnabled(); //check debug services enabled
-    bool directCdn = isDirectCDNEnabled(); //Check direct cdn enable
+    bool directCdn = false;
+    #ifndef GTEST_ENABLE
+      directCdn = isDirectCDNEnabled(); //Check direct cdn enable
+    #endif
 
     if( pServURL != NULL )
     {
@@ -1338,7 +1341,9 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
                 }
                 if( *pServURL == 0 )    // still no URL or eBuildType == ePROD
                 {
-		    bool directCdn = isDirectCDNEnabled(); //Check direct cdn rfc is enable
+	            #ifndef GTEST_ENABLE
+		     directCdn = isDirectCDNEnabled(); //Check direct cdn rfc is enable
+		    #endif
                     *buf = 0;
                     GetTR181Url( eBootstrap, buf, sizeof(buf) );
                     if( *buf != 0 )

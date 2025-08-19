@@ -30,8 +30,12 @@
 #include "iarmInterface/iarmInterface.h"
 #include "codebigUtils.h"
 #include "mtlsUtils.h"
+#ifndef GTEST_ENABLE
 #include "rdk_fwdl_utils.h"
 #include "system_utils.h"
+#else
+#include "miscellaneous.h"
+#endif
 #include "rfcInterface/rfcinterface.h"
 #include "json_process.h"
 #include "device_api.h"
