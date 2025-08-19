@@ -2026,7 +2026,6 @@ int main(int argc, char *argv[]) {
         			SWLOG_INFO("[%d] = %s\n", i, argv[i]);
     			}
 
-
     			trigger_type = atoi(argv[2]);
     			if (trigger_type == 1) {
         			SWLOG_INFO("Image Upgrade During Bootup ..!\n");
