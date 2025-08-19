@@ -180,7 +180,7 @@ static const gchar introspection_xml[] =
 /******************************************************************************
  * D-BUS FUNCTION DECLARATIONS
  ******************************************************************************/
-static void handle_method_call(GDBusConnection *connection,
+static void process_request(GDBusConnection *connection,
                              const gchar *sender,
                              const gchar *object_path,
                              const gchar *interface_name,
@@ -394,7 +394,7 @@ static gboolean upgrade_task(gpointer user_data)
 /******************************************************************************
  * D-BUS METHOD HANDLER - ENTRY POINT FOR ALL REQUESTS
  ******************************************************************************/
-static void handle_method_call(GDBusConnection *connection,
+static void process_request(GDBusConnection *connection,
                              const gchar *sender,
                              const gchar *object_path,
                              const gchar *interface_name,
@@ -535,7 +535,7 @@ static void handle_method_call(GDBusConnection *connection,
 
 // D-Bus interface vtable
 static const GDBusInterfaceVTable interface_vtable = {
-    handle_method_call,
+    process_request,
     NULL, // get_property
     NULL  // set_property
 };
