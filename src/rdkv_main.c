@@ -141,7 +141,7 @@ static GHashTable *registered_processes = NULL;  // handler_id -> SimpleProcessI
 // D-Bus service information
 #define BUS_NAME "com.rdkfwupgrader.Service"
 #define OBJECT_PATH "/com/rdkfwupgrader/Service"
-#define INTERFACE_NAME "com.rdkfwupgrader.Interface"
+#define rdkv_req_iface_name "com.rdkfwupgrader.Interface"
 
 
 // D-Bus introspection data (this defines the interface)
@@ -180,14 +180,14 @@ static const gchar introspection_xml[] =
 /******************************************************************************
  * D-BUS FUNCTION DECLARATIONS
  ******************************************************************************/
-static void process_request(GDBusConnection *connection,
-                             const gchar *sender,
-                             const gchar *object_path,
-                             const gchar *interface_name,
-                             const gchar *method_name,
-                             GVariant *parameters,
-                             GDBusMethodInvocation *invocation,
-                             gpointer user_data);
+static void process_app_request(GDBusConnection *rdkv_conn_dbus,
+                             const gchar *rdkv_req_caller_id,
+                             const gchar *rdkv_req_obj_path,
+                             const gchar *rdkv_req_iface_name,
+                             const gchar *rdkv_req_method,
+                             GVariant *rdkv_req_payload,
+                             GDBusMethodInvocation *rdkv_resp_ctx,
+                             gpointer rdkv_user_ctx);
 
 /******************************************************************************
  * BASIC PROCESS TRACKING SYSTEM
@@ -394,29 +394,29 @@ static gboolean upgrade_task(gpointer user_data)
 /******************************************************************************
  * D-BUS METHOD HANDLER - ENTRY POINT FOR ALL REQUESTS
  ******************************************************************************/
-static void process_request(GDBusConnection *connection,
-                             const gchar *sender,
-                             const gchar *object_path,
-                             const gchar *interface_name,
-                             const gchar *method_name,
-                             GVariant *parameters,
-                             GDBusMethodInvocation *invocation,
-                             gpointer user_data)
+static void process_app_request(GDBusConnection *rdkv_conn_dbus,
+                             const gchar *rdkv_req_caller_id,
+                             const gchar *rdkv_req_obj_path,
+                             const gchar *rdkv_req_iface_name,
+                             const gchar *rdkv_req_method,
+                             GVariant *rdkv_req_payload,
+                             GDBusMethodInvocation *resp_ctx,
+                             gpointer rdkv_user_ctx)
 {
-    SWLOG_INFO("\n==== [D-BUS] INCOMING REQUEST: %s from %s ====\n", method_name, sender);
+    SWLOG_INFO("\n==== [D-BUS] INCOMING REQUEST: %s from %s ====\n", rdkv_req_method, sender);
 
     // ============================================================================
     // CHECK UPDATE REQUEST - Fast operation (2-3 seconds)
     // ============================================================================
-    if (g_strcmp0(method_name, "CheckForUpdate") == 0) {
+    if (g_strcmp0(rdkv_req_method, "CheckForUpdate") == 0) {
         gchar *process_name, *lib_version;
-        g_variant_get(parameters, "(ss)", &process_name, &lib_version);
+        g_variant_get(rdkv_req_payload, "(ss)", &process_name, &lib_version);
 
         SWLOG_INFO("[D-BUS] CheckForUpdate request: process='%s', lib='%s', sender='%s'\n",
                process_name, lib_version, sender);
 
         // Create task context (stores all request info)
-        TaskContext *ctx = create_task_context(process_name, lib_version, sender, invocation);
+        TaskContext *ctx = create_task_context(process_name, lib_version, sender, resp_ctx);
 
         // Assign unique task ID and track it
         guint task_id = next_task_id++;
@@ -434,14 +434,14 @@ static void process_request(GDBusConnection *connection,
     // ============================================================================
     // DOWNLOAD REQUEST - Slow operation (10+ seconds with progress)
     // ============================================================================
-    else if (g_strcmp0(method_name, "DownloadFirmware") == 0) {
+    else if (g_strcmp0(rdkv_req_method, "DownloadFirmware") == 0) {
         gchar *process_name;
-        g_variant_get(parameters, "(s)", &process_name);
+        g_variant_get(rdkv_req_payload, "(s)", &process_name);
 
         SWLOG_INFO("[D-BUS] DownloadFirmware request: process='%s', sender='%s'\n",
                process_name, sender);
 
-        TaskContext *ctx = create_task_context(process_name, NULL, sender, invocation);
+        TaskContext *ctx = create_task_context(process_name, NULL, sender, resp_ctx);
         guint task_id = next_task_id++;
         g_hash_table_insert(active_tasks, GUINT_TO_POINTER(task_id), ctx);
 
@@ -456,15 +456,15 @@ static void process_request(GDBusConnection *connection,
     // ============================================================================
     // UPGRADE REQUEST - Critical operation (30+ seconds, can reboot system)
     // ============================================================================
-    else if (g_strcmp0(method_name, "UpdateFirmware") == 0) {
+    else if (g_strcmp0(rdkv_req_method, "UpdateFirmware") == 0) {
         gchar *process_name;
-        g_variant_get(parameters, "(s)", &process_name);
+        g_variant_get(rdkv_req_payload, "(s)", &process_name);
 
         SWLOG_INFO("[D-BUS] UpdateFirmware request: process='%s', sender='%s'\n",
                process_name, sender);
         SWLOG_INFO("[D-BUS] WARNING: This will flash firmware and reboot system!\n");
 
-        TaskContext *ctx = create_task_context(process_name, NULL, sender, invocation);
+        TaskContext *ctx = create_task_context(process_name, NULL, sender, resp_ctx);
         guint task_id = next_task_id++;
         g_hash_table_insert(active_tasks, GUINT_TO_POINTER(task_id), ctx);
 
@@ -478,9 +478,9 @@ static void process_request(GDBusConnection *connection,
     // ============================================================================
     // REGISTER PROCESS - Immediate response (no async task needed)
     // ============================================================================
-    else if (g_strcmp0(method_name, "RegisterProcess") == 0) {
+    else if (g_strcmp0(rdkv_req_method, "RegisterProcess") == 0) {
         gchar *process_name, *lib_version;
-        g_variant_get(parameters, "(ss)", &process_name, &lib_version);
+        g_variant_get(rdkv_req_payload, "(ss)", &process_name, &lib_version);
 
         SWLOG_INFO("[D-BUS] RegisterProcess: process='%s', lib='%s', sender='%s'\n",
                process_name, lib_version, sender);
@@ -491,7 +491,7 @@ static void process_request(GDBusConnection *connection,
         SWLOG_INFO("[D-BUS] Process registered with handler ID: %lu\n", handler_id);
 
         // Send immediate response (no async task needed)
-        g_dbus_method_invocation_return_value(invocation,
+        g_dbus_method_invocation_return_value(resp_ctx,
             g_variant_new("(t)", handler_id));
 
         g_free(process_name);
@@ -501,20 +501,20 @@ static void process_request(GDBusConnection *connection,
     // ============================================================================
     // UNREGISTER PROCESS - Immediate response (no async task needed)
     // ============================================================================
-    else if (g_strcmp0(method_name, "UnregisterProcess") == 0) {
+    else if (g_strcmp0(rdkv_req_method, "UnregisterProcess") == 0) {
         guint64 handler;
-        g_variant_get(parameters, "(t)", &handler);
+        g_variant_get(rdkv_req_payload, "(t)", &handler);
 
         SWLOG_INFO("[D-BUS] UnregisterProcess: handler=%lu, sender='%s'\n", handler, sender);
 
         // Remove from basic tracking system
         if (remove_process_from_tracking(handler)) {
             SWLOG_INFO("[D-BUS] Process unregistered successfully\n");
-            g_dbus_method_invocation_return_value(invocation,
+            g_dbus_method_invocation_return_value(resp_ctx,
                 g_variant_new("(b)", TRUE));
         } else {
             SWLOG_INFO("[D-BUS]Failed to unregister process\n");
-            g_dbus_method_invocation_return_value(invocation,
+            g_dbus_method_invocation_return_value(resp_ctx,
                 g_variant_new("(b)", FALSE));
         }
     }
@@ -523,10 +523,10 @@ static void process_request(GDBusConnection *connection,
     // UNKNOWN METHOD
     // ============================================================================
     else {
-        SWLOG_INFO("[D-BUS] Unknown method: %s\n", method_name);
-        g_dbus_method_invocation_return_error(invocation,
+        SWLOG_INFO("[D-BUS] Unknown method: %s\n", rdkv_req_method);
+        g_dbus_method_invocation_return_error(resp_ctx,
             G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD,
-            "Unknown method: %s", method_name);
+            "Unknown method: %s", rdkv_req_method);
     }
     SWLOG_INFO("==== [D-BUS] Request handling complete - Active tasks: %d ====\n\n",
            g_hash_table_size(active_tasks));
@@ -535,7 +535,7 @@ static void process_request(GDBusConnection *connection,
 
 // D-Bus interface vtable
 static const GDBusInterfaceVTable interface_vtable = {
-    process_request,
+    process_app_request,
     NULL, // get_property
     NULL  // set_property
 };
