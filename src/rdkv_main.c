@@ -2058,14 +2058,14 @@ int main(int argc, char *argv[]) {
 			{
 				SWLOG_INFO("Initial validation success.transiting into STATE_IDLE\n");
 				currentState = STATE_IDLE;
+				/*this is for check update and fwupgrade*/
+				/*
 				eventManager(FW_STATE_EVENT, FW_STATE_UNINITIALIZED);
 				if( isInStateRed() ) {
 					eventManager(RED_STATE_EVENT, RED_RECOVERY_STARTED);
 				}
 				eventManager(FW_STATE_EVENT, FW_STATE_REQUESTING);
 
-				/*this is for check update and fwupgrade*/
-				/*
 				ret_curl_code = MakeXconfComms( &response, server_type, &http_code );
 
 				SWLOG_INFO("XCONF Download completed with curl code:%d\n", ret_curl_code);
