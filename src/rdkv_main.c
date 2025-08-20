@@ -2,7 +2,7 @@
  * Copyright 2023 Comcast Cable Communications Management, LLC
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
+ *   may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
  * http://www.apache.org/licenses/LICENSE-2.0
@@ -63,7 +63,7 @@
 #define DWNL_PATH_FILE_LEN1 DWNL_PATH_FILE_LEN + 32
 
 // Below are the global variable
-// TODO  Global variables should be avoided to best possible extend and used only as a very last resort !!
+// TODO: Global variables should be avoided to best possible extend and used only as a very last resort !!
 // Device properties is a candidate for getter only utils
 DeviceProperty_t device_info; // Contains all device info
 ImageDetails_t cur_img_detail; // Running Image details
@@ -87,9 +87,6 @@ static pthread_mutex_t app_mode_status = PTHREAD_MUTEX_INITIALIZER;
 static int app_mode = 1; // 1: fore ground and 0: background
 int force_exit = 0; //This use when rdkvfwupgrader rcv appmode background and thottle speed is set to zero.
 
-/******************************************************************************
- * D-BUS TYPE DEFINITIONS - DECLARE BEFORE GLOBAL VARIABLES
- ******************************************************************************/
 
 // State machine definitions
 /*Description: this enum is used to represent the state of the rdkvfwupgrader at any given point of time */
@@ -109,7 +106,7 @@ typedef struct {
     gchar *lib_version;
     gchar *sender_id;
     gint64 registration_time;
-} SimpleProcessInfo;
+} ProcessInfo;;
 
 
 FwUpgraderState currentState;
@@ -119,13 +116,13 @@ typedef struct {
     gchar *process_name;           // App name (e.g., "AppB", "AppC")
     gchar *lib_version;           // Library version
     gchar *sender_id;             // D-Bus sender ID (e.g., ":1.50")
+    gchar *CurrImageVersion;      // get used in checkUpdate,FW download and Upgrade
+    gchar *NextImageVersion;      //get used in Upgrade
     GDBusMethodInvocation *invocation; // Response ticket to send back to app
     gint64 start_time;            // When task started
 } TaskContext;
 
-/******************************************************************************
- * D-BUS GLOBAL VARIABLES
- ******************************************************************************/
+/* D-BUS GLOBAL VARIABLES */
 // Global variables for D-Bus 
 static GDBusConnection *connection = NULL;
 static GMainLoop *main_loop = NULL;
@@ -136,12 +133,12 @@ static GHashTable *active_tasks = NULL;      // Tracks running async tasks (task
 static guint next_task_id = 1;              // Unique task IDs
 
 // Basic process tracking
-static GHashTable *registered_processes = NULL;  // handler_id -> SimpleProcessInfo
+static GHashTable *registered_processes = NULL;  // handler_id -> ProcessInfo;
 
 // D-Bus service information
 #define BUS_NAME "com.rdkfwupgrader.Service"
 #define OBJECT_PATH "/com/rdkfwupgrader/Service"
-#define rdkv_req_iface_name "com.rdkfwupgrader.Interface"
+#define INTERFACE_NAME "com.rdkfwupgrader.Interface"
 
 
 // D-Bus introspection data (this defines the interface)
@@ -149,37 +146,37 @@ static const gchar introspection_xml[] =
 "<node>"
 "  <interface name='com.rdkfwupgrader.Interface'>"
 "    <method name='CheckForUpdate'>"
-"      <arg type='s' name='processName' direction='in'/>"
-"      <arg type='s' name='libVersion' direction='in'/>"
-"      <arg type='b' name='success' direction='out'/>"
-"      <arg type='s' name='message' direction='out'/>"
+"      <arg type='t' name='handler' direction='in'/>"
+"      <arg type='s' name='CurrentVersion' direction='in'/>"
+"      <arg type='s' name='AvailableVersion' direction='out'/>"
 "    </method>"
 "    <method name='DownloadFirmware'>"
-"      <arg type='s' name='processName' direction='in'/>"
-"      <arg type='b' name='success' direction='out'/>"
-"      <arg type='s' name='message' direction='out'/>"
+"      <arg type='s' name='handler' direction='in'/>" //this is a struct in design, for now taking it as string.  handler argument will be the process_name in dbus_handlers
+"      <arg type='s' name='ImageToDownload' direction='in'/>"
+"      <arg type='b' name='success' direction='out'/>"  // just send out the success message once the download is triggered; will modify it later to send updates in parallel.Need to add one more output arg here
 "    </method>"
 "    <method name='UpdateFirmware'>"
-"      <arg type='s' name='processName' direction='in'/>"
-"      <arg type='b' name='success' direction='out'/>"
-"      <arg type='s' name='message' direction='out'/>"
+"      <arg type='s' name='hanlder' direction='in'/>"
+"      <arg type='s' name='currFWVersion' direction='in'/>"
+"      <arg type='s' name='availableVersion' direction='in'/>"
+"      <arg type='s' name='option1' direction='in'/>" // this will be part of UpdateDetails object in FwData ; for now hardcoding to 0and1 and not taking statusOfFw as input yet
+"      <arg type='s' name='option2' direction='in'/>"
+"      <arg type='b' name='success' direction='out'/>" //send out success to app once the Upgrade fucntion is called. eventually system reboots.
 "    </method>"
 "    <method name='RegisterProcess'>"
-"      <arg type='s' name='processName' direction='in'/>"
+"      <arg type='s' name='handler' direction='in'/>"
 "      <arg type='s' name='libVersion' direction='in'/>"
-"      <arg type='t' name='handler' direction='out'/>"
+"      <arg type='t' name='handler' direction='out'/>" //handler type will be changed to struct a<s> ; for now it is unit64 . sent to app and app stores it
 "    </method>"
 "    <method name='UnregisterProcess'>"
-"      <arg type='t' name='handler' direction='in'/>"
+"      <arg type='t' name='handler' direction='in'/>" //handler type will be changed to struct a<s> ; for now it is unit64
 "      <arg type='b' name='success' direction='out'/>"
 "    </method>"
 "  </interface>"
 "</node>";
 
 
-/******************************************************************************
- * D-BUS FUNCTION DECLARATIONS
- ******************************************************************************/
+/* D-BUS FUNCTION DECLARATIONS*/
 static void process_app_request(GDBusConnection *rdkv_conn_dbus,
                              const gchar *rdkv_req_caller_id,
                              const gchar *rdkv_req_obj_path,
@@ -189,17 +186,16 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
                              GDBusMethodInvocation *rdkv_resp_ctx,
                              gpointer rdkv_user_ctx);
 
-/******************************************************************************
- * BASIC PROCESS TRACKING SYSTEM
- ******************************************************************************/
+ /* PROCESS TRACKING SYSTEM*/
 
-// Initialize basic tracking
+// Initialize process tracking
 
-static void init_basic_tracking()
+static void init_process_tracking()
 {
+    /* Maps handler IDs to process information , so the we  can track which processes are registered for updates.*/ 
     registered_processes = g_hash_table_new_full(g_int64_hash, g_int64_equal,
                                                g_free, (GDestroyNotify)g_free);
-    SWLOG_INFO("[TRACKING] Basic process tracking initialized\n");
+    SWLOG_INFO("[TRACKING] process tracking initialized\n");
 }
 
 // Add process to tracking
@@ -207,7 +203,7 @@ static guint64 add_process_to_tracking(const gchar *process_name,
                                       const gchar *lib_version,
                                       const gchar *sender_id)
 {
-    SimpleProcessInfo *info = g_malloc0(sizeof(SimpleProcessInfo));
+    ProcessInfo; *info = g_malloc0(sizeof(ProcessInfo));
 
     info->handler_id = g_get_monotonic_time();
     info->process_name = g_strdup(process_name);
@@ -229,7 +225,7 @@ static guint64 add_process_to_tracking(const gchar *process_name,
 // Remove process from tracking
 static gboolean remove_process_from_tracking(guint64 handler_id)
 {
-    SimpleProcessInfo *info = g_hash_table_lookup(registered_processes, &handler_id);
+    ProcessInfo; *info = g_hash_table_lookup(registered_processes, &handler_id);
     if (!info) {
         SWLOG_INFO("[TRACKING] Handler %lu not found\n", handler_id);
         return FALSE;
@@ -267,7 +263,7 @@ static void init_task_system()
     SWLOG_INFO("[TASK-SYSTEM] Initialized task tracking system\n");
 
     // Also initialize basic process tracking
-    init_basic_tracking();
+    init_process_tracking();
 }
 
 // Create context for each app's request
@@ -298,7 +294,7 @@ static void free_task_context(TaskContext *ctx)
 // ASYNC TASK IMPLEMENTATIONS
 // =============================================================================
 
-// Async Check Update Task - calls your existing firmware check logic
+// Async Check Update Task - calls  r   firmware check logic
 static gboolean check_update_task(gpointer user_data)
 {
     TaskContext *ctx = (TaskContext*)user_data;
@@ -307,12 +303,12 @@ static gboolean check_update_task(gpointer user_data)
     printf("[TASK-%d] Starting CheckUpdate for %s (sender: %s)\n", 
            task_id, ctx->process_name, ctx->sender_id);
     
-    // TODO: Call your existing check update logic here
-    // Example: ret = your_check_update_function(ctx->process_name);
+    // <MADHU:What's Here>:: Call  r   check update logic here
+    // Example: ret =  r_check_update_function(ctx->process_name);
     
     // For now, simulate the work
     printf("[TASK-%d] Contacting xconf server for %s...\n", task_id, ctx->process_name);
-    sleep(2);  // Replace with your actual check logic
+    sleep(2);  // Replace with  r actual check logic
     printf("[TASK-%d] Update check completed for %s\n", task_id, ctx->process_name);
     
     // Send response back to the specific app
@@ -326,7 +322,7 @@ static gboolean check_update_task(gpointer user_data)
     return G_SOURCE_REMOVE;
 }
 
-// Async Download Task - calls your existing download logic
+// Async Download Task - calls  r   download logic
 static gboolean download_task_step(gpointer user_data)
 {
     TaskContext *ctx = (TaskContext*)user_data;
@@ -342,8 +338,8 @@ static gboolean download_task_step(gpointer user_data)
     printf("[TASK-%d] Download progress for %s: %d%%\n", 
            task_id, ctx->process_name, progress);
     
-    // TODO: Call your existing download logic here
-    // Example: ret = your_download_chunk_function(ctx->process_name, progress);
+    // <MADHU:What's Here>:: Call  r   download logic here
+    // Example: ret =  r_download_chunk_function(ctx->process_name, progress);
     
     progress += 20;  // Simulate progress increment
     
@@ -365,7 +361,7 @@ static gboolean download_task_step(gpointer user_data)
     }
 }
 
-// Async Upgrade Task - calls your existing upgrade logic
+// Async Upgrade Task - calls  r   upgrade logic
 static gboolean upgrade_task(gpointer user_data)
 {
     TaskContext *ctx = (TaskContext*)user_data;
@@ -374,11 +370,11 @@ static gboolean upgrade_task(gpointer user_data)
     printf("[TASK-%d] Starting Upgrade for %s (sender: %s)\n", 
            task_id, ctx->process_name, ctx->sender_id);
     
-    // TODO: Call your existing upgrade logic here
-    // Example: ret = your_upgrade_function(ctx->process_name);
+    // <MADHU:What's Here>:: Call  r   upgrade logic here
+    // Example: ret =  r_upgrade_function(ctx->process_name);
     
     printf("[TASK-%d] Flashing firmware for %s...\n", task_id, ctx->process_name);
-    sleep(3);  // Replace with your actual upgrade logic
+    sleep(3);  // Replace with  r actual upgrade logic
     printf("[TASK-%d] Upgrade completed for %s - SYSTEM WILL REBOOT\n", 
            task_id, ctx->process_name);
     
@@ -391,9 +387,7 @@ static gboolean upgrade_task(gpointer user_data)
     
     return G_SOURCE_REMOVE;
 }
-/******************************************************************************
- * D-BUS METHOD HANDLER - ENTRY POINT FOR ALL REQUESTS
- ******************************************************************************/
+ /* D-BUS METHOD HANDLER - ENTRY POINT FOR ALL REQUESTS*/
 static void process_app_request(GDBusConnection *rdkv_conn_dbus,
                              const gchar *rdkv_req_caller_id,
                              const gchar *rdkv_req_obj_path,
@@ -403,20 +397,19 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
                              GDBusMethodInvocation *resp_ctx,
                              gpointer rdkv_user_ctx)
 {
-    SWLOG_INFO("\n==== [D-BUS] INCOMING REQUEST: %s from %s ====\n", rdkv_req_method, sender);
+    SWLOG_INFO("\n==== [D-BUS] INCOMING REQUEST: %s from %s ====\n", rdkv_req_method, rdkv_req_caller_id);
 
-    // ============================================================================
-    // CHECK UPDATE REQUEST - Fast operation (2-3 seconds)
-    // ============================================================================
+    /* CHECK UPDATE REQUEST*/
+    //extract process name and libversion from the payload -  inputs provided by app
     if (g_strcmp0(rdkv_req_method, "CheckForUpdate") == 0) {
         gchar *process_name, *lib_version;
         g_variant_get(rdkv_req_payload, "(ss)", &process_name, &lib_version);
 
         SWLOG_INFO("[D-BUS] CheckForUpdate request: process='%s', lib='%s', sender='%s'\n",
-               process_name, lib_version, sender);
+               process_name, lib_version, rdkv_req_caller_id);
 
         // Create task context (stores all request info)
-        TaskContext *ctx = create_task_context(process_name, lib_version, sender, resp_ctx);
+        TaskContext *ctx = create_task_context(process_name, lib_version, rdkv_req_caller_id, resp_ctx);
 
         // Assign unique task ID and track it
         guint task_id = next_task_id++;
@@ -431,17 +424,15 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
         g_free(lib_version);
     }
 
-    // ============================================================================
-    // DOWNLOAD REQUEST - Slow operation (10+ seconds with progress)
-    // ============================================================================
+    /* DOWNLOAD REQUEST  */
     else if (g_strcmp0(rdkv_req_method, "DownloadFirmware") == 0) {
         gchar *process_name;
         g_variant_get(rdkv_req_payload, "(s)", &process_name);
 
         SWLOG_INFO("[D-BUS] DownloadFirmware request: process='%s', sender='%s'\n",
-               process_name, sender);
+               process_name, rdkv_req_caller_id);
 
-        TaskContext *ctx = create_task_context(process_name, NULL, sender, resp_ctx);
+        TaskContext *ctx = create_task_context(process_name, NULL, rdkv_req_caller_id, resp_ctx);
         guint task_id = next_task_id++;
         g_hash_table_insert(active_tasks, GUINT_TO_POINTER(task_id), ctx);
 
@@ -453,18 +444,16 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
         g_free(process_name);
     }
 
-    // ============================================================================
-    // UPGRADE REQUEST - Critical operation (30+ seconds, can reboot system)
-    // ============================================================================
+    /* UPGRADE REQUEST - */
     else if (g_strcmp0(rdkv_req_method, "UpdateFirmware") == 0) {
         gchar *process_name;
         g_variant_get(rdkv_req_payload, "(s)", &process_name);
 
         SWLOG_INFO("[D-BUS] UpdateFirmware request: process='%s', sender='%s'\n",
-               process_name, sender);
+               process_name, rdkv_req_caller_id);
         SWLOG_INFO("[D-BUS] WARNING: This will flash firmware and reboot system!\n");
 
-        TaskContext *ctx = create_task_context(process_name, NULL, sender, resp_ctx);
+        TaskContext *ctx = create_task_context(process_name, NULL, rdkv_req_caller_id, resp_ctx);
         guint task_id = next_task_id++;
         g_hash_table_insert(active_tasks, GUINT_TO_POINTER(task_id), ctx);
 
@@ -475,18 +464,16 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
         g_free(process_name);
     }
 
-    // ============================================================================
-    // REGISTER PROCESS - Immediate response (no async task needed)
-    // ============================================================================
+    /* REGISTER PROCESS */
     else if (g_strcmp0(rdkv_req_method, "RegisterProcess") == 0) {
         gchar *process_name, *lib_version;
         g_variant_get(rdkv_req_payload, "(ss)", &process_name, &lib_version);
 
         SWLOG_INFO("[D-BUS] RegisterProcess: process='%s', lib='%s', sender='%s'\n",
-               process_name, lib_version, sender);
+               process_name, lib_version, rdkv_req_caller_id);
 
-        // Add to basic tracking system
-        guint64 handler_id = add_process_to_tracking(process_name, lib_version, sender);
+        // Add to process trackiing system
+        guint64 handler_id = add_process_to_tracking(process_name, lib_version, rdkv_req_caller_id);
 
         SWLOG_INFO("[D-BUS] Process registered with handler ID: %lu\n", handler_id);
 
@@ -498,14 +485,12 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
         g_free(lib_version);
     }
 
-    // ============================================================================
-    // UNREGISTER PROCESS - Immediate response (no async task needed)
-    // ============================================================================
+    /* UNREGISTER PROCESS - Immediate response (no async task needed)*/
     else if (g_strcmp0(rdkv_req_method, "UnregisterProcess") == 0) {
         guint64 handler;
         g_variant_get(rdkv_req_payload, "(t)", &handler);
 
-        SWLOG_INFO("[D-BUS] UnregisterProcess: handler=%lu, sender='%s'\n", handler, sender);
+        SWLOG_INFO("[D-BUS] UnregisterProcess: handler=%lu, sender='%s'\n", handler, rdkv_req_caller_id);
 
         // Remove from basic tracking system
         if (remove_process_from_tracking(handler)) {
@@ -519,9 +504,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
         }
     }
 
-    // ============================================================================
-    // UNKNOWN METHOD
-    // ============================================================================
+    /* UNKNOWN METHOD*/
     else {
         SWLOG_INFO("[D-BUS] Unknown method: %s\n", rdkv_req_method);
         g_dbus_method_invocation_return_error(resp_ctx,
@@ -883,7 +866,7 @@ bool savePID(const char *file, char *data)
  * @param: device : device type
  * @param: maint_window : status maintenance manager support
  * @return: void
- * TODO: Need to remove full function once all implementation complete
+ * <MADHU:What's Here>:: Need to remove full function once all implementation complete
  * */
 void getPidStore(const char *device, const char *maint_window) {
     pid_t pid;
@@ -899,7 +882,7 @@ void getPidStore(const char *device, const char *maint_window) {
     savePID(FWDNLD_PID_FILE, data);
 }
 
-// TODO - do similar to what is done for IARM eventing. Is not the primary goal of this module
+// <MADHU:What's Here>: - do similar to what is done for IARM eventing. Is not the primary goal of this module
 /* Description: Use for sending telemetry Log 
  * @param marker: use for send marker details
  * @return : void
@@ -917,7 +900,7 @@ void t2ValNotify( char *marker, char *val )
 #endif
 }
 
-// TODO: Use following function for all types of downloads when needed for telemetry v2 logs
+// <MADHU:What's Here>:: Use following function for all types of downloads when needed for telemetry v2 logs
 bool checkt2ValNotify( int iCurlCode, int iUpgradeType, char *Url  )
 {
     char *pStartString = "CERTERR, ";
@@ -990,7 +973,7 @@ void dwnlError(int curl_code, int http_code, int server_type)
     char device_type[32];
     struct FWDownloadStatus fwdls;
     char failureReason[128];
-    char *type = "Direct"; //TODO: Need to pass this type as a function parameter
+    char *type = "Direct"; //<MADHU:What's Here>:: Need to pass this type as a function parameter
 
     *failureReason = 0;
     if(curl_code == 22) {
@@ -1342,7 +1325,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
             SWLOG_INFO("%s, %s Cert selector initialized successfully\n", __FUNCTION__, (state_red == 1) ? "State red" : "normal state");
         }
     } else {
-        SWLOG_INFO("%s, Cert selector already initialized, reusing the existing instance\n", __FUNCTION__);
+        SWLOG_INFO("%s, Cert selector already initialized, reusing the   instance\n", __FUNCTION__);
     }
 #endif
     
@@ -1405,7 +1388,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
     } else {
         SWLOG_INFO("%s : Disable OCSP check\n", __FUNCTION__);
     }
-    getPidStore(device_info.dev_name, device_info.maint_status); //TODO: Added for script support. Need to remove later    
+    getPidStore(device_info.dev_name, device_info.maint_status); //<MADHU:What's Here>:: Added for script support. Need to remove later    
     if ((strcmp(disableStatsUpdate, "yes")) && (server_type == HTTP_SSR_DIRECT)) {
         chunk_dwnl = isIncremetalCDLEnable(file_dwnl.pathname);
     }
@@ -1674,7 +1657,7 @@ int fallBack(int server_type, const char* artifactLocationUrl, const void* local
     return curl_ret_code;
 }
 
-//TODO: Below functio is use only for temporary. Once all script convert to C
+//<MADHU:What's Here>:: Below functio is use only for temporary. Once all script convert to C
 //      We have to change this logic.
 void updateUpgradeFlag(int action)
 {
@@ -2047,7 +2030,7 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
     int iCurlCode;
     char *pCurVer;
     char *pCurFW;
-    char cDLStoreLoc[DWNL_PATH_FILE_LEN];       // TODO: dynamically allocate buffers
+    char cDLStoreLoc[DWNL_PATH_FILE_LEN];       // <MADHU:What's Here>:: dynamically allocate buffers
     char cSourceURL[URL_MAX_LEN];
     char cTmpCloudFW[100];
     char cCurVerBuf[200];
@@ -2242,7 +2225,7 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
     snprintf(immed_reboot_flag, sizeof(immed_reboot_flag), "%s", pResponse->cloudImmediateRebootFlag);
     delay_dwnl = atoi(pResponse->cloudDelayDownload);
     SWLOG_INFO("%s: reboot_flag =%s and delay_dwnl=%d\n", __FUNCTION__, immed_reboot_flag, delay_dwnl);
-    valid_pci_status = checkForValidPCIUpgrade(trigger_type, cur_img_detail.cur_img_name, pResponse->cloudFWVersion, pResponse->cloudFWFile);//TODO: Trigger type should recived from script as a argument
+    valid_pci_status = checkForValidPCIUpgrade(trigger_type, cur_img_detail.cur_img_name, pResponse->cloudFWVersion, pResponse->cloudFWFile);//<MADHU:What's Here>:: Trigger type should recived from script as a argument
     if (valid_pci_status == true) {
         SWLOG_INFO("checkForValidPCIUpgrade return true\n");
         if (0 == strncmp(device_info.maint_status, "true", 4)) {
@@ -2255,7 +2238,7 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
                     SWLOG_INFO("OptOut: IGNORE UPDATE is set.Exiting !!\n");
                     eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ABORTED);
                     uninitialize(INITIAL_VALIDATION_SUCCESS);
-                    exit(1);//TODO
+                    exit(1);//<MADHU:What's Here>:
                 }else if((0 == optout) && (trigger_type != 4)) {
                     eventManager(FW_STATE_EVENT, FW_STATE_ONHOLD_FOR_OPTOUT);
                     SWLOG_INFO("OptOut: Event sent for on hold for OptOut\n");
@@ -2263,7 +2246,7 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
                     SWLOG_INFO("OptOut: Consent Required from User\n");
                     t2CountNotify("SYST_INFO_NoConsentFlash", 1);
                     uninitialize(INITIAL_VALIDATION_SUCCESS);
-                    exit(1);//TODO
+                    exit(1);//<MADHU:What's Here>:
                 }
 	        }
     	}
