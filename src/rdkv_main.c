@@ -2575,59 +2575,11 @@ int initialValidation(void)
 
 #ifndef GTEST_ENABLE
 
-int main() {
-
-/*
-    pid_t process_id = 0;
-    pid_t sid = 0;
-    log_init();
-*/
-    /* Abort if another instance of rdkvfwupgrader is already running */
-/*
-    if (checkAnotherFWUpgraderInstance()){
-        SWLOG_ERROR("fork failed!\n");
-        return 1;
-    }
-    process_id = fork();
-
-    if (process_id < 0)
-    {
-        SWLOG_ERROR("fork failed!\n");
-        return 1;
-    }
-    else if (process_id > 0)
-    {
-        return 0;
-    }
-
-    //unmask the file mode
-    umask(0);
-
-    //set new session
-    sid = setsid();
-    if (sid < 0)
-    {
-        SWLOG_ERROR("setsid failed!\n");
-    }
-
-    // Change the current working directory to root.
-    if (chdir("/") < 0)
-    {
-        SWLOG_ERROR("chdir failed!\n");
-	return 1;
-    }
-
-     if (isDebugEnabled != true){
-	     // Close stdin. stdout and stderr
-	       close(STDIN_FILENO);
-	       close(STDOUT_FILENO);
-	       close(STDERR_FILENO);
-      }
-*/
+int main(int argc, char *argv[]) {
     static XCONFRES response;
     int ret = -1;
     int ret_sig = -1;
-    //int i;
+    int i;
     int ret_curl_code = 1;
     //int server_type = HTTP_XCONF_DIRECT;
     //int json_res = -1;
@@ -2635,36 +2587,16 @@ int main() {
     struct sigaction rdkv_newaction;
     memset(&rdkv_newaction, '\0', sizeof(struct sigaction));
     int init_validate_status = INITIAL_VALIDATION_FAIL;
-
     
     rdkv_newaction.sa_sigaction = handle_signal;
     rdkv_newaction.sa_flags = SA_ONSTACK | SA_SIGINFO;
     log_init();
-
-
-    //Signal handling 
-    /*
-    ret_sig = sigaction(SIGINT, &rdkv_newaction, NULL);
-    if (ret_sig == -1) {
-        SWLOG_ERROR( "SIGINT handler install fail\n");
-    }else {
-        SWLOG_INFO( "SIGINT handler install success\n");
-    }
-    ret_sig = sigaction(SIGTERM, &rdkv_newaction, NULL);
-    if (ret_sig == -1) {
-	    SWLOG_ERROR( "SIGTERM handler install fail\n");
-    }else {
-	    SWLOG_INFO( "SIGTERM handler install success\n");
-    }
-*/
     ret_sig = sigaction(SIGUSR1, &rdkv_newaction, NULL);
     if (ret_sig == -1) {
         SWLOG_ERROR( "SIGUSR1 handler install fail\n");
     }else {
         SWLOG_INFO( "SIGUSR1 handler install success\n");
     }
-
-    //initialization
     *response.cloudFWFile = 0;
     *response.cloudFWLocation = 0;
     *response.ipv6cloudFWLocation = 0;
@@ -2679,92 +2611,189 @@ int main() {
     t2CountNotify("SYST_INFO_C_CDL", 1);
     
     snprintf(disableStatsUpdate, sizeof(disableStatsUpdate), "%s","no");
-
-
+    // Init the Current state into STATE_INIT
     
-
-   // Init the Current state into STATE_INIT
-   currentState = STATE_INIT_VALIDATION;
-   while (1) {
+    currentState = STATE_INIT;
+    while (1) {
 	    switch (currentState) {
-	    case STATE_INIT_VALIDATION:
-		//Do the initial validation
-		SWLOG_INFO("In STATE_INIT_VALIDATION\n");
-		init_validate_status = initialValidation();
-		SWLOG_INFO("init_validate_status = %d\n", init_validate_status);
-		if( init_validate_status == INITIAL_VALIDATION_SUCCESS) {
-			SWLOG_INFO("Initial validation success.Entering into STATE_INIT\n");
-			currentState = STATE_INIT;
-		}
-		else{
-			SWLOG_ERROR("Initial validation failed\n");
-			uninitialize(init_validate_status);
-			log_exit();
-			exit(ret_curl_code);
-		}
-		break;
-            case STATE_INIT:
-                // Transition to IDLE after setup
-		SWLOG_INFO("In STATE_INIT\n");
-		// Initialize task system FIRST (before D-Bus setup)
-		init_task_system();
-		// Initialize D-Bus server as part of process initialization
-		if (!setup_dbus_server()) {
-			SWLOG_ERROR("Failed to setup D-Bus server\n");
-			cleanup_dbus();
-			log_exit();
-			exit(ret_curl_code);
-		}
-		// Create the main loop
-		SWLOG_INFO("Creating g_main_loop for dbus\n");
+		    case STATE_INIT:
+			    // Transition to INIT_VALIDATION after setup
+			    SWLOG_INFO("In STATE_INIT\n");
+			    // Transition to IDLE after setup
+			    SWLOG_INFO("In STATE_INIT\n");
+			    // Initialize task system FIRST (before D-Bus setup)
+			    init_task_system();
+			    // Initialize D-Bus server as part of process initialization
+			    if (!setup_dbus_server()) {
+				    SWLOG_ERROR("Failed to setup D-Bus server\n");
+				    cleanup_dbus();
+				    log_exit();
+				    exit(ret_curl_code);
+			    }
+			    // Create the main loop
+			    SWLOG_INFO("Creating g_main_loop for dbus\n");
 
-    		main_loop = g_main_loop_new(NULL, FALSE);
-		ret = initialize();
-		if (1 != ret) {
-			SWLOG_ERROR( "initialize(): Fail:%d\n", ret);
-			log_exit();
-			exit(ret_curl_code);
-		}else {
-			SWLOG_ERROR( "initialize(): Success:%d ; Entering into STATE_INTI_VALIDATION\n", ret);
-			currentState = STATE_IDLE;
-		}
-                break;
-            case STATE_IDLE:
-		// Listen for D-Bus events 
-		SWLOG_INFO("\n [STATE_IDLE] rdkvfwupgrader READY FOR D-BUS REQUESTS \n");
-		SWLOG_INFO("=======================================================\n");
-		SWLOG_INFO("D-Bus Service: %s\n", BUS_NAME);
-		SWLOG_INFO("Object Path: %s\n", OBJECT_PATH);
-		SWLOG_INFO("Active Tasks: %d\n", g_hash_table_size(active_tasks));
-		SWLOG_INFO("=======================================================\n");
-		SWLOG_INFO("All requests will be processed ASYNCHRONOUSLY!\n");
-		SWLOG_INFO("Multiple apps can send requests simultaneously!\n");
-		SWLOG_INFO("Waiting for D-Bus requests...\n\n");
+			    main_loop = g_main_loop_new(NULL, FALSE);
+			    ret = initialize();
+			    if (1 != ret) {
+				    SWLOG_ERROR( "initialize(): Fail:%d\n", ret);
+				    log_exit();
+				    exit(ret_curl_code);
+			    }
+			    if(argc < 3) {
+				    SWLOG_ERROR( "Provide 2 arguments. Less than 2 arguments received\n");
+				    SWLOG_ERROR("Retry Count (1) argument will not be parsed as we will use hardcoded fallback mechanism added \
+						    triggerType=2 # Set the Image Upgrade trigger Type \
+						    Usage: rdkvfwupgrader <failure retry count> <Image trigger Type> \
+						    failure retry count: This value from DCM settings file, if not  \
+						    Image trigger Type : Bootup(1)/scheduled(2)/tr69 or SNMP triggered upgrade(3)/App triggered upgrade(4)/(5) Delayed Download\n");
+				    if (0 == (strncmp(device_info.maint_status, "true", 4))) {
+					    eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR);
+				    }
+				    log_exit();
+				    exit(ret_curl_code);
+			    }
+			    for( i = 0; i < argc; i++ ) {
+				    SWLOG_INFO("[%d] = %s\n", i, argv[i]);
+			    }
 
-		// Run the main loop - this blocks and waits for D-Bus requests
-		// When requests come in, they're handled asynchronously by tasks
-		g_main_loop_run(main_loop);
+			    trigger_type = atoi(argv[2]);
+			    if (trigger_type == 1) {
+				    SWLOG_INFO("Image Upgrade During Bootup ..!\n");
+			    }else if (trigger_type == 2) {
+				    SWLOG_INFO("Scheduled Image Upgrade using cron ..!\n");
+				    t2CountNotify("SYST_INFO_SWUpgrdChck", 1);
+			    }else if(trigger_type == 3){
+				    SWLOG_INFO("TR-69/SNMP triggered Image Upgrade ..!\n");
+			    }else if(trigger_type == 4){
+				    SWLOG_INFO("App triggered Image Upgrade ..!\n");
+			    }else if(trigger_type == 5){
+				    SWLOG_INFO("Delayed Trigger Image Upgrade ..!\n");
+			    }else if(trigger_type == 6){
+				    SWLOG_INFO("State Red Image Upgrade ..!\n");
+			    }else{
+				    SWLOG_INFO("Invalid trigger type Image Upgrade ..!\n");
+				    if (0 == (strncmp(device_info.maint_status, "true", 4))) {
+					    eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR);
+				    }
+				    log_exit();
+				    exit(ret_curl_code);
+			    }
+			    SWLOG_ERROR( "initialize(): Success:%d ; Entering into STATE_INTI_VALIDATION\n", ret);
+			    currentState = STATE_INIT_VALIDATION;
+			    break;
+		    case STATE_INIT_VALIDATION:
+			    init_validate_status = initialValidation();
+			    SWLOG_INFO("init_validate_status = %d\n", init_validate_status);
+			    if( init_validate_status == INITIAL_VALIDATION_SUCCESS)
+			    {
+				    SWLOG_INFO("Initial validation success.transiting into STATE_IDLE\n");
+				    currentState = STATE_IDLE;
+				    /*this is for check update and fwupgrade*/
+				    /*
+				       eventManager(FW_STATE_EVENT, FW_STATE_UNINITIALIZED);
+				       if( isInStateRed() ) {
+				       eventManager(RED_STATE_EVENT, RED_RECOVERY_STARTED);
+				       }
+				       eventManager(FW_STATE_EVENT, FW_STATE_REQUESTING);
 
-		// This line only reached if main_loop is quit (shutdown signal)
-		SWLOG_INFO("Main loop exited - rdkvfwupgrader shutting down\n");
-		goto cleanup_and_exit;
-		/*
-            case STATE_CHECK_UPDATE:
-                SWLOG_INFO("Received request for checking the update\n");
-                currentState = STATE_IDLE;
-                break;
-            case STATE_DOWNLOAD_UPDATE:
-                SWLOG_INFO("Recieved request for downloading the FW\n");
-                currentState = STATE_IDLE;
-                break;
-            case STATE_UPGRADE:
-                SWLOG_INFO("Received request for flashing the image.This will reboot the device\n");
-                break;
-		*/
-	    default:
-		SWLOG_INFO("Unknown state: %d\n",currentState);
-		currentState = STATE_IDLE;
-		goto cleanup_and_exit;
+				       ret_curl_code = MakeXconfComms( &response, server_type, &http_code );
+
+				       SWLOG_INFO("XCONF Download completed with curl code:%d\n", ret_curl_code);
+				       if( ret_curl_code == 0 && http_code == 200)
+				       {
+				       SWLOG_INFO("XCONF Download Success\n");
+				       json_res = processJsonResponse(&response, cur_img_detail.cur_img_name, device_info.model, device_info.maint_status);
+				       SWLOG_INFO("processJsonResponse returned %d\n", json_res);
+				       if (0 == (strncmp(response.cloudProto, "tftp", 4))) {
+				       proto = 0;
+				       }
+				       if ((proto == 1) && (json_res == 0)) {
+				       ret_curl_code = checkTriggerUpgrade(&response, device_info.model);
+
+				       char *msg = printCurlError(ret_curl_code);
+				       if (msg != NULL) {
+				       SWLOG_INFO("curl return code =%d and error message=%s\n", ret_curl_code, msg);
+				       t2CountNotify("CurlRet_split", ret_curl_code);
+				       }
+				       SWLOG_INFO("rdkvfwupgrader daemon exit curl code: %d\n", ret_curl_code);
+				       } else if (proto == 0) {    // tftp = 0
+				       SWLOG_INFO("tftp protocol support not present.\n");
+				       }
+				       else {
+				       SWLOG_INFO("Invalid JSON Response.\n");
+				       }
+				       }else {
+				       SWLOG_INFO("XCONF Download Fail\n");
+				       }
+
+*/
+			    }
+			    else{
+				    SWLOG_ERROR("Initial validation failed\n");
+				    uninitialize(init_validate_status);
+				    log_exit();
+				    exit(ret_curl_code);
+			    }
+
+			    /*this is for sending the intermediate updates back to apps and */
+			    /*
+			       if (init_validate_status == INITIAL_VALIDATION_DWNL_INPROGRESS){
+			       if (!(strncmp(device_info.maint_status, "true", 4))) {
+			       eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_INPROGRESS); //Sending status to maintenance manager
+			       }
+			       }else if(init_validate_status == INITIAL_VALIDATION_DWNL_COMPLETED) {
+			       SWLOG_INFO("Software Update is completed by AS/EPG, Exiting from firmware download.\n");
+			       }else if ((ret_curl_code != 0) || (json_res != 0)) {
+			       if (!(strncmp(device_info.maint_status, "true", 4))) {
+			       eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR); //Sending status to maintenance manager
+			       }
+			       if (trigger_type == 6) {
+			       unsetStateRed();
+			       }
+			       }else {
+			       if (!(strncmp(device_info.maint_status, "true", 4))) {
+			       eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_COMPLETE); //Sending status to maintenance manager
+			       }
+			       }
+			       */
+			    break;
+		    case STATE_IDLE:
+			    // Listen for D-Bus events 
+			    SWLOG_INFO("\n [STATE_IDLE] rdkvfwupgrader READY FOR D-BUS REQUESTS \n");
+			    SWLOG_INFO("=======================================================\n");
+			    SWLOG_INFO("D-Bus Service: %s\n", BUS_NAME);
+			    SWLOG_INFO("Object Path: %s\n", OBJECT_PATH);
+			    SWLOG_INFO("Active Tasks: %d\n", g_hash_table_size(active_tasks));
+			    SWLOG_INFO("=======================================================\n");
+			    SWLOG_INFO("All requests will be processed ASYNCHRONOUSLY!\n");
+			    SWLOG_INFO("Multiple apps can send requests simultaneously!\n");
+			    SWLOG_INFO("Waiting for D-Bus requests...\n\n");
+
+			    // Run the main loop - this blocks and waits for D-Bus requests
+			    // When requests come in, they're handled asynchronously by tasks
+			    g_main_loop_run(main_loop);
+
+			    // This line only reached if main_loop is quit (shutdown signal)
+			    SWLOG_INFO("Main loop exited - rdkvfwupgrader shutting down\n");
+			    goto cleanup_and_exit;
+			    /*
+			       case STATE_CHECK_UPDATE:
+			       SWLOG_INFO("Received request for checking the update\n");
+			       currentState = STATE_IDLE;
+			       break;
+			       case STATE_DOWNLOAD_UPDATE:
+			       SWLOG_INFO("Recieved request for downloading the FW\n");
+			       currentState = STATE_IDLE;
+			       break;
+			       case STATE_UPGRADE:
+			       SWLOG_INFO("Received request for flashing the image.This will reboot the device\n");
+			       break;
+			       */
+		    default:
+			    SWLOG_INFO("Unknown state: %d\n",currentState);
+			    currentState = STATE_IDLE;
+			    goto cleanup_and_exit;
 
    }
 }
