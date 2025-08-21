@@ -784,7 +784,7 @@ bool savePID(const char *file, char *data)
  * @param: device : device type
  * @param: maint_window : status maintenance manager support
  * @return: void
- * <MADHU:What's Here>:: Need to remove full function once all implementation complete
+ * TODO: Need to remove full function once all implementation complete
  * */
 void getPidStore(const char *device, const char *maint_window) {
     pid_t pid;
@@ -800,7 +800,7 @@ void getPidStore(const char *device, const char *maint_window) {
     savePID(FWDNLD_PID_FILE, data);
 }
 
-// <MADHU:What's Here>: - do similar to what is done for IARM eventing. Is not the primary goal of this module
+// TODO - do similar to what is done for IARM eventing. Is not the primary goal of this module
 /* Description: Use for sending telemetry Log 
  * @param marker: use for send marker details
  * @return : void
@@ -818,7 +818,7 @@ void t2ValNotify( char *marker, char *val )
 #endif
 }
 
-// <MADHU:What's Here>:: Use following function for all types of downloads when needed for telemetry v2 logs
+// TODO: Use following function for all types of downloads when needed for telemetry v2 logs
 bool checkt2ValNotify( int iCurlCode, int iUpgradeType, char *Url  )
 {
     char *pStartString = "CERTERR, ";
@@ -891,7 +891,7 @@ void dwnlError(int curl_code, int http_code, int server_type)
     char device_type[32];
     struct FWDownloadStatus fwdls;
     char failureReason[128];
-    char *type = "Direct"; //<MADHU:What's Here>:: Need to pass this type as a function parameter
+    char *type = "Direct"; //TODO: Need to pass this type as a function parameter
 
     *failureReason = 0;
     if(curl_code == 22) {
@@ -1243,7 +1243,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
             SWLOG_INFO("%s, %s Cert selector initialized successfully\n", __FUNCTION__, (state_red == 1) ? "State red" : "normal state");
         }
     } else {
-        SWLOG_INFO("%s, Cert selector already initialized, reusing the   instance\n", __FUNCTION__);
+        SWLOG_INFO("%s, Cert selector already initialized, reusing the existing instance\n", __FUNCTION__);
     }
 #endif
     
@@ -1306,7 +1306,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
     } else {
         SWLOG_INFO("%s : Disable OCSP check\n", __FUNCTION__);
     }
-    getPidStore(device_info.dev_name, device_info.maint_status); //<MADHU:What's Here>:: Added for script support. Need to remove later    
+    getPidStore(device_info.dev_name, device_info.maint_status); //TODO: Added for script support. Need to remove later    
     if ((strcmp(disableStatsUpdate, "yes")) && (server_type == HTTP_SSR_DIRECT)) {
         chunk_dwnl = isIncremetalCDLEnable(file_dwnl.pathname);
     }
@@ -1575,7 +1575,7 @@ int fallBack(int server_type, const char* artifactLocationUrl, const void* local
     return curl_ret_code;
 }
 
-//<MADHU:What's Here>:: Below functio is use only for temporary. Once all script convert to C
+//TODO: Below functio is use only for temporary. Once all script convert to C
 //      We have to change this logic.
 void updateUpgradeFlag(int action)
 {
@@ -1948,7 +1948,7 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
     int iCurlCode;
     char *pCurVer;
     char *pCurFW;
-    char cDLStoreLoc[DWNL_PATH_FILE_LEN];       // <MADHU:What's Here>:: dynamically allocate buffers
+    char cDLStoreLoc[DWNL_PATH_FILE_LEN];       // TODO: dynamically allocate buffers
     char cSourceURL[URL_MAX_LEN];
     char cTmpCloudFW[100];
     char cCurVerBuf[200];
@@ -2143,7 +2143,7 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
     snprintf(immed_reboot_flag, sizeof(immed_reboot_flag), "%s", pResponse->cloudImmediateRebootFlag);
     delay_dwnl = atoi(pResponse->cloudDelayDownload);
     SWLOG_INFO("%s: reboot_flag =%s and delay_dwnl=%d\n", __FUNCTION__, immed_reboot_flag, delay_dwnl);
-    valid_pci_status = checkForValidPCIUpgrade(trigger_type, cur_img_detail.cur_img_name, pResponse->cloudFWVersion, pResponse->cloudFWFile);//<MADHU:What's Here>:: Trigger type should recived from script as a argument
+    valid_pci_status = checkForValidPCIUpgrade(trigger_type, cur_img_detail.cur_img_name, pResponse->cloudFWVersion, pResponse->cloudFWFile);//TODO: Trigger type should recived from script as a argument
     if (valid_pci_status == true) {
         SWLOG_INFO("checkForValidPCIUpgrade return true\n");
         if (0 == strncmp(device_info.maint_status, "true", 4)) {
@@ -2156,7 +2156,7 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
                     SWLOG_INFO("OptOut: IGNORE UPDATE is set.Exiting !!\n");
                     eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ABORTED);
                     uninitialize(INITIAL_VALIDATION_SUCCESS);
-                    exit(1);//<MADHU:What's Here>:
+                    exit(1);//TODO
                 }else if((0 == optout) && (trigger_type != 4)) {
                     eventManager(FW_STATE_EVENT, FW_STATE_ONHOLD_FOR_OPTOUT);
                     SWLOG_INFO("OptOut: Event sent for on hold for OptOut\n");
@@ -2164,7 +2164,7 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
                     SWLOG_INFO("OptOut: Consent Required from User\n");
                     t2CountNotify("SYST_INFO_NoConsentFlash", 1);
                     uninitialize(INITIAL_VALIDATION_SUCCESS);
-                    exit(1);//<MADHU:What's Here>:
+                    exit(1);//TODO
                 }
 	        }
     	}
