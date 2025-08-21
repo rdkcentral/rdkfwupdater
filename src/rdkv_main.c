@@ -64,7 +64,7 @@
 #define DWNL_PATH_FILE_LEN1 DWNL_PATH_FILE_LEN + 32
 
 // Below are the global variable
-// TODO Global variables should be avoided to best possible extend and used only as a very last resort !!
+// TODO  Global variables should be avoided to best possible extend and used only as a very last resort !!
 // Device properties is a candidate for getter only utils
 DeviceProperty_t device_info; // Contains all device info
 ImageDetails_t cur_img_detail; // Running Image details
@@ -100,7 +100,7 @@ typedef enum {
     STATE_UPGRADE
 } FwUpgraderState;
 
-// Simple structure to track registered processes
+//structure to track registered processes
 typedef struct {
     guint64 handler_id;
     gchar *process_name;
@@ -114,35 +114,33 @@ FwUpgraderState currentState;
 static guint owner_id = 0;
 // Task context for async operations
 typedef struct {
-    gchar *process_name;           // App name (e.g., "AppB", "AppC")
+    gchar *process_name;           // App name (in string format like "App1", "App2")
     gchar *lib_version;           // Library version
-    gchar *sender_id;             // D-Bus sender ID (e.g., ":1.50")
-    gchar *CurrImageVersion;      // get used in checkUpdate,FW download and Upgrade
-    gchar *NextImageVersion;      //get used in Upgrade
-    GDBusMethodInvocation *invocation; // Response ticket to send back to app
-    gint64 start_time;            // When task started
+    gchar *sender_id;             // D-Bus sender ID ( in string format ":1.50")
+    gchar *CurrImageVersion;      // will be used in checkUpdate,DownloadFirmwar and UpgradeFirmware methods
+    gchar *NextImageVersion;      //get used in UpgradeFirmware
+    GDBusMethodInvocation *invocation; // used to send Response back to app
+    gint64 start_time;            // task starting time
 } TaskContext;
 
-/* D-BUS GLOBAL VARIABLES */
-// Global variables for D-Bus 
+/*Vars for Dbus*/
 static GDBusConnection *connection = NULL;
 static GMainLoop *main_loop = NULL;
 static guint registration_id = 0;
 
-// Task tracking system
-static GHashTable *active_tasks = NULL;      // Tracks running async tasks (task_id -> TaskContext)
+/* Vars for Task tracking system*/
+static GHashTable *active_tasks = NULL;      // hash table to track running async tasks (task_id -> TaskContext)
 static guint next_task_id = 1;              // Unique task IDs
 
-// Basic process tracking
+/*process tracking*/
 static GHashTable *registered_processes = NULL;  // handler_id -> ProcessInfo;
 
-// D-Bus service information
+/*D-Bus service information*/
 #define BUS_NAME "com.rdkfwupgrader.Service"
 #define OBJECT_PATH "/com/rdkfwupgrader/Service"
 #define INTERFACE_NAME "com.rdkfwupgrader.Interface"
 
-
-// D-Bus introspection data (this defines the interface)
+/* D-Bus introspection data or dbus interface : Exposes the methods for apps */
 static const gchar introspection_xml[] =
 "<node>"
 "  <interface name='com.rdkfwupgrader.Interface'>"
@@ -152,7 +150,7 @@ static const gchar introspection_xml[] =
 "      <arg type='s' name='AvailableVersion' direction='out'/>"
 "    </method>"
 "    <method name='DownloadFirmware'>"
-"      <arg type='s' name='handler' direction='in'/>" //this is a struct in design, for now taking it as string.  handler argument will be the process_name in dbus_handlers
+"      <arg type='s' name='handler' direction='in'/>" //this is a struct as per requirement, for now taking it as string.  handler argument will be the process_name in dbus_handlers
 "      <arg type='s' name='ImageToDownload' direction='in'/>"
 "      <arg type='b' name='success' direction='out'/>"  // just send out the success message once the download is triggered; will modify it later to send updates in parallel.Need to add one more output arg here
 "    </method>"
@@ -176,8 +174,6 @@ static const gchar introspection_xml[] =
 "  </interface>"
 "</node>";
 
-
-/* D-BUS FUNCTION DECLARATIONS*/
 static void process_app_request(GDBusConnection *rdkv_conn_dbus,
                              const gchar *rdkv_req_caller_id,
                              const gchar *rdkv_req_obj_path,
@@ -187,9 +183,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
                              GDBusMethodInvocation *rdkv_resp_ctx,
                              gpointer rdkv_user_ctx);
 
- /* PROCESS TRACKING SYSTEM*/
-
-// Initialize process tracking
+/*Initialize process tracking*/
 
 static void init_process_tracking()
 {
@@ -199,7 +193,7 @@ static void init_process_tracking()
     SWLOG_INFO("[TRACKING] process tracking initialized\n");
 }
 
-// Add process to tracking
+/* Add process to list for tracking*/
 static guint64 add_process_to_tracking(const gchar *process_name,
                                       const gchar *lib_version,
                                       const gchar *sender_id)
@@ -223,7 +217,7 @@ static guint64 add_process_to_tracking(const gchar *process_name,
     return info->handler_id;
 }
 
-// Remove process from tracking
+/* Remove process from tracking list */
 static gboolean remove_process_from_tracking(guint64 handler_id)
 {
     ProcessInfo; *info = g_hash_table_lookup(registered_processes, &handler_id);
@@ -241,7 +235,7 @@ static gboolean remove_process_from_tracking(guint64 handler_id)
     return TRUE;
 }
 
-// Free tracking resources
+/* Free tracking resources */
 static void cleanup_basic_tracking()
 {
     if (registered_processes) {
@@ -252,22 +246,18 @@ static void cleanup_basic_tracking()
     }
 }
 
-/******************************************************************************
- * TASK MANAGEMENT FUNCTIONS
- ******************************************************************************/
-
-// Initialize the async task tracking system
+/* Initializes the async task tracking system */
 static void init_task_system()
 {
     active_tasks = g_hash_table_new_full(g_direct_hash, g_direct_equal,
                                         NULL, (GDestroyNotify)g_free);
     SWLOG_INFO("[TASK-SYSTEM] Initialized task tracking system\n");
 
-    // Also initialize basic process tracking
+    // Also initialize process tracking
     init_process_tracking();
 }
 
-// Create context for each app's request
+// Create context for each app's request - for sending back the intermediate responses to apps
 static TaskContext* create_task_context(const gchar* process_name,
                                        const gchar* lib_version,
                                        const gchar* sender_id,
@@ -277,12 +267,12 @@ static TaskContext* create_task_context(const gchar* process_name,
     ctx->process_name = g_strdup(process_name);
     ctx->lib_version = lib_version ? g_strdup(lib_version) : NULL;
     ctx->sender_id = g_strdup(sender_id);
-    ctx->invocation = invocation;  // This is the "response ticket"
+    ctx->invocation = invocation;  
     ctx->start_time = g_get_monotonic_time();
     return ctx;
 }
 
-// Free task context when done
+/* Free task context when done*/
 static void free_task_context(TaskContext *ctx)
 {
     if (!ctx) return;
@@ -291,11 +281,8 @@ static void free_task_context(TaskContext *ctx)
     g_free(ctx->sender_id);
     g_free(ctx);
 }
-// =============================================================================
-// ASYNC TASK IMPLEMENTATIONS
-// =============================================================================
 
-// Async Check Update Task - calls  r   firmware check logic
+/* Async Check Update Task - calls xconf communication check function */
 static gboolean check_update_task(gpointer user_data)
 {
     TaskContext *ctx = (TaskContext*)user_data;
@@ -304,13 +291,13 @@ static gboolean check_update_task(gpointer user_data)
     printf("[TASK-%d] Starting CheckUpdate for %s (sender: %s)\n", 
            task_id, ctx->process_name, ctx->sender_id);
     
-    // <MADHU:What's Here>:: Call  r   check update logic here
-    // Example: ret =  r_check_update_function(ctx->process_name);
+    // <MADHU> Call checkWithXconf logic here
+    // ret =  checkWithXConf(ctx->process_name);
     
-    // For now, simulate the work
-    printf("[TASK-%d] Contacting xconf server for %s...\n", task_id, ctx->process_name);
-    sleep(2);  // Replace with  r actual check logic
-    printf("[TASK-%d] Update check completed for %s\n", task_id, ctx->process_name);
+    // For now, simulating the with logs
+    SWLOG_INFO("[TASK-%d] Contacting xconf server for %s...\n", task_id, ctx->process_name);
+    sleep(2);  // will get replaced by actual check logic
+    SWLOG_INFO("[TASK-%d] Update check completed for %s\n", task_id, ctx->process_name);
     
     // Send response back to the specific app
     g_dbus_method_invocation_return_value(ctx->invocation,
@@ -323,7 +310,7 @@ static gboolean check_update_task(gpointer user_data)
     return G_SOURCE_REMOVE;
 }
 
-// Async Download Task - calls  r   download logic
+/* Async Download Task - calls downloadFirmware function */
 static gboolean download_task_step(gpointer user_data)
 {
     TaskContext *ctx = (TaskContext*)user_data;
@@ -336,13 +323,13 @@ static gboolean download_task_step(gpointer user_data)
     guint task_id = GPOINTER_TO_UINT(g_hash_table_lookup(active_tasks, ctx));
     gint progress = GPOINTER_TO_INT(g_hash_table_lookup(download_progress, ctx));
     
-    printf("[TASK-%d] Download progress for %s: %d%%\n", 
+    SWLOG_INFO("[TASK-%d] Download progress for %s: %d%%\n", 
            task_id, ctx->process_name, progress);
     
-    // <MADHU:What's Here>:: Call  r   download logic here
-    // Example: ret =  r_download_chunk_function(ctx->process_name, progress);
+    // <MADHU> will write downloadFirmware logic
+    // Example: ret = downloadFirmwarwfunction(ctx->process_name, progress);
     
-    progress += 20;  // Simulate progress increment
+    progress += 20;  // to simulate percentage of download
     
     if (progress <= 100) {
         g_hash_table_insert(download_progress, ctx, GINT_TO_POINTER(progress));
@@ -362,21 +349,21 @@ static gboolean download_task_step(gpointer user_data)
     }
 }
 
-// Async Upgrade Task - calls  r   upgrade logic
+/*Async Upgrade Task - calls upgradeFW function*/
 static gboolean upgrade_task(gpointer user_data)
 {
     TaskContext *ctx = (TaskContext*)user_data;
     guint task_id = GPOINTER_TO_UINT(g_hash_table_lookup(active_tasks, ctx));
     
-    printf("[TASK-%d] Starting Upgrade for %s (sender: %s)\n", 
+    SWLOG_INFO("[TASK-%d] Starting Upgrade for %s (sender: %s)\n", 
            task_id, ctx->process_name, ctx->sender_id);
     
-    // <MADHU:What's Here>:: Call  r   upgrade logic here
-    // Example: ret =  r_upgrade_function(ctx->process_name);
+    // <MADHU>call upgradeFW function 
+    // ret = upgradeFW(ctx->process_name,ctx->imageNameToDownload);
     
-    printf("[TASK-%d] Flashing firmware for %s...\n", task_id, ctx->process_name);
-    sleep(3);  // Replace with  r actual upgrade logic
-    printf("[TASK-%d] Upgrade completed for %s - SYSTEM WILL REBOOT\n", 
+    SWLOG_INFO("[TASK-%d] Flashing firmware for %s...\n", task_id, ctx->process_name);
+    sleep(3);  // will get replaced by actual upgrade logic
+    SWLOG_INFO("[TASK-%d] Upgrade completed for %s - SYSTEM WILL REBOOT\n", 
            task_id, ctx->process_name);
     
     g_dbus_method_invocation_return_value(ctx->invocation,
@@ -388,7 +375,7 @@ static gboolean upgrade_task(gpointer user_data)
     
     return G_SOURCE_REMOVE;
 }
- /* D-BUS METHOD HANDLER - ENTRY POINT FOR ALL REQUESTS*/
+ /* D-BUS METHOD HANDLER - entry point for all the requests from apps*/
 static void process_app_request(GDBusConnection *rdkv_conn_dbus,
                              const gchar *rdkv_req_caller_id,
                              const gchar *rdkv_req_obj_path,
@@ -517,27 +504,21 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 }
 
 
-// D-Bus interface vtable
+/*D-Bus interface vtable*/
 static const GDBusInterfaceVTable interface_vtable = {
     process_app_request,
     NULL, // get_property
     NULL  // set_property
 };
 
-
-
-/******************************************************************************
- * D-BUS SERVER SETUP FUNCTIONS
- ******************************************************************************/
-
-// Initialize D-Bus server
+/* Initialize D-Bus server */
 static int setup_dbus_server()
 {
     GError *error = NULL;
     GDBusNodeInfo *introspection_data = NULL;
 
     SWLOG_INFO("[D-BUS SETUP] Setting up D-Bus server...\n");
-
+	
     // Parse the introspection XML
     introspection_data = g_dbus_node_info_new_for_xml(introspection_xml, &error);
     if (!introspection_data) {
