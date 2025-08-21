@@ -18,15 +18,16 @@
 ##########################################################################
 [Unit]
 Description=To start rdkvfwupgrader
-After=local-fs.target nvram.service previous-log-backup.service network-online.target systemd-timesyncd.service tr69hostif.service dbus.service
-Requires=network-online.target dbus.service tr69hostif.service
+After=tr69hostif.service dbus.service
+Requires=tr69hostif.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/rdkvfwupgrader 0 1
-ExecStop=/usr/bin/killall rdkvfwupgrader
-Restart=always
+ExecStart=/bin/bash -c '/usr/bin/rdkvfwupgrader 0 1 > /opt/logs/swupdate.log 2>&1'
+RemainAfterExit=yes
+#ExecStop=/usr/bin/killall rdkvfwupgrader
+#Restart=always
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=ntp-time-sync.target
 

@@ -53,6 +53,7 @@
 #include <string.h>
 #include <strings.h>
 #include <sys/file.h>
+
 #define JSON_STR_LEN        1000
 
 #define DOWNLOADED_PERIPHERAL_VERSION "/tmp/downloaded_peripheral_versions.txt"
@@ -649,26 +650,6 @@ static void cleanup_dbus()
 //static bool isDebugEnabled = true;
 //static pid_t DAEMONPID;
 
-/*
-static int checkAnotherFWUpgraderInstance (void){
-	SWLOG_ERROR("Checking if another instance is running \n");
-	int fd;
-	fd = open("/var/run/rdkvfwupgrader.lock", O_CREAT | O_RDWR, 0666);
-	if (fd == -1)
-	{
-		SWLOG_ERROR("Failed to open lock file\n");
-		return 0;
-	}
-	if (flock(fd, LOCK_EX | LOCK_NB) != 0)
-	{
-		SWLOG_ERROR("Failed to acquire lock file\n");
-		close(fd);
-		return 1;
-	}
-	// OK to proceed (lock will be released and file descriptor will be closed on exit) 
-	return 0;
-}
-*/
 /* Description: Get trigger type info.
  * @param: NA
  * @return: int
@@ -787,56 +768,12 @@ void handle_signal(int no, siginfo_t* info, void* uc)
     SWLOG_INFO("Raise SIGUSR1 signal\n");
     force_exit = 1;
     setForceStop(1);
-    /*
     if (!(strncmp(device_info.maint_status, "true", 4))) {
         eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR);
     }
     eventManager(FW_STATE_EVENT, FW_STATE_FAILED);
     SWLOG_INFO("Download is going to stop and aborted\n");
     updateUpgradeFlag(2);
-    */
-
-/*
-    SWLOG_ERROR("[%s][%u] Signal number: %d\n", __FUNCTION__, __LINE__, info->si_signo);
-    if(DAEMONPID == getpid())
-    {
-	    int fd;
-	    if ( no == SIGINT )
-	    {
-		SWLOG_INFO("SIGINT received!\n");
-		exit(0);
-	    }
-	    if ( no == SIGUSR1 )
-	    {
-		    SWLOG_INFO("Raise SIGUSR1 signal\n");
-		    force_exit = 1;
-		    setForceStop(1);
-	    }
-	    else if ( no == SIGTERM || no == SIGKILL )
-	    {
-		exit(0);
-	    }
-	    else 
-	    {   
-		//get stack trace first 
-		//_print_stack_backtrace();
-		SWLOG_ERROR("[%s][%u] Signal number: %d\n", __FUNCTION__, __LINE__, info->si_signo);
-		SWLOG_INFO("[%s][%u] Signal error: %d\n", __FUNCTION__, __LINE__, info->si_errno);
-		SWLOG_INFO("[%s][%u] Signal code: %d\n", __FUNCTION__, __LINE__, info->si_code);
-		SWLOG_INFO("[%s][%u] Signal value: %d\n", __FUNCTION__, __LINE__, info->si_value.sival_int);
-		(void)uc;
-		exit(0);
-	    }
-    }
-    else
-    {
-	// This logic is added to terminate child imediately if we get terminate signals eg:SIGTERM / SIGKILL ...
-	if(!(sig == SIGCHLD || sig == SIGPIPE || sig == SIGUSR2 || sig == SIGALRM ))
-	{
-		exit(0);
-	}
-    }
-    */
 }
 
 /* Description: Use for save process id and store inside file.
@@ -2587,7 +2524,6 @@ int main(int argc, char *argv[]) {
     struct sigaction rdkv_newaction;
     memset(&rdkv_newaction, '\0', sizeof(struct sigaction));
     int init_validate_status = INITIAL_VALIDATION_FAIL;
-    
     rdkv_newaction.sa_sigaction = handle_signal;
     rdkv_newaction.sa_flags = SA_ONSTACK | SA_SIGINFO;
     log_init();
@@ -2807,4 +2743,3 @@ cleanup_and_exit:
 }
 
 #endif
-
