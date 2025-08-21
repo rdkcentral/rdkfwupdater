@@ -2553,9 +2553,9 @@ int main(int argc, char *argv[]) {
 			    main_loop = g_main_loop_new(NULL, FALSE);
 			    ret = initialize();
 			    if (1 != ret) {
-				    SWLOG_ERROR( "initialize(): Fail:%d\n", ret);
-				    log_exit();
-				    exit(ret_curl_code);
+				SWLOG_ERROR( "initialize(): Fail:%d\n", ret);
+				log_exit();
+				exit(ret_curl_code);
 			    }
 			    if(argc < 3) {
 				    SWLOG_ERROR( "Provide 2 arguments. Less than 2 arguments received\n");
