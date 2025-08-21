@@ -64,7 +64,7 @@
 #define DWNL_PATH_FILE_LEN1 DWNL_PATH_FILE_LEN + 32
 
 // Below are the global variable
-// TODO: Global variables should be avoided to best possible extend and used only as a very last resort !!
+// TODO Global variables should be avoided to best possible extend and used only as a very last resort !!
 // Device properties is a candidate for getter only utils
 DeviceProperty_t device_info; // Contains all device info
 ImageDetails_t cur_img_detail; // Running Image details
