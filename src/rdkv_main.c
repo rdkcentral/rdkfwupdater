@@ -2529,16 +2529,13 @@ int main(int argc, char *argv[]) {
     
     snprintf(disableStatsUpdate, sizeof(disableStatsUpdate), "%s","no");
     // Init the Current state into STATE_INIT
-    
     currentState = STATE_INIT;
-    while (1) {
+    while (1) { 
 	    switch (currentState) {
 		    case STATE_INIT:
 			    // Transition to INIT_VALIDATION after setup
 			    SWLOG_INFO("In STATE_INIT\n");
-			    // Transition to IDLE after setup
-			    SWLOG_INFO("In STATE_INIT\n");
-			    // Initialize task system FIRST (before D-Bus setup)
+			    // Initialize task system first (before D-Bus setup)
 			    init_task_system();
 			    // Initialize D-Bus server as part of process initialization
 			    if (!setup_dbus_server()) {
@@ -2677,17 +2674,14 @@ int main(int argc, char *argv[]) {
 			    break;
 		    case STATE_IDLE:
 			    // Listen for D-Bus events 
-			    SWLOG_INFO("\n [STATE_IDLE] rdkvfwupgrader READY FOR D-BUS REQUESTS \n");
+			    SWLOG_INFO("\n [STATE_IDLE] rdkvfwupgrader Waiting for D-Bus requests...\n\n");
 			    SWLOG_INFO("=======================================================\n");
 			    SWLOG_INFO("D-Bus Service: %s\n", BUS_NAME);
 			    SWLOG_INFO("Object Path: %s\n", OBJECT_PATH);
 			    SWLOG_INFO("Active Tasks: %d\n", g_hash_table_size(active_tasks));
 			    SWLOG_INFO("=======================================================\n");
-			    SWLOG_INFO("All requests will be processed ASYNCHRONOUSLY!\n");
-			    SWLOG_INFO("Multiple apps can send requests simultaneously!\n");
-			    SWLOG_INFO("Waiting for D-Bus requests...\n\n");
 
-			    // Run the main loop - this blocks and waits for D-Bus requests
+			    // Running the main loop - this blocks and waits for D-Bus requests
 			    // When requests come in, they're handled asynchronously by tasks
 			    g_main_loop_run(main_loop);
 
