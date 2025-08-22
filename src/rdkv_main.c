@@ -147,15 +147,17 @@ static const gchar introspection_xml[] =
 "    <method name='CheckForUpdate'>"
 "      <arg type='t' name='handler' direction='in'/>"
 "      <arg type='s' name='CurrentVersion' direction='in'/>"
+"      <arg type='b' name='IsXconfComSuccess' direction='out'/>"
 "      <arg type='s' name='AvailableVersion' direction='out'/>"
 "    </method>"
 "    <method name='DownloadFirmware'>"
-"      <arg type='s' name='handler' direction='in'/>" //this is a struct as per requirement, for now taking it as string.  handler argument will be the process_name in dbus_handlers
+"      <arg type='t' name='handler' direction='in'/>" //this is a struct as per requirement, for now taking it as string.  handler argument will be the process_name in dbus_handlers
 "      <arg type='s' name='ImageToDownload' direction='in'/>"
 "      <arg type='b' name='success' direction='out'/>"  // just send out the success message once the download is triggered; will modify it later to send updates in parallel.Need to add one more output arg here
+"      <arg type='s' name='success_message' direction='out'/>"
 "    </method>"
 "    <method name='UpdateFirmware'>"
-"      <arg type='s' name='hanlder' direction='in'/>"
+"      <arg type='t' name='hanlder' direction='in'/>"
 "      <arg type='s' name='currFWVersion' direction='in'/>"
 "      <arg type='s' name='availableVersion' direction='in'/>"
 "      <arg type='s' name='option1' direction='in'/>" // this will be part of UpdateDetails object in FwData ; for now hardcoding to 0and1 and not taking statusOfFw as input yet
@@ -163,9 +165,9 @@ static const gchar introspection_xml[] =
 "      <arg type='b' name='success' direction='out'/>" //send out success to app once the Upgrade fucntion is called. eventually system reboots.
 "    </method>"
 "    <method name='RegisterProcess'>"
-"      <arg type='s' name='handler' direction='in'/>"
+"      <arg type='s' name='handler' direction='in'/>" //the process name it is
 "      <arg type='s' name='libVersion' direction='in'/>"
-"      <arg type='t' name='handler' direction='out'/>" //handler type will be changed to struct a<s> ; for now it is unit64 . sent to app and app stores it
+"      <arg type='t' name='handler_id' direction='out'/>" //handler type  sent to app and app stores it
 "    </method>"
 "    <method name='UnregisterProcess'>"
 "      <arg type='t' name='handler' direction='in'/>" //handler type will be changed to struct a<s> ; for now it is unit64
@@ -390,8 +392,9 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
     /* CHECK UPDATE REQUEST*/
     //extract process name and libversion from the payload -  inputs provided by app
     if (g_strcmp0(rdkv_req_method, "CheckForUpdate") == 0) {
-        gchar *process_name, *lib_version;
-        g_variant_get(rdkv_req_payload, "(ss)", &process_name, &lib_version);
+        gchar *lib_version;
+	guint64 process_name;
+        g_variant_get(rdkv_req_payload, "(ts)", process_name, &lib_version);
 
         SWLOG_INFO("[D-BUS] CheckForUpdate request: process='%s', lib='%s', sender='%s'\n",
                process_name, lib_version, rdkv_req_caller_id);
@@ -414,10 +417,10 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 
     /* DOWNLOAD REQUEST  */
     else if (g_strcmp0(rdkv_req_method, "DownloadFirmware") == 0) {
-        gchar *process_name;
-        g_variant_get(rdkv_req_payload, "(s)", &process_name);
+        guint64 process_name;
+        g_variant_get(rdkv_req_payload, "(t)", &process_name);
 
-        SWLOG_INFO("[D-BUS] DownloadFirmware request: process='%s', sender='%s'\n",
+        SWLOG_INFO("[D-BUS] DownloadFirmware request: process='%lu', sender='%s'\n",
                process_name, rdkv_req_caller_id);
 
         TaskContext *ctx = create_task_context(process_name, NULL, rdkv_req_caller_id, resp_ctx);
@@ -434,10 +437,10 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 
     /* UPGRADE REQUEST - */
     else if (g_strcmp0(rdkv_req_method, "UpdateFirmware") == 0) {
-        gchar *process_name;
-        g_variant_get(rdkv_req_payload, "(s)", &process_name);
+        guint64 process_name;
+        g_variant_get(rdkv_req_payload, "(t)", &process_name);
 
-        SWLOG_INFO("[D-BUS] UpdateFirmware request: process='%s', sender='%s'\n",
+        SWLOG_INFO("[D-BUS] UpdateFirmware request: process='%lu', sender='%s'\n",
                process_name, rdkv_req_caller_id);
         SWLOG_INFO("[D-BUS] WARNING: This will flash firmware and reboot system!\n");
 
@@ -467,7 +470,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 
         // Send immediate response (no async task needed)
         g_dbus_method_invocation_return_value(resp_ctx,
-            g_variant_new("(t)", handler_id));
+            g_variant_new("(i)", handler_id)); // convert the handler_id into integer
 
         g_free(process_name);
         g_free(lib_version);
@@ -476,7 +479,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
     /* UNREGISTER PROCESS - Immediate response (no async task needed)*/
     else if (g_strcmp0(rdkv_req_method, "UnregisterProcess") == 0) {
         guint64 handler;
-        g_variant_get(rdkv_req_payload, "(t)", &handler);
+        g_variant_get(rdkv_req_payload, "(t)", handler);
 
         SWLOG_INFO("[D-BUS] UnregisterProcess: handler=%lu, sender='%s'\n", handler, rdkv_req_caller_id);
 
