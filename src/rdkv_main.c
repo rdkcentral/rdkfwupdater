@@ -198,7 +198,7 @@ static guint64 add_process_to_tracking(const gchar *process_name,
                                       const gchar *lib_version,
                                       const gchar *sender_id)
 {
-    ProcessInfo; *info = g_malloc0(sizeof(ProcessInfo));
+    ProcessInfo *info = g_malloc0(sizeof(ProcessInfo));
 
     info->handler_id = g_get_monotonic_time();
     info->process_name = g_strdup(process_name);
@@ -220,7 +220,7 @@ static guint64 add_process_to_tracking(const gchar *process_name,
 /* Remove process from tracking list */
 static gboolean remove_process_from_tracking(guint64 handler_id)
 {
-    ProcessInfo; *info = g_hash_table_lookup(registered_processes, &handler_id);
+    ProcessInfo *info = g_hash_table_lookup(registered_processes, &handler_id);
     if (!info) {
         SWLOG_INFO("[TRACKING] Handler %lu not found\n", handler_id);
         return FALSE;
