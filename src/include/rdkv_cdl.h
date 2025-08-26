@@ -86,6 +86,9 @@
 
 #define MAX_BUFF_SIZE 512
 #define MAX_BUFF_SIZE1 256
+#if defined(__aarch64__)
+#define BUFF_SIZE       128
+#endif
 #define MIN_BUFF_SIZE 64
 #define MIN_BUFF_SIZE1 32
 #define SMALL_SIZE_BUFF 8

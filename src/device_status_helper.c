@@ -46,7 +46,11 @@ bool CurrentRunningInst(const char *file)
     FILE *fp = NULL;
     char buf[64] = {0};
     char *tmp = NULL;
+#if defined(__aarch64__)
+    char procfile[BUFF_SIZE];
+#else
     char procfile[78];
+#endif
     char *arg = NULL;
     size_t size = 0;
 
@@ -907,7 +911,11 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
         remainlen = szPostFieldOut - totlen;
         totlen += snprintf( (pTmpPost + totlen), remainlen, "capabilities=%s", tmpbuf );
     }
+#if defined(__aarch64__)
+    SWLOG_INFO( "createJsonString: totlen = %zu\n%s\n", totlen, pPostFieldOut );
+#else
     SWLOG_INFO( "createJsonString: totlen = %d\n%s\n", totlen, pPostFieldOut );
+#endif
     return totlen;
 }
 
@@ -959,7 +967,11 @@ bool lastDwnlImg(char *img_name, size_t img_name_size)
     tbuff[0] = 0;
 
     if (img_name_size > sizeof(last_dwnl_img_name)) {
+#if defined(__aarch64__)
+        SWLOG_INFO("%s: Input buffer size is greater than %zu\n", __FUNCTION__, sizeof(last_dwnl_img_name));
+#else
         SWLOG_INFO("%s: Input buffer size is greater than %d\n", __FUNCTION__, sizeof(last_dwnl_img_name));
+#endif
         return status;
     }
     if (last_dwnl_img_name[0] == 0) {
@@ -996,7 +1008,11 @@ bool currentImg(char *img_name, size_t img_name_size)
     tbuff[0] = 0;
 
     if (img_name_size > sizeof(cur_img_name)) {
+#if defined(__aarch64__)
+        SWLOG_INFO("%s: Input buffer size is greater than %zu\n", __FUNCTION__, sizeof(cur_img_name));
+#else
         SWLOG_INFO("%s: Input buffer size is greater than %d\n", __FUNCTION__, sizeof(cur_img_name));
+#endif
         return status;
     }
     if (cur_img_name[0] == 0) {

@@ -580,7 +580,11 @@ size_t GetOsClass( char *pOsClass, size_t szBufSize )
             i = read_RFCProperty( "OsClass", RFC_OS_CLASS, pOsClass, szBufSize );
             if( i == READ_RFC_FAILURE )
             {
+#if defined(__aarch64__)
+                SWLOG_ERROR( "GetOsClass: read_RFCProperty() failed Status %zu\n", i );
+#else
                 SWLOG_ERROR( "GetOsClass: read_RFCProperty() failed Status %d\n", i );
+#endif
                 i = snprintf( pOsClass, szBufSize, "Not Available" );
             }
             else
@@ -621,7 +625,11 @@ size_t GetSerialNum( char *pSerialNum, size_t szBufSize )
         i = read_RFCProperty( "SerialNumber", RFC_SERIALNUM, pSerialNum, szBufSize );
         if( i == READ_RFC_FAILURE )
         {
+#if defined(__aarch64__)
+            SWLOG_ERROR( "GetSerialNum: read_RFCProperty() failed Status %zu\n", i );
+#else
             SWLOG_ERROR( "GetSerialNum: read_RFCProperty() failed Status %d\n", i );
+#endif
             i = snprintf( pSerialNum, szBufSize, "Not Available" );
         }
         else
@@ -746,7 +754,11 @@ size_t GetAccountID( char *pAccountID, size_t szBufSize )
         if( i == READ_RFC_FAILURE )
         {
             i = snprintf( pAccountID, szBufSize, "Unknown" );
+#if defined(__aarch64__)
+            SWLOG_ERROR( "GetAccountID: read_RFCProperty() failed Status %zu\n", i );
+#else
             SWLOG_ERROR( "GetAccountID: read_RFCProperty() failed Status %d\n", i );
+#endif
         }
         else
         {
