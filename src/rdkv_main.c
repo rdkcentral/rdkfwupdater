@@ -1592,6 +1592,14 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, bool directCdn, 
         SWLOG_ERROR("%s : Parameter is NULL\n", __FUNCTION__);
         return upgrade_status;
     }
+	if (true == isUpgradeInProgress()) {
+        SWLOG_INFO("Exiting from DEVICE INITIATED HTTP CDL\nAnother upgrade is in progress\n");
+        if (!(strncmp(device_info.maint_status, "true", 4))) {
+            eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR);
+        }
+        uninitialize(INITIAL_VALIDATION_SUCCESS);
+        exit(1);
+    }
     if (upgrade_type == PCI_UPGRADE) {
         if ((strstr(pResponse->cloudFWVersion, model)) == NULL) {
              SWLOG_INFO("cloudFWVersion is empty. Do Nothing\n");
