@@ -234,10 +234,10 @@ static guint64 add_process_to_tracking(const gchar *process_name,
                                                                                                                                                                                                                    
     //guint64 *key = g_malloc(sizeof(guint64));                                                                                                                                                                    
     guint64 key = info->handler_id;                                                                                                                                                                                
-    SWLOG_INFO(":  KEY: %ld\n",info->handler_id);                                                                                                                                                          
+    SWLOG_INFO("KEY: %"G_GUINT64_FORMAT"\n",info->handler_id);                                                                                                                                                          
     //g_hash_table_insert(registered_processes, key, info);                                                                                                                                                        
     g_hash_table_insert(registered_processes, GINT_TO_POINTER(key), info);                                                                                                                                         
-    SWLOG_INFO("[TRACKING] Added: %s (handler: %lu, sender: %s)\n",process_name, info->handler_id, sender_id);                                                                                                         
+    SWLOG_INFO("[TRACKING] Added: %s (handler: %"G_GUINT64_FORMAT", sender: %s)\n",process_name, info->handler_id, sender_id);                                                                                                         
     SWLOG_INFO("[TRACKING] Total registered: %d\n", g_hash_table_size(registered_processes));                                                                                                                          
                                                                                                                                                                                                                    
     return info->handler_id;                                                                                                                                                                                       
@@ -248,11 +248,11 @@ static gboolean remove_process_from_tracking(guint64 handler_id)
 {
     ProcessInfo *info = g_hash_table_lookup(registered_processes, &handler_id);
     if (!info) {
-        SWLOG_INFO("[TRACKING] Handler %lu not found\n", handler_id);
+        SWLOG_INFO("[TRACKING] Handler %"G_GUINT64_FORMAT" not found\n", handler_id);
         return FALSE;
     }
 
-    SWLOG_INFO("[TRACKING] Removing: %s (handler: %lu)\n",
+    SWLOG_INFO("[TRACKING] Removing: %s (handler: %"G_GUINT64_FORMAT")\n",
            info->process_name, handler_id);
 
     g_hash_table_remove(registered_processes, &handler_id);
@@ -555,7 +555,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 
         gboolean is_registered = g_hash_table_contains(registered_processes, GINT_TO_POINTER(g_ascii_strtoull(app_id, NULL, 10)));
         //gboolean is_registered=1;
-        SWLOG_INFO("[D-BUS] is_registered:%d app_id searched for : %ld \n",is_registered,g_ascii_strtoull(app_id,NULL,10));
+        SWLOG_INFO("[D-BUS] is_registered:%d app_id searched for : %"G_GUINT64_FORMAT" \n",is_registered,g_ascii_strtoull(app_id,NULL,10));
         if (!is_registered) {
                 SWLOG_INFO("[D-BUS] REJECTED: CheckUpdate from unregistered sender '%s'\n", rdkv_req_caller_id);
                 return;
@@ -582,7 +582,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
     /* UPGRADE REQUEST - */
     else if (g_strcmp0(rdkv_req_method, "UpdateFirmware") == 0) {
         gchar* app_id=NULL;
-        g_variant_get(rdkv_req_payload, "(s)", app_id);
+        g_variant_get(rdkv_req_payload, "(s)", &app_id);
 
         SWLOG_INFO("[D-BUS] UpdateFirmware request: process='%s', sender='%s'\n",
                app_id, rdkv_req_caller_id);
@@ -610,7 +610,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
         // Add to process trackiing system
         guint64 handler_id = add_process_to_tracking(process_name, lib_version,rdkv_req_caller_id);
 
-        SWLOG_INFO("[D-BUS] Process registered with handler ID: %lu\n", handler_id);
+        SWLOG_INFO("[D-BUS] Process registered with handler ID: %"G_GUINT64_FORMAT"\n", handler_id);
 
         // Send immediate response (no async task needed)
         g_dbus_method_invocation_return_value(resp_ctx,
@@ -625,7 +625,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
         guint64 handler;
         g_variant_get(rdkv_req_payload, "(t)", &handler);
 
-        SWLOG_INFO("[D-BUS] UnregisterProcess: handler=%lu, sender='%s'\n", handler, rdkv_req_caller_id);
+        SWLOG_INFO("[D-BUS] UnregisterProcess: handler=%"G_GUINT64_FORMAT", sender='%s'\n", handler, rdkv_req_caller_id);
 
         // Remove from basic tracking system
         if (remove_process_from_tracking(handler)) {
