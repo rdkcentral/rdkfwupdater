@@ -517,7 +517,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
         //gboolean is_registered = g_hash_table_contains(registered_processes, g_ascii_strtoulil(app_id, NULL, 10));
         gboolean is_registered = g_hash_table_contains(registered_processes, GINT_TO_POINTER(g_ascii_strtoull(app_id, NULL, 10)));
         //gboolean is_registered=1;
-        SWLOG_INFO("[D-BUS] is_registered:%d app_id searched for : %ld \n",is_registered,g_ascii_strtoull(app_id,NULL,10));
+        SWLOG_INFO("[D-BUS] is_registered:%d app_id searched for : %"G_GUINT64_FORMAT" \n",is_registered,g_ascii_strtoull(app_id,NULL,10));
         if (!is_registered) {
                 SWLOG_INFO("[D-BUS] REJECTED: CheckUpdate from unregistered sender '%s'\n", rdkv_req_caller_id);
                 return;
