@@ -155,4 +155,7 @@ AC_SUBST(TRACE_LIBS)
 AC_CONFIG_FILES(
     Makefile
     )
+# D-Bus support (enabled by default)
+AC_DEFINE([ENABLE_DBUS], [1], [D-Bus support enabled])
+AM_CONDITIONAL([ENABLE_DBUS], [true])
 AC_OUTPUT

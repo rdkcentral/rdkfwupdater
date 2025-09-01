@@ -26,9 +26,17 @@ AM_CFLAGS += $(GLIB_CFLAGS) -Wno-error=format -Wno-error=int-conversion
 rdkvfwupgrader_LDADD = $(GLIB_LIBS)
 bin_PROGRAMS= rdkvfwupgrader
 
+if ENABLE_DBUS
+DBUS_SRC_FILES = ${top_srcdir}/src/dbus/rdkv_dbus_server.c
+DBUS_HDR_FILES = ${top_srcdir}/src/dbus/rdkv_dbus_server.h
+else
+DBUS_SRC_FILES = 
+DBUS_HDR_FILES =
+endif
 
 rdkvfwupgrader_SOURCES = \
     ${top_srcdir}/src/rdkv_main.c \
+    $(DBUS_SRC_FILES)\
     ${top_srcdir}/src/chunk.c \
     ${top_srcdir}/src/flash.c \
     ${top_srcdir}/src/json_process.c \
@@ -41,6 +49,7 @@ rdkvfwupgrader_SOURCES = \
 
 rdkvfwupgrader_include_HEADERS = \
     ${top_srcdir}/src/rfcInterface/rfcinterface.h \
+    ${top_srcdir}/src/dbus/rdkv_dbus_server.h \
     ${top_srcdir}/src/iarmInterface/iarmInterface.h \
     ${top_srcdir}/src/deviceutils/device_api.h \
     ${top_srcdir}/src/deviceutils/deviceutils.h \
