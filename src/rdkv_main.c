@@ -675,7 +675,7 @@ static int setup_dbus_server()
     }
 
     // Get connection to the system bus
-    connection = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error);
+    connection = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
     if (!connection) {
         SWLOG_INFO("[D-BUS SETUP] Error connecting to D-Bus: %s\n", error->message);
         g_error_free(error);
