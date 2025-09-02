@@ -30,7 +30,7 @@ static GHashTable *registered_processes = NULL;  // handler_id -> ProcessInfo;
 /* D-Bus introspection data or dbus interface : Exposes the methods for apps */
 static const gchar introspection_xml[] =
 "<node>"
-"  <interface name='org.rdkfwupgrader.Interface'>"
+"  <interface name='org.rdkfwupdater.Interface'>"
 "    <method name='CheckForUpdate'>"
 "      <arg type='s' name='handler' direction='in'/>"
 "      <arg type='s' name='version' direction='in'/>"
