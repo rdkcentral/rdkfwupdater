@@ -23,6 +23,33 @@ AM_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
 AM_LDFLAGS += $(cjson_LIBS) $(curl_LIBS)
 AM_LDFLAGS += -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread
 
+# Build the RDK upgrade shared library
+lib_LTLIBRARIES = librdkv_upgrade.la
+
+librdkv_upgrade_la_SOURCES = \
+    ${top_srcdir}/src/rdkv_upgrade.c
+
+librdkv_upgrade_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/iarmInterface -I${top_srcdir}/src/rfcInterface $(AM_CFLAGS)
+librdkv_upgrade_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/iarmInterface -I${top_srcdir}/src/rfcInterface
+
+if USE_CPC_CODE
+librdkv_upgrade_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+librdkv_upgrade_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+else
+librdkv_upgrade_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
+librdkv_upgrade_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
+endif
+
+# Configure for shared library generation with proper flags
+librdkv_upgrade_la_LDFLAGS = -version-info 1:0:0 -shared
+librdkv_upgrade_la_LIBADD = $(AM_LDFLAGS)
+
+# Library headers to install
+librdkv_upgrade_include_HEADERS = \
+    ${top_srcdir}/src/include/rdkv_upgrade.h
+
+librdkv_upgrade_includedir = ${includedir}
+
 bin_PROGRAMS= rdkvfwupgrader
 
 
@@ -37,6 +64,10 @@ rdkvfwupgrader_SOURCES = \
     ${top_srcdir}/src/rfcInterface/rfcinterface.c \
     ${top_srcdir}/src/deviceutils/device_api.c \
     ${top_srcdir}/src/deviceutils/deviceutils.c
+
+# Link against the RDK upgrade shared library AND system libraries
+rdkvfwupgrader_LDADD = librdkv_upgrade.la $(cjson_LIBS) $(curl_LIBS) -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread -lrbus
+rdkvfwupgrader_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
 
 rdkvfwupgrader_include_HEADERS = \
     ${top_srcdir}/src/rfcInterface/rfcinterface.h \
