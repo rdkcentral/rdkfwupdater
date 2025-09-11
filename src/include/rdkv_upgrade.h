@@ -32,7 +32,8 @@ void rdkv_utils_cleanup(void);
  */
 int rdkv_upgrade_request(int upgrade_type, int server_type, 
                         const char* artifactLocationUrl, const void* dwlloc, 
-                        char *pPostFields, int *pHttp_code);
+                        char *pPostFields, int *pHttp_code,char *immed_reboot_flag,int delay_dwnl , 
+			char *lastrun, char *disableStatsUpdate, DeviceProperty_t *device_info);
 
 #ifdef __cplusplus
 }

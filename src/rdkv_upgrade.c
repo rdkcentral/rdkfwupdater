@@ -8,13 +8,6 @@
 #include "rdk_logger_milestone.h"
 
 
-// External variables that need to be accessible (declared in rdkv_main.c)
-extern char immed_reboot_flag[10];
-extern int delay_dwnl;
-extern char lastrun[256];
-extern char disableStatsUpdate[10];
-extern DeviceProperty_t device_info;
-
 // TODO - do similar to what is done for IARM eventing. Is not the primary goal of this module
 /* Description: Use for sending telemetry Log
  * @param marker: use for send marker details
@@ -110,7 +103,7 @@ void rdkv_utils_cleanup(void)
  */
 int rdkv_upgrade_request(int upgrade_type, int server_type, 
                         const char* artifactLocationUrl, const void* dwlloc, 
-                        char *pPostFields, int *pHttp_code)
+                        char *pPostFields, int *pHttp_code,char *immed_reboot_flag,int delay_dwnl , char *lastrun, char *disableStatsUpdate, DeviceProperty_t* device_info)
 {
     const char* dwlpath_filename = NULL;
     int ret_curl_code = -1;
@@ -178,7 +171,7 @@ int rdkv_upgrade_request(int upgrade_type, int server_type,
             st_notify_flag = isMmgbleNotifyEnabled();
         }
 
-        isDelayFWDownloadActive(delay_dwnl, device_info.maint_status, 1);
+        isDelayFWDownloadActive(delay_dwnl, device_info->maint_status, 1);
 	SWLOG_INFO("Delayed Trigger Image Upgrade ..!\n");
         if (upgrade_type == PCI_UPGRADE) {
             logMilestone(cmd_args);
@@ -376,7 +369,7 @@ int rdkv_upgrade_request(int upgrade_type, int server_type,
                 snprintf(dwnl_status, sizeof(dwnl_status), "Flashing In Progress");
                 snprintf(fwdls.status, sizeof(fwdls.status), "Status|%s\n", dwnl_status);
                 updateFWDownloadStatus(&fwdls, disableStatsUpdate);
-                flash_status  = flashImage(artifactLocationUrl, dwlpath_filename, immed_reboot_flag, "2", upgrade_type, device_info.maint_status);
+                flash_status  = flashImage(artifactLocationUrl, dwlpath_filename, immed_reboot_flag, "2", upgrade_type, device_info->maint_status);
                 if (upgrade_type == PCI_UPGRADE) {
                     if (flash_status != 0 && upgrade_type == PCI_UPGRADE) {
                         SWLOG_ERROR("doCDL failed\n");
