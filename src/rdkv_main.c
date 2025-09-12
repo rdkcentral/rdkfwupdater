@@ -453,7 +453,7 @@ int initialize(void) {
         DwnLoc.pvOut = NULL;
         DwnLoc.datasize = 0;
         DwnLoc.memsize = 0;
-        if( MemDLAlloc( &DwnLoc, DEFAULT_DL_ALLOC ) == 0 )
+        if( allocDowndLoadDataMem( &DwnLoc, DEFAULT_DL_ALLOC ) == 0 )
         {
             getJsonRpc(post_data, &DwnLoc);
             if( (strstr((char*)DwnLoc.pvOut, "BACKGROUND")) != NULL ) {
@@ -1450,7 +1450,7 @@ static int MakeXconfComms( XCONFRES *pResponse, int server_type, int *pHttp_code
     DwnLoc.datasize = 0;
     DwnLoc.memsize = 0;
     *pHttp_code = 0;
-    if( MemDLAlloc( &DwnLoc, DEFAULT_DL_ALLOC ) == 0 )
+    if( allocDowndLoadDataMem( &DwnLoc, DEFAULT_DL_ALLOC ) == 0 )
     {
         if( (pJSONStr=(char*)malloc( JSON_STR_LEN )) != NULL )
         {

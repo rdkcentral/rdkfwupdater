@@ -89,7 +89,7 @@ size_t makeHttpHttps(char *pIn, size_t szpInSize);
             Function Notes - The caller is responsible for freeing the dynamically allocated
             memory pointed to by the pvOut member of the DownloadData structure pointer.
 */
-int MemDLAlloc(DownloadData *pDwnData, size_t szDataSize);
+//int MemDLAlloc(DownloadData *pDwnData, size_t szDataSize);
 
 /* function RunCommand - runs a predefined system command using v_secure_popen
  

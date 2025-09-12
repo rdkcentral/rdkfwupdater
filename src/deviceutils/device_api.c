@@ -687,7 +687,7 @@ size_t GetExperience( char *pExperience, size_t szBufSize )
     {
         *pExperience = 0;
 
-        if( MemDLAlloc( &DwnLoc, DEFAULT_DL_ALLOC ) == 0 )
+        if( allocDowndLoadDataMem( &DwnLoc, DEFAULT_DL_ALLOC ) == 0 )
         {
             getJsonRpc( post_data, &DwnLoc );
 
