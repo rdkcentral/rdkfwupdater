@@ -500,7 +500,7 @@ void saveHTTPCode(int http_code)
     char http[8] = { 0 };
     FILE *fp = NULL;
 
-#if defined(__aarch64__)
+#if __WORDSIZE == 64
     snprintf( http, sizeof(http), "%03d\n", http_code );
 #else
     snprintf( http, sizeof(http), "%03ld\n", (long int)http_code );
@@ -1066,7 +1066,7 @@ int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocati
     const char* dwlpath_filename = NULL;
     int ret_curl_code = -1;
     char dwnl_status[64];
-#if defined(__aarch64__)
+#if __WORDSIZE == 64
     unsigned int curtime;
 #else
     unsigned long int curtime;
@@ -1187,7 +1187,7 @@ int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocati
 
         if (true == st_notify_flag) {
             curtime = getCurrentSysTimeSec();
-#if defined(__aarch64__)
+#if __WORDSIZE == 64
             snprintf(current_time, sizeof(current_time), "%u", curtime);
             SWLOG_INFO("current_time calculated as %u and %s\n", curtime, current_time);
 #else

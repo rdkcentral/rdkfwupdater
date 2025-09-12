@@ -311,7 +311,7 @@ size_t RunCommand( SYSCMD eSysCmd, const char *pArgs, char *pResult, size_t szRe
             }
             else
             {
-#if defined(__aarch64__)
+#if __WORDSIZE == 64
                 SWLOG_ERROR( "%s fread fails:%zu\n", __FUNCTION__, nbytes_read );
 #else
                 SWLOG_ERROR( "%s fread fails:%d\n", __FUNCTION__, nbytes_read );

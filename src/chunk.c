@@ -60,7 +60,7 @@ size_t getContentLength(const char *file)
         }
 	memset(tbuff,'\0', sizeof(tbuff));
     }
-#if defined(__aarch64__)
+#if __WORDSIZE == 64
     SWLOG_INFO("Content_lenght string=%zu\n", cnt_len);
 #else
     SWLOG_INFO("Content_lenght string=%u\n", cnt_len);
@@ -95,7 +95,7 @@ int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_li
     }
     snprintf(headerfile, sizeof(headerfile), "%s.header", pfile_dwnl->pathname);
     content_len = getContentLength(headerfile);
-#if defined(__aarch64__)
+#if __WORDSIZE == 64
     SWLOG_INFO("content_len = %zu featched from headerfile=%s\n", content_len, headerfile);
 #else
     SWLOG_INFO("content_len = %d featched from headerfile=%s\n", content_len, headerfile);
@@ -105,7 +105,7 @@ int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_li
         file_size = getFileSize(pfile_dwnl->pathname);
         /* Already Full File Downloaded*/
         if (file_size == content_len) {
-#if defined(__aarch64__)
+#if __WORDSIZE == 64
             SWLOG_INFO("chunkDownload() Existing file_size=%d and content_len=%zu are same\n", file_size, content_len);
 #else
             SWLOG_INFO("chunkDownload() Existing file_size=%d and content_len=%d are same\n", file_size, content_len);
@@ -122,7 +122,7 @@ int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_li
             return -1;
         }
     }else {
-#if defined(__aarch64__)
+#if __WORDSIZE == 64
         SWLOG_ERROR( "chunkDownload() Error to proceed for chunk download due to below reason.\nContent length not present=%zu or Partial image file not present.\n", content_len);
 #else
         SWLOG_ERROR( "chunkDownload() Error to proceed for chunk download due to below reason.\nContent length not present=%d or Partial image file not present.\n", content_len);
@@ -182,7 +182,7 @@ int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_li
     } else if ((curl_ret_code == 0) && ((filePresentCheck(pfile_dwnl->pathname)) == 0)) {
         file_size = 0;
         file_size = getFileSize(pfile_dwnl->pathname);
-#if defined(__aarch64__)
+#if __WORDSIZE == 64
         SWLOG_INFO("chunkDownload() curl status success=%u, filesize=%d, content_len=%zu\n", curl_ret_code, file_size, content_len);
 #else
         SWLOG_INFO("chunkDownload() curl status success=%u, filesize=%d, content_len=%d\n", curl_ret_code, file_size, content_len);
@@ -193,7 +193,7 @@ int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_li
         } else {
             SWLOG_ERROR( "chunkDownload() Downloaded File Size and content length fetch from header are not same. So Go For Full Download\n");
             t2CountNotify("SYST_ERR_DiffFWCTN_FLdnld", 1);
-#if defined(__aarch64__)
+#if __WORDSIZE == 64
             SWLOG_ERROR( "chunkDownload() File Size=%d and content len=%zu\n", file_size, content_len);
 #else
             SWLOG_ERROR( "chunkDownload() File Size=%d and content len=%d\n", file_size, content_len);

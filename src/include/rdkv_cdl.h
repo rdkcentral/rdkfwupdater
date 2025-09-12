@@ -86,7 +86,7 @@
 
 #define MAX_BUFF_SIZE 512
 #define MAX_BUFF_SIZE1 256
-#if defined(__aarch64__)
+#if __WORDSIZE == 64
 #define BUFF_SIZE       128
 #endif
 #define MIN_BUFF_SIZE 64
