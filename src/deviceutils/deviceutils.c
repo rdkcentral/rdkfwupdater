@@ -101,6 +101,7 @@ char *pPeripheralName[MAX_PERIPHERAL_ITEMS] = {
  
             PITFALLS - does not check for NULL input
 */
+/*
 size_t stripinvalidchar( char *pIn, size_t szIn )
 {
     size_t i = 0;
@@ -121,7 +122,7 @@ size_t stripinvalidchar( char *pIn, size_t szIn )
     }
     return i;
 }
-
+*/
 /* function makeHttpHttps - checks a URL for "http:" and, if found,
     makes it "https:"
  
