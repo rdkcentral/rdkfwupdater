@@ -47,6 +47,7 @@
 #include "json_process.h"
 #include "device_api.h"
 #include "deviceutils.h"
+#include "common_device_api.h"
 
 #include <stdlib.h>
 #include <stdio.h>

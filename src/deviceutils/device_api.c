@@ -34,6 +34,7 @@
 #include "rdkv_cdl_log_wrapper.h"
 #include "device_api.h"
 #include "deviceutils.h"
+#include "common_device_api.h"
 #include "device_status_helper.h"
 #include "../rfcInterface/rfcinterface.h"
 
@@ -50,6 +51,7 @@
 
             RETURN - number of characters copied to the output buffer.
 */
+/*
 size_t GetServerUrlFile( char *pServUrl, size_t szBufSize, char *pFileName )
 {
     FILE *fp;
@@ -108,7 +110,7 @@ size_t GetServerUrlFile( char *pServUrl, size_t szBufSize, char *pFileName )
     }
     return i;
 }
-
+*/
 /* function GetTimezone - returns the timezone for the device. 
         Usage: size_t GetTimezone <char *pTimezone> <size_t szBufSize>
  
@@ -409,6 +411,7 @@ size_t GetInstalledBundles(char *pBundles, size_t szBufSize)
 
             RETURN - number of characters copied to the output buffer.
 */
+/*
 size_t GetUTCTime( char *pUTCTime, size_t szBufSize )
 {
     struct tm gmttime;
@@ -432,7 +435,7 @@ size_t GetUTCTime( char *pUTCTime, size_t szBufSize )
     }
     return i;
 }
-
+*/
 /* function GetCapabilities - gets the device capabilities.
  
         Usage: size_t GetCapabilities <char *pCapabilities> <size_t szBufSize>
@@ -443,6 +446,7 @@ size_t GetUTCTime( char *pUTCTime, size_t szBufSize )
 
             RETURN - number of characters copied to the output buffer.
 */
+/*
 size_t GetCapabilities( char *pCapabilities, size_t szBufSize )
 {
     size_t i = 0;
@@ -457,6 +461,7 @@ size_t GetCapabilities( char *pCapabilities, size_t szBufSize )
     }
     return i;
 }
+*/
 
 /* function GetPartnerId - gets the partner ID of the device.
  

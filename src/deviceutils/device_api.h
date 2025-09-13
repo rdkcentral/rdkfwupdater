@@ -109,7 +109,7 @@ typedef enum {
 
             RETURN - number of characters copied to the output buffer.
 */
-size_t GetServerUrlFile(char *pServUrl, size_t szBufSize, char *pFileName);
+//size_t GetServerUrlFile(char *pServUrl, size_t szBufSize, char *pFileName);
 
 
 /* function GetTimezone - returns the timezone for the device. 
@@ -170,7 +170,7 @@ size_t GetInstalledBundles(char *pBundles, size_t szBufSize);
 
             RETURN - number of characters copied to the output buffer.
 */
-size_t GetUTCTime(char *pUTCTime, size_t szBufSize);
+//size_t GetUTCTime(char *pUTCTime, size_t szBufSize);
 
 
 /* function GetCapabilities - gets the device capabilities.
@@ -183,7 +183,7 @@ size_t GetUTCTime(char *pUTCTime, size_t szBufSize);
 
             RETURN - number of characters copied to the output buffer.
 */
-size_t GetCapabilities(char *pCapabilities, size_t szBufSize);
+//size_t GetCapabilities(char *pCapabilities, size_t szBufSize);
 
 
 /* function GetPartnerId - gets the partner ID of the device.
@@ -271,7 +271,7 @@ size_t GetAccountID(char *pAccountID, size_t szBufSize);
             szBufSize - the size of the character buffer in argument 1.
             RETURN - number of characters copied to the output buffer.
 */
-size_t GetModelNum(char *pModelNum, size_t szBufSize);
+//size_t GetModelNum(char *pModelNum, size_t szBufSize);
 #endif
 
 /* function GetBuildType - gets the build type of the device in lowercase. Optionally, sets an enum
