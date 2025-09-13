@@ -60,7 +60,7 @@ typedef struct metaDataFileList
  
             PITFALLS - does not check for NULL input
 */
-size_t stripinvalidchar(char *pIn, size_t szIn);
+//size_t stripinvalidchar(char *pIn, size_t szIn);
 
 /* function makeHttpHttps - checks a URL for "http:" and, if found,
     makes it "https:"

@@ -196,7 +196,7 @@ size_t GetCapabilities(char *pCapabilities, size_t szBufSize);
 
             RETURN - number of characters copied to the output buffer.
 */
-size_t GetPartnerId(char *pPartnerId, size_t szBufSize);
+//size_t GetPartnerId(char *pPartnerId, size_t szBufSize);
 
 /* function GetOsClass - gets the OsClass of the device.
  
@@ -289,7 +289,7 @@ size_t GetModelNum(char *pModelNum, size_t szBufSize);
 
             RETURN - number of characters copied to the output buffer.
 */
-size_t GetBuildType(char *pBuildType, size_t szBufSize, BUILDTYPE *peBuildTypeOut);
+//size_t GetBuildType(char *pBuildType, size_t szBufSize, BUILDTYPE *peBuildTypeOut);
 
 /* function GetMFRName - gets the  manufacturer name of the device.
         Usage: size_t GetMFRName <char *pMFRName> <size_t szBufSize>
@@ -299,7 +299,7 @@ size_t GetBuildType(char *pBuildType, size_t szBufSize, BUILDTYPE *peBuildTypeOu
 
             RETURN - number of characters copied to the output buffer.
 */
-size_t GetMFRName(char *pMFRName, size_t szBufSize);
+//size_t GetMFRName(char *pMFRName, size_t szBufSize);
 
 
 /* function GetFirmwareVersion - gets the firmware version of the device.
@@ -312,7 +312,7 @@ size_t GetMFRName(char *pMFRName, size_t szBufSize);
 
             RETURN - number of characters copied to the output buffer.
 */
-size_t GetFirmwareVersion(char *pFWVersion, size_t szBufSize);
+//size_t GetFirmwareVersion(char *pFWVersion, size_t szBufSize);
 
 
 /* function GetEstbMac - gets the eSTB MAC address of the device.
@@ -325,7 +325,7 @@ size_t GetFirmwareVersion(char *pFWVersion, size_t szBufSize);
 
             RETURN - number of characters copied to the output buffer.
 */
-size_t GetEstbMac(char *pEstbMac, size_t szBufSize);
+//size_t GetEstbMac(char *pEstbMac, size_t szBufSize);
 
 
 /* function GetRemoteInfo - gets the remote info of the device.
