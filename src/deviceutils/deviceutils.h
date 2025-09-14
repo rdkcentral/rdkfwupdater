@@ -154,8 +154,9 @@ int getJRPCTokenData(char *token, char *pJsonStr, unsigned int token_size);
  *  @param: uptime : pointer to recive uptime of system
  *  @return :bool
  * */
-
+/* get_system_uptime function moved to common_utilities/utils/common_device_api.h
 bool get_system_uptime(double *uptime);
+*/
 
 metaDataFileList_st *getInstalledBundleFileList();
 metaDataFileList_st *getMetaDataFile(char *dir);

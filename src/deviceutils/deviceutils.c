@@ -623,6 +623,7 @@ metaDataFileList_st * mergeLists(metaDataFileList_st *nvmList, metaDataFileList_
   
 }
 
+/* get_system_uptime function moved to common_utilities/utils/common_device_api.c
 bool get_system_uptime(double *uptime) {
     FILE* uptime_file = fopen("/proc/uptime", "r");
     if ((uptime_file != NULL) && (uptime != NULL)) {
@@ -637,3 +638,4 @@ bool get_system_uptime(double *uptime) {
     }
     return false;
 }
+*/
