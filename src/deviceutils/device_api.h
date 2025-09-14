@@ -123,7 +123,7 @@ typedef enum {
 
             RETURN - number of characters copied to the output buffer.
 */
-size_t GetTimezone(char *pTimezone, const char *cpuArch, size_t szBufSize);
+//size_t GetTimezone(char *pTimezone, const char *cpuArch, size_t szBufSize);
 
 /* function GetAdditionalFwVerInfo - returns the PDRI filename plus Remote Info for the device. 
         Usage: size_t GetAdditionalFwVerInfo <char *pAdditionalFwVerInfo> <size_t szBufSize>
@@ -393,6 +393,7 @@ size_t GetTR181Url(TR181URL eURL, char *pUrlOut, size_t szBufSize);
 */
 size_t GetServURL(char *pServURL, size_t szBufSize);
 
+
 /* function GetFileContents - gets the contents of a file into a dynamically allocated buffer.
  
         Usage: size_t GetFileContents <char **pOut> <char *pFileName>
@@ -407,7 +408,8 @@ size_t GetServURL(char *pServURL, size_t szBufSize);
             Notes - GetFileContents uses malloc to allocate the the buffer where the string is stored.
                     The caller must use free(*pOut) when done using the buffer to avoid memory leaks.
 */
-size_t GetFileContents(char **pOut, char *pFileName);
+//size_t GetFileContents(char **pOut, char *pFileName);
+
 
 
 #endif

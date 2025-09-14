@@ -120,6 +120,7 @@ size_t GetServerUrlFile( char *pServUrl, size_t szBufSize, char *pFileName )
 
             RETURN - number of characters copied to the output buffer.
 */
+/*
 size_t GetTimezone( char *pTimezone, const char *cpuArch, size_t szBufSize )
 {
 
@@ -264,6 +265,7 @@ size_t GetTimezone( char *pTimezone, const char *cpuArch, size_t szBufSize )
     }
     return i;
 }
+*/ // GetTimezone - MOVED TO COMMON_UTILITIES/LIBFWUTILS
 
 /* function GetAdditionalFwVerInfo - returns the PDRI filename plus Remote Info for the device. 
         Usage: size_t GetAdditionalFwVerInfo <char *pAdditionalFwVerInfo> <size_t szBufSize>
@@ -1378,6 +1380,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
                     The caller must use free(*pOut) when done using the buffer to avoid memory leaks.
 */
 
+/*
 size_t GetFileContents( char **pOut, char *pFileName )
 {
     FILE *fp;
@@ -1418,5 +1421,6 @@ size_t GetFileContents( char **pOut, char *pFileName )
     }
     return len;
 }
+*/ // MOVED TO COMMON_UTILITIES/LIBFWUTILS
 
 

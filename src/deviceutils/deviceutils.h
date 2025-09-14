@@ -75,7 +75,7 @@ typedef struct metaDataFileList
  
             PITFALLS - does not check for NULL input
 */
-size_t makeHttpHttps(char *pIn, size_t szpInSize);
+//size_t makeHttpHttps(char *pIn, size_t szpInSize);  // MOVED TO common_utilities/utils/common_device_api.h
 
 /* function MemDLAlloc - allocates a memory block and fills in data structure used for curl
                           memory downloads.

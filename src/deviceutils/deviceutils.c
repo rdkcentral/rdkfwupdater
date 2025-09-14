@@ -136,6 +136,7 @@ size_t stripinvalidchar( char *pIn, size_t szIn )
  
             PITFALLS - does not check for NULL input
 */
+/*
 size_t makeHttpHttps( char *pIn, size_t szpInSize )
 {
     char *pTmp, *pEnd;
@@ -171,6 +172,7 @@ size_t makeHttpHttps( char *pIn, size_t szpInSize )
     }
     return len;
 }
+*/
 
 
 /* function MemDLAlloc - allocates a memory block and fills in data structure used for curl
