@@ -28,6 +28,7 @@
 #endif
 #include "json_parse.h"
 #include "deviceutils.h"
+#include "common_device_api.h"
 
 
 int getXconfRespData( XCONFRES *pResponse, char *pJsonStr )
