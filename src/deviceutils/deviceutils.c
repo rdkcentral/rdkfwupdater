@@ -241,6 +241,7 @@ int MemDLAlloc( DownloadData *pDwnData, size_t szDataSize )
  
             %s in the command string indicates an argument (pArgs) is required
 */
+/*
 size_t RunCommand( SYSCMD eSysCmd, const char *pArgs, char *pResult, size_t szResultSize )
 {
     FILE *fp;
@@ -331,6 +332,7 @@ size_t RunCommand( SYSCMD eSysCmd, const char *pArgs, char *pResult, size_t szRe
     }
     return nbytes_read;
 }
+*/
 
 /* function BuildRemoteInfo - Formats the "periperalFirmwares" string for remote info part of xconf communication
  
@@ -347,6 +349,7 @@ size_t RunCommand( SYSCMD eSysCmd, const char *pArgs, char *pResult, size_t szRe
             RETURN - the number of characters written to the buffer
 */
 
+/*
 size_t BuildRemoteInfo( JSON *pItem, char *pRemoteInfo, size_t szMaxBuf, bool bAddremCtrl )
 {
     char **pPrefix;
@@ -380,14 +383,14 @@ size_t BuildRemoteInfo( JSON *pItem, char *pRemoteInfo, size_t szMaxBuf, bool bA
                 pSuffix = *pExtStrings;
             }
 
-            /*
+            //
                 Now try to find the json values in the listed in the pPeripheralName array.
                 If bAddRemCtrl is true then the output will be formatted similar to the following for each value in the list;
                     &remCtrlXR11-20=1.1.1.1&remCtrlAudioXR11-20=0.1.0.0&remCtrlDspXR11-20=0.1.0.0&remCtrlKwModelXR11-20=0.1.0.0
                 Otherwise the output will be formatted similar to the following for each value in the list;
                     XR11-20_firmware_1.1.1.1.tgz,XR11-20_audio_0.1.0.0.tgz,XR11-20_dsp_0.1.0.0.tgz,XR11-20_kw_model_0.1.0.0.tgz
                 Note that model name and version numbers are variables depending on the device
-            */
+            //
 
             for( x=0; x < MAX_PERIPHERAL_ITEMS; x++ )
             {
@@ -415,6 +418,7 @@ size_t BuildRemoteInfo( JSON *pItem, char *pRemoteInfo, size_t szMaxBuf, bool bA
     }
     return (size_t)iLen;
 }
+*/
 
 /* function getJsonRpc - Use to get jsonrpc using curl lib
    @param : post_data: Required Postfield data
@@ -492,6 +496,7 @@ int getJRPCTokenData( char *token, char *pJsonStr, unsigned int token_size )
         Input : void
         RETURN - List of installed Bundle in NVM and RFS directory
 */
+/*
 metaDataFileList_st *getInstalledBundleFileList()
 {
     metaDataFileList_st *metadataNVMls = NULL, *metadataRFSls = NULL, *metaDataList = NULL;
@@ -529,12 +534,14 @@ metaDataFileList_st *getInstalledBundleFileList()
 
     return metaDataList;
 }
+*/
 
 /* function getMetaDataFile - gets the files list in the directory
         Usage: metaDataFileList_st *getMetaDataFile(char *dir)
         dir : directory of NVM or RFS Path
         RETURN - List of installed Bundle in NVM or RFS directory
 */
+/*
 metaDataFileList_st *getMetaDataFile(char *dir)
 {
     metaDataFileList_st *newnode = NULL, *prevnode = NULL, *headNode = NULL;
@@ -571,6 +578,7 @@ metaDataFileList_st *getMetaDataFile(char *dir)
     }
     return headNode;
 }
+*/
 
 /* function mergeLists - merge the RFS and NVM file list. 
         Usage: metaDataFileList_st * mergeLists(metaDataFileList_st *nvmList, metaDataFileList_st *rfsList)
@@ -578,6 +586,7 @@ metaDataFileList_st *getMetaDataFile(char *dir)
         rfsList : RFS files list
         RETURN - common files list of installed Bundle in NVM and RFS directory
 */
+/*
 metaDataFileList_st * mergeLists(metaDataFileList_st *nvmList, metaDataFileList_st *rfsList)
 {
    metaDataFileList_st  tmp;
@@ -622,8 +631,9 @@ metaDataFileList_st * mergeLists(metaDataFileList_st *nvmList, metaDataFileList_
   return tmp.next;
   
 }
+*/
 
-/* get_system_uptime function moved to common_utilities/utils/common_device_api.c
+/*
 bool get_system_uptime(double *uptime) {
     FILE* uptime_file = fopen("/proc/uptime", "r");
     if ((uptime_file != NULL) && (uptime != NULL)) {

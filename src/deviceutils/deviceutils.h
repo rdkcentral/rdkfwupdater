@@ -24,6 +24,7 @@
 #endif
 #include "json_parse.h"     // needed for JSON struct definition
 #include "mtlsUtils.h"
+#include "common_device_api.h"
 
 #ifndef GETRDMMANIFESTVERSION_IN_SCRIPT
     #define GETRDMMANIFESTVERSION_IN_SCRIPT
@@ -75,7 +76,7 @@ typedef struct metaDataFileList
  
             PITFALLS - does not check for NULL input
 */
-//size_t makeHttpHttps(char *pIn, size_t szpInSize);  // MOVED TO common_utilities/utils/common_device_api.h
+//size_t makeHttpHttps(char *pIn, size_t szpInSize);
 
 /* function MemDLAlloc - allocates a memory block and fills in data structure used for curl
                           memory downloads.
@@ -117,7 +118,7 @@ typedef struct metaDataFileList
  
             %s in the command string indicates an argument (pArgs) is required
 */
-size_t RunCommand(SYSCMD eSysCmd, const char *pArgs, char *pResult, size_t szResultSize);
+//size_t RunCommand(SYSCMD eSysCmd, const char *pArgs, char *pResult, size_t szResultSize);
 
 /* function BuildRemoteInfo - Formats the "periperalFirmwares" string for remote info part of xconf communication
  
@@ -133,7 +134,7 @@ size_t RunCommand(SYSCMD eSysCmd, const char *pArgs, char *pResult, size_t szRes
 
             RETURN - the number of characters written to the buffer
 */
-size_t BuildRemoteInfo(JSON *pItem, char *pRemoteInfo, size_t szMaxBuf, bool bAddremCtrl);
+//size_t BuildRemoteInfo(JSON *pItem, char *pRemoteInfo, size_t szMaxBuf, bool bAddremCtrl);
 
 /* function getJsonRpc - Use to get jsonrpc using curl lib
    @param : post_data: Required Postfield data
@@ -154,7 +155,7 @@ int getJRPCTokenData(char *token, char *pJsonStr, unsigned int token_size);
  *  @param: uptime : pointer to recive uptime of system
  *  @return :bool
  * */
-/* get_system_uptime function moved to common_utilities/utils/common_device_api.h
+/*
 bool get_system_uptime(double *uptime);
 */
 

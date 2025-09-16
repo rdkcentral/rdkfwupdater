@@ -265,7 +265,7 @@ size_t GetTimezone( char *pTimezone, const char *cpuArch, size_t szBufSize )
     }
     return i;
 }
-*/ // GetTimezone - MOVED TO COMMON_UTILITIES/LIBFWUTILS
+*/
 
 /* function GetAdditionalFwVerInfo - returns the PDRI filename plus Remote Info for the device. 
         Usage: size_t GetAdditionalFwVerInfo <char *pAdditionalFwVerInfo> <size_t szBufSize>
@@ -305,6 +305,7 @@ size_t GetAdditionalFwVerInfo( char *pAdditionalFwVerInfo, size_t szBufSize )
 
             RETURN - number of characters copied to the output buffer.
 */
+/*
 size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
 {
     char *pTmp;
@@ -331,6 +332,7 @@ size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
     }
     return len;
 }
+*/
 
 
 /* function GetInstalledBundles - gets the bundles installed on a device. 
@@ -343,6 +345,7 @@ size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
             RETURN - number of characters copied to the output buffer.
 */
 
+/*
 size_t GetInstalledBundles(char *pBundles, size_t szBufSize)
 {
     JSON *pJsonTop;
@@ -402,6 +405,7 @@ size_t GetInstalledBundles(char *pBundles, size_t szBufSize)
 
     return szRunningLen;
 }
+*/
 
 /* function GetUTCTime - gets a formatted UTC device time. Example;
     Tue Jul 12 21:56:06 UTC 2022 
@@ -1038,6 +1042,7 @@ size_t GetEstbMac( char *pEstbMac, size_t szBufSize )
 
             RETURN - number of characters copied to the output buffer.
 */
+/*
 size_t GetRemoteInfo( char *pRemoteInfo, size_t szBufSize )
 {
     size_t len, sztotlen = 0;
@@ -1094,6 +1099,7 @@ size_t GetRemoteInfo( char *pRemoteInfo, size_t szBufSize )
     SWLOG_INFO( "%s: returning sztotlen=%zu\n", __FUNCTION__, sztotlen );
     return sztotlen;
 }
+*/
 
 /* function GetRemoteVers - gets the peripheral versions of the device.
         (this is identical to GetRemoteInfo except there is no prefix to the string)
@@ -1106,6 +1112,7 @@ size_t GetRemoteInfo( char *pRemoteInfo, size_t szBufSize )
 
             RETURN - number of characters copied to the output buffer.
 */
+/*
 size_t GetRemoteVers( char *pRemoteVers , size_t szBufSize )
 {
     size_t len = 0;
@@ -1150,6 +1157,7 @@ size_t GetRemoteVers( char *pRemoteVers , size_t szBufSize )
 
     return len;
 }
+*/
 
 /* function GetRdmManifestVersion - gets the remote info of the device.
  
@@ -1161,6 +1169,7 @@ size_t GetRemoteVers( char *pRemoteVers , size_t szBufSize )
 
             RETURN - number of characters copied to the output buffer.
 */
+/*
 size_t GetRdmManifestVersion( char *pRdmManifestVersion, size_t szBufSize )
 {
     size_t len = 0;
@@ -1180,6 +1189,7 @@ size_t GetRdmManifestVersion( char *pRdmManifestVersion, size_t szBufSize )
 #endif
     return len;
 }
+*/
 
 /* function GetTR181Url - gets a specific URL from tr181 associated with code downloads.
  
@@ -1421,6 +1431,6 @@ size_t GetFileContents( char **pOut, char *pFileName )
     }
     return len;
 }
-*/ // MOVED TO COMMON_UTILITIES/LIBFWUTILS
+*/
 
 
