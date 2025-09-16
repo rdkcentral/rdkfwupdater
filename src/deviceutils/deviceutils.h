@@ -30,6 +30,8 @@
     #define GETRDMMANIFESTVERSION_IN_SCRIPT
 #endif
 
+// SYSCMD enum moved to common_utilities/utils/rdk_fwdl_utils.h as DEVUTILS_SYSCMD
+/*
 typedef enum {
     eMD5Sum,
     eRdkSsaCli,
@@ -39,6 +41,7 @@ typedef enum {
     ,eGetInstalledRdmManifestVersion
 #endif
 } SYSCMD;
+*/
 
 #define DEFAULT_DL_ALLOC    1024
 
