@@ -382,14 +382,14 @@ size_t BuildRemoteInfo( JSON *pItem, char *pRemoteInfo, size_t szMaxBuf, bool bA
                 pSuffix = *pExtStrings;
             }
 
-            //
+            /*
                 Now try to find the json values in the listed in the pPeripheralName array.
                 If bAddRemCtrl is true then the output will be formatted similar to the following for each value in the list;
                     &remCtrlXR11-20=1.1.1.1&remCtrlAudioXR11-20=0.1.0.0&remCtrlDspXR11-20=0.1.0.0&remCtrlKwModelXR11-20=0.1.0.0
                 Otherwise the output will be formatted similar to the following for each value in the list;
                     XR11-20_firmware_1.1.1.1.tgz,XR11-20_audio_0.1.0.0.tgz,XR11-20_dsp_0.1.0.0.tgz,XR11-20_kw_model_0.1.0.0.tgz
                 Note that model name and version numbers are variables depending on the device
-            //
+            */
 
             for( x=0; x < MAX_PERIPHERAL_ITEMS; x++ )
             {
