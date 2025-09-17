@@ -88,6 +88,8 @@
 #define MAX_BUFF_SIZE1 256
 #if __WORDSIZE == 64
 #define BUFF_SIZE       128
+#else
+#define BUFF_SIZE       78
 #endif
 #define MIN_BUFF_SIZE 64
 #define MIN_BUFF_SIZE1 32
@@ -141,6 +143,12 @@
 
 #define APP_BACKGROUND 0
 #define APP_FOREGROUND 1
+
+#if __WORDSIZE == 64
+#define WORDSIZE_T_FMT "zu"
+#else
+#define WORDSIZE_T_FMT "d"
+#endif
 
 int downloadFile( int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode );
 int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char *pPostFields, int *httpCode );
