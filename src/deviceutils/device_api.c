@@ -108,7 +108,6 @@ size_t GetServerUrlFile( char *pServUrl, size_t szBufSize, char *pFileName )
     }
     return i;
 }
-
 /* function GetTimezone - returns the timezone for the device. 
         Usage: size_t GetTimezone <char *pTimezone> <size_t szBufSize>
  
@@ -118,6 +117,7 @@ size_t GetServerUrlFile( char *pServUrl, size_t szBufSize, char *pFileName )
 
             RETURN - number of characters copied to the output buffer.
 */
+/*
 size_t GetTimezone( char *pTimezone, const char *cpuArch, size_t szBufSize )
 {
 
@@ -262,6 +262,7 @@ size_t GetTimezone( char *pTimezone, const char *cpuArch, size_t szBufSize )
     }
     return i;
 }
+*/
 
 /* function GetAdditionalFwVerInfo - returns the PDRI filename plus Remote Info for the device. 
         Usage: size_t GetAdditionalFwVerInfo <char *pAdditionalFwVerInfo> <size_t szBufSize>
@@ -410,6 +411,7 @@ size_t GetInstalledBundles(char *pBundles, size_t szBufSize)
 
             RETURN - number of characters copied to the output buffer.
 */
+/*
 size_t GetUTCTime( char *pUTCTime, size_t szBufSize )
 {
     struct tm gmttime;
@@ -433,7 +435,7 @@ size_t GetUTCTime( char *pUTCTime, size_t szBufSize )
     }
     return i;
 }
-
+*/
 /* function GetCapabilities - gets the device capabilities.
  
         Usage: size_t GetCapabilities <char *pCapabilities> <size_t szBufSize>
@@ -444,6 +446,7 @@ size_t GetUTCTime( char *pUTCTime, size_t szBufSize )
 
             RETURN - number of characters copied to the output buffer.
 */
+/*
 size_t GetCapabilities( char *pCapabilities, size_t szBufSize )
 {
     size_t i = 0;
@@ -458,6 +461,7 @@ size_t GetCapabilities( char *pCapabilities, size_t szBufSize )
     }
     return i;
 }
+*/
 
 /* function GetPartnerId - gets the partner ID of the device.
  
@@ -469,6 +473,7 @@ size_t GetCapabilities( char *pCapabilities, size_t szBufSize )
 
             RETURN - number of characters copied to the output buffer.
 */
+/*
 size_t GetPartnerId( char *pPartnerId, size_t szBufSize )
 {
     char *pTmp;
@@ -546,7 +551,7 @@ size_t GetPartnerId( char *pPartnerId, size_t szBufSize )
     }
     return i;
 }
-
+*/
 /* function GetOsClass - gets the OsClass of the device.
  
         Usage: size_t GetOsClass( char *pOsClass, size_t szBufSize )
@@ -688,7 +693,7 @@ size_t GetExperience( char *pExperience, size_t szBufSize )
     {
         *pExperience = 0;
 
-        if( MemDLAlloc( &DwnLoc, DEFAULT_DL_ALLOC ) == 0 )
+        if( allocDowndLoadDataMem( &DwnLoc, DEFAULT_DL_ALLOC ) == 0 )
         {
             getJsonRpc( post_data, &DwnLoc );
 
@@ -769,6 +774,7 @@ size_t GetAccountID( char *pAccountID, size_t szBufSize )
 
             RETURN - number of characters copied to the output buffer.
 */
+/*
 size_t GetMFRName( char *pMFRName, size_t szBufSize )
 {
     size_t i = 0;
@@ -794,7 +800,7 @@ size_t GetMFRName( char *pMFRName, size_t szBufSize )
     return i;
 
 }
-
+*/
 /* function GetBuildType - gets the build type of the device in lowercase. Optionally, sets an enum
     indication the build type.
     Example: vbn or prod or qa or dev
@@ -810,6 +816,7 @@ size_t GetMFRName( char *pMFRName, size_t szBufSize )
 
             RETURN - number of characters copied to the output buffer.
 */
+/*
 size_t GetBuildType( char *pBuildType, size_t szBufSize, BUILDTYPE *peBuildTypeOut )
 {
     FILE *fp;
@@ -894,7 +901,7 @@ size_t GetBuildType( char *pBuildType, size_t szBufSize, BUILDTYPE *peBuildTypeO
     }
     return i;
 }
-
+*/
 /* function GetFirmwareVersion - gets the firmware version of the device.
  
         Usage: size_t GetFirmwareVersion <char *pFWVersion> <size_t szBufSize>
@@ -905,6 +912,7 @@ size_t GetBuildType( char *pBuildType, size_t szBufSize, BUILDTYPE *peBuildTypeO
 
             RETURN - number of characters copied to the output buffer.
 */
+/*
 size_t GetFirmwareVersion( char *pFWVersion, size_t szBufSize )
 {
     FILE *fp;
@@ -943,7 +951,7 @@ size_t GetFirmwareVersion( char *pFWVersion, size_t szBufSize )
     }
     return i;
 }
-
+*/
 /* function GetEstbMac - gets the eSTB MAC address of the device.
  
         Usage: size_t GetEstbMac <char *pEstbMac> <size_t szBufSize>
@@ -954,6 +962,7 @@ size_t GetFirmwareVersion( char *pFWVersion, size_t szBufSize )
 
             RETURN - number of characters copied to the output buffer.
 */
+/*
 size_t GetEstbMac( char *pEstbMac, size_t szBufSize )
 {
     FILE *fp;
@@ -971,9 +980,9 @@ size_t GetEstbMac( char *pEstbMac, size_t szBufSize )
             fclose( fp );
             i = stripinvalidchar( pEstbMac, szBufSize );
             SWLOG_INFO("GetEstbMac: After reading ESTB_MAC_FILE value=%s\n", pEstbMac);
-            /* Below condition if ESTB_MAC_FILE file having empty data and pEstbMac does not have 17 character 
+  */          /* Below condition if ESTB_MAC_FILE file having empty data and pEstbMac does not have 17 character 
             * including total mac address with : separate */
-            if (pEstbMac[0] == '\0' || pEstbMac[0] == '\n' || i != MAC_ADDRESS_LEN)
+    /*        if (pEstbMac[0] == '\0' || pEstbMac[0] == '\n' || i != MAC_ADDRESS_LEN)
             {
                 SWLOG_INFO("GetEstbMac: ESTB_MAC_FILE file is empty read_from_hwinterface is set to true\n");
                 read_from_hwinterface = true;
@@ -997,8 +1006,8 @@ size_t GetEstbMac( char *pEstbMac, size_t szBufSize )
                 }
                 else
                 {
-                    /* When there is no hw address available */
-                    *pEstbMac = 0;
+      */              /* When there is no hw address available */
+        /*            *pEstbMac = 0;
                     SWLOG_ERROR("GetEstbMac: GetHwMacAddress return fail\n");
                 }
             }
@@ -1016,7 +1025,7 @@ size_t GetEstbMac( char *pEstbMac, size_t szBufSize )
     }
     return i;
 }
-
+*/
 /* function GetRemoteInfo - gets the remote info of the device.
  
         Usage: size_t GetRemoteInfo <char *pRemoteInfo> <size_t szBufSize>
@@ -1369,6 +1378,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
                     The caller must use free(*pOut) when done using the buffer to avoid memory leaks.
 */
 
+/*
 size_t GetFileContents( char **pOut, char *pFileName )
 {
     FILE *fp;
@@ -1409,5 +1419,6 @@ size_t GetFileContents( char **pOut, char *pFileName )
     }
     return len;
 }
+*/
 
 

@@ -24,6 +24,7 @@
 #endif
 #include "json_parse.h"     // needed for JSON struct definition
 #include "mtlsUtils.h"
+#include "common_device_api.h"
 
 #ifndef GETRDMMANIFESTVERSION_IN_SCRIPT
     #define GETRDMMANIFESTVERSION_IN_SCRIPT
@@ -60,7 +61,7 @@ typedef struct metaDataFileList
  
             PITFALLS - does not check for NULL input
 */
-size_t stripinvalidchar(char *pIn, size_t szIn);
+//size_t stripinvalidchar(char *pIn, size_t szIn);
 
 /* function makeHttpHttps - checks a URL for "http:" and, if found,
     makes it "https:"
@@ -75,7 +76,7 @@ size_t stripinvalidchar(char *pIn, size_t szIn);
  
             PITFALLS - does not check for NULL input
 */
-size_t makeHttpHttps(char *pIn, size_t szpInSize);
+//size_t makeHttpHttps(char *pIn, size_t szpInSize);
 
 /* function MemDLAlloc - allocates a memory block and fills in data structure used for curl
                           memory downloads.
@@ -89,7 +90,7 @@ size_t makeHttpHttps(char *pIn, size_t szpInSize);
             Function Notes - The caller is responsible for freeing the dynamically allocated
             memory pointed to by the pvOut member of the DownloadData structure pointer.
 */
-int MemDLAlloc(DownloadData *pDwnData, size_t szDataSize);
+//int MemDLAlloc(DownloadData *pDwnData, size_t szDataSize);
 
 /* function RunCommand - runs a predefined system command using v_secure_popen
  
@@ -154,8 +155,9 @@ int getJRPCTokenData(char *token, char *pJsonStr, unsigned int token_size);
  *  @param: uptime : pointer to recive uptime of system
  *  @return :bool
  * */
-
+/*
 bool get_system_uptime(double *uptime);
+*/
 
 metaDataFileList_st *getInstalledBundleFileList();
 metaDataFileList_st *getMetaDataFile(char *dir);

@@ -28,6 +28,8 @@
 extern char* strcasestr(const char* s1, const char* s2);
 #endif
 
+#include "common_device_api.h"
+
 #define URL_MAX_LEN 512
 
 typedef enum {
@@ -123,9 +125,9 @@ size_t GetServerUrlFile(char *pServUrl, size_t szBufSize, char *pFileName);
 
             RETURN - number of characters copied to the output buffer.
 */
-size_t GetTimezone(char *pTimezone, const char *cpuArch, size_t szBufSize);
+//size_t GetTimezone(char *pTimezone, const char *cpuArch, size_t szBufSize);
 
-/* function GetAdditionalFwVerInfo - returns the PDRI filename plus Remote Info for the device. 
+/* function GetAdditionalFwVerInfo - returns the PDRI filename plus Remote Info for the device.
         Usage: size_t GetAdditionalFwVerInfo <char *pAdditionalFwVerInfo> <size_t szBufSize>
  
             pAdditionalFwVerInfo - pointer to a char buffer to store the output string.
@@ -136,7 +138,7 @@ size_t GetTimezone(char *pTimezone, const char *cpuArch, size_t szBufSize);
 */
 size_t GetAdditionalFwVerInfo(char *pAdditionalFwVerInfo, size_t szBufSize);
 
-/* function GetPDRIFileName - returns the PDRI for the device. 
+/* function GetPDRIFileName - returns the PDRI for the device.
         Usage: size_t GetPDRIFileName <char *pPDRIFilename> <size_t szBufSize>
  
             pPDRIFilename - pointer to a char buffer to store the output string.
@@ -148,7 +150,7 @@ size_t GetAdditionalFwVerInfo(char *pAdditionalFwVerInfo, size_t szBufSize);
 size_t GetPDRIFileName(char *pPDRIFilename, size_t szBufSize);
 
 
-/* function GetInstalledBundles - gets the bundles installed on a device. 
+/* function GetInstalledBundles - gets the bundles installed on a device.
         Usage: size_t GetInstalledBundles <char *pBundles> <size_t szBufSize>
  
             pBundles - pointer to a char buffer to store the output string.
@@ -170,7 +172,7 @@ size_t GetInstalledBundles(char *pBundles, size_t szBufSize);
 
             RETURN - number of characters copied to the output buffer.
 */
-size_t GetUTCTime(char *pUTCTime, size_t szBufSize);
+//size_t GetUTCTime(char *pUTCTime, size_t szBufSize);
 
 
 /* function GetCapabilities - gets the device capabilities.
@@ -183,7 +185,7 @@ size_t GetUTCTime(char *pUTCTime, size_t szBufSize);
 
             RETURN - number of characters copied to the output buffer.
 */
-size_t GetCapabilities(char *pCapabilities, size_t szBufSize);
+//size_t GetCapabilities(char *pCapabilities, size_t szBufSize);
 
 
 /* function GetPartnerId - gets the partner ID of the device.
@@ -196,7 +198,7 @@ size_t GetCapabilities(char *pCapabilities, size_t szBufSize);
 
             RETURN - number of characters copied to the output buffer.
 */
-size_t GetPartnerId(char *pPartnerId, size_t szBufSize);
+//size_t GetPartnerId(char *pPartnerId, size_t szBufSize);
 
 /* function GetOsClass - gets the OsClass of the device.
  
@@ -271,7 +273,7 @@ size_t GetAccountID(char *pAccountID, size_t szBufSize);
             szBufSize - the size of the character buffer in argument 1.
             RETURN - number of characters copied to the output buffer.
 */
-size_t GetModelNum(char *pModelNum, size_t szBufSize);
+//size_t GetModelNum(char *pModelNum, size_t szBufSize);
 #endif
 
 /* function GetBuildType - gets the build type of the device in lowercase. Optionally, sets an enum
@@ -289,7 +291,7 @@ size_t GetModelNum(char *pModelNum, size_t szBufSize);
 
             RETURN - number of characters copied to the output buffer.
 */
-size_t GetBuildType(char *pBuildType, size_t szBufSize, BUILDTYPE *peBuildTypeOut);
+//size_t GetBuildType(char *pBuildType, size_t szBufSize, BUILDTYPE *peBuildTypeOut);
 
 /* function GetMFRName - gets the  manufacturer name of the device.
         Usage: size_t GetMFRName <char *pMFRName> <size_t szBufSize>
@@ -299,7 +301,7 @@ size_t GetBuildType(char *pBuildType, size_t szBufSize, BUILDTYPE *peBuildTypeOu
 
             RETURN - number of characters copied to the output buffer.
 */
-size_t GetMFRName(char *pMFRName, size_t szBufSize);
+//size_t GetMFRName(char *pMFRName, size_t szBufSize);
 
 
 /* function GetFirmwareVersion - gets the firmware version of the device.
@@ -312,7 +314,7 @@ size_t GetMFRName(char *pMFRName, size_t szBufSize);
 
             RETURN - number of characters copied to the output buffer.
 */
-size_t GetFirmwareVersion(char *pFWVersion, size_t szBufSize);
+//size_t GetFirmwareVersion(char *pFWVersion, size_t szBufSize);
 
 
 /* function GetEstbMac - gets the eSTB MAC address of the device.
@@ -325,7 +327,7 @@ size_t GetFirmwareVersion(char *pFWVersion, size_t szBufSize);
 
             RETURN - number of characters copied to the output buffer.
 */
-size_t GetEstbMac(char *pEstbMac, size_t szBufSize);
+//size_t GetEstbMac(char *pEstbMac, size_t szBufSize);
 
 
 /* function GetRemoteInfo - gets the remote info of the device.
@@ -393,6 +395,7 @@ size_t GetTR181Url(TR181URL eURL, char *pUrlOut, size_t szBufSize);
 */
 size_t GetServURL(char *pServURL, size_t szBufSize);
 
+
 /* function GetFileContents - gets the contents of a file into a dynamically allocated buffer.
  
         Usage: size_t GetFileContents <char **pOut> <char *pFileName>
@@ -407,7 +410,8 @@ size_t GetServURL(char *pServURL, size_t szBufSize);
             Notes - GetFileContents uses malloc to allocate the the buffer where the string is stored.
                     The caller must use free(*pOut) when done using the buffer to avoid memory leaks.
 */
-size_t GetFileContents(char **pOut, char *pFileName);
+//size_t GetFileContents(char **pOut, char *pFileName);
+
 
 
 #endif

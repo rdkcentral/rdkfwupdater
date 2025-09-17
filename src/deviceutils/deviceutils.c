@@ -101,6 +101,7 @@ char *pPeripheralName[MAX_PERIPHERAL_ITEMS] = {
  
             PITFALLS - does not check for NULL input
 */
+/*
 size_t stripinvalidchar( char *pIn, size_t szIn )
 {
     size_t i = 0;
@@ -121,7 +122,7 @@ size_t stripinvalidchar( char *pIn, size_t szIn )
     }
     return i;
 }
-
+*/
 /* function makeHttpHttps - checks a URL for "http:" and, if found,
     makes it "https:"
  
@@ -135,6 +136,7 @@ size_t stripinvalidchar( char *pIn, size_t szIn )
  
             PITFALLS - does not check for NULL input
 */
+/*
 size_t makeHttpHttps( char *pIn, size_t szpInSize )
 {
     char *pTmp, *pEnd;
@@ -170,6 +172,7 @@ size_t makeHttpHttps( char *pIn, size_t szpInSize )
     }
     return len;
 }
+*/
 
 
 /* function MemDLAlloc - allocates a memory block and fills in data structure used for curl
@@ -184,6 +187,7 @@ size_t makeHttpHttps( char *pIn, size_t szpInSize )
             Function Notes - The caller is responsible for freeing the dynamically allocated
             memory pointed to by the pvOut member of the DownloadData structure pointer.
 */
+/*
 int MemDLAlloc( DownloadData *pDwnData, size_t szDataSize )
 {
     void *ptr;
@@ -209,6 +213,7 @@ int MemDLAlloc( DownloadData *pDwnData, size_t szDataSize )
     }
     return iRet;
 }
+*/
 
 /* function RunCommand - runs a predefined system command using v_secure_popen
  
@@ -236,6 +241,7 @@ int MemDLAlloc( DownloadData *pDwnData, size_t szDataSize )
  
             %s in the command string indicates an argument (pArgs) is required
 */
+
 size_t RunCommand( SYSCMD eSysCmd, const char *pArgs, char *pResult, size_t szResultSize )
 {
     FILE *fp;
@@ -326,6 +332,7 @@ size_t RunCommand( SYSCMD eSysCmd, const char *pArgs, char *pResult, size_t szRe
     }
     return nbytes_read;
 }
+
 
 /* function BuildRemoteInfo - Formats the "periperalFirmwares" string for remote info part of xconf communication
  
@@ -618,6 +625,7 @@ metaDataFileList_st * mergeLists(metaDataFileList_st *nvmList, metaDataFileList_
   
 }
 
+/*
 bool get_system_uptime(double *uptime) {
     FILE* uptime_file = fopen("/proc/uptime", "r");
     if ((uptime_file != NULL) && (uptime != NULL)) {
@@ -632,3 +640,4 @@ bool get_system_uptime(double *uptime) {
     }
     return false;
 }
+*/
