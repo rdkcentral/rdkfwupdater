@@ -241,7 +241,7 @@ int MemDLAlloc( DownloadData *pDwnData, size_t szDataSize )
  
             %s in the command string indicates an argument (pArgs) is required
 */
-/*
+
 size_t RunCommand( SYSCMD eSysCmd, const char *pArgs, char *pResult, size_t szResultSize )
 {
     FILE *fp;
@@ -332,7 +332,7 @@ size_t RunCommand( SYSCMD eSysCmd, const char *pArgs, char *pResult, size_t szRe
     }
     return nbytes_read;
 }
-*/
+
 
 /* function BuildRemoteInfo - Formats the "periperalFirmwares" string for remote info part of xconf communication
  
