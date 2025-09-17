@@ -436,7 +436,7 @@ int getJsonRpc(char *post_data, DownloadData* pJsonRpc )
 
     *token = 0;
     *jsondata = 0;
-    RunCommand( eDEVUTILS_WpeFrameworkSecurityUtility, NULL, jsondata, sizeof(jsondata) );
+    RunCommand( eWpeFrameworkSecurityUtility, NULL, jsondata, sizeof(jsondata) );
     
     getJRPCTokenData(token, jsondata, sizeof(token));
     if (pJsonRpc->pvOut != NULL) {

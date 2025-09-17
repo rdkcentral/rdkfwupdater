@@ -34,7 +34,6 @@
 #include "rdkv_cdl_log_wrapper.h"
 #include "device_api.h"
 #include "deviceutils.h"
-#include "common_device_api.h"
 #include "device_status_helper.h"
 #include "../rfcInterface/rfcinterface.h"
 
@@ -310,7 +309,7 @@ size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
 
     if( pPDRIFilename != NULL )
     {
-        len = RunCommand( eDEVUTILS_MfrUtil, "--PDRIVersion", pPDRIFilename, szBufSize );
+        len = RunCommand( eMfrUtil, "--PDRIVersion", pPDRIFilename, szBufSize );
         if( len && ((pTmp = strcasestr( pPDRIFilename, "failed" )) == NULL) )   // if "failed" is not found
         {
             SWLOG_INFO( "GetPDRIFileName: PDRI Version = %s\n", pPDRIFilename );
@@ -1167,7 +1166,7 @@ size_t GetRdmManifestVersion( char *pRdmManifestVersion, size_t szBufSize )
     if( pRdmManifestVersion != NULL )
     {
 	*pRdmManifestVersion = 0;
-        len = RunCommand( eDEVUTILS_GetInstalledRdmManifestVersion, NULL, pRdmManifestVersion, szBufSize );
+        len = RunCommand( eGetInstalledRdmManifestVersion, NULL, pRdmManifestVersion, szBufSize );
     }
     else
     {
