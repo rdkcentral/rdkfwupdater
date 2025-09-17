@@ -349,7 +349,6 @@ size_t RunCommand( SYSCMD eSysCmd, const char *pArgs, char *pResult, size_t szRe
             RETURN - the number of characters written to the buffer
 */
 
-/*
 size_t BuildRemoteInfo( JSON *pItem, char *pRemoteInfo, size_t szMaxBuf, bool bAddremCtrl )
 {
     char **pPrefix;
@@ -418,7 +417,6 @@ size_t BuildRemoteInfo( JSON *pItem, char *pRemoteInfo, size_t szMaxBuf, bool bA
     }
     return (size_t)iLen;
 }
-*/
 
 /* function getJsonRpc - Use to get jsonrpc using curl lib
    @param : post_data: Required Postfield data
@@ -438,7 +436,7 @@ int getJsonRpc(char *post_data, DownloadData* pJsonRpc )
 
     *token = 0;
     *jsondata = 0;
-    RunCommand( eWpeFrameworkSecurityUtility, NULL, jsondata, sizeof(jsondata) );
+    RunCommand( eDEVUTILS_WpeFrameworkSecurityUtility, NULL, jsondata, sizeof(jsondata) );
     
     getJRPCTokenData(token, jsondata, sizeof(token));
     if (pJsonRpc->pvOut != NULL) {
@@ -496,7 +494,6 @@ int getJRPCTokenData( char *token, char *pJsonStr, unsigned int token_size )
         Input : void
         RETURN - List of installed Bundle in NVM and RFS directory
 */
-/*
 metaDataFileList_st *getInstalledBundleFileList()
 {
     metaDataFileList_st *metadataNVMls = NULL, *metadataRFSls = NULL, *metaDataList = NULL;
@@ -534,14 +531,12 @@ metaDataFileList_st *getInstalledBundleFileList()
 
     return metaDataList;
 }
-*/
 
 /* function getMetaDataFile - gets the files list in the directory
         Usage: metaDataFileList_st *getMetaDataFile(char *dir)
         dir : directory of NVM or RFS Path
         RETURN - List of installed Bundle in NVM or RFS directory
 */
-/*
 metaDataFileList_st *getMetaDataFile(char *dir)
 {
     metaDataFileList_st *newnode = NULL, *prevnode = NULL, *headNode = NULL;
@@ -578,7 +573,6 @@ metaDataFileList_st *getMetaDataFile(char *dir)
     }
     return headNode;
 }
-*/
 
 /* function mergeLists - merge the RFS and NVM file list. 
         Usage: metaDataFileList_st * mergeLists(metaDataFileList_st *nvmList, metaDataFileList_st *rfsList)
@@ -586,7 +580,6 @@ metaDataFileList_st *getMetaDataFile(char *dir)
         rfsList : RFS files list
         RETURN - common files list of installed Bundle in NVM and RFS directory
 */
-/*
 metaDataFileList_st * mergeLists(metaDataFileList_st *nvmList, metaDataFileList_st *rfsList)
 {
    metaDataFileList_st  tmp;
@@ -631,7 +624,6 @@ metaDataFileList_st * mergeLists(metaDataFileList_st *nvmList, metaDataFileList_
   return tmp.next;
   
 }
-*/
 
 /*
 bool get_system_uptime(double *uptime) {

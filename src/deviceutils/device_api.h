@@ -111,7 +111,7 @@ typedef enum {
 
             RETURN - number of characters copied to the output buffer.
 */
-//size_t GetServerUrlFile(char *pServUrl, size_t szBufSize, char *pFileName);
+size_t GetServerUrlFile(char *pServUrl, size_t szBufSize, char *pFileName);
 
 
 /* function GetTimezone - returns the timezone for the device. 
@@ -136,7 +136,7 @@ typedef enum {
 
             RETURN - number of characters copied to the output buffer.
 */
-//size_t GetAdditionalFwVerInfo(char *pAdditionalFwVerInfo, size_t szBufSize);
+size_t GetAdditionalFwVerInfo(char *pAdditionalFwVerInfo, size_t szBufSize);
 
 /* function GetPDRIFileName - returns the PDRI for the device.
         Usage: size_t GetPDRIFileName <char *pPDRIFilename> <size_t szBufSize>
@@ -147,7 +147,7 @@ typedef enum {
 
             RETURN - number of characters copied to the output buffer.
 */
-//size_t GetPDRIFileName(char *pPDRIFilename, size_t szBufSize);
+size_t GetPDRIFileName(char *pPDRIFilename, size_t szBufSize);
 
 
 /* function GetInstalledBundles - gets the bundles installed on a device.
@@ -159,7 +159,7 @@ typedef enum {
 
             RETURN - number of characters copied to the output buffer.
 */
-//size_t GetInstalledBundles(char *pBundles, size_t szBufSize);
+size_t GetInstalledBundles(char *pBundles, size_t szBufSize);
 
 
 /* function GetUTCTime - gets a formatted UTC device time. Example;
@@ -340,7 +340,7 @@ size_t GetAccountID(char *pAccountID, size_t szBufSize);
 
             RETURN - number of characters copied to the output buffer.
 */
-//size_t GetRemoteInfo(char *pRemoteInfo, size_t szBufSize);
+size_t GetRemoteInfo(char *pRemoteInfo, size_t szBufSize);
 
 /* function GetRemoteVers - gets the peripheral versions of the device.
         (this is identical to GetRemoteInfo except there is no prefix to the string)
@@ -353,7 +353,7 @@ size_t GetAccountID(char *pAccountID, size_t szBufSize);
 
             RETURN - number of characters copied to the output buffer.
 */
-//size_t GetRemoteVers(char *pRemoteVers , size_t szBufSize);
+size_t GetRemoteVers(char *pRemoteVers , size_t szBufSize);
 
 /* function GetRdmManifestVersion - gets the remote info of the device.
  
@@ -365,7 +365,7 @@ size_t GetAccountID(char *pAccountID, size_t szBufSize);
 
             RETURN - number of characters copied to the output buffer.
 */
-//size_t GetRdmManifestVersion(char *pRdmManifestVersion, size_t szBufSize);
+size_t GetRdmManifestVersion(char *pRdmManifestVersion, size_t szBufSize);
 
 
 /* function GetTR181Url - gets a specific URL from tr181 associated with code downloads.

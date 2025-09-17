@@ -1400,7 +1400,7 @@ int startFactoryProtectService(void)
 
     *token = 0;
     *jsondata = 0;
-    RunCommand( eWpeFrameworkSecurityUtility, NULL, jsondata, sizeof(jsondata) );
+    RunCommand( eDEVUTILS_WpeFrameworkSecurityUtility, NULL, jsondata, sizeof(jsondata) );
     
     SWLOG_INFO("token jsondata=%s\n", jsondata);
     getJRPCTokenData(token, jsondata, sizeof(token));

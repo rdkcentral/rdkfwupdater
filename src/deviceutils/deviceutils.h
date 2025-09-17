@@ -137,7 +137,7 @@ typedef struct metaDataFileList
 
             RETURN - the number of characters written to the buffer
 */
-//size_t BuildRemoteInfo(JSON *pItem, char *pRemoteInfo, size_t szMaxBuf, bool bAddremCtrl);
+size_t BuildRemoteInfo(JSON *pItem, char *pRemoteInfo, size_t szMaxBuf, bool bAddremCtrl);
 
 /* function getJsonRpc - Use to get jsonrpc using curl lib
    @param : post_data: Required Postfield data

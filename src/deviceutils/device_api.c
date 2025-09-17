@@ -51,7 +51,6 @@
 
             RETURN - number of characters copied to the output buffer.
 */
-/*
 size_t GetServerUrlFile( char *pServUrl, size_t szBufSize, char *pFileName )
 {
     FILE *fp;
@@ -110,7 +109,6 @@ size_t GetServerUrlFile( char *pServUrl, size_t szBufSize, char *pFileName )
     }
     return i;
 }
-*/
 /* function GetTimezone - returns the timezone for the device. 
         Usage: size_t GetTimezone <char *pTimezone> <size_t szBufSize>
  
@@ -305,7 +303,6 @@ size_t GetAdditionalFwVerInfo( char *pAdditionalFwVerInfo, size_t szBufSize )
 
             RETURN - number of characters copied to the output buffer.
 */
-/*
 size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
 {
     char *pTmp;
@@ -313,7 +310,7 @@ size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
 
     if( pPDRIFilename != NULL )
     {
-        len = RunCommand( eMfrUtil, "--PDRIVersion", pPDRIFilename, szBufSize );
+        len = RunCommand( eDEVUTILS_MfrUtil, "--PDRIVersion", pPDRIFilename, szBufSize );
         if( len && ((pTmp = strcasestr( pPDRIFilename, "failed" )) == NULL) )   // if "failed" is not found
         {
             SWLOG_INFO( "GetPDRIFileName: PDRI Version = %s\n", pPDRIFilename );
@@ -332,7 +329,6 @@ size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
     }
     return len;
 }
-*/
 
 
 /* function GetInstalledBundles - gets the bundles installed on a device. 
@@ -345,7 +341,6 @@ size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
             RETURN - number of characters copied to the output buffer.
 */
 
-/*
 size_t GetInstalledBundles(char *pBundles, size_t szBufSize)
 {
     JSON *pJsonTop;
@@ -405,7 +400,6 @@ size_t GetInstalledBundles(char *pBundles, size_t szBufSize)
 
     return szRunningLen;
 }
-*/
 
 /* function GetUTCTime - gets a formatted UTC device time. Example;
     Tue Jul 12 21:56:06 UTC 2022 
@@ -1042,7 +1036,6 @@ size_t GetEstbMac( char *pEstbMac, size_t szBufSize )
 
             RETURN - number of characters copied to the output buffer.
 */
-/*
 size_t GetRemoteInfo( char *pRemoteInfo, size_t szBufSize )
 {
     size_t len, sztotlen = 0;
@@ -1099,7 +1092,6 @@ size_t GetRemoteInfo( char *pRemoteInfo, size_t szBufSize )
     SWLOG_INFO( "%s: returning sztotlen=%zu\n", __FUNCTION__, sztotlen );
     return sztotlen;
 }
-*/
 
 /* function GetRemoteVers - gets the peripheral versions of the device.
         (this is identical to GetRemoteInfo except there is no prefix to the string)
@@ -1112,7 +1104,6 @@ size_t GetRemoteInfo( char *pRemoteInfo, size_t szBufSize )
 
             RETURN - number of characters copied to the output buffer.
 */
-/*
 size_t GetRemoteVers( char *pRemoteVers , size_t szBufSize )
 {
     size_t len = 0;
@@ -1157,7 +1148,6 @@ size_t GetRemoteVers( char *pRemoteVers , size_t szBufSize )
 
     return len;
 }
-*/
 
 /* function GetRdmManifestVersion - gets the remote info of the device.
  
@@ -1169,7 +1159,6 @@ size_t GetRemoteVers( char *pRemoteVers , size_t szBufSize )
 
             RETURN - number of characters copied to the output buffer.
 */
-/*
 size_t GetRdmManifestVersion( char *pRdmManifestVersion, size_t szBufSize )
 {
     size_t len = 0;
@@ -1178,7 +1167,7 @@ size_t GetRdmManifestVersion( char *pRdmManifestVersion, size_t szBufSize )
     if( pRdmManifestVersion != NULL )
     {
 	*pRdmManifestVersion = 0;
-        len = RunCommand( eGetInstalledRdmManifestVersion, NULL, pRdmManifestVersion, szBufSize );
+        len = RunCommand( eDEVUTILS_GetInstalledRdmManifestVersion, NULL, pRdmManifestVersion, szBufSize );
     }
     else
     {
@@ -1189,7 +1178,6 @@ size_t GetRdmManifestVersion( char *pRdmManifestVersion, size_t szBufSize )
 #endif
     return len;
 }
-*/
 
 /* function GetTR181Url - gets a specific URL from tr181 associated with code downloads.
  
