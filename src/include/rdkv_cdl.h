@@ -86,7 +86,7 @@
 
 #define MAX_BUFF_SIZE 512
 #define MAX_BUFF_SIZE1 256
-#if __WORDSIZE == 64
+#if (defined(UINTPTR_MAX) && UINTPTR_MAX > 0xFFFFFFFF) || (defined(__WORDSIZE) && __WORDSIZE == 64)
 #define BUFF_SIZE       128
 #else
 #define BUFF_SIZE       78
