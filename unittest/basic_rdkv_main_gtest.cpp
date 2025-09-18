@@ -64,7 +64,7 @@ extern "C" {
     int retryDownload(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char *pPostFields, int retry_cnt, int delay, int *httpCode );
 
     int downloadFile( int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode );
-    int checkTriggerUpgrade(XCONFRES *response, const char *model_num);
+    int checkTriggerUpgrade(XCONFRES *response, const char *model_num, bool directCdn, int upgrade_type);
     void setForceStop(int value);
     T2ERROR t2_event_s(char* marker, char* value);
     T2ERROR t2_event_d(char* marker, int value);
@@ -88,7 +88,7 @@ extern "C" {
     int peripheral_firmware_dndl(char *pCloudFWLocation, char *pPeripheralFirmwares);
     int fallBack(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char *pPostFields, int *httpCode);
     void saveHTTPCode(int http_code);
-    int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocationUrl, const void* dwlloc, char *pPostFields, int *pHttp_code);
+    int upgradeRequest(int upgrade_type, int server_type, bool directCdn, const char* artifactLocationUrl, const void* dwlloc, char *pPostFields, int *pHttp_code);
     size_t getContentLength(const char *file);
     int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_limit, int *httpcode);
 }
@@ -408,7 +408,7 @@ TEST(MainHelperFunctionTest,upgradeRequestTest){
     MockExternal mockexternal;
     global_mockexternal_ptr = &mockexternal;
     //EXPECT_CALL(mockexternal,checkForValidPCIUpgrade(_,_,_,_)).Times(1).WillOnce(Return(false));
-    EXPECT_EQ(upgradeRequest(1, 1, "test", "test1", "test2", NULL), -1);
+    EXPECT_EQ(upgradeRequest(1, 1, false, "test", "test1", "test2", NULL), -1);
     global_mockexternal_ptr = NULL;
 }
 
@@ -719,7 +719,7 @@ TEST(checkTriggerUpgradeTest, ReturnsZeroWhenSuccessful) {
     XCONFRES response;
 
     // Call the function to test
-    int result = checkTriggerUpgrade(&response, "testModel");
+    int result = checkTriggerUpgrade(&response, "testModel", false, 0);
 
     // Check the result
     EXPECT_EQ(result, 0);
@@ -729,7 +729,7 @@ TEST(checkTriggerUpgradeTest, ReturnsZeroWhenSuccessful) {
 
 TEST(checkTriggerUpgradeTest, TestFailNull) {
     XCONFRES response;
-    int result = checkTriggerUpgrade(&response, NULL);
+    int result = checkTriggerUpgrade(&response, NULL, false, 0);
     EXPECT_EQ(result, -1);
 }
 TEST(checkTriggerUpgradeTest, ReturnsZeroWhenSuccessful404) {
@@ -748,7 +748,7 @@ TEST(checkTriggerUpgradeTest, ReturnsZeroWhenSuccessful404) {
     XCONFRES response;
 
     // Call the function to test
-    int result = checkTriggerUpgrade(&response, "testModel");
+    int result = checkTriggerUpgrade(&response, "testModel", false, 0);
 
     // Check the result
     EXPECT_EQ(result, 0);
@@ -775,7 +775,7 @@ TEST(checkTriggerUpgradeTest, TestValidPciUpgradeSuccess) {
     EXPECT_CALL(mockexternal,updateFWDownloadStatus(_,_)).Times(1);
     EXPECT_CALL(mockexternal, isPDRIEnable()).WillOnce(Return(true));
     EXPECT_CALL(mockdownloadfileops, downloadFile(_,_,_,_,_)).WillRepeatedly(Return(0));
-    int result = checkTriggerUpgrade(&response, "testModel");
+    int result = checkTriggerUpgrade(&response, "testModel", false, 0);
     EXPECT_EQ(result, 0);
     global_mockexternal_ptr = NULL;
     global_mockdownloadfileops_ptr = NULL;
@@ -799,7 +799,7 @@ TEST(checkTriggerUpgradeTest, TestPdriUpgradeSuccess) {
     EXPECT_CALL(mockexternal,updateFWDownloadStatus(_,_)).Times(1);
     EXPECT_CALL(mockexternal, isPDRIEnable()).WillOnce(Return(true));
     EXPECT_CALL(mockdownloadfileops, downloadFile(_,_,_,_,_)).WillRepeatedly(Return(0));
-    int result = checkTriggerUpgrade(&response, "testModel");
+    int result = checkTriggerUpgrade(&response, "testModel", false, 0);
     EXPECT_EQ(result, 0);
     global_mockexternal_ptr = NULL;
     global_mockdownloadfileops_ptr = NULL;

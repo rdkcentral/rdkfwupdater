@@ -88,6 +88,32 @@ char *pPeripheralName[MAX_PERIPHERAL_ITEMS] = {
     "DspVer",
     "KwModelVer"
 };
+
+static char pProuductNumber[128] = { 0 };
+
+/* function getPeripheralProduct - get peripheral device model number
+
+   Usage: int getPeripheralProduct(char *buf, size_t szIn)
+          buf - pointer to a char buffer to hold product model number.
+          szIn - the size of the character buffer in argument 1.
+          RETURN - -1 on failure on successes > 1
+*/
+int getPeripheralProduct(char *buf, size_t szIn)
+{
+    int ret = -1;
+    if (buf != NULL && szIn <= sizeof(pProuductNumber)) {
+        if (pProuductNumber[0] != 0) {
+            ret = snprintf(buf, szIn, "%s", pProuductNumber);
+	}else {
+            ret = snprintf(buf, szIn, "%s", "remCtrl");
+	}
+	SWLOG_INFO("getPeripheralProduct(): Peripheral Product=%s\n", buf);
+    }else {
+        SWLOG_ERROR("getPeripheralProduct(): Return Error due to buf null or buf size > 100\n");
+    }
+    return ret;
+}
+
 /* function stripinvalidchar - truncates a string when a space or control
     character is encountered.
  
@@ -362,6 +388,9 @@ size_t BuildRemoteInfo( JSON *pItem, char *pRemoteInfo, size_t szMaxBuf, bool bA
         i = GetJsonVal( pItem, "Product", productBuf, sizeof(productBuf) );
         if( i )
         {
+	    /* Setting pProuductNumber to use during json response parse */
+	    snprintf(pProuductNumber, sizeof(pProuductNumber), "remCtrl%s", productBuf);
+	    SWLOG_INFO("BuildRemoteInfo : product=%s=%s\n", pProuductNumber, productBuf);
             if( bAddremCtrl == true )
             {
                 pPrefix = pRemCtrlStrings;

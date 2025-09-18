@@ -28,6 +28,7 @@ bin_PROGRAMS= rdkvfwupgrader
 
 rdkvfwupgrader_SOURCES = \
     ${top_srcdir}/src/rdkv_main.c \
+    ${top_srcdir}/src/directcdn.c \
     ${top_srcdir}/src/chunk.c \
     ${top_srcdir}/src/flash.c \
     ${top_srcdir}/src/json_process.c \
