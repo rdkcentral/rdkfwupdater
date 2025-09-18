@@ -1,3 +1,5 @@
+
+
 # Copyright 2023 Comcast Cable Communications Management, LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,31 +26,51 @@ AM_LDFLAGS += $(cjson_LIBS) $(curl_LIBS)
 AM_LDFLAGS += -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread
 
 # Build the RDK upgrade shared library
-lib_LTLIBRARIES = librdkv_upgrade.la
+lib_LTLIBRARIES = librdk_upgrade.la librdk_rfcIntf.la librdk_iarmIntf.la
 
-librdkv_upgrade_la_SOURCES = \
+librdk_upgrade_la_SOURCES = \
     ${top_srcdir}/src/rdkv_upgrade.c
 
-librdkv_upgrade_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/iarmInterface -I${top_srcdir}/src/rfcInterface $(AM_CFLAGS)
-librdkv_upgrade_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/iarmInterface -I${top_srcdir}/src/rfcInterface
+librdk_rfcIntf_la_SOURCES = \
+    ${top_srcdir}/src/rfcInterface/rfcinterface.c
+
+librdk_iarmIntf_la_SOURCES = \
+    ${top_srcdir}/src/iarmInterface/iarmInterface.c
+
+librdk_upgrade_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/iarmInterface -I${top_srcdir}/src/rfcInterface $(AM_CFLAGS)
+librdk_upgrade_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/iarmInterface -I${top_srcdir}/src/rfcInterface
+librdk_rfcIntf_la_CFLAGS = -fPIC -I${top_srcdir}/src/rfcInterface $(AM_CFLAGS)
+librdk_rfcIntf_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/rfcInterface
+librdk_iarmIntf_la_CFLAGS = -fPIC -I${top_srcdir}/src/iarmInterface $(AM_CFLAGS)
+librdk_iarmIntf_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/iarmInterface
 
 if USE_CPC_CODE
-librdkv_upgrade_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
-librdkv_upgrade_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+librdk_upgrade_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+librdk_upgrade_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
 else
-librdkv_upgrade_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
-librdkv_upgrade_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
+librdk_upgrade_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
+librdk_upgrade_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
 endif
 
 # Configure for shared library generation with proper flags
-librdkv_upgrade_la_LDFLAGS = -version-info 1:0:0 -shared
-librdkv_upgrade_la_LIBADD = $(AM_LDFLAGS)
+librdk_upgrade_la_LDFLAGS = -version-info 1:0:0 -shared
+librdk_upgrade_la_LIBADD = $(AM_LDFLAGS)
+librdk_rfcIntf_la_LDFLAGS = -version-info 1:0:0 -shared
+librdk_rfcIntf_la_LIBADD = $(AM_LDFLAGS)
+librdk_iarmIntf_la_LDFLAGS = -version-info 1:0:0 -shared
+librdk_iarmIntf_la_LIBADD = $(AM_LDFLAGS)
 
 # Library headers to install
-librdkv_upgrade_include_HEADERS = \
+librdk_upgrade_include_HEADERS = \
     ${top_srcdir}/src/include/rdkv_upgrade.h
+librdk_rfcIntf_include_HEADERS = \
+    ${top_srcdir}/src/rfcInterface/rfcinterface.h
+librdk_iarmIntf_include_HEADERS = \
+    ${top_srcdir}/src/iarmInterface/iarmInterface.h
 
-librdkv_upgrade_includedir = ${includedir}
+librdk_upgrade_includedir = ${includedir}
+librdk_rfcIntf_includedir = ${includedir}
+librdk_iarmIntf_includedir = ${includedir}
 
 bin_PROGRAMS= rdkvfwupgrader
 
@@ -60,13 +82,11 @@ rdkvfwupgrader_SOURCES = \
     ${top_srcdir}/src/json_process.c \
     ${top_srcdir}/src/device_status_helper.c \
     ${top_srcdir}/src/download_status_helper.c \
-    ${top_srcdir}/src/iarmInterface/iarmInterface.c \
-    ${top_srcdir}/src/rfcInterface/rfcinterface.c \
     ${top_srcdir}/src/deviceutils/device_api.c \
     ${top_srcdir}/src/deviceutils/deviceutils.c
 
-# Link against the RDK upgrade shared library AND system libraries
-rdkvfwupgrader_LDADD = librdkv_upgrade.la $(cjson_LIBS) $(curl_LIBS) -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread -lrbus
+# Link against the RDK upgrade shared library AND new interface libraries
+rdkvfwupgrader_LDADD = librdk_upgrade.la librdk_rfcIntf.la librdk_iarmIntf.la $(cjson_LIBS) $(curl_LIBS) -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread -lrbus
 rdkvfwupgrader_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
 
 rdkvfwupgrader_include_HEADERS = \
