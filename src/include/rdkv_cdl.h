@@ -144,7 +144,7 @@
 #define APP_BACKGROUND 0
 #define APP_FOREGROUND 1
 
-#if __WORDSIZE == 64
+#if (defined(UINTPTR_MAX) && UINTPTR_MAX > 0xFFFFFFFF) || (defined(__WORDSIZE) && __WORDSIZE == 64)
 #define WORDSIZE_T_FMT "zu"
 #else
 #define WORDSIZE_T_FMT "d"
