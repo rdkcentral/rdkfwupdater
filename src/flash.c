@@ -21,12 +21,12 @@
 #include "rdkv_cdl_log_wrapper.h"
 #include "download_status_helper.h"
 #include "device_status_helper.h"
-#include "iarmInterface/iarmInterface.h"
+#include "iarmInterface.h"
+#include "rfcinterface.h"
 #ifndef GTEST_ENABLE
 #include "rdk_fwdl_utils.h"
 #include "system_utils.h"
 #endif
-#include "rfcInterface/rfcinterface.h"
 #include <sys/wait.h>
 #include "deviceutils.h"
 

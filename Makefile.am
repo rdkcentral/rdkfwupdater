@@ -1,5 +1,3 @@
-
-
 # Copyright 2023 Comcast Cable Communications Management, LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -37,12 +35,12 @@ librdk_rfcIntf_la_SOURCES = \
 librdk_iarmIntf_la_SOURCES = \
     ${top_srcdir}/src/iarmInterface/iarmInterface.c
 
-librdk_upgrade_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/iarmInterface -I${top_srcdir}/src/rfcInterface $(AM_CFLAGS)
-librdk_upgrade_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/iarmInterface -I${top_srcdir}/src/rfcInterface
-librdk_rfcIntf_la_CFLAGS = -fPIC -I${top_srcdir}/src/rfcInterface $(AM_CFLAGS)
-librdk_rfcIntf_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/rfcInterface
-librdk_iarmIntf_la_CFLAGS = -fPIC -I${top_srcdir}/src/iarmInterface $(AM_CFLAGS)
-librdk_iarmIntf_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/iarmInterface
+librdk_upgrade_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils $(AM_CFLAGS)
+librdk_upgrade_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
+librdk_rfcIntf_la_CFLAGS = -fPIC -I${top_srcdir}/src/include $(AM_CFLAGS)
+librdk_rfcIntf_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include
+librdk_iarmIntf_la_CFLAGS = -fPIC -I${top_srcdir}/src/include $(AM_CFLAGS)
+librdk_iarmIntf_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include
 
 if USE_CPC_CODE
 librdk_upgrade_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
@@ -64,9 +62,9 @@ librdk_iarmIntf_la_LIBADD = $(AM_LDFLAGS)
 librdk_upgrade_include_HEADERS = \
     ${top_srcdir}/src/include/rdkv_upgrade.h
 librdk_rfcIntf_include_HEADERS = \
-    ${top_srcdir}/src/rfcInterface/rfcinterface.h
+    ${top_srcdir}/src/include/rfcinterface.h
 librdk_iarmIntf_include_HEADERS = \
-    ${top_srcdir}/src/iarmInterface/iarmInterface.h
+    ${top_srcdir}/src/include/iarmInterface.h
 
 librdk_upgrade_includedir = ${includedir}
 librdk_rfcIntf_includedir = ${includedir}
@@ -90,8 +88,8 @@ rdkvfwupgrader_LDADD = librdk_upgrade.la librdk_rfcIntf.la librdk_iarmIntf.la $(
 rdkvfwupgrader_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
 
 rdkvfwupgrader_include_HEADERS = \
-    ${top_srcdir}/src/rfcInterface/rfcinterface.h \
-    ${top_srcdir}/src/iarmInterface/iarmInterface.h \
+    ${top_srcdir}/src/include/rfcinterface.h \
+    ${top_srcdir}/src/include/iarmInterface.h \
     ${top_srcdir}/src/deviceutils/device_api.h \
     ${top_srcdir}/src/deviceutils/deviceutils.h \
     ${top_srcdir}/src/include/device_status_helper.h
