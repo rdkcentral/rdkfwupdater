@@ -37,9 +37,9 @@ librdk_iarmIntf_la_SOURCES = \
 
 librdk_upgrade_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils $(AM_CFLAGS)
 librdk_upgrade_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
-librdk_rfcIntf_la_CFLAGS = -fPIC -I${top_srcdir}/src/include $(AM_CFLAGS)
+librdk_rfcIntf_la_CFLAGS = -fPIC -I${top_srcdir}/src/include $(AM_CFLAGS) $(LIBRFCAPI_FLAG)
 librdk_rfcIntf_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include
-librdk_iarmIntf_la_CFLAGS = -fPIC -I${top_srcdir}/src/include $(AM_CFLAGS)
+librdk_iarmIntf_la_CFLAGS = -fPIC -I${top_srcdir}/src/include $(AM_CFLAGS) $(IARM_EVENT_FLAG)
 librdk_iarmIntf_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include
 
 if USE_CPC_CODE
