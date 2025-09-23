@@ -35,18 +35,23 @@ librdk_rfcIntf_la_SOURCES = \
 librdk_iarmIntf_la_SOURCES = \
     ${top_srcdir}/src/iarmInterface/iarmInterface.c
 
-librdk_upgrade_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/iarmInterface -I${top_srcdir}/src/rfcInterface $(AM_CFLAGS)
-librdk_upgrade_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/iarmInterface -I${top_srcdir}/src/rfcInterface
-librdk_rfcIntf_la_CFLAGS = -fPIC -I${top_srcdir}/src/include $(AM_CFLAGS)
+librdk_upgrade_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils $(AM_CFLAGS)
+librdk_upgrade_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
+librdk_rfcIntf_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils $(AM_CFLAGS)
+librdk_rfcIntf_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
 librdk_iarmIntf_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils $(AM_CFLAGS)
-librdk_iarmIntf_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/iarmInterface
+librdk_iarmIntf_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
 
 if IS_IARMEVENT_ENABLED
 librdk_iarmIntf_la_CFLAGS += $(IARM_EVENT_FLAG)
 endif
+
 if IS_LIBRFCAPI_ENABLED
 librdk_rfcIntf_la_CFLAGS += $(LIBRFCAPI_FLAG)
-librdk_rfcIntf_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include
+endif
+
+if IS_IARMEVENT_ENABLED
+librdk_iarmIntf_la_CFLAGS += $(IARM_EVENT_FLAG)
 endif
 
 if USE_CPC_CODE
@@ -61,9 +66,17 @@ endif
 librdk_upgrade_la_LDFLAGS = -version-info 1:0:0 -shared
 librdk_upgrade_la_LIBADD = $(AM_LDFLAGS)
 librdk_rfcIntf_la_LDFLAGS = -version-info 1:0:0 -shared
+if IS_LIBRFCAPI_ENABLED
+librdk_rfcIntf_la_LIBADD = -lrfcapi $(AM_LDFLAGS)
+else
 librdk_rfcIntf_la_LIBADD = $(AM_LDFLAGS)
+endif
 librdk_iarmIntf_la_LDFLAGS = -version-info 1:0:0 -shared
+if IS_IARMEVENT_ENABLED
+librdk_iarmIntf_la_LIBADD = -lIARMBus $(AM_LDFLAGS)
+else
 librdk_iarmIntf_la_LIBADD = $(AM_LDFLAGS)
+endif
 
 # Library headers to install
 librdk_upgrade_include_HEADERS = \
@@ -159,7 +172,6 @@ endif
 if IS_IARMEVENT_ENABLED
 rdkvfwupgrader_CFLAGS += $(IARM_EVENT_FLAG)
 testrdkvfwupgrader_CFLAGS = $(IARM_EVENT_FLAG)
-librdk_iarmIntf_la_LIBADD = -lIARMBus $(AM_LDFLAGS)
 endif
 
 if IS_LIBRDKCONFIG_ENABLED
