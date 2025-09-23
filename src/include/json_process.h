@@ -37,5 +37,6 @@ typedef struct xconf_response {
 
 int processJsonResponse(XCONFRES *response, const char *myfwversion, const char *model, const char *maint);
 int getXconfRespData(XCONFRES *pResponse, char *pJsonStr);
+size_t createJsonString(char *pPostFieldOut, size_t szPostFieldOut);
 
 #endif
