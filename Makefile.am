@@ -36,7 +36,7 @@ librdk_iarmIntf_la_SOURCES = \
     ${top_srcdir}/src/iarmInterface/iarmInterface.c
 
 librdk_jsonparse_la_SOURCES = \
-    ${top_srcdir}/src/jsonparse/json_process.c
+    ${top_srcdir}/src/json_process.c
 
 librdk_upgrade_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils $(AM_CFLAGS)
 librdk_upgrade_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
@@ -64,11 +64,15 @@ librdk_upgrade_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
 librdk_upgrade_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
 librdk_iarmIntf_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
 librdk_iarmIntf_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+librdk_jsonparse_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+librdk_jsonparse_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
 else
 librdk_upgrade_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
 librdk_upgrade_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
 librdk_iarmIntf_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
 librdk_iarmIntf_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
+librdk_jsonparse_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
+librdk_jsonparse_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
 endif
 
 # Configure for shared library generation with proper flags
