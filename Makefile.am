@@ -57,9 +57,13 @@ endif
 if USE_CPC_CODE
 librdk_upgrade_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
 librdk_upgrade_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+librdk_iarmIntf_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+librdk_iarmIntf_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
 else
 librdk_upgrade_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
 librdk_upgrade_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
+librdk_iarmIntf_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
+librdk_iarmIntf_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
 endif
 
 # Configure for shared library generation with proper flags
