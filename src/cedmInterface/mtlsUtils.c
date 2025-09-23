@@ -18,8 +18,10 @@
 
 #include "mtlsUtils.h"
 #include "deviceutils.h"
+#ifndef LIBRDKCERTSELECTOR
 #ifdef LIBRDKCONFIG_BUILD
 #include "rdkconfig.h"
+#endif
 #endif
 
 #ifdef LIBRDKCERTSELECTOR
