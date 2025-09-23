@@ -39,10 +39,17 @@ librdk_iarmIntf_la_SOURCES = \
 
 librdk_upgrade_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/iarmInterface -I${top_srcdir}/src/rfcInterface $(AM_CFLAGS)
 librdk_upgrade_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/iarmInterface -I${top_srcdir}/src/rfcInterface
-librdk_rfcIntf_la_CFLAGS = -fPIC -I${top_srcdir}/src/rfcInterface $(AM_CFLAGS)
-librdk_rfcIntf_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/rfcInterface
-librdk_iarmIntf_la_CFLAGS = -fPIC -I${top_srcdir}/src/iarmInterface $(AM_CFLAGS)
+librdk_rfcIntf_la_CFLAGS = -fPIC -I${top_srcdir}/src/include $(AM_CFLAGS)
+librdk_iarmIntf_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils $(AM_CFLAGS)
 librdk_iarmIntf_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/iarmInterface
+
+if IS_IARMEVENT_ENABLED
+librdk_iarmIntf_la_CFLAGS += $(IARM_EVENT_FLAG)
+endif
+if IS_LIBRFCAPI_ENABLED
+librdk_rfcIntf_la_CFLAGS += $(LIBRFCAPI_FLAG)
+librdk_rfcIntf_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include
+endif
 
 if USE_CPC_CODE
 librdk_upgrade_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
@@ -148,13 +155,13 @@ endif
 
 if IS_LIBRFCAPI_ENABLED
 rdkvfwupgrader_CFLAGS += $(LIBRFCAPI_FLAG)
-AM_LDFLAGS += -lrfcapi
+librdk_rfcIntf_la_LIBADD = -lrfcapi $(AM_LDFLAGS)
 endif
 
 if IS_IARMEVENT_ENABLED
 rdkvfwupgrader_CFLAGS += $(IARM_EVENT_FLAG)
 testrdkvfwupgrader_CFLAGS = $(IARM_EVENT_FLAG)
-AM_LDFLAGS += -lIARMBus
+librdk_iarmIntf_la_LIBADD = -lIARMBus $(AM_LDFLAGS)
 endif
 
 if IS_LIBRDKCONFIG_ENABLED
