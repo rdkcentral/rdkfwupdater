@@ -115,14 +115,13 @@ rdkvfwupgrader_SOURCES = \
     ${top_srcdir}/src/rdkv_main.c \
     ${top_srcdir}/src/chunk.c \
     ${top_srcdir}/src/flash.c \
-    ${top_srcdir}/src/json_process.c \
     ${top_srcdir}/src/device_status_helper.c \
     ${top_srcdir}/src/download_status_helper.c \
     ${top_srcdir}/src/deviceutils/device_api.c \
     ${top_srcdir}/src/deviceutils/deviceutils.c
 
 # Link against the RDK upgrade shared library AND new interface libraries
-rdkvfwupgrader_LDADD = librdk_upgrade.la librdk_rfcIntf.la librdk_iarmIntf.la librdk_jsonparse.la $(cjson_LIBS) $(curl_LIBS) -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread -lrbus
+rdkvfwupgrader_LDADD = librdk_jsonparse.la librdk_upgrade.la librdk_rfcIntf.la librdk_iarmIntf.la $(cjson_LIBS) $(curl_LIBS) -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread -lrbus
 rdkvfwupgrader_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
 
 rdkvfwupgrader_include_HEADERS = \
