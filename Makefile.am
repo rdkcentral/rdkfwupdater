@@ -1,5 +1,3 @@
-
-
 # Copyright 2023 Comcast Cable Communications Management, LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -71,9 +69,9 @@ librdk_iarmIntf_la_LIBADD = $(AM_LDFLAGS)
 librdk_upgrade_include_HEADERS = \
     ${top_srcdir}/src/include/rdkv_upgrade.h
 librdk_rfcIntf_include_HEADERS = \
-    ${top_srcdir}/src/rfcInterface/rfcinterface.h
+    ${top_srcdir}/src/include/rfcinterface.h
 librdk_iarmIntf_include_HEADERS = \
-    ${top_srcdir}/src/iarmInterface/iarmInterface.h
+    ${top_srcdir}/src/include/iarmInterface.h
 
 librdk_upgrade_includedir = ${includedir}
 librdk_rfcIntf_includedir = ${includedir}
@@ -97,8 +95,8 @@ rdkvfwupgrader_LDADD = librdk_upgrade.la librdk_rfcIntf.la librdk_iarmIntf.la $(
 rdkvfwupgrader_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
 
 rdkvfwupgrader_include_HEADERS = \
-    ${top_srcdir}/src/rfcInterface/rfcinterface.h \
-    ${top_srcdir}/src/iarmInterface/iarmInterface.h \
+    ${top_srcdir}/src/include/rfcinterface.h \
+    ${top_srcdir}/src/include/iarmInterface.h \
     ${top_srcdir}/src/deviceutils/device_api.h \
     ${top_srcdir}/src/deviceutils/deviceutils.h \
     ${top_srcdir}/src/include/device_status_helper.h

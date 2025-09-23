@@ -20,7 +20,7 @@
 #include "rdkv_cdl_log_wrapper.h"
 #include "codebigUtils.h"
 //#include <safec_lib.h>
-#include "../rfcInterface/rfcinterface.h"
+#include "rfcinterface.h"
 #include "rdk_fwdl_utils.h"
 #include "device_api.h"
 
