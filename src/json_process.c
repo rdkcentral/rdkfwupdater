@@ -30,6 +30,226 @@
 #include "deviceutils.h"
 #include "common_device_api.h"
 
+// TODO: Convert to array of function pointer calls to reduce size of this function
+size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
+{
+    char *pTmpPost = pPostFieldOut;     // keep original pointer in case needed
+    size_t len, totlen = 0, remainlen;
+    int ret = -1;
+    char tmpbuf[400];
+    char cpuarch[16];
+    char devicename[32];
+   
+    cpuarch[0] = 0;
+    devicename[0] = 0;
+    ret = getDevicePropertyData("CPU_ARCH", cpuarch, sizeof(cpuarch));
+    if (ret == UTILS_SUCCESS) {
+         SWLOG_INFO("cpu_arch = %s\n", cpuarch);
+    } else {
+         SWLOG_ERROR("%s: getDevicePropertyData() for cpu arch fail\n", __FUNCTION__);
+    }
+    ret = getDevicePropertyData("DEVICE_NAME", devicename, sizeof(devicename));
+    if (ret == UTILS_SUCCESS) {
+         SWLOG_INFO("DEVICE_NAME = %s\n", devicename);
+    } else {
+         SWLOG_ERROR("%s: getDevicePropertyData() device name fail\n", __FUNCTION__);
+    }
+
+    len = GetEstbMac( tmpbuf, sizeof(tmpbuf) );
+    if( len )
+    {
+        remainlen = szPostFieldOut - totlen;
+        totlen += snprintf( (pTmpPost + totlen), remainlen, "eStbMac=%s", tmpbuf );
+    }
+    len = GetFirmwareVersion( tmpbuf, sizeof(tmpbuf) );
+    if( len )
+    {
+        if( totlen )
+        {
+            *(pTmpPost + totlen) = '&';
+            ++totlen;
+        }
+        remainlen = szPostFieldOut - totlen;
+        totlen += snprintf( pTmpPost + totlen, remainlen, "firmwareVersion=%s", tmpbuf );
+    }
+    len = GetAdditionalFwVerInfo( tmpbuf, sizeof(tmpbuf) );
+    if( len )
+    {
+        if( totlen )
+        {
+            *(pTmpPost + totlen) = '&';
+            ++totlen;
+        }
+        remainlen = szPostFieldOut - totlen;
+        totlen += snprintf( (pTmpPost + totlen), remainlen, "additionalFwVerInfo=%s", tmpbuf );
+    }
+    len = GetBuildType( tmpbuf, sizeof(tmpbuf), NULL );
+    if( len )
+    {
+        if( totlen )
+        {
+            *(pTmpPost + totlen) = '&';
+            ++totlen;
+        }
+        remainlen = szPostFieldOut - totlen;
+        totlen += snprintf( (pTmpPost + totlen), remainlen, "env=%s", tmpbuf );
+    }
+    SWLOG_INFO("Calling GetModelNum function\n");
+    len = GetModelNum( tmpbuf, sizeof(tmpbuf) );
+    if( len )
+    {
+        if( totlen )
+        {
+            *(pTmpPost + totlen) = '&';
+            ++totlen;
+        }
+        remainlen = szPostFieldOut - totlen;
+        totlen += snprintf( (pTmpPost + totlen), remainlen, "model=%s", tmpbuf );
+    }
+    len = GetMFRName( tmpbuf, sizeof(tmpbuf) ); 
+    if( len )
+    {
+        if( totlen )
+        {
+            *(pTmpPost + totlen) = '&';
+            ++totlen;
+        }
+        remainlen = szPostFieldOut - totlen;
+        totlen += snprintf( (pTmpPost + totlen), remainlen, "manufacturer=%s", tmpbuf );
+    }
+    len = GetPartnerId( tmpbuf, sizeof(tmpbuf) );
+    if( len )
+    {
+        if( totlen )
+        {
+            *(pTmpPost + totlen) = '&';
+            ++totlen;
+        }
+        remainlen = szPostFieldOut - totlen;
+        totlen += snprintf( (pTmpPost + totlen), remainlen, "partnerId=%s", tmpbuf );
+        remainlen = szPostFieldOut - totlen;
+        totlen += snprintf( (pTmpPost + totlen), remainlen, "&activationInProgress=false" );
+    }
+    else    // there's no partner ID (kind of impossible since there's a default
+    {
+        if( totlen )
+        {
+            *(pTmpPost + totlen) = '&';
+            ++totlen;
+        }
+        remainlen = szPostFieldOut - totlen;
+        totlen += snprintf( (pTmpPost + totlen), remainlen, "activationInProgress=true" );
+    }
+    len = GetOsClass( tmpbuf, sizeof(tmpbuf) );
+    if( len )
+    {
+        if( totlen )
+        {
+            *(pTmpPost + totlen) = '&';
+            ++totlen;
+        }
+        remainlen = szPostFieldOut - totlen;
+        totlen += snprintf( (pTmpPost + totlen), remainlen, "osClass=%s", tmpbuf );
+    }
+    len = GetAccountID( tmpbuf, sizeof(tmpbuf) );
+    if( len )
+    {
+        if( totlen )
+        {
+            *(pTmpPost + totlen) = '&';
+            ++totlen;
+        }
+        remainlen = szPostFieldOut - totlen;
+        totlen += snprintf( (pTmpPost + totlen), remainlen, "accountId=%s", tmpbuf );
+    }
+    len = GetExperience( tmpbuf, sizeof(tmpbuf) );
+    if( len )
+    {
+        if( totlen )
+        {
+            *(pTmpPost + totlen) = '&';
+            ++totlen;
+        }
+        remainlen = szPostFieldOut - totlen;
+        totlen += snprintf( (pTmpPost + totlen), remainlen, "experience=%s", tmpbuf );
+    }
+    len = GetMigrationReady( tmpbuf, sizeof(tmpbuf) );
+     if( len )
+     {
+         if( totlen )
+         {
+             *(pTmpPost + totlen) = '&';
+             ++totlen;
+         }
+         remainlen = szPostFieldOut - totlen;
+         totlen += snprintf( (pTmpPost + totlen), remainlen, "migrationReady=%s", tmpbuf );
+     }
+    len = GetSerialNum( tmpbuf, sizeof(tmpbuf) );
+    if( len )
+    {
+        if( totlen )
+        {
+            *(pTmpPost + totlen) = '&';
+            ++totlen;
+        }
+        remainlen = szPostFieldOut - totlen;
+        totlen += snprintf( (pTmpPost + totlen), remainlen, "serial=%s", tmpbuf );
+    }
+    len = GetUTCTime( tmpbuf, sizeof(tmpbuf) );
+    if( len )
+    {
+        if( totlen )
+        {
+            *(pTmpPost + totlen) = '&';
+            ++totlen;
+        }
+        remainlen = szPostFieldOut - totlen;
+        totlen += snprintf( (pTmpPost + totlen), remainlen, "localtime=%s", tmpbuf );
+    }
+    len = GetInstalledBundles( tmpbuf, sizeof(tmpbuf) );
+    if( totlen )
+    {
+        *(pTmpPost + totlen) = '&';
+        ++totlen;
+    }
+    remainlen = szPostFieldOut - totlen;
+    totlen += snprintf( (pTmpPost + totlen), remainlen, "dlCertBundle=%s", tmpbuf );
+    len = GetRdmManifestVersion( tmpbuf, sizeof(tmpbuf) );
+    if( totlen )
+    {
+        *(pTmpPost + totlen) = '&';
+        ++totlen;
+    }
+    remainlen = szPostFieldOut - totlen;
+    totlen += snprintf( (pTmpPost + totlen), remainlen, "rdmCatalogueVersion=%s", tmpbuf );
+    //TODO: WAREHOUSE_ENV="$RAMDISK_PATH/warehouse_mode_active" this is not present then call
+    len = GetTimezone( tmpbuf, cpuarch, sizeof(tmpbuf) );
+    if( len )
+    {
+        if( totlen )
+        {
+            *(pTmpPost + totlen) = '&';
+            ++totlen;
+        }
+        remainlen = szPostFieldOut - totlen;
+        totlen += snprintf( (pTmpPost + totlen), remainlen, "timezone=%s", tmpbuf );
+    }
+    waitForNtp(); // Waiting for ntp server to start
+    len = GetCapabilities( tmpbuf, sizeof(tmpbuf) );
+    if( len )
+    {
+        if( totlen )
+        {
+            *(pTmpPost + totlen) = '&';
+            ++totlen;
+        }
+        remainlen = szPostFieldOut - totlen;
+        totlen += snprintf( (pTmpPost + totlen), remainlen, "capabilities=%s", tmpbuf );
+    }
+    SWLOG_INFO( "createJsonString: totlen = %d\n%s\n", totlen, pPostFieldOut );
+    return totlen;
+}
+
 
 int getXconfRespData( XCONFRES *pResponse, char *pJsonStr )
 {
