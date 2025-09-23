@@ -32,16 +32,22 @@ jobs:
           docker pull ghcr.io/rdkcentral/docker-device-mgt-service-test/mockxconf:latest
           docker pull ghcr.io/rdkcentral/docker-device-mgt-service-test/native-platform:latest
 
-      - name: Start mock-xconf service
+      - name: Start mock-xconf service with mTLS enabled
         run: |
-          docker run -d --name mockxconf -p 50050:50050 -p 50051:50051 -p 50052:50052 -v ${{ github.workspace }}:/mnt/L2_CONTAINER_SHARED_VOLUME ghcr.io/rdkcentral/docker-device-mgt-service-test/mockxconf:latest
+          docker run -d --name mockxconf -p 50050:50050 -p 50051:50051 -p 50052:50052 -e ENABLE_MTLS=true -v ${{ github.workspace }}:/mnt/L2_CONTAINER_SHARED_VOLUME ghcr.io/rdkcentral/docker-device-mgt-service-test/mockxconf:latest
 
-      - name: Start l2-container service
+      - name: Start l2-container service with mTLS enabled
         run: |
-          docker run -d --name native-platform --link mockxconf -v ${{ github.workspace }}:/mnt/L2_CONTAINER_SHARED_VOLUME ghcr.io/rdkcentral/docker-device-mgt-service-test/native-platform:latest
+          docker run -d --name native-platform --link mockxconf -e ENABLE_MTLS=true -v ${{ github.workspace }}:/mnt/L2_CONTAINER_SHARED_VOLUME ghcr.io/rdkcentral/docker-device-mgt-service-test/native-platform:latest
 
       - name: Enter Inside Platform native container and run L2 Test
         run: |
+          # Wait briefly to ensure mTLS setup is complete
+          sleep 5
+          # Verify mTLS status
+          echo "Checking mTLS status:"
+          curl -k https://localhost:50052/mtls/status || echo "mTLS status check failed (expected if mTLS is enforcing)"
+
           docker exec -i native-platform /bin/bash -c "cd /mnt/L2_CONTAINER_SHARED_VOLUME/ && export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/lib/aarch64-linux-gnu:/usr/local/lib: && sh run_l2.sh" 
 
       - name: Copy l2 test results to runner 
