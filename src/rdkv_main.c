@@ -33,8 +33,7 @@
 #endif
 #include "download_status_helper.h"
 #include "device_status_helper.h"
-#include "iarmInterface.h"
-#include "rfcinterface.h"
+#include "iarmInterface/iarmInterface.h"
 #include "codebigUtils.h"
 #include "mtlsUtils.h"
 #ifndef GTEST_ENABLE
@@ -44,6 +43,7 @@
 #else
 #include "miscellaneous.h"
 #endif
+#include "rfcInterface/rfcinterface.h"
 #include "json_process.h"
 #include "device_api.h"
 #include "deviceutils.h"

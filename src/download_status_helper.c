@@ -17,7 +17,7 @@
  */
 
 #include "download_status_helper.h"
-#include "rfcinterface.h"
+#include "rfcInterface/rfcinterface.h"
 
 /* Description: Updating Firmware Download status inside status File.
  * @param fwdls: This is structure use to Receive all data required to write inside status file.

@@ -23,9 +23,9 @@
 #include "rdk_fwdl_utils.h"
 #include "json_parse.h"
 #endif
-#include "iarmInterface.h"
-#include "rfcinterface.h"
+#include "rfcInterface/rfcinterface.h"
 #include "download_status_helper.h"
+#include "iarmInterface/iarmInterface.h"
 #include "json_process.h"
 #include "device_api.h"
 #ifndef GTEST_ENABLE
