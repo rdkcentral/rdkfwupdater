@@ -28,6 +28,7 @@
 #endif
 #include "json_parse.h"
 #include "deviceutils.h"
+#include "device_api.h"
 #include "common_device_api.h"
 
 // TODO: Convert to array of function pointer calls to reduce size of this function
