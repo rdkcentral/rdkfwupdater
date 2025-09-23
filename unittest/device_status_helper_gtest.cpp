@@ -18,6 +18,7 @@
 
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
+#include "json_process.h"
 #include <iostream>
 #include <unistd.h>
 

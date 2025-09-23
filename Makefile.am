@@ -24,7 +24,7 @@ AM_LDFLAGS += $(cjson_LIBS) $(curl_LIBS)
 AM_LDFLAGS += -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread
 
 # Build the RDK upgrade shared library
-lib_LTLIBRARIES = librdk_upgrade.la librdk_rfcIntf.la librdk_iarmIntf.la
+lib_LTLIBRARIES = librdk_upgrade.la librdk_rfcIntf.la librdk_iarmIntf.la librdk_jsonparse.la
 
 librdk_upgrade_la_SOURCES = \
     ${top_srcdir}/src/rdkv_upgrade.c
@@ -35,12 +35,17 @@ librdk_rfcIntf_la_SOURCES = \
 librdk_iarmIntf_la_SOURCES = \
     ${top_srcdir}/src/iarmInterface/iarmInterface.c
 
+librdk_jsonparse_la_SOURCES = \
+    ${top_srcdir}/src/jsonparse/json_process.c
+
 librdk_upgrade_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils $(AM_CFLAGS)
 librdk_upgrade_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
 librdk_rfcIntf_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils $(AM_CFLAGS)
 librdk_rfcIntf_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
 librdk_iarmIntf_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils $(AM_CFLAGS)
 librdk_iarmIntf_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
+librdk_jsonparse_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils $(AM_CFLAGS)
+librdk_jsonparse_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
 
 if IS_IARMEVENT_ENABLED
 librdk_iarmIntf_la_CFLAGS += $(IARM_EVENT_FLAG)
@@ -81,6 +86,8 @@ librdk_iarmIntf_la_LIBADD = -lIARMBus $(AM_LDFLAGS)
 else
 librdk_iarmIntf_la_LIBADD = $(AM_LDFLAGS)
 endif
+librdk_jsonparse_la_LDFLAGS = -version-info 1:0:0 -shared
+librdk_jsonparse_la_LIBADD = $(AM_LDFLAGS)
 
 # Library headers to install
 librdk_upgrade_include_HEADERS = \
@@ -89,10 +96,13 @@ librdk_rfcIntf_include_HEADERS = \
     ${top_srcdir}/src/include/rfcinterface.h
 librdk_iarmIntf_include_HEADERS = \
     ${top_srcdir}/src/include/iarmInterface.h
+librdk_jsonparse_include_HEADERS = \
+    ${top_srcdir}/src/include/json_process.h
 
 librdk_upgrade_includedir = ${includedir}
 librdk_rfcIntf_includedir = ${includedir}
 librdk_iarmIntf_includedir = ${includedir}
+librdk_jsonparse_includedir = ${includedir}
 
 bin_PROGRAMS= rdkvfwupgrader
 
@@ -108,7 +118,7 @@ rdkvfwupgrader_SOURCES = \
     ${top_srcdir}/src/deviceutils/deviceutils.c
 
 # Link against the RDK upgrade shared library AND new interface libraries
-rdkvfwupgrader_LDADD = librdk_upgrade.la librdk_rfcIntf.la librdk_iarmIntf.la $(cjson_LIBS) $(curl_LIBS) -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread -lrbus
+rdkvfwupgrader_LDADD = librdk_upgrade.la librdk_rfcIntf.la librdk_iarmIntf.la librdk_jsonparse.la $(cjson_LIBS) $(curl_LIBS) -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread -lrbus
 rdkvfwupgrader_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
 
 rdkvfwupgrader_include_HEADERS = \
@@ -155,7 +165,7 @@ testrdkvfwupgrader_SOURCES = \
      ${top_srcdir}/test/testiarmInterface.c
 
 testrdkvfwupgrader_CFLAGS = $(AM_CFLAGS) $(TEST_FWUPGRADER_CFLAGS)
-testrdkvfwupgrader_LDADD = -lIARMBus $(AM_LDFLAGS)
+testrdkvfwupgrader_LDADD = -lIARMBus $(AM_LDFLAGS) librdk_jsonparse.la
 
 testrdkvfwupgrader_include_HEADERS = \
     ${top_srcdir}/test/testiarmInterface.h
