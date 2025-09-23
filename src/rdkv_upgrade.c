@@ -2,8 +2,8 @@
 #include "rdkv_cdl_log_wrapper.h"
 #include "device_status_helper.h"
 #include "download_status_helper.h"
-#include "iarmInterface/iarmInterface.h"
-#include "rfcInterface/rfcinterface.h"
+#include "iarmInterface.h"
+#include "rfcinterface.h"
 #include "deviceutils.h"
 #include "rdk_logger_milestone.h"
 
