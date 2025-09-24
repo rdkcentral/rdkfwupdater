@@ -500,7 +500,7 @@ void saveHTTPCode(int http_code)
     char http[8] = { 0 };
     FILE *fp = NULL;
 
-    snprintf( http, sizeof(http), "%zu\n", http_code );
+    snprintf( http, sizeof(http), "%03d\n", http_code );
     
     fp = fopen(HTTP_CODE_FILE, "w");
     if(fp == NULL) {
