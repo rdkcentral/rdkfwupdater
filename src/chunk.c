@@ -60,7 +60,7 @@ size_t getContentLength(const char *file)
         }
 	memset(tbuff,'\0', sizeof(tbuff));
     }
-    SWLOG_INFO("Content_lenght string=%" WORDSIZE_T_FMT "\n", cnt_len);
+    SWLOG_INFO("Content_lenght string=%zu \n", cnt_len);
     //unlink(FILE_CONTENT_LEN);
     //CID:280545-Resource leak-file not closed
     fclose(fp);
@@ -91,13 +91,13 @@ int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_li
     }
     snprintf(headerfile, sizeof(headerfile), "%s.header", pfile_dwnl->pathname);
     content_len = getContentLength(headerfile);
-    SWLOG_INFO("content_len = %" WORDSIZE_T_FMT "featched from headerfile=%s\n", content_len, headerfile);
+    SWLOG_INFO("content_len = %zu featched from headerfile=%s\n", content_len, headerfile);
     t2CountNotify("SYST_INFO_FetchFWCTN", 1);
     if (((filePresentCheck(pfile_dwnl->pathname)) == 0) && (content_len > 0)) {
         file_size = getFileSize(pfile_dwnl->pathname);
         /* Already Full File Downloaded*/
         if (file_size == content_len) {
-            SWLOG_INFO("chunkDownload() Existing file_size=%d and content_len=%" WORDSIZE_T_FMT "are same\n", file_size, content_len);
+            SWLOG_INFO("chunkDownload() Existing file_size=%d and content_len=%zu are same\n", file_size, content_len);
             t2CountNotify("SYST_INFO_SAME_FWCTN", 1);
             *httpcode = 200;
             curl_ret_code = CURLE_OK;
@@ -110,7 +110,7 @@ int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_li
             return -1;
         }
     }else {
-        SWLOG_ERROR( "chunkDownload() Error to proceed for chunk download due to below reason.\nContent length not present=%" WORDSIZE_T_FMT "or Partial image file not present.\n", content_len);
+        SWLOG_ERROR( "chunkDownload() Error to proceed for chunk download due to below reason.\nContent length not present=%zu or Partial image file not present.\n", content_len);
         t2CountNotify("SYST_ERR_FWCTNFetch", 1);
         return curl_code_header_req;
     }
@@ -166,14 +166,14 @@ int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_li
     } else if ((curl_ret_code == 0) && ((filePresentCheck(pfile_dwnl->pathname)) == 0)) {
         file_size = 0;
         file_size = getFileSize(pfile_dwnl->pathname);
-        SWLOG_INFO("chunkDownload() curl status success=%u, filesize=%d, content_len=%" WORDSIZE_T_FMT "\n", curl_ret_code, file_size, content_len);
+        SWLOG_INFO("chunkDownload() curl status success=%u, filesize=%d, content_len=%zu\n", curl_ret_code, file_size, content_len);
         if (file_size == content_len) {
             SWLOG_INFO("chunkDownload() All file data Downloaded\n");
             setDwnlState(RDKV_FWDNLD_DOWNLOAD_COMPLETE);
         } else {
             SWLOG_ERROR( "chunkDownload() Downloaded File Size and content length fetch from header are not same. So Go For Full Download\n");
             t2CountNotify("SYST_ERR_DiffFWCTN_FLdnld", 1);
-            SWLOG_ERROR( "chunkDownload() File Size=%d and content len=%" WORDSIZE_T_FMT "\n", file_size, content_len);
+            SWLOG_ERROR( "chunkDownload() File Size=%d and content len=%zu\n", file_size, content_len);
             setDwnlState(RDKV_FWDNLD_DOWNLOAD_INIT);
             curl = doCurlInit();
             setDwnlState(RDKV_FWDNLD_DOWNLOAD_INPROGRESS);

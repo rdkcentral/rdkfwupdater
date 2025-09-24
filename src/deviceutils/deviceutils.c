@@ -31,7 +31,6 @@
 #include "deviceutils.h"
 #include "json_parse.h"
 #include <dirent.h>
-#include "rdkv_cdl.h"
 
 #ifndef GTEST_ENABLE
 	#define BUNDLE_METADATA_NVM_PATH    "/media/apps/etc/certs"
@@ -312,7 +311,7 @@ size_t RunCommand( SYSCMD eSysCmd, const char *pArgs, char *pResult, size_t szRe
             }
             else
             {
-                SWLOG_ERROR( "%s fread fails:%" WORDSIZE_T_FMT "\n", __FUNCTION__, nbytes_read );
+                SWLOG_ERROR( "%s fread fails:%zu\n", __FUNCTION__, nbytes_read );
             }
 //            SWLOG_INFO( "output=%s\n", pResult );
         }

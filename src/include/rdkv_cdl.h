@@ -144,12 +144,6 @@
 #define APP_BACKGROUND 0
 #define APP_FOREGROUND 1
 
-#if (defined(UINTPTR_MAX) && UINTPTR_MAX > 0xFFFFFFFF) || (defined(__WORDSIZE) && __WORDSIZE == 64)
-#define WORDSIZE_T_FMT "zu"
-#else
-#define WORDSIZE_T_FMT "d"
-#endif
-
 int downloadFile( int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode );
 int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char *pPostFields, int *httpCode );
 int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_limit, int *httpcode);
