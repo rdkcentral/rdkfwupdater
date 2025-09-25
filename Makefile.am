@@ -61,12 +61,10 @@ rdkvfwupgrader_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
 rdkvfwupgrader_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
 else
 rdkvfwupgrader_SOURCES += \
-    ${top_srcdir}/src/cedmInterface/codebigUtils.c \
-    ${top_srcdir}/src/cedmInterface/mtlsUtils.c
+    ${top_srcdir}/src/cedmInterface/codebigUtils.c
 
 rdkvfwupgrader_include_HEADERS += \
-    ${top_srcdir}/src/cedmInterface/codebigUtils.h \
-    ${top_srcdir}/src/cedmInterface/mtlsUtils.h
+    ${top_srcdir}/src/cedmInterface/codebigUtils.h
 
 rdkvfwupgrader_CFLAGS += -I${top_srcdir}/src/cedmInterface
 rdkvfwupgrader_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
