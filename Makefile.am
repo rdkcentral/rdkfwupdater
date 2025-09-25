@@ -52,12 +52,10 @@ rdkvfwupgrader_CPPFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/device
 
 if USE_CPC_CODE
 rdkvfwupgrader_SOURCES += \
-    ${top_srcdir}/src/cedmInterface-cpc/codebigUtils.c \
-    ${top_srcdir}/src/cedmInterface-cpc/mtlsUtils.c
+    ${top_srcdir}/src/cedmInterface-cpc/codebigUtils.c
 
 rdkvfwupgrader_include_HEADERS += \
-    ${top_srcdir}/src/cedmInterface-cpc/codebigUtils.h \
-    ${top_srcdir}/src/cedmInterface-cpc/mtlsUtils.h
+    ${top_srcdir}/src/cedmInterface-cpc/codebigUtils.h
 
 rdkvfwupgrader_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
 rdkvfwupgrader_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
@@ -72,6 +70,20 @@ rdkvfwupgrader_include_HEADERS += \
 
 rdkvfwupgrader_CFLAGS += -I${top_srcdir}/src/cedmInterface
 rdkvfwupgrader_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
+
+endif
+
+if IS_LIBRDKCERTSEL_ENABLED
+
+rdkvfwupgrader_SOURCES += ${top_srcdir}/src/cedmInterface/mtlsUtils.c
+
+rdkvfwupgrader_include_HEADERS += ${top_srcdir}/src/cedmInterface/mtlsUtils.h
+
+else
+
+rdkvfwupgrader_SOURCES += ${top_srcdir}/src/cedmInterface-cpc/mtlsUtils.c
+
+rdkvfwupgrader_include_HEADERS += ${top_srcdir}/src/cedmInterface-cpc/mtlsUtils.h
 
 endif
 
