@@ -17,18 +17,27 @@
  */ 
 
 #include <sys/stat.h>
+#include <curl/curl.h>
 #include "rdkv_cdl.h"
 #include "rdkv_cdl_log_wrapper.h"
 #include "download_status_helper.h"
 #include "device_status_helper.h"
 #include "iarmInterface/iarmInterface.h"
 #ifndef GTEST_ENABLE
+#include "urlHelper.h"
+#include "json_parse.h"
 #include "rdk_fwdl_utils.h"
 #include "system_utils.h"
+#include "rbusInterface/rbusInterface.h"
+#else
+#include "rbus_mock.h"
 #endif
 #include "rfcInterface/rfcinterface.h"
 #include <sys/wait.h>
 #include "deviceutils.h"
+
+extern int getTriggerType();
+extern void t2CountNotify(char *marker, int val);
 
 /* Description:Use for Flashing the image
  * @param: server_url : server url
@@ -138,10 +147,25 @@ int flashImage(const char *server_url, const char *upgrade_file, const char *reb
          snprintf(fwdls.status, sizeof(fwdls.status), "Status|Success\n");
          snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Validation complete\n");
          snprintf(fwdls.failureReason, sizeof(fwdls.failureReason), "FailureReason|");
-	 if (((strncmp(maint, "true", 4)) == 0) && (0 == (strncmp(reboot_flag, "true", 4)))) {
+	 char *pXconfCheckNow = calloc(10, sizeof(char));
+         FILE *canFile = fopen("/tmp/xconfchecknow_val", "r");
+         if (canFile != NULL) {
+             int fret = fscanf(canFile, "%9s", pXconfCheckNow);
+	     if (fret <= 0) {
+	         SWLOG_ERROR("Device_X_COMCAST_COM_Xcalibur_Client_xconfCheckNow: Error reading from file\n");
+	     }
+             fclose(canFile);
+         }
+         else {
+             SWLOG_INFO("Device_X_COMCAST_COM_Xcalibur_Client_xconfCheckNow: File does not exist\n");
+         }
+	 if (((strncmp(maint, "true", 4)) == 0) && (0 == (strncmp(reboot_flag, "true", 4))) && ((0 != strcasecmp("CANARY", pXconfCheckNow)) || (getTriggerType() != 3))) {
              eventManager("MaintenanceMGR", MAINT_CRITICAL_UPDATE);
 	     SWLOG_INFO("Posting Critical update");
 	 }
+	 if( pXconfCheckNow != NULL ) {
+             free(pXconfCheckNow);
+         }
 	 if (0 == filePresentCheck(upgrade_file)) {
              SWLOG_INFO("flashImage: Flashing completed. Deleting File:%s\n", upgrade_file);
              unlink(upgrade_file);
@@ -276,6 +300,21 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
     }
     sleep(5);
     sync();
+    char* pXconfCheckNow = calloc(10, sizeof(char));
+    if (pXconfCheckNow == NULL) {
+        SWLOG_ERROR("Device_X_COMCAST_COM_Xcalibur_Client_xconfCheckNow: CALLOC failure\n");
+	return ret;
+    }
+    FILE *file = fopen("/tmp/xconfchecknow_val", "r");
+    if (file != NULL) {
+        if (fscanf(file, "%9s", pXconfCheckNow) == EOF) {
+	    SWLOG_ERROR("Device_X_COMCAST_COM_Xcalibur_Client_xconfCheckNow: Error reading file\n");
+	}
+        fclose(file);
+    }
+    else {
+        SWLOG_INFO("Device_X_COMCAST_COM_Xcalibur_Client_xconfCheckNow: Error opening file for read\n");
+    }
     if (0 != (filePresentCheck("/tmp/fw_preparing_to_reboot"))) {
 	fp = fopen("/tmp/fw_preparing_to_reboot", "w");
 	if (fp == NULL) {
@@ -284,7 +323,9 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
 	    SWLOG_INFO("Creating flag for preparing to reboot event sent to AS/EPG\n");
 	    fclose(fp);
 	}
-        eventManager(FW_STATE_EVENT,FW_STATE_PREPARING_TO_REBOOT);
+        if ((0 != strcasecmp("CANARY", pXconfCheckNow)) || (getTriggerType() != 3)) {
+            eventManager(FW_STATE_EVENT,FW_STATE_PREPARING_TO_REBOOT);
+	}
     }
     if (upgrade_type == PDRI_UPGRADE) {
         SWLOG_INFO("Reboot Not Needed after PDRI Upgrade..!\n");
@@ -295,7 +336,75 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
             fprintf(fp, "%s\n", upgrade_file);
             fclose(fp);
         }
-        if (0 == (strncmp(maint, "true", 4))) {
+	if ((0 == strcasecmp("CANARY", pXconfCheckNow)) && (getTriggerType() == 3)) {
+
+            char post_data[] = "{\"jsonrpc\":\"2.0\",\"id\":\"42\",\"method\": \"org.rdk.System.getPowerState\"}";
+            DownloadData DwnLoc = {NULL, 0, 0};
+            JSON *pJson = NULL;
+            JSON *pItem = NULL;
+            JSON *res_val = NULL;
+
+            if( MemDLAlloc( &DwnLoc, DEFAULT_DL_ALLOC ) == 0 ) {
+              if (0 != getJsonRpc(post_data, &DwnLoc)) {
+                  SWLOG_INFO("%s :: isconnected JsonRpc call failed\n",__FUNCTION__);
+		  free(pXconfCheckNow);
+		  if (DwnLoc.pvOut != NULL) {
+		      free(DwnLoc.pvOut);
+		  }
+                  return ret;
+              }
+              pJson = ParseJsonStr( (char *)DwnLoc.pvOut );
+              if( pJson != NULL ) {
+                  pItem = GetJsonItem( pJson, "result" );
+                  res_val = GetJsonItem( pItem, "powerState" );
+              }
+              else {
+                  SWLOG_INFO("%s :: isconnected JsonRpc response is empty\n",__FUNCTION__);
+		  free(pXconfCheckNow);
+		  if (DwnLoc.pvOut != NULL) {
+		      free(DwnLoc.pvOut);
+		  }
+                  return ret;
+              }
+            }
+
+	    if(res_val != NULL) {
+                if(0 == strcasecmp("ON", res_val->valuestring)) {
+                    SWLOG_INFO("Defer Reboot for Canary Firmware Upgrade since power state is ON\n");
+                    t2CountNotify("SYS_INFO_DEFER_CANARY_REBOOT", 1);
+                }
+#ifndef GTEST_ENABLE
+                else {
+                    t2CountNotify("SYS_INFO_CANARY_Update", 1);
+					// Call rbus method - Device.X_RDKCENTRAL-COM_T2.UploadDCMReport
+                    if( RBUS_ERROR_SUCCESS != invokeRbusDCMReport()) {
+		        SWLOG_ERROR("Error in uploading telemetry report\n");
+			if( DwnLoc.pvOut != NULL ) {
+                            free( DwnLoc.pvOut );
+                        }
+                        if( pJson != NULL ) {
+                            FreeJson( pJson );
+                        }
+			if ( pXconfCheckNow != NULL ) {
+	                    free(pXconfCheckNow);
+	                }
+			return ret;
+		    }
+                    if (0 == (strncmp(reboot_flag, "true", 4))) {
+                        SWLOG_INFO("Rebooting from RDK for Canary Firmware Upgrade\n");
+                        v_secure_system("sh /rebootNow.sh -s '%s' -o '%s'","CANARY_Update", "Rebooting the box from RDK for Pending Canary Firmware Upgrade...");
+		    }
+		}
+#endif
+	    }
+            if( DwnLoc.pvOut != NULL ) {
+                free( DwnLoc.pvOut );
+            }
+            if( pJson != NULL ) {
+                FreeJson( pJson );
+            }
+        }
+        else if (0 == (strncmp(maint, "true", 4))) {
 	    eventManager("MaintenanceMGR", MAINT_REBOOT_REQUIRED);
 	    if (0 == (strncmp(device_name, "PLATCO", 6)) && (0 == (strncmp(reboot_flag, "true", 4)))) {
 		SWLOG_INFO("Send notification to reboot in 10mins due to critical upgrade\n");
@@ -323,6 +432,9 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
 		v_secure_system("sh /rebootNow.sh -s '%s' -o '%s'", "UpgradeReboot_rdkvfwupgrader", "Rebooting the box after Firmware Image Upgrade...");
 	    }
 	}
+    }
+    if( pXconfCheckNow != NULL ) {
+        free(pXconfCheckNow);
     }
     return 0;
 }

@@ -15,15 +15,16 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+
 AM_CFLAGS = $(TRACE_CFLAGS)
 
 AM_CFLAGS += -Wall -Werror $(cjson_CFLAGS) $(curl_CFLAGS) $(CFLAGS)
 AM_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
-AM_LDFLAGS += $(cjson_LIBS) $(curl_LIBS)
-AM_LDFLAGS += -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread
+AM_LDFLAGS += $(cjson_LIBS) $(curl_LIBS) 
+AM_LDFLAGS += -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread -lrbus
 
 bin_PROGRAMS= rdkvfwupgrader
-bin_PROGRAMS+= testrdkvfwupgrader
+
 
 rdkvfwupgrader_SOURCES = \
     ${top_srcdir}/src/rdkv_main.c \
@@ -34,12 +35,14 @@ rdkvfwupgrader_SOURCES = \
     ${top_srcdir}/src/download_status_helper.c \
     ${top_srcdir}/src/iarmInterface/iarmInterface.c \
     ${top_srcdir}/src/rfcInterface/rfcinterface.c \
+    ${top_srcdir}/src/rbusInterface/rbusInterface.c \
     ${top_srcdir}/src/deviceutils/device_api.c \
     ${top_srcdir}/src/deviceutils/deviceutils.c
 
 rdkvfwupgrader_include_HEADERS = \
     ${top_srcdir}/src/rfcInterface/rfcinterface.h \
     ${top_srcdir}/src/iarmInterface/iarmInterface.h \
+    ${top_srcdir}/src/rbusInterface/rbusInterface.h \
     ${top_srcdir}/src/deviceutils/device_api.h \
     ${top_srcdir}/src/deviceutils/deviceutils.h \
     ${top_srcdir}/src/include/device_status_helper.h
@@ -74,13 +77,19 @@ endif
 
 rdkvfwupgrader_includedir = ${includedir}
 
+if INSTALL_TEST_FWUPGRADER
+bin_PROGRAMS += testrdkvfwupgrader
+
 testrdkvfwupgrader_SOURCES = \
      ${top_srcdir}/test/testiarmInterface.c
+
+testrdkvfwupgrader_CFLAGS = $(AM_CFLAGS) $(TEST_FWUPGRADER_CFLAGS)
 
 testrdkvfwupgrader_include_HEADERS = \
     ${top_srcdir}/test/testiarmInterface.h
 
 testrdkvfwupgrader_includedir = ${includedir}
+endif
 
 
 if IS_TELEMETRY2_ENABLED
