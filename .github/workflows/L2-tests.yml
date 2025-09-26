@@ -42,12 +42,6 @@ jobs:
 
       - name: Enter Inside Platform native container and run L2 Test
         run: |
-          # Wait briefly to ensure mTLS setup is complete
-          sleep 5
-          # Verify mTLS status
-          echo "Checking mTLS status:"
-          curl -k https://localhost:50052/mtls/status || echo "mTLS status check failed (expected if mTLS is enforcing)"
-
           docker exec -i native-platform /bin/bash -c "cd /mnt/L2_CONTAINER_SHARED_VOLUME/ && export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/lib/aarch64-linux-gnu:/usr/local/lib: && sh run_l2.sh" 
 
       - name: Copy l2 test results to runner 
