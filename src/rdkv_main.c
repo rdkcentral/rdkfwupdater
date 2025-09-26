@@ -1180,8 +1180,8 @@ int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocati
 
         if (true == st_notify_flag) {
             curtime = getCurrentSysTimeSec();
-            snprintf(current_time, sizeof(current_time), "%zu", curtime);
-            SWLOG_INFO("current_time calculated as %zu and %s\n", curtime, current_time);
+            snprintf(current_time, sizeof(current_time), "%ju", curtime);
+            SWLOG_INFO("current_time calculated as %ju and %s\n", curtime, current_time);
             //write_RFCProperty("Rfc_FW", RFC_FW_DWNL_START, current_time, RFC_STRING);
             notifyDwnlStatus(RFC_FW_DWNL_START, current_time, RFC_STRING);
             SWLOG_INFO("FirmwareDownloadStartedNotification SET succeeded\n");
