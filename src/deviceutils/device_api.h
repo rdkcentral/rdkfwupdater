@@ -113,20 +113,6 @@ typedef enum {
 */
 size_t GetServerUrlFile(char *pServUrl, size_t szBufSize, char *pFileName);
 
-
-/* function GetTimezone - returns the timezone for the device. 
-        Usage: size_t GetTimezone <char *pTimezone> <const char  *cpu> <size_t szBufSize>
- 
-            pTimezone - pointer to a char buffer to store the output string.
-
-	        cpuArch - poniter holds device cpu type
-
-            szBufSize - the size of the character buffer in argument 1.
-
-            RETURN - number of characters copied to the output buffer.
-*/
-//size_t GetTimezone(char *pTimezone, const char *cpuArch, size_t szBufSize);
-
 /* function GetAdditionalFwVerInfo - returns the PDRI filename plus Remote Info for the device.
         Usage: size_t GetAdditionalFwVerInfo <char *pAdditionalFwVerInfo> <size_t szBufSize>
  
