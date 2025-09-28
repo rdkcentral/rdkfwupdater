@@ -124,7 +124,7 @@ size_t GetServerUrlFile(char *pServUrl, size_t szBufSize, char *pFileName);
 */
 size_t GetAdditionalFwVerInfo(char *pAdditionalFwVerInfo, size_t szBufSize);
 
-/* function GetPDRIFileName - returns the PDRI for the device.
+/* function GetPDRIFileName - returns the PDRI for the device. 
         Usage: size_t GetPDRIFileName <char *pPDRIFilename> <size_t szBufSize>
  
             pPDRIFilename - pointer to a char buffer to store the output string.
@@ -136,7 +136,7 @@ size_t GetAdditionalFwVerInfo(char *pAdditionalFwVerInfo, size_t szBufSize);
 size_t GetPDRIFileName(char *pPDRIFilename, size_t szBufSize);
 
 
-/* function GetInstalledBundles - gets the bundles installed on a device.
+/* function GetInstalledBundles - gets the bundles installed on a device. 
         Usage: size_t GetInstalledBundles <char *pBundles> <size_t szBufSize>
  
             pBundles - pointer to a char buffer to store the output string.
