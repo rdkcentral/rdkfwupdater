@@ -691,7 +691,6 @@ bool GetPDRIVersion( char *pPdriVersion, size_t szBufSize )
 }
 
 
-// createJsonString moved to librdk_jsonparse
 
 /* Description: Checking either pdri upgrade required or not.
  * @param dwnl_pdri_img: Requested pdri image recived from xconf

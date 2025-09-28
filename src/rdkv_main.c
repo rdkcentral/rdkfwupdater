@@ -1046,7 +1046,7 @@ void updateUpgradeFlag(int action)
 
 /* Description: Use for requesting upgrade pci/pdri */
  // @param: upgrade_type : pci/pdri
-// upgradeRequest() function has been moved to librdkv_upgrade.so
+// upgradeRequest() function has been moved to librdksw_upgrade.so
 // Use rdkv_upgrade_request() from rdkv_upgrade.h instead
 
 int getOPTOUTValue(const char *file_name)

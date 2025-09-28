@@ -24,89 +24,89 @@ AM_LDFLAGS += $(cjson_LIBS) $(curl_LIBS)
 AM_LDFLAGS += -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread
 
 # Build the RDK upgrade shared library
-lib_LTLIBRARIES = librdk_upgrade.la librdk_rfcIntf.la librdk_iarmIntf.la librdk_jsonparse.la
+lib_LTLIBRARIES = librdksw_upgrade.la librdksw_rfcIntf.la librdksw_iarmIntf.la librdksw_jsonparse.la
 
-librdk_upgrade_la_SOURCES = \
+librdksw_upgrade_la_SOURCES = \
     ${top_srcdir}/src/rdkv_upgrade.c
 
-librdk_rfcIntf_la_SOURCES = \
+librdksw_rfcIntf_la_SOURCES = \
     ${top_srcdir}/src/rfcInterface/rfcinterface.c
 
-librdk_iarmIntf_la_SOURCES = \
+librdksw_iarmIntf_la_SOURCES = \
     ${top_srcdir}/src/iarmInterface/iarmInterface.c
 
-librdk_jsonparse_la_SOURCES = \
+librdksw_jsonparse_la_SOURCES = \
     ${top_srcdir}/src/json_process.c
 
-librdk_upgrade_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils $(AM_CFLAGS)
-librdk_upgrade_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
-librdk_rfcIntf_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils $(AM_CFLAGS)
-librdk_rfcIntf_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
-librdk_iarmIntf_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils $(AM_CFLAGS)
-librdk_iarmIntf_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
-librdk_jsonparse_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils $(AM_CFLAGS)
-librdk_jsonparse_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
+librdksw_upgrade_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils $(AM_CFLAGS)
+librdksw_upgrade_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
+librdksw_rfcIntf_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils $(AM_CFLAGS)
+librdksw_rfcIntf_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
+librdksw_iarmIntf_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils $(AM_CFLAGS)
+librdksw_iarmIntf_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
+librdksw_jsonparse_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils $(AM_CFLAGS)
+librdksw_jsonparse_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
 
 if IS_IARMEVENT_ENABLED
-librdk_iarmIntf_la_CFLAGS += $(IARM_EVENT_FLAG)
+librdksw_iarmIntf_la_CFLAGS += $(IARM_EVENT_FLAG)
 endif
 
 if IS_LIBRFCAPI_ENABLED
-librdk_rfcIntf_la_CFLAGS += $(LIBRFCAPI_FLAG)
+librdksw_rfcIntf_la_CFLAGS += $(LIBRFCAPI_FLAG)
 endif
 
 if IS_IARMEVENT_ENABLED
-librdk_iarmIntf_la_CFLAGS += $(IARM_EVENT_FLAG)
+librdksw_iarmIntf_la_CFLAGS += $(IARM_EVENT_FLAG)
 endif
 
 if USE_CPC_CODE
-librdk_upgrade_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
-librdk_upgrade_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
-librdk_iarmIntf_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
-librdk_iarmIntf_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
-librdk_jsonparse_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
-librdk_jsonparse_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+librdksw_upgrade_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+librdksw_upgrade_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+librdksw_iarmIntf_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+librdksw_iarmIntf_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+librdksw_jsonparse_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+librdksw_jsonparse_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
 else
-librdk_upgrade_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
-librdk_upgrade_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
-librdk_iarmIntf_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
-librdk_iarmIntf_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
-librdk_jsonparse_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
-librdk_jsonparse_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
+librdksw_upgrade_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
+librdksw_upgrade_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
+librdksw_iarmIntf_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
+librdksw_iarmIntf_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
+librdksw_jsonparse_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
+librdksw_jsonparse_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
 endif
 
 # Configure for shared library generation with proper flags
-librdk_upgrade_la_LDFLAGS = -version-info 1:0:0 -shared
-librdk_upgrade_la_LIBADD = $(AM_LDFLAGS)
-librdk_rfcIntf_la_LDFLAGS = -version-info 1:0:0 -shared
+librdksw_upgrade_la_LDFLAGS = -version-info 1:0:0 -shared
+librdksw_upgrade_la_LIBADD = $(AM_LDFLAGS)
+librdksw_rfcIntf_la_LDFLAGS = -version-info 1:0:0 -shared
 if IS_LIBRFCAPI_ENABLED
-librdk_rfcIntf_la_LIBADD = -lrfcapi $(AM_LDFLAGS)
+librdksw_rfcIntf_la_LIBADD = -lrfcapi $(AM_LDFLAGS)
 else
-librdk_rfcIntf_la_LIBADD = $(AM_LDFLAGS)
+librdksw_rfcIntf_la_LIBADD = $(AM_LDFLAGS)
 endif
-librdk_iarmIntf_la_LDFLAGS = -version-info 1:0:0 -shared
+librdksw_iarmIntf_la_LDFLAGS = -version-info 1:0:0 -shared
 if IS_IARMEVENT_ENABLED
-librdk_iarmIntf_la_LIBADD = -lIARMBus $(AM_LDFLAGS)
+librdksw_iarmIntf_la_LIBADD = -lIARMBus $(AM_LDFLAGS)
 else
-librdk_iarmIntf_la_LIBADD = $(AM_LDFLAGS)
+librdksw_iarmIntf_la_LIBADD = $(AM_LDFLAGS)
 endif
-librdk_jsonparse_la_LDFLAGS = -version-info 1:0:0 -shared
-librdk_jsonparse_la_LIBADD = $(AM_LDFLAGS)
+librdksw_jsonparse_la_LDFLAGS = -version-info 1:0:0 -shared
+librdksw_jsonparse_la_LIBADD = $(AM_LDFLAGS)
 
 # Library headers to install
-librdk_upgrade_include_HEADERS = \
+librdksw_upgrade_include_HEADERS = \
     ${top_srcdir}/src/include/rdkv_upgrade.h
-librdk_rfcIntf_include_HEADERS = \
+librdksw_rfcIntf_include_HEADERS = \
     ${top_srcdir}/src/include/rfcinterface.h
-librdk_iarmIntf_include_HEADERS = \
+librdksw_iarmIntf_include_HEADERS = \
     ${top_srcdir}/src/include/iarmInterface.h
-librdk_jsonparse_include_HEADERS = \
+librdksw_jsonparse_include_HEADERS = \
     ${top_srcdir}/src/include/json_process.h
 
-librdk_upgrade_includedir = ${includedir}
-librdk_rfcIntf_includedir = ${includedir}
-librdk_iarmIntf_includedir = ${includedir}
-librdk_jsonparse_includedir = ${includedir}
+librdksw_upgrade_includedir = ${includedir}
+librdksw_rfcIntf_includedir = ${includedir}
+librdksw_iarmIntf_includedir = ${includedir}
+librdksw_jsonparse_includedir = ${includedir}
 
 bin_PROGRAMS= rdkvfwupgrader
 
@@ -121,7 +121,7 @@ rdkvfwupgrader_SOURCES = \
     ${top_srcdir}/src/deviceutils/deviceutils.c
 
 # Link against the RDK upgrade shared library AND new interface libraries
-rdkvfwupgrader_LDADD = librdk_jsonparse.la librdk_upgrade.la librdk_rfcIntf.la librdk_iarmIntf.la $(cjson_LIBS) $(curl_LIBS) -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread -lrbus
+rdkvfwupgrader_LDADD = librdksw_jsonparse.la librdksw_upgrade.la librdksw_rfcIntf.la librdksw_iarmIntf.la $(cjson_LIBS) $(curl_LIBS) -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread -lrbus
 rdkvfwupgrader_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
 
 rdkvfwupgrader_include_HEADERS = \
@@ -168,7 +168,7 @@ testrdkvfwupgrader_SOURCES = \
      ${top_srcdir}/test/testiarmInterface.c
 
 testrdkvfwupgrader_CFLAGS = $(AM_CFLAGS) $(TEST_FWUPGRADER_CFLAGS)
-testrdkvfwupgrader_LDADD = -lIARMBus $(AM_LDFLAGS) librdk_jsonparse.la
+testrdkvfwupgrader_LDADD = -lIARMBus $(AM_LDFLAGS) librdksw_jsonparse.la
 
 testrdkvfwupgrader_include_HEADERS = \
     ${top_srcdir}/test/testiarmInterface.h
@@ -184,7 +184,7 @@ endif
 
 if IS_LIBRFCAPI_ENABLED
 rdkvfwupgrader_CFLAGS += $(LIBRFCAPI_FLAG)
-librdk_rfcIntf_la_LIBADD = -lrfcapi $(AM_LDFLAGS)
+librdksw_rfcIntf_la_LIBADD = -lrfcapi $(AM_LDFLAGS)
 endif
 
 if IS_IARMEVENT_ENABLED
