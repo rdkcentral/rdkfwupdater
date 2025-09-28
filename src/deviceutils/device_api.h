@@ -113,7 +113,7 @@ typedef enum {
 */
 size_t GetServerUrlFile(char *pServUrl, size_t szBufSize, char *pFileName);
 
-/* function GetAdditionalFwVerInfo - returns the PDRI filename plus Remote Info for the device.
+/* function GetAdditionalFwVerInfo - returns the PDRI filename plus Remote Info for the device. 
         Usage: size_t GetAdditionalFwVerInfo <char *pAdditionalFwVerInfo> <size_t szBufSize>
  
             pAdditionalFwVerInfo - pointer to a char buffer to store the output string.
