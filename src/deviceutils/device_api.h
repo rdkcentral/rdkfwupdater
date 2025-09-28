@@ -161,45 +161,6 @@ size_t GetPDRIFileName(char *pPDRIFilename, size_t szBufSize);
 */
 size_t GetInstalledBundles(char *pBundles, size_t szBufSize);
 
-
-/* function GetUTCTime - gets a formatted UTC device time. Example;
-    Tue Jul 12 21:56:06 UTC 2022 
-        Usage: size_t GetUTCTime <char *pUTCTime> <size_t szBufSize>
- 
-            pUTCTime - pointer to a char buffer to store the output string.
-
-            szBufSize - the size of the character buffer in argument 1.
-
-            RETURN - number of characters copied to the output buffer.
-*/
-//size_t GetUTCTime(char *pUTCTime, size_t szBufSize);
-
-
-/* function GetCapabilities - gets the device capabilities.
- 
-        Usage: size_t GetCapabilities <char *pCapabilities> <size_t szBufSize>
- 
-            pCapabilities - pointer to a char buffer to store the output string.
-
-            szBufSize - the size of the character buffer in argument 1.
-
-            RETURN - number of characters copied to the output buffer.
-*/
-//size_t GetCapabilities(char *pCapabilities, size_t szBufSize);
-
-
-/* function GetPartnerId - gets the partner ID of the device.
- 
-        Usage: size_t GetPartnerId <char *pPartnerId> <size_t szBufSize>
- 
-            pPartnerId - pointer to a char buffer to store the output string.
-
-            szBufSize - the size of the character buffer in argument 1.
-
-            RETURN - number of characters copied to the output buffer.
-*/
-//size_t GetPartnerId(char *pPartnerId, size_t szBufSize);
-
 /* function GetOsClass - gets the OsClass of the device.
  
         Usage: size_t GetOsClass( char *pOsClass, size_t szBufSize )
@@ -263,72 +224,6 @@ size_t GetExperience(char *pExperience, size_t szBufSize);
             RETURN - number of characters copied to the output buffer.
 */
 size_t GetAccountID(char *pAccountID, size_t szBufSize);
-
-#ifdef GTEST_ENABLE
-/* function GetModelNum - gets the model number of the device.
-
-        Usage: size_t GetModelNum <char *pModelNum> <size_t szBufSize>
-
-            pModelNum - pointer to a char buffer to store the output string.
-            szBufSize - the size of the character buffer in argument 1.
-            RETURN - number of characters copied to the output buffer.
-*/
-//size_t GetModelNum(char *pModelNum, size_t szBufSize);
-#endif
-
-/* function GetBuildType - gets the build type of the device in lowercase. Optionally, sets an enum
-    indication the build type.
-    Example: vbn or prod or qa or dev
- 
-        Usage: size_t GetBuildType <char *pBuildType> <size_t szBufSize> <BUILDTYPE *peBuildTypeOut>
- 
-            pBuildType - pointer to a char buffer to store the output string.
-
-            szBufSize - the size of the character buffer in argument 1.
- 
-            peBuildTypeOut - a pointer to a BUILDTYPE enum or NULL if not needed by the caller.
-                Contains an enum indicating the buildtype if not NULL on function exit.
-
-            RETURN - number of characters copied to the output buffer.
-*/
-//size_t GetBuildType(char *pBuildType, size_t szBufSize, BUILDTYPE *peBuildTypeOut);
-
-/* function GetMFRName - gets the  manufacturer name of the device.
-        Usage: size_t GetMFRName <char *pMFRName> <size_t szBufSize>
-            pMFRName - pointer to a char buffer to store the output string.
-
-            szBufSize - the size of the character buffer in argument 1.
-
-            RETURN - number of characters copied to the output buffer.
-*/
-//size_t GetMFRName(char *pMFRName, size_t szBufSize);
-
-
-/* function GetFirmwareVersion - gets the firmware version of the device.
- 
-        Usage: size_t GetFirmwareVersion <char *pFWVersion> <size_t szBufSize>
- 
-            pFWVersion - pointer to a char buffer to store the output string.
-
-            szBufSize - the size of the character buffer in argument 1.
-
-            RETURN - number of characters copied to the output buffer.
-*/
-//size_t GetFirmwareVersion(char *pFWVersion, size_t szBufSize);
-
-
-/* function GetEstbMac - gets the eSTB MAC address of the device.
- 
-        Usage: size_t GetEstbMac <char *pEstbMac> <size_t szBufSize>
- 
-            pEstbMac - pointer to a char buffer to store the output string.
-
-            szBufSize - the size of the character buffer in argument 1.
-
-            RETURN - number of characters copied to the output buffer.
-*/
-//size_t GetEstbMac(char *pEstbMac, size_t szBufSize);
-
 
 /* function GetRemoteInfo - gets the remote info of the device.
  
@@ -394,24 +289,5 @@ size_t GetTR181Url(TR181URL eURL, char *pUrlOut, size_t szBufSize);
             RETURN - number of characters copied to the output buffer.
 */
 size_t GetServURL(char *pServURL, size_t szBufSize);
-
-
-/* function GetFileContents - gets the contents of a file into a dynamically allocated buffer.
- 
-        Usage: size_t GetFileContents <char **pOut> <char *pFileName>
- 
-            pOut - the address of a char pointer (char **) where the dynamically allocated
-                    character buffer will be located.
-
-            pFileName - the name of the file to read.
-
-            RETURN - number of characters copied to the output buffer.
- 
-            Notes - GetFileContents uses malloc to allocate the the buffer where the string is stored.
-                    The caller must use free(*pOut) when done using the buffer to avoid memory leaks.
-*/
-//size_t GetFileContents(char **pOut, char *pFileName);
-
-
 
 #endif
