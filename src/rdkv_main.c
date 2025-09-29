@@ -773,6 +773,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
     }
 
     (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_INIT) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_INIT);
+	#ifdef LIBRDKCERTSELECTOR
     do {
 	       if ((0 == (strncmp(rfc_list.rfc_directcdn, "true", 4))) && (server_type == HTTP_SSR_DIRECT) && (state_red != 1)) {
                           SWLOG_INFO("Disabling MTLS credential for Direct CDN\n");
@@ -800,7 +801,6 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
                              }
                       }
 	       } else {
-	       #ifdef LIBRDKCERTSELECTOR	       
 		      SWLOG_INFO("Fetching MTLS credential for SSR/XCONF\n");
                       ret = getMtlscert(&sec, &thisCertSel);
                       SWLOG_INFO("%s, getMtlscert function ret value = %d\n", __FUNCTION__, ret);
@@ -817,8 +817,9 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
                       }else {
                             SWLOG_INFO("MTLS is enable\nMTLS creds for SSR fetched ret=%d\n", ret);
                       }
-	       #endif
                }
+		} while (rdkcertselector_setCurlStatus(thisCertSel, curl_ret_code, file_dwnl.url) == TRY_ANOTHER);
+        #endif
         do {
 	       if(direct_cdn_image_download != true) {
                   if ((1 == state_red)) {
@@ -862,9 +863,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
            }
            SWLOG_INFO("%s : After curl request the curl status = %d and http=%d and chunk download=%d\n", __FUNCTION__, curl_ret_code, *httpCode, chunk_dwnl);
         } while(chunk_dwnl && (CURL_LOW_BANDWIDTH == curl_ret_code || CURLTIMEOUT == curl_ret_code));
-#ifdef LIBRDKCERTSELECTOR
-    } while (rdkcertselector_setCurlStatus(thisCertSel, curl_ret_code, file_dwnl.url) == TRY_ANOTHER);
-#endif
+
     if((filePresentCheck(CURL_PROGRESS_FILE)) == 0) {
         SWLOG_INFO("%s : Curl Progress data...\n", __FUNCTION__);
         logFileData(CURL_PROGRESS_FILE);
