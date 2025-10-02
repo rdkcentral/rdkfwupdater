@@ -46,6 +46,8 @@
 #include "json_process.h"
 #include "device_api.h"
 #include "deviceutils.h"
+#include "mfr/mfrTypes.h"
+#include "mfrlib/platform_hardware.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -1980,6 +1982,20 @@ int main(int argc, char *argv[]) {
     *response.dlCertBundle = 0;
     *response.cloudPDRIVersion = 0;
     SWLOG_INFO("Starting c method rdkvfwupgrader\n");
+
+    /* MfrInterface API Test BEGIN */
+    mfrError_t ret = mfrERR_GENERAL;
+    ret = mfrIsSecureBootEnabled();
+    if (ret == mfrERR_NONE) {
+	SWLOG_INFO("MFRINTERFACE: The Current Device is a Secure Device");
+    } else if (ret == mfrERR_GENERAL) {
+	SWLOG_INFO("MFRINTERFACE: The Current Device is a Debug Device");
+    } else if (ret == mfrERR_OPERATION_NOT_SUPPORTED){
+        SWLOG_ERROR("MFRINTERFACE: The Current Device has a driver/otp error");
+    } else {
+        SWLOG_ERROR("MFRINTERFACE: Some other Value from mfrError enum");
+    }
+    /* MfrInterface API Test End */
     t2CountNotify("SYST_INFO_C_CDL", 1);
     
     snprintf(disableStatsUpdate, sizeof(disableStatsUpdate), "%s","no");
