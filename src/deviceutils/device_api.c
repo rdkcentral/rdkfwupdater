@@ -283,7 +283,6 @@ size_t GetAdditionalFwVerInfo( char *pAdditionalFwVerInfo, size_t szBufSize )
         {
             len += GetRemoteInfo( (pAdditionalFwVerInfo + len), (szBufSize - len) );
         }
-	    len = stripinvalidchar(pAdditionalFwVerInfo, len); // remove newline etc.
     }
     else
     {
