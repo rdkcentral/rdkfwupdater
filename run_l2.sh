@@ -26,7 +26,7 @@ mkdir -p $INSTALL_DIR
 
 #Build rdkfwupdater
 autoreconf -i
-./configure --prefix=${INSTALL_DIR} --enable-rfcapi=yes CFLAGS="-DRDK_LOGGER"
+./configure --prefix=${INSTALL_DIR} --enable-rdkcertselector=yes --enable-mountutils=yes --enable-rfcapi=yes CFLAGS="-DRDK_LOGGER"
 make && make install
 
 
