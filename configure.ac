@@ -42,6 +42,9 @@ TRACE_CFLAGS=" "
 TRACE_LIBS==" "
 IS_LIBRDKCERTSEL_ENABLED=" "
 
+# Check for force MTLS
+IS_MTLS_ENABLED=" "
+
 # Checks for header files.
 AC_CHECK_HEADERS([stdlib.h string.h unistd.h])
 AC_FUNC_MKTIME
@@ -136,6 +139,21 @@ AC_ARG_ENABLE([iarmevent],
         [echo "iarm is disabled"])
 AM_CONDITIONAL([IS_IARMEVENT_ENABLED], [test x$IS_IARMEVENT_ENABLED = xtrue])
 AC_SUBST(IARM_EVENT_FLAG)
+
+
+AC_ARG_ENABLE([mtls],
+        AS_HELP_STRING([--enable-mtls], [Enable mTLS support (default is no)]),
+        [
+          case "${enableval}" in
+           yes) IS_MTLS_ENABLED=true
+                MTLS_FLAG=" -DENABLE_MTLS ";;
+           no)  IS_MTLS_ENABLED=false ;;
+          *) AC_MSG_ERROR([bad value ${enableval} for --enable-mtls]) ;;
+          esac
+        ],
+        [echo "MTLS is disabled"])
+AM_CONDITIONAL([IS_MTLS_ENABLED], [test x$IS_MTLS_ENABLED = xtrue])
+AC_SUBST(MTLS_FLAG)
 
 PKG_CHECK_MODULES([cjson], [libcjson])
 PKG_CHECK_MODULES([curl], [libcurl])
