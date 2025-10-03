@@ -1286,6 +1286,10 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
     char buf[URL_MAX_LEN];
     bool skip = false;
     bool dbgServices = isDebugServicesEnabled(); //check debug services enabled
+    bool directCdn = false;
+    #ifndef GTEST_ENABLE
+      directCdn = isDirectCDNEnabled(); //Check direct cdn enable
+    #endif
 
     if( pServURL != NULL )
     {
@@ -1299,7 +1303,19 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
             }
             if( len == 0 || *pServURL == 0 )
             {
-                len = GetTR181Url( eRecovery, pServURL, szBufSize );
+		*buf = 0;
+		GetTR181Url( eRecovery, buf, sizeof(buf) );
+		if( *buf != 0 )
+		{
+			if (directCdn == false)
+			{
+				len = snprintf( pServURL, szBufSize, "%s/xconf/swu/stb", buf );    // default value
+			}
+			else
+			{
+				len = snprintf( pServURL, szBufSize, "%s/xconf/firmware/stb/", buf );    // default value for direct cdn
+			}
+		}
             }
         }
         else
@@ -1325,11 +1341,21 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
                 }
                 if( *pServURL == 0 )    // still no URL or eBuildType == ePROD
                 {
+	            #ifndef GTEST_ENABLE
+		     directCdn = isDirectCDNEnabled(); //Check direct cdn rfc is enable
+		    #endif
                     *buf = 0;
                     GetTR181Url( eBootstrap, buf, sizeof(buf) );
                     if( *buf != 0 )
                     {
-                        len = snprintf( pServURL, szBufSize, "%s/xconf/swu/stb", buf );    // default value
+			if (directCdn == false)
+			{
+				len = snprintf( pServURL, szBufSize, "%s/xconf/swu/stb", buf );    // default value
+			}
+			else
+			{
+				len = snprintf( pServURL, szBufSize, "%s/xconf/firmware/stb/", buf );    // default value for direct cdn
+			}
                     }
                     else
                     {
@@ -1340,12 +1366,20 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
                         else
                         {
                             GetTR181Url( eXconf, buf, sizeof(buf) );
-                            len = snprintf( pServURL, szBufSize, "https://%s/xconf/swu/stb/", buf );
+			    if (directCdn == false)
+			    {
+                                len = snprintf( pServURL, szBufSize, "https://%s/xconf/swu/stb/", buf );
+			    }
+			    else
+			    {
+				len = snprintf( pServURL, szBufSize, "https://%s/xconf/firmware/stb/", buf ); //direct cdn
+			    }
                         }
                     }
                 }
             }
         }
+	SWLOG_INFO( "GetServURL: pServURL = %s\n", pServURL );
     }
     else
     {

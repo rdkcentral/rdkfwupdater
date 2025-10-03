@@ -52,7 +52,6 @@
 #include <string.h>
 #include <strings.h>
 
-#define JSON_STR_LEN        1000
 
 #define DOWNLOADED_PERIPHERAL_VERSION "/tmp/downloaded_peripheral_versions.txt"
 #define MAX_VER_LEN             10
@@ -85,6 +84,7 @@ static pthread_mutex_t mutuex_dwnl_state = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t app_mode_status = PTHREAD_MUTEX_INITIALIZER;
 static int app_mode = 1; // 1: fore ground and 0: background
 int force_exit = 0; //This use when rdkvfwupgrader rcv appmode background and thottle speed is set to zero.
+static int direct_cdn_cnt_retry = 0;
 
 /* Description: Get trigger type info.
  * @param: NA
@@ -437,6 +437,7 @@ int initialize(void) {
     *rfc_list.rfc_mtls = 0;
     *rfc_list.rfc_throttle = 0;
     *rfc_list.rfc_topspeed = 0;
+    *rfc_list.rfc_directcdn = 0;
 
     ret = getDeviceProperties(&device_info);
     if(-1 == ret) {
@@ -524,6 +525,11 @@ int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const
     char oAuthHeader[BIG_BUF_LEN]  = "Authorization: OAuth realm=\"\", ";
     int curl_ret_code = -1;
     char headerInfoFile[136];
+
+    if ((0 == (strncmp(rfc_list.rfc_directcdn, "true", 4)))) {
+        SWLOG_INFO("%s : Codebig firmware download is not supported for DirectCDN\n", __FUNCTION__);
+        return curl_ret_code;
+    }
 
     if (artifactLocationUrl == NULL || localDownloadLocation == NULL || httpCode == NULL) {
         SWLOG_ERROR("%s: Parameter is NULL\n", __FUNCTION__);
@@ -674,7 +680,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
     int curl_ret_code = -1;
     FileDwnl_t file_dwnl;
     int chunk_dwnl = 0;
-    int mtls_enable = 1; //Setting mtls by default enable
+	int mtls_enable = 1; //Setting mtls by default enable
     char headerInfoFile[136] = {0};
 
     if (artifactLocationUrl == NULL || localDownloadLocation == NULL || httpCode == NULL) {
@@ -765,35 +771,45 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
     if ((strcmp(disableStatsUpdate, "yes")) && (server_type == HTTP_SSR_DIRECT)) {
         chunk_dwnl = isIncremetalCDLEnable(file_dwnl.pathname);
     }
-#ifndef LIBRDKCERTSELECTOR	
-    SWLOG_INFO("Fetching MTLS credential for SSR/XCONF\n");
-    ret = getMtlscert(&sec);
-    if (-1 == ret) {
-        SWLOG_ERROR("%s : getMtlscert() Featching MTLS fail. Going For NON MTLS:%d\n", __FUNCTION__, ret);
-        mtls_enable = -1;//If certificate or key featching fail try with non mtls
-    }else {
-        SWLOG_INFO("MTLS is enable\nMTLS creds for SSR fetched ret=%d\n", ret);
-        t2CountNotify("SYS_INFO_MTLS_enable", 1);
-    }
+#ifndef LIBRDKCERTSELECTOR
+	if ((0 == (strncmp(rfc_list.rfc_directcdn, "true", 4))) && (server_type == HTTP_SSR_DIRECT) && (state_red != 1)) {
+        SWLOG_INFO("Disabling MTLS credential for Direct CDN\n");
+        mtls_enable = -1;
+    } else { 
+        SWLOG_INFO("Fetching MTLS credential for SSR/XCONF\n");
+        ret = getMtlscert(&sec);
+        if (-1 == ret) {
+             SWLOG_ERROR("%s : getMtlscert() Featching MTLS fail. Going For NON MTLS:%d\n", __FUNCTION__, ret);
+             mtls_enable = -1;//If certificate or key featching fail try with non mtls
+        }else {
+             SWLOG_INFO("MTLS is enable\nMTLS creds for SSR fetched ret=%d\n", ret);
+             t2CountNotify("SYS_INFO_MTLS_enable", 1);
+        }
+	}
 #endif	
     (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_INIT) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_INIT);
 #ifdef LIBRDKCERTSELECTOR
     do {
-        SWLOG_INFO("Fetching MTLS credential for SSR/XCONF\n");
-        ret = getMtlscert(&sec, &thisCertSel);
-        SWLOG_INFO("%s, getMtlscert function ret value = %d\n", __FUNCTION__, ret);
+		if ((0 == (strncmp(rfc_list.rfc_directcdn, "true", 4))) && (server_type == HTTP_SSR_DIRECT) && (state_red != 1)) {
+             SWLOG_INFO("Disabling MTLS credential for Direct CDN\n");
+             mtls_enable = -1;
+        } else {
+            SWLOG_INFO("Fetching MTLS credential for SSR/XCONF\n");
+            ret = getMtlscert(&sec, &thisCertSel);
+            SWLOG_INFO("%s, getMtlscert function ret value = %d\n", __FUNCTION__, ret);
 
-        if (ret == MTLS_CERT_FETCH_FAILURE) {
+           if (ret == MTLS_CERT_FETCH_FAILURE) {
             SWLOG_ERROR("%s : ret=%d\n", __FUNCTION__, ret);
             SWLOG_ERROR("%s : All MTLS certs are failed. Falling back to state red.\n", __FUNCTION__);
             checkAndEnterStateRed(CURL_MTLS_LOCAL_CERTPROBLEM, disableStatsUpdate);
             return curl_ret_code;
-        } else if (ret == STATE_RED_CERT_FETCH_FAILURE) {
+           } else if (ret == STATE_RED_CERT_FETCH_FAILURE) {
             SWLOG_ERROR("%s : State red cert failed.\n", __FUNCTION__);
             return curl_ret_code;
-        } else {
+           } else {
             SWLOG_INFO("MTLS is enabled\nMTLS creds for SSR fetched ret=%d\n", ret);
             t2CountNotify("SYS_INFO_MTLS_enable", 1);
+		}
 	}
 #endif
         do {
@@ -1052,13 +1068,13 @@ void updateUpgradeFlag(int action)
 
 /* Description: Use for requesting upgrade pci/pdri
  * @param: upgrade_type : pci/pdri
- * @param: server_type : Type of the server SSR/codebig.
+ * @param: server_type : Type of the server SSR/codebig/Xconf.
  * @param: artifactLocationUrl : server url
  * @param: dwlloc : Download data 
  * @param: pHttp_code : int pointer HTTP output code 
  * @return int:  Success/Failure
  * */
-int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocationUrl, const void* dwlloc, char *pPostFields, int *pHttp_code)
+int upgradeRequest(int upgrade_type, int server_type, bool directCdn, const char* artifactLocationUrl, const void* dwlloc, char *pPostFields, int *pHttp_code)
 {
     const char* dwlpath_filename = NULL;
     int ret_curl_code = -1;
@@ -1204,7 +1220,8 @@ int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocati
                 }
             }
             if (*pHttp_code == HTTP_PAGE_NOT_FOUND) {
-                SWLOG_INFO("%s : Received HTTPS 404 Response from Xconf Server. Retry logic not needed\n", __FUNCTION__);
+		SWLOG_INFO("%s : Received 404 response from %s, Retry logic not needed\n", __FUNCTION__,
+                                    (server_type == HTTP_SSR_DIRECT) ? "Direct Image upgrade" : "Xconf Server");
                 SWLOG_INFO("%s : Creating /tmp/.xconfssrdownloadurl with 404 response from Xconf\n", __FUNCTION__);
                 fp = fopen("/tmp/.xconfssrdownloadurl", "w");
                 if (fp != NULL) {
@@ -1215,22 +1232,37 @@ int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocati
             }
             if (ret_curl_code != CURL_SUCCESS ||
                 (*pHttp_code != HTTP_SUCCESS && *pHttp_code != HTTP_CHUNK_SUCCESS && *pHttp_code != HTTP_PAGE_NOT_FOUND)) {
-                ret_curl_code = retryDownload(server_type, artifactLocationUrl, dwlloc, pPostFields, RETRY_COUNT, 60, pHttp_code);
-                if (ret_curl_code == CURL_CONNECTIVITY_ISSUE || *pHttp_code == 0) {
-                    if (server_type == HTTP_SSR_DIRECT) {
-                        SWLOG_ERROR("%s : Direct Image upgrade Failed: http_code:%d, attempting codebig\n", __FUNCTION__, *pHttp_code);
-                    }else {
-                        SWLOG_ERROR("%s : sendXCONFRequest Direct Image upgrade Failed: http_code:%d, attempting codebig\n", __FUNCTION__, *pHttp_code);
-                    }
-                    if( server_type == HTTP_SSR_DIRECT )
-                    {
-                        server_type = HTTP_SSR_CODEBIG;
-                    }
-                    else
-                    {
-                        server_type = HTTP_XCONF_CODEBIG;
-                    }
-                    ret_curl_code = fallBack(server_type, artifactLocationUrl, dwlloc, pPostFields, pHttp_code);
+		/* In case of Direct cdn every time need to get url from xconf with new token. Thats why return from here
+		 * After discussion now logic change to if download failed due to url expire error in this case only go to xconf again */
+		if ((directCdn == true) && (server_type == HTTP_SSR_DIRECT) && (*pHttp_code == 403)) {
+                    direct_cdn_cnt_retry++;
+		    if (direct_cdn_cnt_retry < 3) {
+                        return ret_curl_code;
+		    }else {
+			direct_cdn_cnt_retry = 0;
+		    }
+		}else {
+                   ret_curl_code = retryDownload(server_type, artifactLocationUrl, dwlloc, pPostFields, RETRY_COUNT, 60, pHttp_code);
+                   if (ret_curl_code == CURL_CONNECTIVITY_ISSUE || *pHttp_code == 0) {
+                       if (server_type == HTTP_SSR_DIRECT) {
+			   if (directCdn == true) {
+			       SWLOG_ERROR("%s : Direct Image upgrade Failed: http_code:%d, code big is not supported\n", __FUNCTION__, *pHttp_code);
+			   } else {
+                               SWLOG_ERROR("%s : Direct Image upgrade Failed: http_code:%d, attempting codebig\n", __FUNCTION__, *pHttp_code);
+			   }
+                       }else {  
+                            SWLOG_ERROR("%s : sendXCONFRequest Direct Image upgrade Failed: http_code:%d, attempting codebig\n", __FUNCTION__, *pHttp_code);
+                       }
+                       if( server_type == HTTP_SSR_DIRECT && directCdn != true )
+                       {
+                           server_type = HTTP_SSR_CODEBIG;
+                       }
+                       else
+                       {
+                           server_type = HTTP_XCONF_CODEBIG;
+                       }
+                       ret_curl_code = fallBack(server_type, artifactLocationUrl, dwlloc, pPostFields, pHttp_code);
+		   }
                 }
             }
         }
@@ -1383,7 +1415,7 @@ int getOPTOUTValue(const char *file_name)
     return status;
 }
 
-int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares )
+int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares, bool directCdn )
 {
     FILE *fp;
     char *pPeriphFW;
@@ -1512,7 +1544,7 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
                     }
 
                     SWLOG_INFO( "%s: Requesting upgrade to %s from %s\n", __FUNCTION__, cDLStoreLoc, cSourceURL );
-                    iCurlCode = upgradeRequest( PERIPHERAL_UPGRADE, HTTP_SSR_DIRECT, cSourceURL, cDLStoreLoc, NULL, &http_code );
+                    iCurlCode = upgradeRequest( PERIPHERAL_UPGRADE, HTTP_SSR_DIRECT, directCdn, cSourceURL, cDLStoreLoc, NULL, &http_code );
                     if( iCurlCode == 0 && http_code == 200 )
                     {
                         if( szRunningLen )
@@ -1565,11 +1597,12 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
 }
 
 
-int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
+int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, bool directCdn, int upgrade_type)
 {
-    int http_code;
+    int http_code = 0;
     int upgrade_status = -1;
     bool valid_pci_status = false;
+    bool cdn_no_retry = false;
     int pci_curl_code = -1;
     int pdri_curl_code = -1;
     int peripheral_curl_code = -1;
@@ -1584,84 +1617,113 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
         SWLOG_ERROR("%s : Parameter is NULL\n", __FUNCTION__);
         return upgrade_status;
     }
-    if (true == isUpgradeInProgress()) {
-        SWLOG_ERROR("Exiting from DEVICE INITIATED HTTP CDL\nAnother upgrade is in progress\n");
+	if (true == isUpgradeInProgress()) {
+        SWLOG_INFO("Exiting from DEVICE INITIATED HTTP CDL\nAnother upgrade is in progress\n");
         if (!(strncmp(device_info.maint_status, "true", 4))) {
             eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR);
         }
         uninitialize(INITIAL_VALIDATION_SUCCESS);
         exit(1);
     }
-    if ((strstr(pResponse->cloudFWVersion, model)) == NULL) {
-        SWLOG_INFO("cloudFWVersion is empty. Do Nothing\n");
-        eventManager(FW_STATE_EVENT, FW_STATE_FAILED);
-    }
-    snprintf(immed_reboot_flag, sizeof(immed_reboot_flag), "%s", pResponse->cloudImmediateRebootFlag);
-    delay_dwnl = atoi(pResponse->cloudDelayDownload);
-    SWLOG_INFO("%s: reboot_flag =%s and delay_dwnl=%d\n", __FUNCTION__, immed_reboot_flag, delay_dwnl);
-    valid_pci_status = checkForValidPCIUpgrade(trigger_type, cur_img_detail.cur_img_name, pResponse->cloudFWVersion, pResponse->cloudFWFile);//TODO: Trigger type should recived from script as a argument
-    if (valid_pci_status == true) {
-        SWLOG_INFO("checkForValidPCIUpgrade return true\n");
-        if (0 == strncmp(device_info.maint_status, "true", 4)) {
-            if ((strncmp(pResponse->cloudImmediateRebootFlag, "true", 4)) == 0) {
-                isCriticalUpdate = true;
-            }
-            if (0 == strncmp(device_info.sw_optout, "true", 4)) {
-                optout = getOPTOUTValue("/opt/maintenance_mgr_record.conf");
-                if (optout == 1 && isCriticalUpdate != true) {
-                    SWLOG_INFO("OptOut: IGNORE UPDATE is set.Exiting !!\n");
-                    eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ABORTED);
-                    uninitialize(INITIAL_VALIDATION_SUCCESS);
-                    exit(1);//TODO
-                }else if((0 == optout) && (trigger_type != 4)) {
-                    eventManager(FW_STATE_EVENT, FW_STATE_ONHOLD_FOR_OPTOUT);
-                    SWLOG_INFO("OptOut: Event sent for on hold for OptOut\n");
-                    eventManager("MaintenanceMGR" ,MAINT_FWDOWNLOAD_COMPLETE);
-                    SWLOG_INFO("OptOut: Consent Required from User\n");
-                    t2CountNotify("SYST_INFO_NoConsentFlash", 1);
-                    uninitialize(INITIAL_VALIDATION_SUCCESS);
-                    exit(1);//TODO
-                }
-	        }
-    	}
-        snprintf(imageHTTPURL, sizeof(imageHTTPURL), "%s/%s", pResponse->cloudFWLocation, pResponse->cloudFWFile);
-        SWLOG_INFO("imageHTTPURL=%s\n", imageHTTPURL);
-        fp = fopen(DWNL_URL_VALUE, "w");
-        if (fp != NULL) {
-            fprintf(fp, "%s\n", imageHTTPURL);
-            fclose(fp);
+    if (upgrade_type == PCI_UPGRADE) {
+        if ((strstr(pResponse->cloudFWVersion, model)) == NULL) {
+             SWLOG_INFO("cloudFWVersion is empty. Do Nothing\n");
+             eventManager(FW_STATE_EVENT, FW_STATE_FAILED);
         }
-        snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s", device_info.difw_path, pResponse->cloudFWFile);
+        snprintf(immed_reboot_flag, sizeof(immed_reboot_flag), "%s", pResponse->cloudImmediateRebootFlag);
+        delay_dwnl = atoi(pResponse->cloudDelayDownload);
+        SWLOG_INFO("%s: reboot_flag =%s and delay_dwnl=%d\n", __FUNCTION__, immed_reboot_flag, delay_dwnl);
+        valid_pci_status = checkForValidPCIUpgrade(trigger_type, cur_img_detail.cur_img_name, pResponse->cloudFWVersion, pResponse->cloudFWFile);
+        if (valid_pci_status == true) {
+             SWLOG_INFO("checkForValidPCIUpgrade return true\n");
+             if (0 == strncmp(device_info.maint_status, "true", 4)) {
+                 if ((strncmp(pResponse->cloudImmediateRebootFlag, "true", 4)) == 0) {
+                      isCriticalUpdate = true;
+                 }
+                 if (0 == strncmp(device_info.sw_optout, "true", 4)) {
+                      optout = getOPTOUTValue("/opt/maintenance_mgr_record.conf");
+                      if (optout == 1 && isCriticalUpdate != true) {
+                          SWLOG_INFO("OptOut: IGNORE UPDATE is set.Exiting !!\n");
+                          eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ABORTED);
+                          uninitialize(INITIAL_VALIDATION_SUCCESS);
+                          exit(1);//TODO
+                      }else if((0 == optout) && (trigger_type != 4)) {
+                          eventManager(FW_STATE_EVENT, FW_STATE_ONHOLD_FOR_OPTOUT);
+                          SWLOG_INFO("OptOut: Event sent for on hold for OptOut\n");
+                          eventManager("MaintenanceMGR" ,MAINT_FWDOWNLOAD_COMPLETE);
+                          SWLOG_INFO("OptOut: Consent Required from User\n");
+                          t2CountNotify("SYST_INFO_NoConsentFlash", 1);
+                          uninitialize(INITIAL_VALIDATION_SUCCESS);
+                          exit(1);//TODO
+                     }
+	         }
+    	     }
+	     if (directCdn == false){
+                snprintf(imageHTTPURL, sizeof(imageHTTPURL), "%s/%s", pResponse->cloudFWLocation, pResponse->cloudFWFile);
+            }else {
+                snprintf(imageHTTPURL, sizeof(imageHTTPURL), "%s", pResponse->firmwareUrl); // For direct cdn pci
+	    }
+            SWLOG_INFO("imageHTTPURL=%s\n", imageHTTPURL);
+            fp = fopen(DWNL_URL_VALUE, "w");
+            if (fp != NULL) {
+                fprintf(fp, "%s\n", imageHTTPURL);
+                fclose(fp);
+            }
+            snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s", device_info.difw_path, pResponse->cloudFWFile);
 	    SWLOG_INFO("DWNL path with img name=%s\n", dwlpath_filename);
-        eraseFolderExcePramaFile(device_info.difw_path, pResponse->cloudFWFile, device_info.model);
-        pci_curl_code = upgradeRequest(PCI_UPGRADE, HTTP_SSR_DIRECT, imageHTTPURL, dwlpath_filename, NULL, &http_code);
-    } else {
-        SWLOG_INFO("checkForValidPCIUpgrade return false\n");
-        pci_curl_code = 0;
-    }
-    if ((strstr(pResponse->cloudPDRIVersion, model)) && true == (isPDRIEnable())) {
-        if ((0 == strncmp(pResponse->cloudImmediateRebootFlag, "true", 4)) && (true == valid_pci_status)) {
-            SWLOG_INFO("cloudImmediateRebootFlag is true, PCI Upgrade is required. Skipping PDRI upgrade check ... \n");
-            return 0;
+            eraseFolderExcePramaFile(device_info.difw_path, pResponse->cloudFWFile, device_info.model);
+            pci_curl_code = upgradeRequest(PCI_UPGRADE, HTTP_SSR_DIRECT, directCdn, imageHTTPURL, dwlpath_filename, NULL, &http_code);
         } else {
-            SWLOG_INFO("cloudImmediateRebootFlag is %s. Starting PDRI upgrade check ... \n", pResponse->cloudImmediateRebootFlag);
-            if ((strstr(pResponse->cloudPDRIVersion, ".bin")) == NULL) {
-                optout = strnlen( pResponse->cloudPDRIVersion, sizeof(pResponse->cloudPDRIVersion) );   // reuse variable
-                snprintf( pResponse->cloudPDRIVersion + optout, sizeof(pResponse->cloudPDRIVersion) - optout, ".bin" ); // prevent buffer overflow
-                SWLOG_INFO("Added .bin in pdri image=%s\n", pResponse->cloudPDRIVersion);
-            }
-            snprintf(imageHTTPURL, sizeof(imageHTTPURL), "%s/%s", pResponse->cloudFWLocation, pResponse->cloudPDRIVersion);
-            SWLOG_INFO("pdri imageHTTPURL=%s\n", imageHTTPURL);
-            snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s", device_info.difw_path, pResponse->cloudPDRIVersion);
-            SWLOG_INFO("pdri DWNL path with img name=%s\n", dwlpath_filename);
-            if (true == valid_pci_status && pci_curl_code == 0) {
-                SWLOG_INFO("Adding a sleep of 30secs to avoid the PCI PDRI race condition during flashing\n");
-                sleep(30);
-            }
-            snprintf(disableStatsUpdate, sizeof(disableStatsUpdate), "%s","yes");
-            pdri_curl_code = upgradeRequest(PDRI_UPGRADE, HTTP_SSR_DIRECT, imageHTTPURL, dwlpath_filename, NULL, &http_code);
-            snprintf(disableStatsUpdate, sizeof(disableStatsUpdate), "%s","no");
+            SWLOG_INFO("checkForValidPCIUpgrade return false\n");
+            pci_curl_code = 0;
+	    cdn_no_retry = true;
+        }
+	/*If direct cdn false in this case continue for pdri upgrade. If direct cdn true case this function will call again with
+         * upgrade_type PDRI_UPGRADE */
+        if (directCdn == false) {
+            upgrade_type = PDRI_UPGRADE;
+        } else {
+	    if ((pci_curl_code == 0) && (http_code == 200 || http_code == 206)) {
+                upgrade_status = pci_curl_code;
+	    }else if (cdn_no_retry == true) {
+                upgrade_status = 0; // Valid check failed, retry not required
+	    }else if (http_code == 403) {
+                upgrade_status = DIRECT_CDN_RETRY_ERR; // Token expiry, retry required
+	    }else {
+                upgrade_status = -1; //Error. So retry should happen
+	    }
+        }
+    }
+    if (upgrade_type == PDRI_UPGRADE) {
+        if ((strstr(pResponse->cloudPDRIVersion, model)) && true == (isPDRIEnable())) {
+            if ((0 == strncmp(pResponse->cloudImmediateRebootFlag, "true", 4)) && (true == valid_pci_status)) {
+                 SWLOG_INFO("cloudImmediateRebootFlag is true, PCI Upgrade is required. Skipping PDRI upgrade check ... \n");
+                 return 0;
+            } else {
+                 SWLOG_INFO("cloudImmediateRebootFlag is %s. Starting PDRI upgrade check ... \n", pResponse->cloudImmediateRebootFlag);
+                 if ((strstr(pResponse->cloudPDRIVersion, ".bin")) == NULL) {
+                      optout = strnlen( pResponse->cloudPDRIVersion, sizeof(pResponse->cloudPDRIVersion) );   // reuse variable
+                      snprintf( pResponse->cloudPDRIVersion + optout, sizeof(pResponse->cloudPDRIVersion) - optout, ".bin" ); // prevent buffer overflow
+                      SWLOG_INFO("Added .bin in pdri image=%s\n", pResponse->cloudPDRIVersion);
+                 }
+		 if (directCdn == false) {
+                    snprintf(imageHTTPURL, sizeof(imageHTTPURL), "%s/%s", pResponse->cloudFWLocation, pResponse->cloudPDRIVersion);
+	        }else {
+                    snprintf(imageHTTPURL, sizeof(imageHTTPURL), "%s", pResponse->pdriUrl); // For direct cdn pdri
+	        }
+                SWLOG_INFO("pdri imageHTTPURL=%s\n", imageHTTPURL);
+                snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s", device_info.difw_path, pResponse->cloudPDRIVersion);
+                SWLOG_INFO("pdri DWNL path with img name=%s\n", dwlpath_filename);
+                if (true == valid_pci_status && pci_curl_code == 0) {
+                    SWLOG_INFO("Adding a sleep of 30secs to avoid the PCI PDRI race condition during flashing\n");
+                    sleep(30);
+                }
+                snprintf(disableStatsUpdate, sizeof(disableStatsUpdate), "%s","yes");
+                pdri_curl_code = upgradeRequest(PDRI_UPGRADE, HTTP_SSR_DIRECT, directCdn, imageHTTPURL, dwlpath_filename, NULL, &http_code);
+                snprintf(disableStatsUpdate, sizeof(disableStatsUpdate), "%s","no");
             if (pdri_curl_code == 100) {
+		if (directCdn == true)
+                       cdn_no_retry = true;
                 pdri_curl_code = 0;
             }
         }
@@ -1669,16 +1731,42 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
         SWLOG_INFO("cloudPDRIfile is empty. Do Nothing\n");
         pdri_curl_code = 0;
     }
-    if ((0 == (filePresentCheck("/etc/os-release"))) && (*pResponse->peripheralFirmwares != 0)) {
-        strncat(pResponse->peripheralFirmwares, ",", sizeof(pResponse->peripheralFirmwares) - 1);
-        pResponse->peripheralFirmwares[sizeof(pResponse->peripheralFirmwares) - 1] = '\0';
-	SWLOG_INFO("Triggering Peripheral Download cloudFWLocation: %s\nperipheralFirmwares: %s\n", pResponse->cloudFWLocation, pResponse->peripheralFirmwares);
-        peripheral_curl_code = peripheral_firmware_dndl( pResponse->cloudFWLocation, pResponse->peripheralFirmwares );
-        SWLOG_INFO("After Trigger Peripheral Download status=%d\n", peripheral_curl_code);
-    } else {
-        SWLOG_INFO("Skipping Peripheral Download\n");
+    if (directCdn == true) {
+	    if ((pdri_curl_code == 0) && (http_code == 200 || http_code == 206)) {
+                upgrade_status = pdri_curl_code;
+	    }else if (cdn_no_retry == true) {
+	        upgrade_status = 0; // pdri upgrade is not required
+	    }else if (http_code == 403) {
+	        upgrade_status = DIRECT_CDN_RETRY_ERR; // Token Expiry, retry required
+	    }else {
+	        upgrade_status = -1; //Error pdri upgrade So retry should happen
+	    }
+        } else {
+          upgrade_type = PERIPHERAL_UPGRADE;
+        }
     }
-    if ((pci_curl_code == 0) && (pdri_curl_code == 0)) {
+    if (upgrade_type == PERIPHERAL_UPGRADE) {
+        if ((0 == (filePresentCheck("/etc/os-release"))) && (*pResponse->peripheralFirmwares != 0)) {
+             strncat(pResponse->peripheralFirmwares, ",", sizeof(pResponse->peripheralFirmwares) - 1);
+             pResponse->peripheralFirmwares[sizeof(pResponse->peripheralFirmwares) - 1] = '\0';
+	     if (directCdn == false) {
+	          SWLOG_INFO("Triggering Peripheral Download cloudFWLocation: %s\nperipheralFirmwares: %s\n", pResponse->cloudFWLocation, pResponse->peripheralFirmwares);
+                  peripheral_curl_code = peripheral_firmware_dndl( pResponse->cloudFWLocation, pResponse->peripheralFirmwares, false );
+                  SWLOG_INFO("After Trigger Peripheral Download status=%d\n", peripheral_curl_code);
+	     } else {
+		strncat(pResponse->remCtrlUrl, ",", sizeof(pResponse->remCtrlUrl) - 1);
+		pResponse->remCtrlUrl[sizeof(pResponse->remCtrlUrl) - 1] = '\0';
+		SWLOG_INFO("Triggering Peripheral Download directCDN cloudFWLocation:%s.\nperipheralFirmwares:%s.\n", pResponse->remCtrlUrl, pResponse->peripheralFirmwares);
+                peripheral_curl_code = peripheral_firmware_dndl( pResponse->remCtrlUrl, pResponse->peripheralFirmwares, true );
+                SWLOG_INFO("After Trigger Peripheral directCDN Download status=%d\n", peripheral_curl_code);
+	    }
+        } else {
+            SWLOG_INFO("Skipping Peripheral Download\n");
+        }
+    }
+    /* If the direct cdn is true upgrade_status varibale is updated based on pci/pdri download status. And 
+     * this function will call each time for pci and pdri.*/
+    if ((directCdn == false) && (pci_curl_code == 0) && (pdri_curl_code == 0)) {
         upgrade_status = 0;
     }
     return upgrade_status;
@@ -1764,7 +1852,7 @@ static int MakeXconfComms( XCONFRES *pResponse, int server_type, int *pHttp_code
                 if( len )
                 {
                     len = createJsonString( pJSONStr, JSON_STR_LEN );
-                    ret = upgradeRequest( XCONF_UPGRADE, server_type, pServURL, &DwnLoc, pJSONStr, pHttp_code );
+                    ret = upgradeRequest( XCONF_UPGRADE, server_type, false, pServURL, &DwnLoc, pJSONStr, pHttp_code );
                     if( ret == 0 && *pHttp_code == 200 && DwnLoc.pvOut != NULL )
                     {
                         SWLOG_INFO( "MakeXconfComms: Calling getXconfRespData with input = %s\n", (char *)DwnLoc.pvOut );
@@ -1979,6 +2067,10 @@ int main(int argc, char *argv[]) {
     *response.peripheralFirmwares = 0;
     *response.dlCertBundle = 0;
     *response.cloudPDRIVersion = 0;
+    *response.firmwareUrl = 0;
+    *response.remCtrlUrl = 0;
+    *response.pdriUrl = 0;
+
     SWLOG_INFO("Starting c method rdkvfwupgrader\n");
     t2CountNotify("SYST_INFO_C_CDL", 1);
     
@@ -2009,20 +2101,8 @@ int main(int argc, char *argv[]) {
 
 
     trigger_type = atoi(argv[2]);
-    if (trigger_type == 1) {
-        SWLOG_INFO("Image Upgrade During Bootup ..!\n");
-    }else if (trigger_type == 2) {
-        SWLOG_INFO("Scheduled Image Upgrade using cron ..!\n");
-        t2CountNotify("SYST_INFO_SWUpgrdChck", 1);
-    }else if(trigger_type == 3){
-        SWLOG_INFO("TR-69/SNMP triggered Image Upgrade ..!\n");
-    }else if(trigger_type == 4){
-        SWLOG_INFO("App triggered Image Upgrade ..!\n");
-    }else if(trigger_type == 5){
-        SWLOG_INFO("Delayed Trigger Image Upgrade ..!\n");
-    }else if(trigger_type == 6){
-        SWLOG_INFO("State Red Image Upgrade ..!\n");
-    }else{
+    ret = printTriggerType(trigger_type);
+    if (ret == -1) {
         SWLOG_INFO("Invalid trigger type Image Upgrade ..!\n");
         if (0 == (strncmp(device_info.maint_status, "true", 4))) {
 	    eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR);
@@ -2039,11 +2119,13 @@ int main(int argc, char *argv[]) {
           eventManager(RED_STATE_EVENT, RED_RECOVERY_STARTED);
         }
 	eventManager(FW_STATE_EVENT, FW_STATE_REQUESTING);
+	/* Direct cdn rfc false */
+	if (0 == (strncmp(rfc_list.rfc_directcdn, "false", 5))) {
         ret_curl_code = MakeXconfComms( &response, server_type, &http_code );
 
         SWLOG_INFO("XCONF Download completed with curl code:%d\n", ret_curl_code);
-        if( ret_curl_code == 0 && http_code == 200)
-        {
+          if( ret_curl_code == 0 && http_code == 200)
+          {
             SWLOG_INFO("XCONF Download Success\n");
             json_res = processJsonResponse(&response, cur_img_detail.cur_img_name, device_info.model, device_info.maint_status);
             SWLOG_INFO("processJsonResponse returned %d\n", json_res);
@@ -2051,7 +2133,7 @@ int main(int argc, char *argv[]) {
                 proto = 0;
             }
             if ((proto == 1) && (json_res == 0)) {
-                ret_curl_code = checkTriggerUpgrade(&response, device_info.model);
+                ret_curl_code = checkTriggerUpgrade(&response, device_info.model, false, PCI_UPGRADE);
 
                 char *msg = printCurlError(ret_curl_code);
                 if (msg != NULL) {
@@ -2059,14 +2141,17 @@ int main(int argc, char *argv[]) {
                     t2CountNotify("CurlRet_split", ret_curl_code);
                 }
                 SWLOG_INFO("rdkvfwupgrader daemon exit curl code: %d\n", ret_curl_code);
-            } else if (proto == 0) {    // tftp = 0
+            } else if (proto == 0) {
                SWLOG_INFO("tftp protocol support not present.\n");
+            } else {
+               SWLOG_ERROR("processJsonResponse return fail:%d\n", json_res);
             }
-            else {
-               SWLOG_INFO("Invalid JSON Response.\n");
-            }
-	}else {
+	  } else {
             SWLOG_INFO("XCONF Download Fail\n");
+	  }
+	} else {
+	    /* Direct cdn rfc true */
+	    ret_curl_code = DirectCDNDownload( &response, cur_img_detail.cur_img_name, &device_info, server_type, &http_code );
 	}
     }
     if (init_validate_status == INITIAL_VALIDATION_DWNL_INPROGRESS){

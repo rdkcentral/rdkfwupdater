@@ -22,6 +22,7 @@
 #include "download_status_helper.h"
 #include "device_status_helper.h"
 #include "iarmInterface/iarmInterface.h"
+#include "rfcInterface/rfcinterface.h"
 #ifndef GTEST_ENABLE
 #include "rdk_fwdl_utils.h"
 #include "system_utils.h"
@@ -29,11 +30,22 @@
 #include "json_parse.h"
 #include "deviceutils.h"
 
+extern Rfc_t rfc_list;
 
 int getXconfRespData( XCONFRES *pResponse, char *pJsonStr )
 {
     JSON *pJson = NULL;
     int ret = -1;
+    int peri_ret = -1;
+    char peripheral_product[64] = { 0 };
+    char peripheral_product_url[100] = { 0 };
+
+    peri_ret = getPeripheralProduct(peripheral_product, sizeof(peripheral_product));
+    if (peri_ret != -1) {
+        snprintf(peripheral_product_url, sizeof(peripheral_product_url), "%s_URL", peripheral_product);
+    } else {
+        SWLOG_INFO("getXconfRespData:PeripheralProduct is NULL\n");
+    }
 
     if( pResponse != NULL )
     {
@@ -47,13 +59,23 @@ int getXconfRespData( XCONFRES *pResponse, char *pJsonStr )
             GetJsonVal( pJson, "rebootImmediately", pResponse->cloudImmediateRebootFlag, sizeof(pResponse->cloudImmediateRebootFlag) );
             GetJsonVal( pJson, "additionalFwVerInfo", pResponse->cloudPDRIVersion, sizeof(pResponse->cloudPDRIVersion) );
             GetJsonVal( pJson, "delayDownload", pResponse->cloudDelayDownload, sizeof(pResponse->cloudDelayDownload) );
-            GetJsonValContaining( pJson, "remCtrl", pResponse->peripheralFirmwares, sizeof(pResponse->peripheralFirmwares) );
             t2ValNotify("SYST_INFO_PRXR_Ver_split", pResponse->peripheralFirmwares);
             GetJsonVal( pJson, "dlCertBundle", pResponse->dlCertBundle, sizeof(pResponse->dlCertBundle) );
             strncmp(pResponse->dlCertBundle, "lxyupdate-bundle:", 17)?1:t2ValNotify("lxybundleversion_split", pResponse->dlCertBundle + 17);
             GetJsonVal( pJson, "rdmCatalogueVersion", pResponse->rdmCatalogueVersion, sizeof(pResponse->rdmCatalogueVersion) );
             GetJsonVal( pJson, "ipv6FirmwareLocation", pResponse->ipv6cloudFWLocation, sizeof(pResponse->ipv6cloudFWLocation) );
-
+	    if (0 == (strncmp(rfc_list.rfc_directcdn, "true", 4))) {
+		    /* Add support for direct cdn. Seperate url for pci, pdri and peripheral image*/
+		    //TODO : Check the cases where we have multiple firmware images for the same model
+		   GetJsonVal( pJson, "firmware_URL", pResponse->firmwareUrl, sizeof(pResponse->firmwareUrl) );
+                   GetJsonVal( pJson, "additionalFwVerInfo_URL", pResponse->pdriUrl, sizeof(pResponse->pdriUrl) );
+                   GetJsonVal( pJson, peripheral_product, pResponse->peripheralFirmwares, sizeof(pResponse->peripheralFirmwares) );
+                   SWLOG_INFO("remctrl with buf %s= %s\n",peripheral_product, pResponse->peripheralFirmwares);
+                   GetJsonVal( pJson, peripheral_product_url, pResponse->remCtrlUrl, sizeof(pResponse->remCtrlUrl) );
+                   SWLOG_INFO("remctrl with buf url %s= %s\n",peripheral_product_url, pResponse->remCtrlUrl);
+	    } else {
+		   GetJsonValContaining( pJson, "remCtrl", pResponse->peripheralFirmwares, sizeof(pResponse->peripheralFirmwares) );
+            }
             FreeJson( pJson );
             ret = 0;
         }
@@ -115,6 +137,9 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
         SWLOG_INFO("dlCertBundle: %s\n", response->dlCertBundle);
         SWLOG_INFO("cloudPDRIVersion: %s\n", response->cloudPDRIVersion);
         SWLOG_INFO("rdmCatalogueVersion: %s\n", response->rdmCatalogueVersion);
+	SWLOG_INFO("cloudFWURL: %s\n", response->firmwareUrl);
+        SWLOG_INFO("peripheralFirmwaresURL: %s\n", response->remCtrlUrl);
+        SWLOG_INFO("cloudPDRIURL: %s\n", response->pdriUrl);
 
         fp = fopen("/tmp/.xconfssrdownloadurl", "w");
         if (fp != NULL) {
@@ -150,6 +175,10 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
 	if ((*(response->cloudPDRIVersion)) != 0) {
 	    SWLOG_INFO("Validate PDRI image with device model number\n");
             valid_pdri_img = validateImage(response->cloudPDRIVersion, model);
+	    if ((strstr(response->cloudPDRIVersion, "_PDRI_")) == NULL) {
+	        SWLOG_INFO("Invalid PDRI image\n");
+		valid_pdri_img = false;
+	    }
 	}
         if ((false == valid_img) || (false == valid_pdri_img)) {
             SWLOG_INFO("Image configured is not of model %s.. Skipping the upgrade\nExiting from Image Upgrade process..!\n", model);

@@ -160,6 +160,6 @@ bool get_system_uptime(double *uptime);
 metaDataFileList_st *getInstalledBundleFileList();
 metaDataFileList_st *getMetaDataFile(char *dir);
 metaDataFileList_st * mergeLists(metaDataFileList_st *nvmList, metaDataFileList_st *rfsList);
-
+int getPeripheralProduct(char *buf, size_t szIn);
 
 #endif

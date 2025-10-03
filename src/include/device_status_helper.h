@@ -66,5 +66,6 @@ bool lastDwnlImg(char *img_name, size_t img_name_size);
 void waitForNtp(void);
 bool prevFlashedFile(char *img_name, size_t img_name_size);
 unsigned int getFileLastModifyTime(char *file_name);
+int printTriggerType(int trigger_type);
 
 #endif /* VIDEO_DEVICE_STATUS_HELPER_H_ */

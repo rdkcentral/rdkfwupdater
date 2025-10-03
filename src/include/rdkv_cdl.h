@@ -36,11 +36,17 @@
 #include "urlHelper.h"
 #endif
 
+#ifdef GTEST_ENABLE
+#include "miscellaneous.h"
+#endif
+
 #include "mtlsUtils.h"
 #include "json_process.h"
 
 #define SUCCESS 1
 #define FAILURE -1
+
+#define JSON_STR_LEN        1000
 
 #define RDKV_FW_UPGRADER "RdkvFwUpgrader"
 
@@ -121,6 +127,7 @@
 #define DWNL_BLOCK -2
 #define REBOOT_PENDING_DELAY "2"
 #define CODEBIG_SIGNING_FAILED -7
+#define DIRECT_CDN_RETRY_ERR -2
 
 #define RDKV_FWDNLD_UNINITIALIZED 0
 #define RDKV_FWDNLD_DOWNLOAD_INIT 1
@@ -148,7 +155,7 @@ int fallBack(int server_type, const char* artifactLocationUrl, const void* local
 void uninitialize(int);
 int initialize(void);
 int logFileData(const char *file_path);
-int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocationUrl, const void* dwlloc, char *pPostFields, int *pHttp_code);
+int upgradeRequest(int upgrade_type, int server_type, bool directCdn, const char* artifactLocationUrl, const void* dwlloc, char *pPostFields, int *pHttp_code);
 int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint);
 int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, const char *reboot_flag);
 void updateUpgradeFlag(int action);
@@ -160,5 +167,7 @@ void setDwnlState(int state);
 int getDwnlState(void);
 int startFactoryProtectService(void);
 int initialValidation(void);
+int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, bool directCdn, int upgrade_type);
+int DirectCDNDownload( XCONFRES *response, char *cur_img_name, DeviceProperty_t *device_info, int server_type, int *pHttp_code );
 
 #endif

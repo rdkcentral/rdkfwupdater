@@ -282,7 +282,7 @@ bool updateOPTOUTFile(const char *optout_file_name)
         fclose(fp_write);
     }
     unlink(MAINTENANCE_MGR_RECORD_UPDATE_FILE);
-    return opt_status;
+return opt_status;
 }
 
 /* Description: Checking either device is having codebig access or not
@@ -292,13 +292,22 @@ bool checkCodebigAccess(void)
 {
     int ret = -1;
     bool codebigEnable = false;
-    ret = v_secure_system("GetServiceUrl 2 temp");
-    SWLOG_INFO("Exit code for codebigcheck:%d\n", ret);
-    if (ret == 0) {
-        SWLOG_INFO("CodebigAccess Present:%d\n", ret);
-	codebigEnable = true;
-    }else {
-        SWLOG_INFO("CodebigAccess Not Present:%d\n", ret);
+    bool directCdn = false;
+
+#ifndef GTEST_ENABLE
+    directCdn = isDirectCDNEnabled();
+#endif
+    if (directCdn == false) {
+        ret = v_secure_system("GetServiceUrl 2 temp");
+        SWLOG_INFO("Exit code for codebigcheck:%d\n", ret);
+        if (ret == 0) {
+            SWLOG_INFO("CodebigAccess Present:%d\n", ret);
+	    codebigEnable = true;
+        }else {
+            SWLOG_INFO("CodebigAccess Not Present:%d\n", ret);
+        }
+    } else {
+	    SWLOG_INFO("CodebigAccess Not Present For direct cdn\n");
     }
     return codebigEnable;
 }
@@ -973,14 +982,14 @@ bool lastDwnlImg(char *img_name, size_t img_name_size)
         }
         snprintf(last_dwnl_img_name, sizeof(last_dwnl_img_name), "%s", tbuff);
         snprintf(img_name, img_name_size, "%s", last_dwnl_img_name);
-        SWLOG_INFO("lastDnldFile: %s\n", last_dwnl_img_name);
+        SWLOG_INFO("last Image download firmware: %s\n", last_dwnl_img_name);
         SWLOG_INFO("Image name return to caller function: %s\n", img_name);
         fclose(fp);
         status = true;
     }
     } else {
         snprintf(img_name, img_name_size, "%s", last_dwnl_img_name);
-        SWLOG_INFO("Optimize lastDnldFile: %s\n", img_name);
+        SWLOG_INFO("last Image download fw file: %s\n", img_name);
         status = true;
     }
     return status;
@@ -1010,14 +1019,14 @@ bool currentImg(char *img_name, size_t img_name_size)
             }
             snprintf(cur_img_name, sizeof(cur_img_name), "%s", tbuff);
             snprintf(img_name, img_name_size, "%s", cur_img_name);
-            SWLOG_INFO("currentImg: %s\n", cur_img_name);
-            SWLOG_INFO("currentImg: %s\n", img_name);
+            //SWLOG_INFO("currentImg: %s\n", cur_img_name);
+            SWLOG_INFO("Current Running Image name: %s\n", img_name);
             fclose(fp);
             status = true;
         }
     } else {
         snprintf(img_name, img_name_size, "%s", cur_img_name);
-        SWLOG_INFO("Optimize currentImg: %s\n", img_name);
+        SWLOG_INFO("Current Running Image: %s\n", img_name);
         status = true;
     }
     return status;
@@ -1147,4 +1156,24 @@ bool checkForValidPCIUpgrade(int trigger_type, const char *myfwversion, const ch
     }
     return pci_valid_status;
 }
-
+int printTriggerType(int trigger_type)
+{
+    int ret = -1;
+    if (trigger_type == 1) {
+        SWLOG_INFO("Image Upgrade During Bootup ..!\n");
+    }else if (trigger_type == 2) {
+        SWLOG_INFO("Scheduled Image Upgrade using cron ..!\n");
+    }else if(trigger_type == 3){
+        SWLOG_INFO("TR-69/SNMP triggered Image Upgrade ..!\n");
+    }else if(trigger_type == 4){
+        SWLOG_INFO("App triggered Image Upgrade ..!\n");
+    }else if(trigger_type == 5){
+        SWLOG_INFO("Delayed Trigger Image Upgrade ..!\n");
+    }else if(trigger_type == 6){
+        SWLOG_INFO("State Red Image Upgrade ..!\n");
+    }else {
+        SWLOG_INFO("Invalid trigger type Image Upgrade ..!\n");
+    }
+    ret = 0;
+    return ret;
+}
