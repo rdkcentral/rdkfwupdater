@@ -500,7 +500,8 @@ void saveHTTPCode(int http_code)
     char http[8] = { 0 };
     FILE *fp = NULL;
 
-    snprintf( http, sizeof(http), "%03ld\n", (long int)http_code );
+    snprintf( http, sizeof(http), "%03d\n", http_code );
+    
     fp = fopen(HTTP_CODE_FILE, "w");
     if(fp == NULL) {
         SWLOG_ERROR("%s : fopen failed:%s\n", __FUNCTION__, HTTP_CODE_FILE);
@@ -1063,7 +1064,7 @@ int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocati
     const char* dwlpath_filename = NULL;
     int ret_curl_code = -1;
     char dwnl_status[64];
-    unsigned long int curtime;
+    time_t curtime;
     char current_time[64];
     char *dev_prop_name = "CPU_ARCH";
     char cpu_arch[8] = {0};
@@ -1180,8 +1181,8 @@ int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocati
 
         if (true == st_notify_flag) {
             curtime = getCurrentSysTimeSec();
-            snprintf(current_time, sizeof(current_time), "%lu", curtime);
-            SWLOG_INFO("current_time calculated as %lu and %s\n", curtime, current_time);
+            snprintf(current_time, sizeof(current_time), "%ju", curtime);
+            SWLOG_INFO("current_time calculated as %ju and %s\n", curtime, current_time);
             //write_RFCProperty("Rfc_FW", RFC_FW_DWNL_START, current_time, RFC_STRING);
             notifyDwnlStatus(RFC_FW_DWNL_START, current_time, RFC_STRING);
             SWLOG_INFO("FirmwareDownloadStartedNotification SET succeeded\n");

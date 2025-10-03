@@ -27,9 +27,13 @@
 struct FWDownloadStatus {
     char method[MIN_BUFF_SIZE1];
     char proto[MIN_BUFF_SIZE1];
-    char status[MIN_BUFF_SIZE2];
+    char status[BUFF_SIZE];
     char reboot[MIN_BUFF_SIZE1];
+#if (defined(UINTPTR_MAX) && UINTPTR_MAX > 0xFFFFFFFF) || (defined(__WORDSIZE) && __WORDSIZE == 64)
+    char failureReason[MAX_BUFF_SIZE1];
+#else
     char failureReason[MIN_BUFF_SIZE3];
+#endif
     char dnldVersn[MAX_BUFF_SIZE1];
     char dnldfile[MAX_BUFF_SIZE1];
     char dnldurl[MAX_BUFF_SIZE];
