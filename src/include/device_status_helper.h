@@ -56,7 +56,6 @@ bool lastDwnlImg(char *img_name, size_t img_name_size);
 bool currentImg(char *img_name, size_t img_name_size);
 void unsetStateRed(void);
 bool GetPDRIVersion(char *pPdriVersion, size_t szBufSize);
-size_t createJsonString(char *pPostFieldOut, size_t szPostFieldOut);
 bool updateOPTOUTFile(const char *optout_file_name);
 bool CheckIProuteConnectivity(const char *file_name);
 bool isDnsResolve(const char *dns_file_name);

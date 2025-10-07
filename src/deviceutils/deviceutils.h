@@ -24,6 +24,7 @@
 #endif
 #include "json_parse.h"     // needed for JSON struct definition
 #include "mtlsUtils.h"
+#include "common_device_api.h"
 
 #ifndef GETRDMMANIFESTVERSION_IN_SCRIPT
     #define GETRDMMANIFESTVERSION_IN_SCRIPT
@@ -47,49 +48,6 @@ typedef struct metaDataFileList
     struct metaDataFileList *next;
 }metaDataFileList_st;
 
-/* function stripinvalidchar - truncates a string when a space or control
-    character is encountered.
- 
-        Usage: size_t stripinvalidchar <char *pIn> <size_t szIn>
- 
-            pIn - pointer to a char buffer to check/modify.
-
-            szIn - the size of the character buffer in argument 1.
-
-            RETURN - number of characters in the buffer upon exit.
- 
-            PITFALLS - does not check for NULL input
-*/
-size_t stripinvalidchar(char *pIn, size_t szIn);
-
-/* function makeHttpHttps - checks a URL for "http:" and, if found,
-    makes it "https:"
- 
-        Usage: size_t makeHttpHttps <char *pIn> <size_t szpInSize>
- 
-            pIn - pointer to a char buffer to check/modify.
-
-            szpInSize - the size of the character buffer in argument 1.
-
-            RETURN - number of characters in the buffer upon exit.
- 
-            PITFALLS - does not check for NULL input
-*/
-size_t makeHttpHttps(char *pIn, size_t szpInSize);
-
-/* function MemDLAlloc - allocates a memory block and fills in data structure used for curl
-                          memory downloads.
- 
-        Usage: int MemDLAlloc <DownloadData *pDwnData>
- 
-            pDwnData - pointer to a DownloadData structure to hold download allocation data.
-
-            RETURN - 0 on success, non-zero otherwise
- 
-            Function Notes - The caller is responsible for freeing the dynamically allocated
-            memory pointed to by the pvOut member of the DownloadData structure pointer.
-*/
-int MemDLAlloc(DownloadData *pDwnData, size_t szDataSize);
 
 /* function RunCommand - runs a predefined system command using v_secure_popen
  
@@ -149,13 +107,6 @@ int getJsonRpc(char *post_data, DownloadData* pJsonRpc);
  * @return int:
  * */
 int getJRPCTokenData(char *token, char *pJsonStr, unsigned int token_size);
-
-/* Description: Use to get system uptime in second
- *  @param: uptime : pointer to recive uptime of system
- *  @return :bool
- * */
-
-bool get_system_uptime(double *uptime);
 
 metaDataFileList_st *getInstalledBundleFileList();
 metaDataFileList_st *getMetaDataFile(char *dir);

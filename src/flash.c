@@ -22,7 +22,8 @@
 #include "rdkv_cdl_log_wrapper.h"
 #include "download_status_helper.h"
 #include "device_status_helper.h"
-#include "iarmInterface/iarmInterface.h"
+#include "iarmInterface.h"
+#include "rfcinterface.h"
 #ifndef GTEST_ENABLE
 #include "urlHelper.h"
 #include "json_parse.h"
@@ -32,7 +33,6 @@
 #else
 #include "rbus_mock.h"
 #endif
-#include "rfcInterface/rfcinterface.h"
 #include <sys/wait.h>
 #include "deviceutils.h"
 
@@ -264,7 +264,7 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
                 startFactoryProtectService();
                 sleep(2);
                 
-                if( MemDLAlloc( &DwnLoc, DEFAULT_DL_ALLOC ) == 0 )
+                if( allocDowndLoadDataMem( &DwnLoc, DEFAULT_DL_ALLOC ) == 0 )
                 {
                     getJsonRpc(post_data, &DwnLoc);//Update security stage to stage2
                     fp = fopen(stage2file, "w");

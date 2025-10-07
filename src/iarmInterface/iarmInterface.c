@@ -260,7 +260,7 @@ bool isConnectedToInternet (void)
     char post_data4[] = "{\"jsonrpc\":\"2.0\",\"id\":\"42\",\"method\": \"org.rdk.NetworkManager.IsConnectedToInternet\", \"params\" : { \"ipversion\" : \"IPv4\"}}";
     char post_data6[] = "{\"jsonrpc\":\"2.0\",\"id\":\"42\",\"method\": \"org.rdk.NetworkManager.IsConnectedToInternet\", \"params\" : { \"ipversion\" : \"IPv6\"}}";
     char status[20];
-    if( MemDLAlloc( &DwnLoc, DEFAULT_DL_ALLOC ) == 0 )
+    if( allocDowndLoadDataMem( &DwnLoc, DEFAULT_DL_ALLOC ) == 0 )
     {
         if (0 != getJsonRpc(post_data4, &DwnLoc))
 	{

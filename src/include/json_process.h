@@ -19,6 +19,7 @@
 #ifndef _JSON_PROCESS_H_
 #define _JSON_PROCESS_H_
 
+#include <stddef.h>
 #define CLD_URL_MAX_LEN 512
 
 typedef struct xconf_response {
@@ -37,5 +38,6 @@ typedef struct xconf_response {
 
 int processJsonResponse(XCONFRES *response, const char *myfwversion, const char *model, const char *maint);
 int getXconfRespData(XCONFRES *pResponse, char *pJsonStr);
+size_t createJsonString(char *pPostFieldOut, size_t szPostFieldOut);
 
 #endif
