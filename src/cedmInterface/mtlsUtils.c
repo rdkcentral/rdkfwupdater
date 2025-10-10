@@ -61,22 +61,39 @@ MtlsAuthStatus getMtlscert(MtlsAuth_t *sec, rdkcertselector_h* pthisCertSel) {
             certFile += (sizeof(FILESCHEME)-1); // Remove file scheme prefix
         }
 
-        strncpy(sec->cert_name, certFile, sizeof(sec->cert_name) - 1);
-        sec->cert_name[sizeof(sec->cert_name) - 1] = '\0';
+        size_t certFile_len = strnlen(certFile, sizeof(sec->cert_name));
+        if (certFile_len >= sizeof(sec->cert_name) - 1) {
+            SWLOG_ERROR("%s, Certificate file name too long (%zu chars), maximum allowed: %zu\n",
+                       __FUNCTION__, certFile_len, sizeof(sec->cert_name) - 1);
+            rdkcertselector_free(pthisCertSel);
+            return STATE_RED_CERT_FETCH_FAILURE;
+        }
+        strncpy(sec->cert_name, certFile, sizeof(sec->cert_name));
 
-        strncpy(sec->key_pas, certPass, sizeof(sec->key_pas) - 1);
-        sec->key_pas[sizeof(sec->key_pas) - 1] = '\0';
+        size_t certPass_len = strnlen(certPass, sizeof(sec->key_pas));
+        if (certPass_len >= sizeof(sec->key_pas) - 1) {
+            SWLOG_ERROR("%s, Certificate password too long (%zu chars), maximum allowed: %zu\n",
+                       __FUNCTION__, certPass_len, sizeof(sec->key_pas) - 1);
+            rdkcertselector_free(pthisCertSel);
+            return STATE_RED_CERT_FETCH_FAILURE;
+        }
+        strncpy(sec->key_pas, certPass, sizeof(sec->key_pas));
 
         engine = rdkcertselector_getEngine(*pthisCertSel);
         if (engine == NULL) {
              sec->engine[0] = '\0';
-        }else{
-             strncpy(sec->engine, engine, sizeof(sec->engine) - 1);
-             sec->engine[sizeof(sec->engine) - 1] = '\0';
+        } else {
+             size_t engine_len = strnlen(engine, sizeof(sec->engine));
+             if (engine_len >= sizeof(sec->engine) - 1) {
+                 SWLOG_ERROR("%s, Engine name too long (%zu chars), maximum allowed: %zu\n",
+                            __FUNCTION__, engine_len, sizeof(sec->engine) - 1);
+                 rdkcertselector_free(pthisCertSel);
+                 return STATE_RED_CERT_FETCH_FAILURE;
+             }
+             strncpy(sec->engine, engine, sizeof(sec->engine));
         }
 
         strncpy(sec->cert_type, "P12", sizeof(sec->cert_type) - 1);
-        sec->cert_type[sizeof(sec->cert_type) - 1] = '\0';
 
         SWLOG_INFO("%s, State red success. cert=%s, type=%s, engine=%s\n", __FUNCTION__, sec->cert_name, sec->cert_type, sec->engine);
         SWLOG_INFO("RED:State Red Recovery CURL_CMD: method for download\n");
@@ -101,22 +118,40 @@ MtlsAuthStatus getMtlscert(MtlsAuth_t *sec, rdkcertselector_h* pthisCertSel) {
             certFile += (sizeof(FILESCHEME)-1); // Remove file scheme prefix
         }
 
-        strncpy(sec->cert_name, certFile, sizeof(sec->cert_name) - 1);
+        size_t certFile_len = strnlen(certFile, sizeof(sec->cert_name));
+        if (certFile_len >= sizeof(sec->cert_name) - 1) {
+            SWLOG_ERROR("%s, Certificate file name too long (%zu chars), maximum allowed: %zu\n",
+                       __FUNCTION__, certFile_len, sizeof(sec->cert_name) - 1);
+            rdkcertselector_free(pthisCertSel);
+            return MTLS_CERT_FETCH_FAILURE;
+        }
+        strncpy(sec->cert_name, certFile, sizeof(sec->cert_name));
         sec->cert_name[sizeof(sec->cert_name) - 1] = '\0';
 
-        strncpy(sec->key_pas, certPass, sizeof(sec->key_pas) - 1);
-        sec->key_pas[sizeof(sec->key_pas) - 1] = '\0';
+        size_t certPass_len = strnlen(certPass, sizeof(sec->key_pas));
+        if (certPass_len >= sizeof(sec->key_pas) - 1) {
+            SWLOG_ERROR("%s, Certificate password too long (%zu chars), maximum allowed: %zu\n",
+                       __FUNCTION__, certPass_len, sizeof(sec->key_pas) - 1);
+            rdkcertselector_free(pthisCertSel);
+            return MTLS_CERT_FETCH_FAILURE;
+        }
+        strncpy(sec->key_pas, certPass, sizeof(sec->key_pas));
 
         engine = rdkcertselector_getEngine(*pthisCertSel);
         if (engine == NULL) {
               sec->engine[0] = '\0';
-        }else{
-             strncpy(sec->engine, engine, sizeof(sec->engine) - 1);
-             sec->engine[sizeof(sec->engine) - 1] = '\0';
-        }
+        } else {
+             size_t engine_len = strnlen(engine, sizeof(sec->engine));
+             if (engine_len >= sizeof(sec->engine) - 1) {
+                 SWLOG_ERROR("%s, Engine name too long (%zu chars), maximum allowed: %zu\n",
+                            __FUNCTION__, engine_len, sizeof(sec->engine) - 1);
+                 rdkcertselector_free(pthisCertSel);
+                 return MTLS_CERT_FETCH_FAILURE;
+             }
+             strncpy(sec->engine, engine, sizeof(sec->engine));
+         }
 
         strncpy(sec->cert_type, "P12", sizeof(sec->cert_type) - 1);
-        sec->cert_type[sizeof(sec->cert_type) - 1] = '\0';
 
         SWLOG_INFO("%s, MTLS dynamic/static cert success. cert=%s, type=%s, engine=%s\n", __FUNCTION__, sec->cert_name, sec->cert_type, sec->engine);
     }
