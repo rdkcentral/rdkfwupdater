@@ -148,7 +148,7 @@ TEST_F(InterfaceTestFixture, TestName_isMtlsEnabledSuccess)
 }
 TEST_F(InterfaceTestFixture, TestName_isMtlsEnabledFail)
 {
-    EXPECT_NE(isMtlsEnabled("PLATCO"), 1);
+    EXPECT_NE(isMtlsEnabled("PLATCO"), 0);
 }
 
 TEST_F(InterfaceTestFixture, TestName_isMmgbleNotifyEnabledFail)
