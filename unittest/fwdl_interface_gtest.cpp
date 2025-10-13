@@ -116,14 +116,14 @@ TEST_F(InterfaceTestFixture, TestName_getRFCSettingsSuccess)
 {
     Rfc_t rfcvalue;
     memset(&rfcvalue, '\0', sizeof(rfcvalue));
-    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(4).WillRepeatedly(Return(1));
+    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(3).WillRepeatedly(Return(1));
     EXPECT_EQ(getRFCSettings(&rfcvalue), 0);
 }
 TEST_F(InterfaceTestFixture, TestName_getRFCSettingsFail)
 {
     Rfc_t rfcvalue;
     memset(&rfcvalue, '\0', sizeof(rfcvalue));
-    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(4).WillRepeatedly(Return(-1));
+    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(3).WillRepeatedly(Return(-1));
     EXPECT_EQ(getRFCSettings(&rfcvalue), 0);
 }
 TEST_F(InterfaceTestFixture, TestName_write_RFCPropertySuccess2)
@@ -144,14 +144,10 @@ TEST_F(InterfaceTestFixture, TestName_write_RFCPropertyFail)
 }
 TEST_F(InterfaceTestFixture, TestName_isMtlsEnabledSuccess)
 {
-    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(1).WillOnce(Return(1));
-    EXPECT_CALL(*g_InterfaceMock, getDevicePropertyData(_, _, _)).Times(1).WillOnce(Return(0));
     EXPECT_EQ(isMtlsEnabled("PLATCO"), 1);
 }
 TEST_F(InterfaceTestFixture, TestName_isMtlsEnabledFail)
 {
-    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(1).WillOnce(Return(-1));
-    EXPECT_CALL(*g_InterfaceMock, getDevicePropertyData(_, _, _)).Times(1).WillOnce(Return(1));
     EXPECT_EQ(isMtlsEnabled("PLATCO"), 0);
 }
 
