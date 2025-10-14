@@ -1284,8 +1284,10 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
     size_t len = 0;
     BUILDTYPE eBuildType;
     char buf[URL_MAX_LEN];
+	char buf2[URL_MAX_LEN];
     bool skip = false;
     bool dbgServices = isDebugServicesEnabled(); //check debug services enabled
+	bool labSigned = GetLabsignedValue(buf2, sizeof(buf2));
 
     if( pServURL != NULL )
     {
@@ -1293,7 +1295,8 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
         GetBuildType( buf, sizeof(buf), &eBuildType );
         if( isInStateRed() )
         {
-            if(( eBuildType != ePROD )  || ( dbgServices == true ))
+            //if(( eBuildType != ePROD )  || ( dbgServices == true ))
+			if(Debug_Services_Enabled(labSigned, eBuildType, dbgServices))
             {
                 len = GetServerUrlFile( pServURL, szBufSize, STATE_RED_CONF );
             }
