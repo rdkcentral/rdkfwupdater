@@ -76,21 +76,21 @@ librdksw_jsonparse_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
 endif
 
 # Configure for shared library generation with proper flags
-librdksw_upgrade_la_LDFLAGS = -version-info 1:0:0 -shared
+librdksw_upgrade_la_LDFLAGS = -shared
 librdksw_upgrade_la_LIBADD = $(AM_LDFLAGS)
-librdksw_rfcIntf_la_LDFLAGS = -version-info 1:0:0 -shared
+librdksw_rfcIntf_la_LDFLAGS = -shared
 if IS_LIBRFCAPI_ENABLED
 librdksw_rfcIntf_la_LIBADD = -lrfcapi $(AM_LDFLAGS)
 else
 librdksw_rfcIntf_la_LIBADD = $(AM_LDFLAGS)
 endif
-librdksw_iarmIntf_la_LDFLAGS = -version-info 1:0:0 -shared
+librdksw_iarmIntf_la_LDFLAGS = -shared
 if IS_IARMEVENT_ENABLED
 librdksw_iarmIntf_la_LIBADD = -lIARMBus $(AM_LDFLAGS)
 else
 librdksw_iarmIntf_la_LIBADD = $(AM_LDFLAGS)
 endif
-librdksw_jsonparse_la_LDFLAGS = -version-info 1:0:0 -shared
+librdksw_jsonparse_la_LDFLAGS = -shared
 librdksw_jsonparse_la_LIBADD = $(AM_LDFLAGS)
 
 # Library headers to install
