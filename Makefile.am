@@ -186,12 +186,13 @@ endif
 
 if IS_LIBRFCAPI_ENABLED
 rdkvfwupgrader_CFLAGS += $(LIBRFCAPI_FLAG)
-librdksw_rfcIntf_la_LIBADD = -lrfcapi $(AM_LDFLAGS)
+AM_LDFLAGS += -lrfcapi
 endif
 
 if IS_IARMEVENT_ENABLED
 rdkvfwupgrader_CFLAGS += $(IARM_EVENT_FLAG)
 testrdkvfwupgrader_CFLAGS = $(IARM_EVENT_FLAG)
+AM_LDFLAGS += -lIARMBus
 endif
 
 if IS_LIBRDKCONFIG_ENABLED
