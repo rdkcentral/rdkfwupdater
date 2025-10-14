@@ -1307,7 +1307,8 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
         }
         else
         {
-            if(( eBuildType != ePROD )  || ( dbgServices == true ))
+            //if(( eBuildType != ePROD )  || ( dbgServices == true ))
+			if(Debug_Services_Enabled(labSigned, eBuildType, dbgServices))
             {
                 if( (filePresentCheck( SWUPDATE_CONF ) == RDK_API_SUCCESS) )    // if the file exists
                 {
