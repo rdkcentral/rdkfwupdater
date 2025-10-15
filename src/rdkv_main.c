@@ -219,6 +219,7 @@ void handle_signal(int no, siginfo_t* info, void* uc)
  * @param: data: data to save inside file.
  * @return: bool
  * */
+/*
 bool savePID(const char *file, char *data)
 {
     bool status = false;
@@ -237,12 +238,14 @@ bool savePID(const char *file, char *data)
     }
     return status;
 }
+*/
 /* Description: Use for get process id and store inside file.
  * @param: device : device type
  * @param: maint_window : status maintenance manager support
  * @return: void
  * TODO: Need to remove full function once all implementation complete
  * */
+/*
 void getPidStore(const char *device, const char *maint_window) {
     pid_t pid;
     char data[16] = { 0 };
@@ -256,7 +259,8 @@ void getPidStore(const char *device, const char *maint_window) {
     savePID(CURL_PID_FILE, data);
     savePID(FWDNLD_PID_FILE, data);
 }
-
+*/
+/*
 bool checkForTlsErrors(int curl_code, const char *type)
 {
     if (type == NULL) {
@@ -270,12 +274,14 @@ bool checkForTlsErrors(int curl_code, const char *type)
     }
     return true;
 }
+*/
 
 /* Description:Use for store download error and send telemetry
  * @param: curl_code : curl return status
  * @param: http_code : http return status
  * @return void:
  * */
+/*
 void dwnlError(int curl_code, int http_code, int server_type)
 {
     char telemetry_data[32];
@@ -353,7 +359,7 @@ void dwnlError(int curl_code, int http_code, int server_type)
         checkAndEnterStateRed(curl_code, disableStatsUpdate);
     }
 }
-
+*/
 
 /* Description: initialize function
  * @param: void
@@ -431,6 +437,7 @@ void uninitialize(int fwDwnlStatus) {
  * @param: http_code : http value after curl command return
  * @return: void
  * */
+/*
 void saveHTTPCode(int http_code)
 {
     char http[8] = { 0 };
@@ -446,6 +453,7 @@ void saveHTTPCode(int http_code)
         fclose(fp);
     }
 }
+*/
 
 /* Description: Use for download image from codebig
  * @param: artifactLocationUrl : server url
@@ -453,6 +461,7 @@ void saveHTTPCode(int http_code)
  * @param: httpCode : send back http value
  * @return int: success/failure
  * */
+/*
 #ifndef GTEST_BASIC
 int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode ) {
     int signFailed = 1;           // 0 for success, 1 indicates failed
@@ -483,8 +492,9 @@ int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const
     }
 
     SWLOG_INFO("Using Codebig Image upgrade connection\nCheck if codebig is applicable for the Device\n");
-    t2CountNotify("SYST_INFO_cb_xconf", 1);
+    t2CountNotify("SYST_INFO_cb_xconf", 1); */
     /* checkCodebigAccess check is required only for xconf communication. Detail mention in ticket LLAMA-10049 */
+/*
     if ((server_type == HTTP_XCONF_CODEBIG) && (false == (checkCodebigAccess()))) {
         SWLOG_ERROR("%s:  Codebig Image upgrade is not supported.\n", __FUNCTION__);
         return curl_ret_code;
@@ -551,8 +561,9 @@ int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const
             }
 
             doStopDownload(curl);
-            curl = NULL;
+            curl = NULL; */
             /* Stop the donwload if Throttle speed rfc is set to zero */
+/*
             if (force_exit == 1 && (curl_ret_code == 23)) {
                 uninitialize(INITIAL_VALIDATION_SUCCESS);
                 exit(1);
@@ -588,12 +599,14 @@ int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const
     return curl_ret_code;
 }
 #endif
+*/
 /* Description: Use for download image from Direct server
  * @param: artifactLocationUrl : server url
  * @param: localDownloadLocation : download location
  * @param: httpCode : send back http value
  * @return int: success/failure
  * */
+/*
 #ifndef GTEST_BASIC
 int downloadFile( int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode ){
 
@@ -840,7 +853,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
     return curl_ret_code;
 }
 #endif
-
+*/
 /* Description: Download retry logic
  * @param: server_type : Type of the server.
  * @param: artifactLocationUrl : server url
@@ -850,6 +863,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
  * @param: httCode : Send back httpCode 
  * @return int:  Success/Failure
  * */
+/*
 int retryDownload(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char *pPostFields, int retry_cnt, int delay, int *httpCode ){
     int curl_ret_code = -1;
     int retry_completed = 1;
@@ -914,7 +928,7 @@ int retryDownload(int server_type, const char* artifactLocationUrl, const void* 
     }
     return curl_ret_code;
 }
-
+*/
 /* Description: Use for fall back between direct to codebig and vise versa
  * @param: server_type : Type of the server.
  * @param: artifactLocationUrl : server url
@@ -922,6 +936,7 @@ int retryDownload(int server_type, const char* artifactLocationUrl, const void* 
  * @param: httCode : Send back httpCode 
  * @return int:  Success/Failure
  * */
+/*
 int fallBack(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char *pPostFields, int *httpCode) {
     int curl_ret_code = -1;
 
@@ -948,8 +963,9 @@ int fallBack(int server_type, const char* artifactLocationUrl, const void* local
                 createFile(DIRECT_BLOCK_FILENAME);
                 SWLOG_INFO("%s : Use CodeBig and Blocking Direct attempts for 24hrs\n", __FUNCTION__);
             }
-        } else if ((*httpCode != HTTP_PAGE_NOT_FOUND) && (curl_ret_code != -1)){
+        } else if ((*httpCode != HTTP_PAGE_NOT_FOUND) && (curl_ret_code != -1)){ */
             /* if curl_ret_code -1 means codebig is not supported or some invalid paramter */
+/*
             SWLOG_INFO("%s : Codebig Image upgrade Fail: ret=%d httpcode=%d\n", __FUNCTION__, curl_ret_code, *httpCode);
             if ((filePresentCheck(CB_BLOCK_FILENAME)) != 0) {
                 createFile(CB_BLOCK_FILENAME);
@@ -966,7 +982,7 @@ int fallBack(int server_type, const char* artifactLocationUrl, const void* local
     }
     return curl_ret_code;
 }
-
+*/
 //TODO: Below functio is use only for temporary. Once all script convert to C
 //      We have to change this logic.
 void updateUpgradeFlag(int action)
@@ -1152,7 +1168,7 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
                     }
 
                     SWLOG_INFO( "%s: Requesting upgrade to %s from %s\n", __FUNCTION__, cDLStoreLoc, cSourceURL );
-                    iCurlCode = rdkv_upgrade_request( PERIPHERAL_UPGRADE, HTTP_SSR_DIRECT, cSourceURL, cDLStoreLoc, NULL, &http_code,immed_reboot_flag,delay_dwnl , lastrun, disableStatsUpdate, &device_info);
+                    iCurlCode = rdkv_upgrade_request( PERIPHERAL_UPGRADE, HTTP_SSR_DIRECT, cSourceURL, cDLStoreLoc, NULL, &http_code,immed_reboot_flag,delay_dwnl , lastrun, disableStatsUpdate, &device_info,&curl,&force_exit,&rfc_list);
                     if( iCurlCode == 0 && http_code == 200 )
                     {
                         if( szRunningLen )
@@ -1274,7 +1290,7 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
         snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s", device_info.difw_path, pResponse->cloudFWFile);
 	    SWLOG_INFO("DWNL path with img name=%s\n", dwlpath_filename);
         eraseFolderExcePramaFile(device_info.difw_path, pResponse->cloudFWFile, device_info.model);
-        pci_curl_code = rdkv_upgrade_request(PCI_UPGRADE, HTTP_SSR_DIRECT, imageHTTPURL, dwlpath_filename, NULL, &http_code,immed_reboot_flag,delay_dwnl , lastrun, disableStatsUpdate, &device_info);
+        pci_curl_code = rdkv_upgrade_request(PCI_UPGRADE, HTTP_SSR_DIRECT, imageHTTPURL, dwlpath_filename, NULL, &http_code,immed_reboot_flag,delay_dwnl , lastrun, disableStatsUpdate, &device_info, &curl,&force_exit, &rfc_list);
     } else {
         SWLOG_INFO("checkForValidPCIUpgrade return false\n");
         pci_curl_code = 0;
@@ -1299,7 +1315,7 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
                 sleep(30);
             }
             snprintf(disableStatsUpdate, sizeof(disableStatsUpdate), "%s","yes");
-            pdri_curl_code = rdkv_upgrade_request(PDRI_UPGRADE, HTTP_SSR_DIRECT, imageHTTPURL, dwlpath_filename, NULL, &http_code,immed_reboot_flag,delay_dwnl , lastrun, disableStatsUpdate, &device_info);
+            pdri_curl_code = rdkv_upgrade_request(PDRI_UPGRADE, HTTP_SSR_DIRECT, imageHTTPURL, dwlpath_filename, NULL, &http_code,immed_reboot_flag,delay_dwnl , lastrun, disableStatsUpdate, &device_info, &curl,&force_exit, &rfc_list);
             snprintf(disableStatsUpdate, sizeof(disableStatsUpdate), "%s","no");
             if (pdri_curl_code == 100) {
                 pdri_curl_code = 0;
@@ -1404,7 +1420,7 @@ static int MakeXconfComms( XCONFRES *pResponse, int server_type, int *pHttp_code
                 if( len )
                 {
                     len = createJsonString( pJSONStr, JSON_STR_LEN );
-                    ret = rdkv_upgrade_request( XCONF_UPGRADE, server_type, pServURL, &DwnLoc, pJSONStr, pHttp_code, immed_reboot_flag, delay_dwnl , lastrun,disableStatsUpdate, &device_info);
+                    ret = rdkv_upgrade_request( XCONF_UPGRADE, server_type, pServURL, &DwnLoc, pJSONStr, pHttp_code, immed_reboot_flag, delay_dwnl , lastrun,disableStatsUpdate, &device_info, &curl, &force_exit, &rfc_list);
                     if( ret == 0 && *pHttp_code == 200 && DwnLoc.pvOut != NULL )
                     {
                         SWLOG_INFO( "MakeXconfComms: Calling getXconfRespData with input = %s\n", (char *)DwnLoc.pvOut );

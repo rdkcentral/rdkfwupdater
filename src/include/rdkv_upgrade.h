@@ -6,7 +6,7 @@ extern "C" {
 #endif
 
 #include "rdkv_cdl.h"
-
+#include "rfcinterface.h"
 
 /**
  * @brief Initialize the RDK firmware utility library
@@ -32,9 +32,24 @@ void rdkv_utils_cleanup(void);
  */
 int rdkv_upgrade_request(int upgrade_type, int server_type, 
                         const char* artifactLocationUrl, const void* dwlloc, 
-                        char *pPostFields, int *pHttp_code,char *immed_reboot_flag,int delay_dwnl , 
-			char *lastrun, char *disableStatsUpdate, DeviceProperty_t *device_info);
+                        char *pPostFields, int *pHttp_code,const char *immed_reboot_flag,int delay_dwnl , 
+			const char *lastrun, char *disableStatsUpdate, const DeviceProperty_t *device_info,void **curl,int *force_exit,const Rfc_t *rfc_list);
 
+int downloadFile( int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode, void **curl, int *force_exit, const char *immed_reboot_flag, const DeviceProperty_t *device_info,const char *lastrun,const Rfc_t *rfc_list,char *disableStatsUpdate);
+
+int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char *pPostFields, int *httpCode, void **curl, int *force_exit, const char *immed_reboot_flag, const DeviceProperty_t *device_info,const char *lastrun,const Rfc_t *rfc_list,char *disableStatsUpdate);
+
+int retryDownload(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char *pPostFields, int retry_cnt, int delay, int *httpCode, void **curl, int *force_exit, const char *immed_reboot_flag, const DeviceProperty_t *device_info,const char *lastrun,const Rfc_t *rfc_list, char *disableStatsUpdate);
+
+int fallBack(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char *pPostFields, int *httpCode, void **curl, int *force_exit,const char *immed_reboot_flag, const DeviceProperty_t *device_info,const char *lastrun,const Rfc_t *rfc_list, char *disableStatsUpdate);
+
+//void t2CountNotify(char *marker, int val);
+
+//void t2ValNotify(char *marker, char *val);
+
+void dwnlError(int curl_code, int http_code, int server_type,const DeviceProperty_t *device_info,const char *lastrun, char *disableStatsUpdate);
+
+void saveHTTPCode(int http_code, const char *lastrun);
 #ifdef __cplusplus
 }
 #endif
