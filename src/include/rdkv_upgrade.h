@@ -1,5 +1,5 @@
-#ifndef RDKV_UTILS_H_
-#define RDKV_UTILS_H_
+#ifndef RDKV_UPGRADE_H_
+#define RDKV_UPGRADE_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -33,7 +33,7 @@ void rdkv_utils_cleanup(void);
 int rdkv_upgrade_request(int upgrade_type, int server_type, 
                         const char* artifactLocationUrl, const void* dwlloc, 
                         char *pPostFields, int *pHttp_code,const char *immed_reboot_flag,int delay_dwnl , 
-			const char *lastrun, char *disableStatsUpdate, const DeviceProperty_t *device_info,void **curl,int *force_exit,const Rfc_t *rfc_list);
+			const char *lastrun, char *disableStatsUpdate, const DeviceProperty_t *device_info,void **curl,int *force_exit,const Rfc_t *rfc_list,int trigger_type);
 
 int downloadFile( int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode, void **curl, int *force_exit, const char *immed_reboot_flag, const DeviceProperty_t *device_info,const char *lastrun,const Rfc_t *rfc_list,char *disableStatsUpdate);
 
@@ -54,4 +54,4 @@ void saveHTTPCode(int http_code, const char *lastrun);
 }
 #endif
 
-#endif /* RDKV_UTILS_H_ */
+#endif /* RDKV_UPGRADE_H_ */

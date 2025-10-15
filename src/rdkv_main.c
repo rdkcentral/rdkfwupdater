@@ -1168,7 +1168,7 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
                     }
 
                     SWLOG_INFO( "%s: Requesting upgrade to %s from %s\n", __FUNCTION__, cDLStoreLoc, cSourceURL );
-                    iCurlCode = rdkv_upgrade_request( PERIPHERAL_UPGRADE, HTTP_SSR_DIRECT, cSourceURL, cDLStoreLoc, NULL, &http_code,immed_reboot_flag,delay_dwnl , lastrun, disableStatsUpdate, &device_info,&curl,&force_exit,&rfc_list);
+                    iCurlCode = rdkv_upgrade_request( PERIPHERAL_UPGRADE, HTTP_SSR_DIRECT, cSourceURL, cDLStoreLoc, NULL, &http_code,immed_reboot_flag,delay_dwnl , lastrun, disableStatsUpdate, &device_info,&curl,&force_exit,&rfc_list,trigger_type);
                     if( iCurlCode == 0 && http_code == 200 )
                     {
                         if( szRunningLen )
@@ -1290,7 +1290,7 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
         snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s", device_info.difw_path, pResponse->cloudFWFile);
 	    SWLOG_INFO("DWNL path with img name=%s\n", dwlpath_filename);
         eraseFolderExcePramaFile(device_info.difw_path, pResponse->cloudFWFile, device_info.model);
-        pci_curl_code = rdkv_upgrade_request(PCI_UPGRADE, HTTP_SSR_DIRECT, imageHTTPURL, dwlpath_filename, NULL, &http_code,immed_reboot_flag,delay_dwnl , lastrun, disableStatsUpdate, &device_info, &curl,&force_exit, &rfc_list);
+        pci_curl_code = rdkv_upgrade_request(PCI_UPGRADE, HTTP_SSR_DIRECT, imageHTTPURL, dwlpath_filename, NULL, &http_code,immed_reboot_flag,delay_dwnl , lastrun, disableStatsUpdate, &device_info, &curl,&force_exit, &rfc_list,trigger_type);
     } else {
         SWLOG_INFO("checkForValidPCIUpgrade return false\n");
         pci_curl_code = 0;
@@ -1315,7 +1315,7 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
                 sleep(30);
             }
             snprintf(disableStatsUpdate, sizeof(disableStatsUpdate), "%s","yes");
-            pdri_curl_code = rdkv_upgrade_request(PDRI_UPGRADE, HTTP_SSR_DIRECT, imageHTTPURL, dwlpath_filename, NULL, &http_code,immed_reboot_flag,delay_dwnl , lastrun, disableStatsUpdate, &device_info, &curl,&force_exit, &rfc_list);
+            pdri_curl_code = rdkv_upgrade_request(PDRI_UPGRADE, HTTP_SSR_DIRECT, imageHTTPURL, dwlpath_filename, NULL, &http_code,immed_reboot_flag,delay_dwnl , lastrun, disableStatsUpdate, &device_info, &curl,&force_exit, &rfc_list,trigger_type);
             snprintf(disableStatsUpdate, sizeof(disableStatsUpdate), "%s","no");
             if (pdri_curl_code == 100) {
                 pdri_curl_code = 0;
@@ -1420,7 +1420,7 @@ static int MakeXconfComms( XCONFRES *pResponse, int server_type, int *pHttp_code
                 if( len )
                 {
                     len = createJsonString( pJSONStr, JSON_STR_LEN );
-                    ret = rdkv_upgrade_request( XCONF_UPGRADE, server_type, pServURL, &DwnLoc, pJSONStr, pHttp_code, immed_reboot_flag, delay_dwnl , lastrun,disableStatsUpdate, &device_info, &curl, &force_exit, &rfc_list);
+                    ret = rdkv_upgrade_request( XCONF_UPGRADE, server_type, pServURL, &DwnLoc, pJSONStr, pHttp_code, immed_reboot_flag, delay_dwnl , lastrun,disableStatsUpdate, &device_info, &curl, &force_exit, &rfc_list,trigger_type);
                     if( ret == 0 && *pHttp_code == 200 && DwnLoc.pvOut != NULL )
                     {
                         SWLOG_INFO( "MakeXconfComms: Calling getXconfRespData with input = %s\n", (char *)DwnLoc.pvOut );

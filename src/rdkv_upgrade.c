@@ -8,6 +8,7 @@
 #include "rdk_logger_milestone.h"
 #include "codebigUtils.h"
 #include "downloadUtil.h"
+#include "flash.h"
 
 
 /* Description: Use for save process id and store inside file.
@@ -271,7 +272,7 @@ int rdkv_upgrade_request(int upgrade_type, int server_type,
                         const char* artifactLocationUrl, const void* dwlloc, 
                         char *pPostFields, int *pHttp_code,const char *immed_reboot_flag,
 			int delay_dwnl , const char *lastrun, char *disableStatsUpdate, 
-			const DeviceProperty_t* device_info,void **curl,int *force_exit, const Rfc_t *rfc_list)
+			const DeviceProperty_t* device_info,void **curl,int *force_exit, const Rfc_t *rfc_list,int trigger_type)
 {
     const char* dwlpath_filename = NULL;
     int ret_curl_code = -1;
@@ -537,7 +538,7 @@ int rdkv_upgrade_request(int upgrade_type, int server_type,
                 snprintf(dwnl_status, sizeof(dwnl_status), "Flashing In Progress");
                 snprintf(fwdls.status, sizeof(fwdls.status), "Status|%s\n", dwnl_status);
                 updateFWDownloadStatus(&fwdls, disableStatsUpdate);
-                flash_status  = flashImage(artifactLocationUrl, dwlpath_filename, immed_reboot_flag, "2", upgrade_type, device_info->maint_status);
+                flash_status  = flashImage(artifactLocationUrl, dwlpath_filename, immed_reboot_flag, "2", upgrade_type, device_info->maint_status,trigger_type);
                 if (upgrade_type == PCI_UPGRADE) {
                     if (flash_status != 0 && upgrade_type == PCI_UPGRADE) {
                         SWLOG_ERROR("doCDL failed\n");

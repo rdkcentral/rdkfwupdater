@@ -36,8 +36,17 @@
 #include <sys/wait.h>
 #include "deviceutils.h"
 
-extern int getTriggerType();
-extern void t2CountNotify(char *marker, int val);
+//extern int getTriggerType();
+// TODO - do similar to what is done for IARM eventing. Is not the primary goal of this module
+/* Description: Use for sending telemetry Log
+ * @param marker: use for send marker details
+ * @return : void
+ * */
+void t2CountNotify(char *marker, int val) {
+#ifdef T2_EVENT_ENABLED
+    t2_event_d(marker, val);
+#endif
+}
 
 /* Description:Use for Flashing the image
  * @param: server_url : server url
@@ -48,7 +57,7 @@ extern void t2CountNotify(char *marker, int val);
  * @param: maint : maintenance manager enable/disable
  * @return int: 0 : Success other than 0 false
  * */
-int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint)
+int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint,int trigger_type)
 {
     int ret =  -1;
     bool mediaclient = false;
@@ -159,7 +168,7 @@ int flashImage(const char *server_url, const char *upgrade_file, const char *reb
          else {
              SWLOG_INFO("Device_X_COMCAST_COM_Xcalibur_Client_xconfCheckNow: File does not exist\n");
          }
-	 if (((strncmp(maint, "true", 4)) == 0) && (0 == (strncmp(reboot_flag, "true", 4))) && ((0 != strcasecmp("CANARY", pXconfCheckNow)) || (getTriggerType() != 3))) {
+	 if (((strncmp(maint, "true", 4)) == 0) && (0 == (strncmp(reboot_flag, "true", 4))) && ((0 != strcasecmp("CANARY", pXconfCheckNow)) || (trigger_type != 3))) {
              eventManager("MaintenanceMGR", MAINT_CRITICAL_UPDATE);
 	     SWLOG_INFO("Posting Critical update");
 	 }
@@ -170,7 +179,7 @@ int flashImage(const char *server_url, const char *upgrade_file, const char *reb
              SWLOG_INFO("flashImage: Flashing completed. Deleting File:%s\n", upgrade_file);
              unlink(upgrade_file);
 	 }
-	 postFlash(maint, file+1, upgrade_type, reboot_flag);
+	 postFlash(maint, file+1, upgrade_type, reboot_flag,trigger_type);
          updateUpgradeFlag(2);// Remove file TODO: Logic need to change
     }
     if (true == mediaclient && (0 == filePresentCheck(upgrade_file))) {
@@ -206,7 +215,7 @@ int flashImage(const char *server_url, const char *upgrade_file, const char *reb
  * @return int: 0
  * */
 
-int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, const char *reboot_flag)
+int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, const char *reboot_flag,int trigger_type)
 {
     DownloadData DwnLoc;
     int ret = -1;
@@ -323,7 +332,7 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
 	    SWLOG_INFO("Creating flag for preparing to reboot event sent to AS/EPG\n");
 	    fclose(fp);
 	}
-        if ((0 != strcasecmp("CANARY", pXconfCheckNow)) || (getTriggerType() != 3)) {
+        if ((0 != strcasecmp("CANARY", pXconfCheckNow)) || (trigger_type != 3)) {
             eventManager(FW_STATE_EVENT,FW_STATE_PREPARING_TO_REBOOT);
 	}
     }
@@ -336,7 +345,7 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
             fprintf(fp, "%s\n", upgrade_file);
             fclose(fp);
         }
-	if ((0 == strcasecmp("CANARY", pXconfCheckNow)) && (getTriggerType() == 3)) {
+	if ((0 == strcasecmp("CANARY", pXconfCheckNow)) && (trigger_type == 3)) {
 
             char post_data[] = "{\"jsonrpc\":\"2.0\",\"id\":\"42\",\"method\": \"org.rdk.System.getPowerState\"}";
             DownloadData DwnLoc = {NULL, 0, 0};
