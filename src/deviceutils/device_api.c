@@ -1288,7 +1288,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
     bool skip = false;
     bool dbgServices = isDebugServicesEnabled(); //check debug services enabled
 	bool labSigned = GetLabsignedValue(buf2, sizeof(buf2));
-	eDeviceType DeviceType = getDeviceType();
+	eDeviceType deviceType = getDeviceType();
 
     if( pServURL != NULL )
     {
@@ -1297,7 +1297,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
         if( isInStateRed() )
         {
             //if(( eBuildType != ePROD )  || ( dbgServices == true ))
-			if(Debug_Services_Enabled(labSigned, eBuildType, dbgServices, eDeviceType))
+			if(Debug_Services_Enabled(labSigned, eBuildType, dbgServices, deviceType))
             {
                 len = GetServerUrlFile( pServURL, szBufSize, STATE_RED_CONF );
             }
