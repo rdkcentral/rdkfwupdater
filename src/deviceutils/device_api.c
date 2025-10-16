@@ -1288,7 +1288,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
     bool skip = false;
     bool dbgServices = isDebugServicesEnabled(); //check debug services enabled
 	bool labSigned = GetLabsignedValue(buf2, sizeof(buf2));
-	const char * DeviceType = getDeviceType();
+	eDeviceType DeviceType = getDeviceType();
 
     if( pServURL != NULL )
     {
@@ -1297,7 +1297,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
         if( isInStateRed() )
         {
             //if(( eBuildType != ePROD )  || ( dbgServices == true ))
-			if(Debug_Services_Enabled(labSigned, eBuildType, dbgServices, DeviceType))
+			if(Debug_Services_Enabled(labSigned, eBuildType, dbgServices, eDeviceType))
             {
                 len = GetServerUrlFile( pServURL, szBufSize, STATE_RED_CONF );
             }
@@ -1309,7 +1309,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
         else
         {
             //if(( eBuildType != ePROD )  || ( dbgServices == true ))
-			if(Debug_Services_Enabled(labSigned, eBuildType, dbgServices, DeviceType))
+			if(Debug_Services_Enabled(labSigned, eBuildType, dbgServices, eDeviceType))
             {
                 if( (filePresentCheck( SWUPDATE_CONF ) == RDK_API_SUCCESS) )    // if the file exists
                 {
