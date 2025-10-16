@@ -130,5 +130,7 @@ int term_event_handler(void);
 int init_event_handler(void);
 void interuptDwnl(int app_mode);
 bool isConnectedToInternet (void);
+void setAppMode(int mode);
+int getAppMode(void);
 
 #endif /* VIDEO_IARMINTERFACE_IARMINTERFACE_H_ */

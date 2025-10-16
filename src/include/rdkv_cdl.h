@@ -154,8 +154,6 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
 void updateUpgradeFlag(int action);
 void t2CountNotify(char *marker, int val);
 void t2ValNotify(char *marker, char *val);
-void setAppMode(int mode);
-int getAppMode(void);
 void setDwnlState(int state);
 int getDwnlState(void);
 int startFactoryProtectService(void);
