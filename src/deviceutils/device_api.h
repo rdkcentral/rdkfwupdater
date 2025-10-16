@@ -412,5 +412,16 @@ size_t GetServURL(char *pServURL, size_t szBufSize);
 */
 size_t GetFileContents(char **pOut, char *pFileName);
 
+/* function GetLabsignedValue - gets the LABSIGNED_ENABLED value from /etc/device.properties.
+
+        Usage: bool GetLabsignedValue <char> *pBuf, <size_t> szBufSize
+
+            pBuf - pointer to a char buffer to store the output string.
+
+            szBufSize - the size of the character buffer in argument 1.
+
+            RETURN - if firmware version has LABSIGNED and LABSIGNED_ENABLE is true, then TRUE shall be returned. Else, false.
+*/
+bool GetLabsignedValue(char *pBuf, size_t szBufSize);
 
 #endif
