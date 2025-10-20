@@ -18,7 +18,7 @@
 
 AM_CFLAGS = $(TRACE_CFLAGS)
 
-AM_CFLAGS += -Wall -Werror -Wno-error=format $(cjson_CFLAGS) $(curl_CFLAGS) $(CFLAGS)
+AM_CFLAGS += -Wall -Werror $(cjson_CFLAGS) $(curl_CFLAGS) $(CFLAGS)
 AM_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
 AM_LDFLAGS += $(cjson_LIBS) $(curl_LIBS) 
 AM_LDFLAGS += -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread -lrbus

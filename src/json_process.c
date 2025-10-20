@@ -247,7 +247,7 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
         remainlen = szPostFieldOut - totlen;
         totlen += snprintf( (pTmpPost + totlen), remainlen, "capabilities=%s", tmpbuf );
     }
-    SWLOG_INFO( "createJsonString: totlen = %d\n%s\n", totlen, pPostFieldOut );
+    SWLOG_INFO( "createJsonString: totlen = %zu\n%s\n", totlen, pPostFieldOut );
     return totlen;
 }
 
