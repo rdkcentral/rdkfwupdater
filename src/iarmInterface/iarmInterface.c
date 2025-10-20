@@ -19,34 +19,6 @@
 #include <stdbool.h>
 #include <pthread.h>
 #include "rdkv_cdl_log_wrapper.h"
-// App mode management - moved from rdkv_main.c
-static pthread_mutex_t app_mode_status = PTHREAD_MUTEX_INITIALIZER;
-static int app_mode = 1; // 1: fore ground and 0: background
-			  
-/* Description: Set App mode - moved from rdkv_main.c
- * * @param: mode : set mode
- * * @return: void
- * */
-void setAppMode(int mode)
-{
-	pthread_mutex_lock(&app_mode_status);
-	app_mode = mode;
-	SWLOG_INFO("%s: app mode = %d\n", __FUNCTION__, app_mode);
-	pthread_mutex_unlock(&app_mode_status);
-}
-/* Description: Get App mode - moved from rdkv_main.c
- * * @param: void
- * @return: int : return state
- * */
-int getAppMode(void)
-{
-	int mode = 1;
-	pthread_mutex_lock(&app_mode_status);
-	mode = app_mode;
-	pthread_mutex_unlock(&app_mode_status);
-	SWLOG_INFO("%s: app mode = %d\n", __FUNCTION__, mode);
-	return mode;
-}
 #if defined(IARM_ENABLED)
 
 #include "iarmInterface.h"
@@ -64,6 +36,7 @@ int getAppMode(void)
 #endif
 #include "deviceutils.h"
 
+int getAppMode(void);
 #define IARM_RDKVFWUPGRADER_EVENT "RDKVFWEvent"
 
 /** Description: Send event to iarm event manager
@@ -274,7 +247,6 @@ int term_event_handler(void)
     SWLOG_INFO("Successfully terminated all event handlers:%d\n",res);
     IARM_Bus_Disconnect();
     IARM_Bus_Term();
-    pthread_mutex_destroy(&app_mode_status);
         return 0;
 }
 
@@ -357,7 +329,6 @@ void eventManager(const char *cur_event_name, const char *event_status) {
 
 int term_event_handler(void)
 {
-    pthread_mutex_destroy(&app_mode_status);
     return 0;
 }
 int init_event_handler(void)

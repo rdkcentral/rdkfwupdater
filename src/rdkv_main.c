@@ -102,7 +102,26 @@ int getTriggerType()
  * @param: state : set state
  * @return: void
  * */
-
+void setAppMode(int mode)
+{
+	pthread_mutex_lock(&app_mode_status);
+	app_mode = mode;
+	SWLOG_INFO("%s: app mode = %d\n", __FUNCTION__, app_mode);
+	pthread_mutex_unlock(&app_mode_status);
+}
+/* Description: Get App mode
+ * * @param: void
+ * @return: int : return state
+ * */
+int getAppMode(void)
+{
+	int mode = 1;
+	pthread_mutex_lock(&app_mode_status);
+	mode = app_mode;
+	pthread_mutex_unlock(&app_mode_status);
+	SWLOG_INFO("%s: app mode = %d\n", __FUNCTION__, mode);
+	return mode;
+}
 /* Description: Set Download state.
  * @param: state : set state
  * @return: void
@@ -404,6 +423,7 @@ void uninitialize(int fwDwnlStatus) {
     t2_uninit();
 #endif
     pthread_mutex_destroy(&mutuex_dwnl_state);
+    pthread_mutex_destroy(&app_mode_status);
     term_event_handler();
     updateUpgradeFlag(2);
     if((fwDwnlStatus != INITIAL_VALIDATION_DWNL_INPROGRESS) && ((filePresentCheck(DIFDPID)) == 0)) {
