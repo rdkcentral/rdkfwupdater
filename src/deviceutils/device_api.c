@@ -1426,64 +1426,61 @@ size_t GetFileContents( char **pOut, char *pFileName )
 
             RETURN - if firmware version has LABSIGNED and LABSIGNED_ENABLE is true, then TRUE shall be returned. Else, false.
 */
-bool GetLabsignedValue(char *pBuf, size_t szBufSize){
+bool GetLabsignedValue(char *pBuf, size_t szBufSize)
+{
     FILE *fp;
-    size_t i = 0;
-    char *pTmp = NULL, *pTmp2 =NULL;
-    bool pOut = false;
-    char buf[150];
+    bool isEnabled = false;
+    char buf[150] = {0};
+    char firmware[150] = {0};
+    char *eVal, *eBuf;
+    int i = 0;
 
-    if ( pBuf != NULL ){
-		*pBuf = 0;
-        if( (fp = fopen( DEVICE_PROPERTIES_FILE, "r" )) != NULL )
-        {
-            while( fgets( buf, sizeof(buf), fp ) != NULL )
-            {
-                pTmp = strstr( buf, "LABSIGNED_ENABLED=" );
-                if( pTmp && pTmp == buf )   // if match found and match is first character on line
-                {
-                    pTmp = strchr( pTmp, '=' );
-		    if(pTmp != NULL){
-		    ++pTmp;
-                    i = snprintf( pBuf, szBufSize, "%s", pTmp );
-                    i = stripinvalidchar( pBuf, i );
-                    pTmp = pBuf;
-                    while( *pTmp )
-                    {
-                        *pTmp = tolower( *pTmp );
-                        ++pTmp;
-                    }
-		  		  }
-			    break;
-               }
-            }
-            fclose( fp );
-        } else {
-        COMMONUTILITIES_ERROR("GetLabsignedValue: Error, failed to open properties file\n");
+    if (!pBuf || szBufSize == 0)
         return false;
-        } 
 
-        if( *pBuf == 0 )
-        {
-			 COMMONUTILITIES_ERROR( "GetLabsignedValue: Error, LABSIGNED_ENABLED not found or empty!!!\n" );
-		} else {
-			pTmp = pBuf;
-            GetFirmwareVersion( buf, sizeof(buf) );
-            pTmp2 = buf;
-            while( *pTmp2 )
-            {
-                *pTmp2 = tolower( *pTmp2 );
-                ++pTmp2;
+    *pBuf = '\0';
+
+    fp = fopen(DEVICE_PROPERTIES_FILE, "r");
+    if (!fp) {
+        COMMONUTILITIES_ERROR("GetLabsignedValue: can't open properties file\n");
+        return isEnabled;
+    }
+
+    while (fgets(buf, sizeof(buf), fp)) {
+        if (strncmp(buf, "LABSIGNED_ENABLED=", 17) == 0) {
+            eVal = strchr(buf, '=');
+            if (eVal) {
+                ++eVal;
+                i = snprintf(pBuf, szBufSize, "%s", eVal);
+                i = stripinvalidchar(pBuf, i);
+                eBuf = pBuf;
+                while (*eBuf) {
+                    *eBuf = tolower((unsigned char)*eBuf);
+                    ++eBuf;
+                }
             }
+            break;
+        }
+    }
+    fclose(fp);
 
-			pTmp2 = buf;
-		}
-        if(( strstr( pTmp2, "labsigned") != NULL) && strstr(pTmp, "true")){
-             pOut = true;	 
-		}
-	}
-     return pOut;
+    if (*pBuf == '\0') {
+        COMMONUTILITIES_ERROR("GetLabsignedValue: LABSIGNED_ENABLED not found or empty\n");
+        return isEnabled;
+    }
+
+    if (GetFirmwareVersion(firmware, sizeof(firmware)) == 0 || *firmware == '\0') {
+        COMMONUTILITIES_ERROR("GetLabsignedValue: GetFirmwareVersion failed or empty\n");
+        return isEnabled;
+    }
+    eBuf = firmware;
+    while (*eBuf) {
+        *eBuf = tolower((unsigned char)*eBuf);
+        ++eBuf;
+    }
+
+    if (strstr(firmware, "labsigned") && strstr(pBuf, "true"))
+        isEnabled = true;
+
+    return isEnabled;
 }
-
-
-
