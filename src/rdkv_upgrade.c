@@ -268,12 +268,22 @@ void rdkv_utils_cleanup(void)
  * PDRI, and peripheral upgrades. It manages download coordination, status 
  * reporting, and error handling.
  */
-int rdkv_upgrade_request(int upgrade_type, int server_type, 
-                        const char* artifactLocationUrl, const void* dwlloc, 
-                        char *pPostFields, int *pHttp_code,const char *immed_reboot_flag,
-			int delay_dwnl , const char *lastrun, char *disableStatsUpdate, 
-			const DeviceProperty_t* device_info,void **curl,int *force_exit, const Rfc_t *rfc_list,int trigger_type)
+int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* pHttp_code)
 {
+    int upgrade_type = context->upgrade_type;
+    int server_type = context->server_type;
+    const char* artifactLocationUrl = context->artifactLocationUrl;
+    const void* dwlloc = context->dwlloc;
+    char* pPostFields = context->pPostFields;
+    const char* immed_reboot_flag = context->immed_reboot_flag;
+    int delay_dwnl = context->delay_dwnl;
+    const char* lastrun = context->lastrun;
+    char* disableStatsUpdate = context->disableStatsUpdate;
+    const DeviceProperty_t* device_info = context->device_info;
+    int* force_exit = context->force_exit;
+    int trigger_type = context->trigger_type;
+    const Rfc_t* rfc_list = context->rfc_list;
+
     const char* dwlpath_filename = NULL;
     int ret_curl_code = -1;
     char dwnl_status[64];
@@ -289,7 +299,7 @@ int rdkv_upgrade_request(int upgrade_type, int server_type,
     FILE *fp = NULL;
     int flash_status = -1;
 
-    if (artifactLocationUrl == NULL || dwlloc == NULL || pHttp_code == NULL) {
+    if (context == NULL || artifactLocationUrl == NULL || dwlloc == NULL || pHttp_code == NULL) {
         SWLOG_ERROR("%s: Parameter is NULL\n", __FUNCTION__);
         return ret_curl_code;
     }

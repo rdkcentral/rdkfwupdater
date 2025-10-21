@@ -1168,7 +1168,24 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
                     }
 
                     SWLOG_INFO( "%s: Requesting upgrade to %s from %s\n", __FUNCTION__, cDLStoreLoc, cSourceURL );
-                    iCurlCode = rdkv_upgrade_request( PERIPHERAL_UPGRADE, HTTP_SSR_DIRECT, cSourceURL, cDLStoreLoc, NULL, &http_code,immed_reboot_flag,delay_dwnl , lastrun, disableStatsUpdate, &device_info,&curl,&force_exit,&rfc_list,trigger_type);
+
+                    //context structure for rdkv_upgrade_request()
+                    RdkUpgradeContext_t peripheral_context = {0};
+                    peripheral_context.upgrade_type = PERIPHERAL_UPGRADE;
+                    peripheral_context.server_type = HTTP_SSR_DIRECT;
+                    peripheral_context.artifactLocationUrl = cSourceURL;
+                    peripheral_context.dwlloc = cDLStoreLoc;
+                    peripheral_context.pPostFields = NULL;
+                    peripheral_context.immed_reboot_flag = immed_reboot_flag;
+                    peripheral_context.delay_dwnl = delay_dwnl;
+                    peripheral_context.lastrun = lastrun;
+                    peripheral_context.disableStatsUpdate = disableStatsUpdate;
+                    peripheral_context.device_info = &device_info;
+                    peripheral_context.force_exit = &force_exit;
+                    peripheral_context.trigger_type = trigger_type;
+                    peripheral_context.rfc_list = &rfc_list;
+
+                    iCurlCode = rdkv_upgrade_request(&peripheral_context, &curl, &http_code);
                     if( iCurlCode == 0 && http_code == 200 )
                     {
                         if( szRunningLen )
@@ -1290,7 +1307,24 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
         snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s", device_info.difw_path, pResponse->cloudFWFile);
 	    SWLOG_INFO("DWNL path with img name=%s\n", dwlpath_filename);
         eraseFolderExcePramaFile(device_info.difw_path, pResponse->cloudFWFile, device_info.model);
-        pci_curl_code = rdkv_upgrade_request(PCI_UPGRADE, HTTP_SSR_DIRECT, imageHTTPURL, dwlpath_filename, NULL, &http_code,immed_reboot_flag,delay_dwnl , lastrun, disableStatsUpdate, &device_info, &curl,&force_exit, &rfc_list,trigger_type);
+
+        // context structure for PCI rdkv_upgrade_request
+        RdkUpgradeContext_t pci_context = {0};
+        pci_context.upgrade_type = PCI_UPGRADE;
+        pci_context.server_type = HTTP_SSR_DIRECT;
+        pci_context.artifactLocationUrl = imageHTTPURL;
+        pci_context.dwlloc = dwlpath_filename;
+        pci_context.pPostFields = NULL;
+        pci_context.immed_reboot_flag = immed_reboot_flag;
+        pci_context.delay_dwnl = delay_dwnl;
+        pci_context.lastrun = lastrun;
+        pci_context.disableStatsUpdate = disableStatsUpdate;
+        pci_context.device_info = &device_info;
+        pci_context.force_exit = &force_exit;
+        pci_context.trigger_type = trigger_type;
+        pci_context.rfc_list = &rfc_list;
+
+        pci_curl_code = rdkv_upgrade_request(&pci_context, &curl, &http_code);
     } else {
         SWLOG_INFO("checkForValidPCIUpgrade return false\n");
         pci_curl_code = 0;
@@ -1315,7 +1349,24 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
                 sleep(30);
             }
             snprintf(disableStatsUpdate, sizeof(disableStatsUpdate), "%s","yes");
-            pdri_curl_code = rdkv_upgrade_request(PDRI_UPGRADE, HTTP_SSR_DIRECT, imageHTTPURL, dwlpath_filename, NULL, &http_code,immed_reboot_flag,delay_dwnl , lastrun, disableStatsUpdate, &device_info, &curl,&force_exit, &rfc_list,trigger_type);
+
+            //context structure for PDRI rdkv_upgrade_request
+            RdkUpgradeContext_t pdri_context = {0};
+            pdri_context.upgrade_type = PDRI_UPGRADE;
+            pdri_context.server_type = HTTP_SSR_DIRECT;
+            pdri_context.artifactLocationUrl = imageHTTPURL;
+            pdri_context.dwlloc = dwlpath_filename;
+            pdri_context.pPostFields = NULL;
+            pdri_context.immed_reboot_flag = immed_reboot_flag;
+            pdri_context.delay_dwnl = delay_dwnl;
+            pdri_context.lastrun = lastrun;
+            pdri_context.disableStatsUpdate = disableStatsUpdate;
+            pdri_context.device_info = &device_info;
+            pdri_context.force_exit = &force_exit;
+            pdri_context.trigger_type = trigger_type;
+            pdri_context.rfc_list = &rfc_list;
+
+            pdri_curl_code = rdkv_upgrade_request(&pdri_context, &curl, &http_code);
             snprintf(disableStatsUpdate, sizeof(disableStatsUpdate), "%s","no");
             if (pdri_curl_code == 100) {
                 pdri_curl_code = 0;
@@ -1420,7 +1471,24 @@ static int MakeXconfComms( XCONFRES *pResponse, int server_type, int *pHttp_code
                 if( len )
                 {
                     len = createJsonString( pJSONStr, JSON_STR_LEN );
-                    ret = rdkv_upgrade_request( XCONF_UPGRADE, server_type, pServURL, &DwnLoc, pJSONStr, pHttp_code, immed_reboot_flag, delay_dwnl , lastrun,disableStatsUpdate, &device_info, &curl, &force_exit, &rfc_list,trigger_type);
+
+                    //context structure for XCONF upgrade request
+                    RdkUpgradeContext_t xconf_context = {0};
+                    xconf_context.upgrade_type = XCONF_UPGRADE;
+                    xconf_context.server_type = server_type;
+                    xconf_context.artifactLocationUrl = pServURL;
+                    xconf_context.dwlloc = &DwnLoc;
+                    xconf_context.pPostFields = pJSONStr;
+                    xconf_context.immed_reboot_flag = immed_reboot_flag;
+                    xconf_context.delay_dwnl = delay_dwnl;
+                    xconf_context.lastrun = lastrun;
+                    xconf_context.disableStatsUpdate = disableStatsUpdate;
+                    xconf_context.device_info = &device_info;
+                    xconf_context.force_exit = &force_exit;
+                    xconf_context.trigger_type = trigger_type;
+                    xconf_context.rfc_list = &rfc_list;
+
+                    ret = rdkv_upgrade_request(&xconf_context, &curl, pHttp_code);
                     if( ret == 0 && *pHttp_code == 200 && DwnLoc.pvOut != NULL )
                     {
                         SWLOG_INFO( "MakeXconfComms: Calling getXconfRespData with input = %s\n", (char *)DwnLoc.pvOut );
