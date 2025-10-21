@@ -245,6 +245,94 @@ size_t GetInstalledBundles(char *pBundles, size_t szBufSize)
 
     return szRunningLen;
 }
+/* function GetPartnerId - gets the partner ID of the device.
+ 
+        Usage: size_t GetPartnerId <char *pPartnerId> <size_t szBufSize>
+ 
+            pPartnerId - pointer to a char buffer to store the output string.
+
+            szBufSize - the size of the character buffer in argument 1.
+
+            RETURN - number of characters copied to the output buffer.
+*/
+size_t GetPartnerId( char *pPartnerId, size_t szBufSize )
+{
+    SWLOG_ERROR("%s calling from librdksw_fwutils.so\n", __FUNCTION__);
+    char *pTmp;
+    FILE *fp;
+    size_t i = 0;
+    char buf[150];
+    char whoami[8];
+    int ret = -1;
+
+    if( pPartnerId != NULL )
+    {
+        *pPartnerId = 0;
+	whoami[0] = 0;
+	ret = getDevicePropertyData("WHOAMI_SUPPORT", whoami, sizeof(whoami));
+        if (ret == UTILS_SUCCESS) 
+	{
+            SWLOG_INFO("whoami is = %s\n", whoami);
+        } 
+	else 
+	{
+            SWLOG_ERROR("%s: getDevicePropertyData() for whoami fail\n", __FUNCTION__);
+        }
+	if (((0 == (strncmp(whoami, "true", 4))) && (fp = fopen( BOOTSTRAP_FILE, "r" )) != NULL))
+        {
+            while( fgets( buf, sizeof(buf), fp ) != NULL )
+            {
+                if( (pTmp = strstr( buf, "X_RDKCENTRAL-COM_RFC.Bootstrap.PartnerName" )) != NULL )
+                {
+                    while( *pTmp && *pTmp++ != '=' )
+                    {
+                        ;
+                    }
+                    snprintf( pPartnerId, szBufSize, "%s", pTmp );
+		    break;
+		}
+	    }
+	    fclose(fp);
+        }
+	else if( (fp = fopen( PARTNER_ID_FILE, "r" )) != NULL )
+        {
+            fgets( pPartnerId, szBufSize, fp );
+            fclose( fp );
+        }
+        else if( (fp = fopen( BOOTSTRAP_FILE, "r" )) != NULL )
+        {
+            while( fgets( buf, sizeof(buf), fp ) != NULL )
+            {
+                if( (pTmp = strstr( buf, "X_RDKCENTRAL-COM_Syndication.PartnerId" )) != NULL )
+                {
+                    while( *pTmp && *pTmp++ != '=' )
+                    {
+                        ;
+                    }
+                    snprintf( pPartnerId, szBufSize, "%s", pTmp );
+		    break;
+                }
+            }
+            fclose( fp );
+        }
+        else
+        {
+            // TODO: need to check
+            // if [ "$DEVICE_NAME" = "PLATCO" ]; then
+            // defaultPartnerId="xglobal"
+            // else
+            // defaultPartnerId="comcast"
+            // fi
+            snprintf( pPartnerId, szBufSize, "comcast" );
+        }
+        i = stripinvalidchar( pPartnerId, szBufSize );      // remove newline etc.
+    }
+    else
+    {
+        SWLOG_ERROR( "GetPartnerId: Error, input argument NULL\n" );
+    }
+    return i;
+}
 
 /* function GetOsClass - gets the OsClass of the device.
  
@@ -459,6 +547,80 @@ size_t GetAccountID( char *pAccountID, size_t szBufSize )
     }
     return i;
 }
+/* function GetEstbMac - gets the eSTB MAC address of the device.
+
+        Usage: size_t GetEstbMac <char *pEstbMac> <size_t szBufSize>
+
+            pEstbMac - pointer to a char buffer to store the output string.
+
+            szBufSize - the size of the character buffer in argument 1.
+
+            RETURN - number of characters copied to the output buffer.
+*/
+size_t GetEstbMac( char *pEstbMac, size_t szBufSize )
+{
+    SWLOG_ERROR("%s calling from librdksw_fwutils.so\n", __FUNCTION__);
+    FILE *fp;
+    size_t i = 0;
+    char estb_interface[8] = {0};
+    int ret = -1;
+    bool read_from_hwinterface = false; // default value
+
+    if( pEstbMac != NULL )
+    {
+        *pEstbMac = 0;
+        if( (fp = fopen( ESTB_MAC_FILE, "r" )) != NULL )
+        {
+            fgets( pEstbMac, szBufSize, fp );   // better be a valid string on first line
+            fclose( fp );
+            i = stripinvalidchar( pEstbMac, szBufSize );
+            SWLOG_INFO("GetEstbMac: After reading ESTB_MAC_FILE value=%s\n", pEstbMac);
+            /* Below condition if ESTB_MAC_FILE file having empty data and pEstbMac does not have 17 character
+            * including total mac address with : separate */
+            if (pEstbMac[0] == '\0' || pEstbMac[0] == '\n' || i != MAC_ADDRESS_LEN)
+            {
+                SWLOG_INFO("GetEstbMac: ESTB_MAC_FILE file is empty read_from_hwinterface is set to true\n");
+                read_from_hwinterface = true;
+            }
+        }
+        else
+        {
+            read_from_hwinterface = true;//ESTB_MAC_FILE file does not present proceed for reading from interface
+            SWLOG_INFO("GetEstbMac: read_from_hwinterface is set to true\n");
+        }
+        if (read_from_hwinterface == true)
+        {
+            SWLOG_INFO("GetEstbMac: Reading from hw interface\n");
+            ret = getDevicePropertyData("ESTB_INTERFACE", estb_interface, sizeof(estb_interface));
+            if (ret == UTILS_SUCCESS)
+            {
+                i = GetHwMacAddress(estb_interface, pEstbMac, szBufSize);
+                if(i)
+                {
+                    SWLOG_INFO("GetEstbMac: Hardware address=%s=\n", pEstbMac);
+                }
+                else
+                {
+                    /* When there is no hw address available */
+                    *pEstbMac = 0;
+                    SWLOG_ERROR("GetEstbMac: GetHwMacAddress return fail\n");
+                }
+            }
+            else
+            {
+                *pEstbMac = 0;
+                i = 0;
+                SWLOG_ERROR("GetEstbMac: Interface is not part of /etc/device.properties missing\n");
+            }
+        }
+    }
+    else
+    {
+        SWLOG_ERROR( "GetEstbMac: Error, input argument NULL\n" );
+    }
+    return i;
+}
+
 /* function GetRemoteInfo - gets the remote info of the device.
  
         Usage: size_t GetRemoteInfo <char *pRemoteInfo> <size_t szBufSize>

@@ -146,7 +146,17 @@ size_t GetPDRIFileName(char *pPDRIFilename, size_t szBufSize);
             RETURN - number of characters copied to the output buffer.
 */
 size_t GetInstalledBundles(char *pBundles, size_t szBufSize);
+/* function GetPartnerId - gets the partner ID of the device.
+ 
+        Usage: size_t GetPartnerId <char *pPartnerId> <size_t szBufSize>
+ 
+            pPartnerId - pointer to a char buffer to store the output string.
 
+            szBufSize - the size of the character buffer in argument 1.
+
+            RETURN - number of characters copied to the output buffer.
+*/
+size_t GetPartnerId(char *pPartnerId, size_t szBufSize);
 /* function GetOsClass - gets the OsClass of the device.
  
         Usage: size_t GetOsClass( char *pOsClass, size_t szBufSize )
@@ -210,7 +220,17 @@ size_t GetExperience(char *pExperience, size_t szBufSize);
             RETURN - number of characters copied to the output buffer.
 */
 size_t GetAccountID(char *pAccountID, size_t szBufSize);
+/* function GetEstbMac - gets the eSTB MAC address of the device.
+ 
+        Usage: size_t GetEstbMac <char *pEstbMac> <size_t szBufSize>
+ 
+            pEstbMac - pointer to a char buffer to store the output string.
 
+            szBufSize - the size of the character buffer in argument 1.
+
+            RETURN - number of characters copied to the output buffer.
+*/
+size_t GetEstbMac(char *pEstbMac, size_t szBufSize);
 /* function GetRemoteInfo - gets the remote info of the device.
  
         Usage: size_t GetRemoteInfo <char *pRemoteInfo> <size_t szBufSize>
