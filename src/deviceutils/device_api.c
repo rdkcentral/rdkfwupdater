@@ -1434,6 +1434,7 @@ bool GetLabsignedValue(char *pBuf, size_t szBufSize)
     char firmware[150] = {0};
     char *eVal, *eBuf;
     int i = 0;
+	const char* key = "LABSIGNED_ENABLED=";
 
     if (!pBuf || szBufSize == 0)
         return false;
@@ -1447,7 +1448,7 @@ bool GetLabsignedValue(char *pBuf, size_t szBufSize)
     }
 
     while (fgets(buf, sizeof(buf), fp)) {
-        if (strncmp(buf, "LABSIGNED_ENABLED=", 17) == 0) {
+        if (strncmp(buf, key, sizeof(key)-1 ) == 0) {
             eVal = strchr(buf, '=');
             if (eVal) {
                 ++eVal;
