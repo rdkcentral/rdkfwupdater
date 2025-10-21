@@ -72,10 +72,10 @@ void eventManager(const char *cur_event_name, const char *event_status) {
 
         memset( &infoStatus, 0, sizeof(IARM_Bus_MaintMGR_EventData_t) );
         main_mgr_event = atoi(event_status);
-        SWLOG_INFO(">>>>> Identified MaintenanceMGR with event value=%u", main_mgr_event);
+        SWLOG_INFO(">>>>> Identified MaintenanceMGR with event value=%u\n", main_mgr_event);
         infoStatus.data.maintenance_module_status.status = (IARM_Maint_module_status_t)main_mgr_event;
         ret_code=IARM_Bus_BroadcastEvent(IARM_BUS_MAINTENANCE_MGR_NAME,(IARM_EventId_t)IARM_BUS_MAINTENANCEMGR_EVENT_UPDATE, (void *)&infoStatus, sizeof(infoStatus));
-        SWLOG_INFO(">>>>> IARM %s  Event  = %d",(ret_code == IARM_RESULT_SUCCESS) ? "SUCCESS" : "FAILURE",\
+        SWLOG_INFO(">>>>> IARM %s  Event  = %d\n",(ret_code == IARM_RESULT_SUCCESS) ? "SUCCESS" : "FAILURE",\
                 infoStatus.data.maintenance_module_status.status);
     }
     else

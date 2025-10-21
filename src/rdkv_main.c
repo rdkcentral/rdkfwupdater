@@ -869,7 +869,8 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
                 chunk_dwnl = isIncremetalCDLEnable(file_dwnl.pathname);
             }
             SWLOG_INFO("%s : After curl request the curl status = %d and http=%d and chunk download=%d\n", __FUNCTION__, curl_ret_code, *httpCode, chunk_dwnl);
-        } while(chunk_dwnl && (CURL_LOW_BANDWIDTH == curl_ret_code || CURLTIMEOUT == curl_ret_code));
+            // Sleep for 10 seconds in case of curl 56 (CURL_RECV_ERROR) for network to stabilize if this is due to network issue. 
+        } while(chunk_dwnl && (CURL_LOW_BANDWIDTH == curl_ret_code || CURLTIMEOUT == curl_ret_code || ((CURL_RECV_ERROR == curl_ret_code) && !sleep(10)) ));
 #ifdef LIBRDKCERTSELECTOR
     } while (rdkcertselector_setCurlStatus(thisCertSel, curl_ret_code, file_dwnl.url) == TRY_ANOTHER);
 #endif
@@ -1079,7 +1080,7 @@ int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocati
         return ret_curl_code;
     }
     if (upgrade_type == XCONF_UPGRADE) {
-        SWLOG_INFO("Trying to communicate with XCONF server");
+        SWLOG_INFO("Trying to communicate with XCONF server\n");
         t2CountNotify("SYST_INFO_XCONFConnect", 1);
     }
     *pHttp_code = 0;
