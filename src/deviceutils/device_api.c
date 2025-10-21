@@ -899,7 +899,6 @@ size_t GetBuildType( char *pBuildType, size_t szBufSize, BUILDTYPE *peBuildTypeO
     return i;
 }
 
-
 /* function GetFirmwareVersion - gets the firmware version of the device.
  
         Usage: size_t GetFirmwareVersion <char *pFWVersion> <size_t szBufSize>
@@ -1486,6 +1485,5 @@ bool GetLabsignedValue(char *pBuf, size_t szBufSize)
 
     if (strstr(firmware, "labsigned") && strstr(pBuf, "true"))
         isEnabled = true;
-
     return isEnabled;
 }
