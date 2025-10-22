@@ -6,7 +6,7 @@ mkdir -p $INSTALL_DIR
 git clone https://github.com/rdkcentral/common_utilities.git
 ls
 cd common_utilities
-git checkout topic/RDK-59276-modularization/
+git checkout topic/RDK-59276-modularization
 make 
 make && make install
 
