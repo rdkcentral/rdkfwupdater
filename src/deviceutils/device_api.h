@@ -424,7 +424,7 @@ size_t GetFileContents(char **pOut, char *pFileName);
 
             RETURN - if firmware version has LABSIGNED and LABSIGNED_ENABLE is true, then TRUE shall be returned. Else, false.
 */
-bool GetLabsignedValue(char *pBuf, size_t szBufSize);
+bool GetDbgBuildValue(char *pBuf, size_t szBufSize);
 
-bool Debug_Services_Enabled(bool labSigned, BUILDTYPE eBuildType, bool dbgServices, const char* deviceType);
+bool Debug_Services_Enabled(bool DbgBuild, BUILDTYPE eBuildType, bool dbgServices, const char* deviceType);
 #endif
