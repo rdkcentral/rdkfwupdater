@@ -426,5 +426,5 @@ size_t GetFileContents(char **pOut, char *pFileName);
 */
 bool GetLabsignedValue(char *pBuf, size_t szBufSize);
 
-bool Debug_Services_Enabled(bool labSigned, BUILDTYPE eBuildType, bool dbgServices, eDeviceType deviceType);
+bool Debug_Services_Enabled(bool labSigned, BUILDTYPE eBuildType, bool dbgServices, const char* deviceType);
 #endif
