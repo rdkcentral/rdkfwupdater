@@ -27,8 +27,7 @@ AM_LDFLAGS += -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lp
 lib_LTLIBRARIES = librdksw_upgrade.la librdksw_rfcIntf.la librdksw_iarmIntf.la librdksw_jsonparse.la librdksw_flash.la librdksw_fwutils.la
 
 librdksw_upgrade_la_SOURCES = \
-    ${top_srcdir}/src/rdkv_upgrade.c \
-    ${top_srcdir}/src/chunk.c
+    ${top_srcdir}/src/rdkv_upgrade.c
 
 librdksw_rfcIntf_la_SOURCES = \
     ${top_srcdir}/src/rfcInterface/rfcinterface.c
@@ -145,6 +144,7 @@ bin_PROGRAMS= rdkvfwupgrader
 
 rdkvfwupgrader_SOURCES = \
     ${top_srcdir}/src/rdkv_main.c \
+    ${top_srcdir}/src/chunk.c \
     ${top_srcdir}/src/device_status_helper.c \
     ${top_srcdir}/src/rbusInterface/rbusInterface.c
 
