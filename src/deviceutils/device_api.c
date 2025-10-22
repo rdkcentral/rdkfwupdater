@@ -39,8 +39,8 @@
 
 #define MAC_ADDRESS_LEN 17
 
-bool Debug_Services_Enabled(bool labSigned, BUILDTYPE eBuildType, bool dbgServices, const char* deviceType) { 
-    return ((labSigned && (eBuildType == ePROD) && dbgServices && (strcmp(deviceType, "test") == 0))
+bool Debug_Services_Enabled(bool DbgBuild, BUILDTYPE eBuildType, bool dbgServices, const char* deviceType) { 
+    return ((DbgBuild && (eBuildType == ePROD) && dbgServices && (strcmp(deviceType, "test") == 0))
             || (eBuildType == eDEV));
 }
 /* function GetServerUrlFile - scans a file for a URL. 
@@ -1291,7 +1291,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
 	char buf2[URL_MAX_LEN];
     bool skip = false;
     bool dbgServices = isDebugServicesEnabled(); //check debug services enabled
-	bool labSigned = GetLabsignedValue(buf2, sizeof(buf2));
+	bool DbgBuild = GetDbgBuildValue(buf2, sizeof(buf2));
 	const char* deviceType = getDeviceType();
 
     if( pServURL != NULL )
@@ -1301,7 +1301,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
         if( isInStateRed() )
         {
             //if(( eBuildType != ePROD )  || ( dbgServices == true ))
-			if(Debug_Services_Enabled(labSigned, eBuildType, dbgServices, deviceType))
+			if(Debug_Services_Enabled(DbgBuild, eBuildType, dbgServices, deviceType))
             {
                 len = GetServerUrlFile( pServURL, szBufSize, STATE_RED_CONF );
             }
@@ -1313,7 +1313,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
         else
         {
             //if(( eBuildType != ePROD )  || ( dbgServices == true ))
-			if(Debug_Services_Enabled(labSigned, eBuildType, dbgServices, deviceType))
+			if(Debug_Services_Enabled(DbgBuild, eBuildType, dbgServices, deviceType))
             {
                 if( (filePresentCheck( SWUPDATE_CONF ) == RDK_API_SUCCESS) )    // if the file exists
                 {
@@ -1429,7 +1429,7 @@ size_t GetFileContents( char **pOut, char *pFileName )
 
             RETURN - if firmware version has LABSIGNED and LABSIGNED_ENABLE is true, then TRUE shall be returned. Else, false.
 */
-bool GetLabsignedValue(char *pBuf, size_t szBufSize)
+bool GetDbgBuildValue(char *pBuf, size_t szBufSize)
 {
     FILE *fp;
     bool isEnabled = false;
@@ -1437,7 +1437,7 @@ bool GetLabsignedValue(char *pBuf, size_t szBufSize)
     char firmware[150] = {0};
     char *eVal, *eBuf;
     int i = 0;
-	const char* key = "DBGSERVICES_ENABLED=";
+	const char* key = "DBGBUILD_PRODHW=";
 
     if (!pBuf || szBufSize == 0)
         return false;
@@ -1446,7 +1446,7 @@ bool GetLabsignedValue(char *pBuf, size_t szBufSize)
 
     fp = fopen(DEVICE_PROPERTIES_FILE, "r");
     if (!fp) {
-        COMMONUTILITIES_ERROR("GetLabsignedValue: can't open properties file\n");
+        COMMONUTILITIES_ERROR("GetDbgBuildValue: can't open properties file\n");
         return isEnabled;
     }
 
@@ -1469,12 +1469,12 @@ bool GetLabsignedValue(char *pBuf, size_t szBufSize)
     fclose(fp);
 
     if (*pBuf == '\0') {
-        COMMONUTILITIES_ERROR("GetLabsignedValue: DBGSERVICES_ENABLED not found or empty\n");
+        COMMONUTILITIES_ERROR("GetDbgBuildValue: DBGBUILD_PRODHW property not found or empty\n");
         return isEnabled;
     }
 
     if (GetFirmwareVersion(firmware, sizeof(firmware)) == 0 || *firmware == '\0') {
-        COMMONUTILITIES_ERROR("GetLabsignedValue: GetFirmwareVersion failed or empty\n");
+        COMMONUTILITIES_ERROR("GetDbgBuildValue: GetFirmwareVersion failed or empty\n");
         return isEnabled;
     }
     eBuf = firmware;
