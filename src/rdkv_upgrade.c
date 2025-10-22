@@ -433,7 +433,34 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
         }
 
         if (server_type == HTTP_SSR_DIRECT || server_type == HTTP_XCONF_DIRECT) {
-            ret_curl_code = downloadFile(server_type, artifactLocationUrl, dwlloc, pPostFields, pHttp_code, curl, force_exit, immed_reboot_flag, device_info,lastrun,rfc_list,disableStatsUpdate); //SEND MADHU
+		//----------------------------------DEBUG
+		// Comprehensive parameter logging before downloadFile() call
+		SWLOG_INFO("=== About to call downloadFile() ===\n");
+		SWLOG_INFO("Parameters:\n");
+		SWLOG_INFO("  server_type: %d\n", server_type);
+		SWLOG_INFO("  artifactLocationUrl: %s\n", artifactLocationUrl ? artifactLocationUrl : "NULL");
+		SWLOG_INFO("  dwlloc: %s\n", dwlloc ? (char*)dwlloc : "NULL");
+		SWLOG_INFO("  pPostFields: %s\n", pPostFields ? pPostFields : "NULL");
+		SWLOG_INFO("  pHttp_code: %p (value: %d)\n", (void*)pHttp_code, pHttp_code ? *pHttp_code : -1);
+		SWLOG_INFO("  curl: %p (handle: %p)\n", (void*)curl, curl ? *curl : NULL);
+		SWLOG_INFO("  force_exit: %p (value: %d)\n", (void*)force_exit, force_exit ? *force_exit : -1);
+		SWLOG_INFO("  immed_reboot_flag: %s\n", immed_reboot_flag ? immed_reboot_flag : "NULL");
+		SWLOG_INFO("  device_info: %p\n", (void*)device_info);
+		if (device_info) {
+			SWLOG_INFO("    dev_name: %s\n", device_info->dev_name ? device_info->dev_name : "NULL");
+			SWLOG_INFO("    dev_type: %s\n", device_info->dev_type ? device_info->dev_type : "NULL");
+			SWLOG_INFO("    maint_status: %s\n", device_info->maint_status ? device_info->maint_status : "NULL");
+		}
+		SWLOG_INFO("  lastrun: %s\n", lastrun ? lastrun : "NULL");
+		SWLOG_INFO("  rfc_list: %p\n", (void*)rfc_list);
+		if (rfc_list) {
+			SWLOG_INFO("    rfc_throttle: %s\n", rfc_list->rfc_throttle ? rfc_list->rfc_throttle : "NULL");
+			SWLOG_INFO("    rfc_topspeed: %s\n", rfc_list->rfc_topspeed ? rfc_list->rfc_topspeed : "NULL");
+		}
+		SWLOG_INFO("  disableStatsUpdate: %s\n", disableStatsUpdate ? disableStatsUpdate : "NULL");
+		SWLOG_INFO("=====================================\n");
+//-------------------------------------------------------------------------
+            ret_curl_code = downloadFile(server_type, artifactLocationUrl, dwlloc, pPostFields, pHttp_code, curl, force_exit, immed_reboot_flag, device_info,lastrun,rfc_list,disableStatsUpdate);
             if ((server_type == HTTP_XCONF_DIRECT) && (ret_curl_code == 6 || ret_curl_code == 28)) {
                 SWLOG_INFO("%s: Checking IP and Route configuration\n", __FUNCTION__);
                 if (true == (CheckIProuteConnectivity(GATEWAYIP_FILE))) {
@@ -747,6 +774,35 @@ int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const
 #ifndef GTEST_BASIC
 int downloadFile( int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode, void **curl, int *force_exit, const char *immed_reboot_flag, const DeviceProperty_t *device_info,const char *lastrun,const Rfc_t *rfc_list,char *disableStatsUpdate){
 
+//---------------------------------------------------------------------------------------DEBUG
+// Comprehensive parameter logging at start of downloadFile()
+SWLOG_INFO("=== downloadFile() RECEIVED PARAMETERS ===\n");
+SWLOG_INFO("Received Parameters:\n");
+SWLOG_INFO("  server_type: %d\n", server_type);
+SWLOG_INFO("  artifactLocationUrl: %s\n", artifactLocationUrl ? artifactLocationUrl : "NULL");
+SWLOG_INFO("  localDownloadLocation: %s\n", localDownloadLocation ? (char*)localDownloadLocation : "NULL");
+SWLOG_INFO("  pPostFields: %s\n", pPostFields ? pPostFields : "NULL");
+SWLOG_INFO("  httpCode: %p (value: %d)\n", (void*)httpCode, httpCode ? *httpCode : -1);
+SWLOG_INFO("  curl: %p (handle: %p)\n", (void*)curl, curl ? *curl : NULL);
+SWLOG_INFO("  force_exit: %p (value: %d)\n", (void*)force_exit, force_exit ? *force_exit : -1);
+SWLOG_INFO("  immed_reboot_flag: %s\n", immed_reboot_flag ? immed_reboot_flag : "NULL");
+SWLOG_INFO("  device_info: %p\n", (void*)device_info);
+if (device_info) {
+    SWLOG_INFO("    dev_name: %s\n", device_info->dev_name ? device_info->dev_name : "NULL");
+    SWLOG_INFO("    dev_type: %s\n", device_info->dev_type ? device_info->dev_type : "NULL");
+    SWLOG_INFO("    maint_status: %s\n", device_info->maint_status ? device_info->maint_status : "NULL");
+}
+SWLOG_INFO("  lastrun: %s\n", lastrun ? lastrun : "NULL");
+SWLOG_INFO("  rfc_list: %p\n", (void*)rfc_list);
+if (rfc_list) {
+    SWLOG_INFO("    rfc_throttle: %s\n", rfc_list->rfc_throttle ? rfc_list->rfc_throttle : "NULL");
+    SWLOG_INFO("    rfc_topspeed: %s\n", rfc_list->rfc_topspeed ? rfc_list->rfc_topspeed : "NULL");
+}
+SWLOG_INFO("  disableStatsUpdate: %s\n", disableStatsUpdate ? disableStatsUpdate : "NULL");
+SWLOG_INFO("==========================================\n");
+//-------------------------------------------------------------------------------------------
+
+
     int app_mode = 0;
 //The following compilation LIBRDKCERTSELECTOR is enabled only Comcast proprietary code until the rdk-cert-config(Cert selector) component becomes open-source.	
 #ifdef LIBRDKCERTSELECTOR
@@ -767,12 +823,13 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
         SWLOG_ERROR("%s: Parameter is NULL\n", __FUNCTION__);
         return ret;
     }
-    app_mode = getAppMode(); //MADHU
+    app_mode = getAppMode();
     memset(&sec, '\0', sizeof(MtlsAuth_t));
     memset(&file_dwnl, '\0', sizeof(FileDwnl_t));
 	
     state_red = isInStateRed();
 #ifdef LIBRDKCERTSELECTOR
+    SWLOG_INFO("MADHU-- Under #ifdef LIBRDKCERTSELECTOR\n");
     static rdkcertselector_h thisCertSel = NULL;
     if (thisCertSel == NULL) {
         const char* certGroup = (state_red == 1) ? "RCVRY" : "MTLS";
@@ -820,7 +877,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
         SWLOG_INFO("%s :Trying to communicate with SSR via TLS server\n", __FUNCTION__);
         t2CountNotify("SYST_INFO_TLS_xconf", 1);
     }
-    SWLOG_INFO("%s : MADHU -- reboot_immediate flag: %s\n", __FUNCTION__,immed_reboot_flag);//MADHU 4
+    SWLOG_INFO("%s : MADHU -- reboot_immediate flag: %s\n", __FUNCTION__,immed_reboot_flag);
     if ((1 == (isThrottleEnabled(device_info->dev_name, immed_reboot_flag, app_mode)))) {
         if (0 == (strncmp(rfc_list->rfc_throttle, "true", 4))) {
             max_dwnl_speed = atoi(rfc_list->rfc_topspeed);
@@ -848,14 +905,15 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
     } else {
         SWLOG_INFO("%s : Disable OCSP check\n", __FUNCTION__);
     }
-    getPidStore(device_info->dev_name, device_info->maint_status); //TODO: Added for script support. Need to remove later   //MADHU 5
+    getPidStore(device_info->dev_name, device_info->maint_status); //TODO: Added for script support. Need to remove later
     SWLOG_INFO("download File: MADHU-- disableStatsUpdate %s, server_type:%d\n",disableStatsUpdate,HTTP_SSR_DIRECT);
     if (disableStatsUpdate != NULL && (strcmp(disableStatsUpdate, "yes")) && (server_type == HTTP_SSR_DIRECT)) {
         chunk_dwnl = isIncremetalCDLEnable(file_dwnl.pathname);
     }
 #ifndef LIBRDKCERTSELECTOR	
-    SWLOG_INFO("Fetching MTLS credential for SSR/XCONF\n");
+    SWLOG_INFO("1 Fetching MTLS credential for SSR/XCONF\n");
     ret = getMtlscert(&sec);
+    SWLOG_INFO("MADHU: Returned form getMtlscert\n ");
     if (-1 == ret) {
         SWLOG_ERROR("%s : getMtlscert() Featching MTLS fail. Going For NON MTLS:%d\n", __FUNCTION__, ret);
         mtls_enable = -1;//If certificate or key featching fail try with non mtls
@@ -867,8 +925,9 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
     (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_INIT) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_INIT);
 #ifdef LIBRDKCERTSELECTOR
     do {
-        SWLOG_INFO("Fetching MTLS credential for SSR/XCONF\n");
+        SWLOG_INFO("2 Fetching MTLS credential for SSR/XCONF\n");
         ret = getMtlscert(&sec, &thisCertSel);
+	SWLOG_INFO("MADHU: Returned form getMtlscert\n ");
         SWLOG_INFO("%s, getMtlscert function ret value = %d\n", __FUNCTION__, ret);
 
         if (ret == MTLS_CERT_FETCH_FAILURE) {

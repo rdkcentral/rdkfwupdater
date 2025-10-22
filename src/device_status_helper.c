@@ -593,7 +593,7 @@ int isDwnlBlock(int type)
     unsigned int modification_time = 0;
     int remtime = 0;
     int block = 0;
-
+    SWLOG_INFO("MADHU- In isDwnlBlock\n");
     if (type == HTTP_SSR_DIRECT || type == HTTP_XCONF_DIRECT) {
         snprintf(file_name, sizeof(file_name), "%s", DIRECT_BLOCK_FILENAME);
         block_time = 86400;
