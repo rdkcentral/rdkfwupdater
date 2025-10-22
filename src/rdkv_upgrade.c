@@ -299,6 +299,27 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
     FILE *fp = NULL;
     int flash_status = -1;
 
+    //DEBUG 
+    // Comprehensive logging with safe string handling
+    SWLOG_INFO("=== rdkv_upgrade_request() START ===\n");
+    SWLOG_INFO("Context Parameters:\n");
+    SWLOG_INFO("  upgrade_type: %d\n", upgrade_type);
+    SWLOG_INFO("  server_type: %d\n", server_type);
+    SWLOG_INFO("  artifactLocationUrl: %s\n", artifactLocationUrl ? artifactLocationUrl : "NULL");
+    SWLOG_INFO("  dwlloc: %p\n", dwlloc);
+    SWLOG_INFO("  pPostFields: %s\n", pPostFields ? pPostFields : "NULL");
+    SWLOG_INFO("  immed_reboot_flag: %s\n", immed_reboot_flag ? immed_reboot_flag : "NULL");
+    SWLOG_INFO("  delay_dwnl: %d\n", delay_dwnl);
+    SWLOG_INFO("  lastrun: %s\n", lastrun ? lastrun : "NULL");
+    SWLOG_INFO("  disableStatsUpdate: %s\n", disableStatsUpdate ? disableStatsUpdate : "NULL");
+    SWLOG_INFO("  device_info: %p\n", (void*)device_info);
+    SWLOG_INFO("  force_exit: %p (value: %s)\n", (void*)force_exit, force_exit ? (*force_exit ? "true" : "false") : "NULL");
+    SWLOG_INFO("  trigger_type: %d\n", trigger_type);
+    SWLOG_INFO("  rfc_list: %p\n", (void*)rfc_list);
+    SWLOG_INFO("========================================\n");
+
+//-----------------------------------------------------------
+
     if (context == NULL || artifactLocationUrl == NULL || dwlloc == NULL || pHttp_code == NULL) {
         SWLOG_ERROR("%s: Parameter is NULL\n", __FUNCTION__);
         return ret_curl_code;
@@ -412,7 +433,7 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
         }
 
         if (server_type == HTTP_SSR_DIRECT || server_type == HTTP_XCONF_DIRECT) {
-            ret_curl_code = downloadFile(server_type, artifactLocationUrl, dwlloc, pPostFields, pHttp_code, curl, force_exit, immed_reboot_flag, device_info,lastrun,rfc_list,disableStatsUpdate);
+            ret_curl_code = downloadFile(server_type, artifactLocationUrl, dwlloc, pPostFields, pHttp_code, curl, force_exit, immed_reboot_flag, device_info,lastrun,rfc_list,disableStatsUpdate); //SEND MADHU
             if ((server_type == HTTP_XCONF_DIRECT) && (ret_curl_code == 6 || ret_curl_code == 28)) {
                 SWLOG_INFO("%s: Checking IP and Route configuration\n", __FUNCTION__);
                 if (true == (CheckIProuteConnectivity(GATEWAYIP_FILE))) {
@@ -746,7 +767,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
         SWLOG_ERROR("%s: Parameter is NULL\n", __FUNCTION__);
         return ret;
     }
-    app_mode = getAppMode();
+    app_mode = getAppMode(); //MADHU
     memset(&sec, '\0', sizeof(MtlsAuth_t));
     memset(&file_dwnl, '\0', sizeof(FileDwnl_t));
 	
@@ -799,6 +820,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
         SWLOG_INFO("%s :Trying to communicate with SSR via TLS server\n", __FUNCTION__);
         t2CountNotify("SYST_INFO_TLS_xconf", 1);
     }
+    SWLOG_INFO("%s : MADHU -- reboot_immediate flag: %d\n", __FUNCTION__,immed_reboot_flag);//MADHU 4
     if ((1 == (isThrottleEnabled(device_info->dev_name, immed_reboot_flag, app_mode)))) {
         if (0 == (strncmp(rfc_list->rfc_throttle, "true", 4))) {
             max_dwnl_speed = atoi(rfc_list->rfc_topspeed);
@@ -826,8 +848,9 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
     } else {
         SWLOG_INFO("%s : Disable OCSP check\n", __FUNCTION__);
     }
-    getPidStore(device_info->dev_name, device_info->maint_status); //TODO: Added for script support. Need to remove later    
-    if ((strcmp(disableStatsUpdate, "yes")) && (server_type == HTTP_SSR_DIRECT)) {
+    getPidStore(device_info->dev_name, device_info->maint_status); //TODO: Added for script support. Need to remove later   //MADHU 5
+    SWLOG_INFO("download File: MADHU-- disableStatsUpdate %s, server_type:%d\n",disableStatsUpdate,HTTP_SSR_DIRECT);
+    if (disableStatsUpdate != NULL && (strcmp(disableStatsUpdate, "yes")) && (server_type == HTTP_SSR_DIRECT)) {
         chunk_dwnl = isIncremetalCDLEnable(file_dwnl.pathname);
     }
 #ifndef LIBRDKCERTSELECTOR	
