@@ -288,21 +288,24 @@ bool isDebugServicesEnabled(void)
     return status;
 }
 
-eDeviceType getDeviceType(void) {
+const char* getDeviceType(void) {
+    static char deviceType[16] = "unknown";  // default
     char rfc_data[RFC_VALUE_BUF_SIZE] = {0};
     int ret = read_RFCProperty("LABSGND", RFC_DEVICETYPE, rfc_data, sizeof(rfc_data));
 
     if (ret == -1) {
         SWLOG_ERROR("%s: Failed to read device type\n", __FUNCTION__);
-        return DEVICE_TYPE_UNKNOWN;
+        return deviceType; 
     }
 
     SWLOG_INFO("%s: RFC device type = %s\n", __FUNCTION__, rfc_data);
 
     if (strncasecmp(rfc_data, "prod", 4) == 0) {
-        return DEVICE_TYPE_PROD;
+        strncpy(deviceType, "prod", sizeof(deviceType) - 1);
     } else if (strncasecmp(rfc_data, "test", 4) == 0) {
-        return DEVICE_TYPE_TEST;
+        strncpy(deviceType, "test", sizeof(deviceType) - 1);
     }
-    return DEVICE_TYPE_UNKNOWN;
+
+    deviceType[sizeof(deviceType) - 1] = '\0'; // to ensure null termination
+    return deviceType;
 }
