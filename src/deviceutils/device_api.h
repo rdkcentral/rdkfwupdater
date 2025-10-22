@@ -98,8 +98,10 @@ typedef enum {
 #define BOOTSTRAPURL        "BsXconfUrl"
 #define BOOTSTRAPDEFAULT    NO_URL
 
-//#define Debug_Services_Enabled(labSigned, eBuildType, dbgServices, deviceType) \
-//    ( ((labSigned) && ((eBuildType) == ePROD) && (dbgServices) && ((deviceType) == DEVICE_TYPE_TEST)) || ((eBuildType) == eDEV) )
+/*
+#define Debug_Services_Enabled(labSigned, eBuildType, dbgServices, deviceType) \
+    ( ((labSigned) && ((eBuildType) == ePROD) && (dbgServices) && ((deviceType) == DEVICE_TYPE_TEST)) || ((eBuildType) == eDEV) )
+*/
 
 /* function GetServerUrlFile - scans a file for a URL. 
         Usage: size_t GetServerUrlFile <char *pServUrl> <size_t szBufSize> <char *pFileName>
