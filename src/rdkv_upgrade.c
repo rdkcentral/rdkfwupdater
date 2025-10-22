@@ -820,7 +820,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
         SWLOG_INFO("%s :Trying to communicate with SSR via TLS server\n", __FUNCTION__);
         t2CountNotify("SYST_INFO_TLS_xconf", 1);
     }
-    SWLOG_INFO("%s : MADHU -- reboot_immediate flag: %d\n", __FUNCTION__,immed_reboot_flag);//MADHU 4
+    SWLOG_INFO("%s : MADHU -- reboot_immediate flag: %s\n", __FUNCTION__,immed_reboot_flag);//MADHU 4
     if ((1 == (isThrottleEnabled(device_info->dev_name, immed_reboot_flag, app_mode)))) {
         if (0 == (strncmp(rfc_list->rfc_throttle, "true", 4))) {
             max_dwnl_speed = atoi(rfc_list->rfc_topspeed);
