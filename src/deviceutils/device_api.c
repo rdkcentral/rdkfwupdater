@@ -39,7 +39,7 @@
 
 #define MAC_ADDRESS_LEN 17
 
-static inline bool Debug_Services_Enabled(bool labSigned, BUILDTYPE eBuildType, bool dbgServices, eDeviceType deviceType) { 
+bool Debug_Services_Enabled(bool labSigned, BUILDTYPE eBuildType, bool dbgServices, eDeviceType deviceType) { 
      return (labSigned && (eBuildType == ePROD) && dbgServices && (deviceType == DEVICE_TYPE_TEST)) || (eBuildType == eDEV));
 }
 
