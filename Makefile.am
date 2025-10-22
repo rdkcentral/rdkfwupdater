@@ -28,6 +28,7 @@ lib_LTLIBRARIES = librdksw_upgrade.la librdksw_rfcIntf.la librdksw_iarmIntf.la l
 
 librdksw_upgrade_la_SOURCES = \
     ${top_srcdir}/src/rdkv_upgrade.c
+    ${top_srcdir}/src/chunk.c
 
 librdksw_rfcIntf_la_SOURCES = \
     ${top_srcdir}/src/rfcInterface/rfcinterface.c
@@ -46,8 +47,8 @@ librdksw_fwutils_la_SOURCES = \
     ${top_srcdir}/src/deviceutils/deviceutils.c \
     ${top_srcdir}/src/deviceutils/device_api.c
 
-librdksw_upgrade_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/cedmInterface $(AM_CFLAGS)
-librdksw_upgrade_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/cedmInterface
+librdksw_upgrade_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils  $(AM_CFLAGS)
+librdksw_upgrade_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
 librdksw_rfcIntf_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils $(AM_CFLAGS)
 librdksw_rfcIntf_la_CPPFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
 librdksw_iarmIntf_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils $(AM_CFLAGS)
