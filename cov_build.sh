@@ -6,8 +6,7 @@ mkdir -p $INSTALL_DIR
 git clone https://github.com/rdkcentral/common_utilities.git
 ls
 cd common_utilities
-git checkout topic/RDK-59276-modularization
-make 
+git checkout topic/RDK-59276-modularization 
 make && make install
 
 # Below dependencies are available in native build containers 
