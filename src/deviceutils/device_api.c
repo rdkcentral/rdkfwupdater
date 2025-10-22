@@ -39,8 +39,8 @@
 
 #define MAC_ADDRESS_LEN 17
 
-bool Debug_Services_Enabled(bool labSigned, BUILDTYPE eBuildType, bool dbgServices, eDeviceType deviceType) { 
-     return (labSigned && (eBuildType == ePROD) && dbgServices && (deviceType == DEVICE_TYPE_TEST)) || (eBuildType == eDEV));
+bool Debug_Services_Enabled(bool labSigned, BUILDTYPE eBuildType, bool dbgServices, const char* deviceType) { 
+     return (labSigned && (eBuildType == ePROD) && dbgServices && (strcmp(deviceType, "test") == 0)) || (eBuildType == eDEV));
 }
 
 /* function GetServerUrlFile - scans a file for a URL. 
@@ -1292,7 +1292,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
     bool skip = false;
     bool dbgServices = isDebugServicesEnabled(); //check debug services enabled
 	bool labSigned = GetLabsignedValue(buf2, sizeof(buf2));
-	eDeviceType deviceType = getDeviceType();
+	const char* deviceType = getDeviceType();
 
     if( pServURL != NULL )
     {
