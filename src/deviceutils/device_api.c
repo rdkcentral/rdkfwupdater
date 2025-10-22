@@ -40,9 +40,9 @@
 #define MAC_ADDRESS_LEN 17
 
 bool Debug_Services_Enabled(bool labSigned, BUILDTYPE eBuildType, bool dbgServices, const char* deviceType) { 
-     return (labSigned && (eBuildType == ePROD) && dbgServices && (strcmp(deviceType, "test") == 0)) || (eBuildType == eDEV));
+    return ((labSigned && (eBuildType == ePROD) && dbgServices && (strcmp(deviceType, "test") == 0))
+            || (eBuildType == eDEV));
 }
-
 /* function GetServerUrlFile - scans a file for a URL. 
         Usage: size_t GetServerUrlFile <char *pServUrl> <size_t szBufSize> <char *pFileName>
  
@@ -1437,7 +1437,7 @@ bool GetLabsignedValue(char *pBuf, size_t szBufSize)
     char firmware[150] = {0};
     char *eVal, *eBuf;
     int i = 0;
-	const char* key = "LABSIGNED_ENABLED=";
+	const char* key = "DBGSERVICES_ENABLED=";
 
     if (!pBuf || szBufSize == 0)
         return false;
@@ -1469,7 +1469,7 @@ bool GetLabsignedValue(char *pBuf, size_t szBufSize)
     fclose(fp);
 
     if (*pBuf == '\0') {
-        COMMONUTILITIES_ERROR("GetLabsignedValue: LABSIGNED_ENABLED not found or empty\n");
+        COMMONUTILITIES_ERROR("GetLabsignedValue: DBGSERVICES_ENABLED not found or empty\n");
         return isEnabled;
     }
 
@@ -1483,7 +1483,7 @@ bool GetLabsignedValue(char *pBuf, size_t szBufSize)
         ++eBuf;
     }
 
-    if (strstr(firmware, "labsigned") && strstr(pBuf, "true"))
+    if (strstr(firmware, "DbgBuild_ProdHw") && strstr(pBuf, "true"))
         isEnabled = true;
     return isEnabled;
 }
