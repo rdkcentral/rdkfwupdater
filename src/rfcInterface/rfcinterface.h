@@ -68,13 +68,6 @@ typedef enum
   RFC_UINT
 }RFCVALDATATYPE;
 
-typedef enum {
-    DEVICE_TYPE_UNKNOWN = 0,
-    DEVICE_TYPE_PROD,
-    DEVICE_TYPE_TEST
-} eDeviceType;
-
-
 typedef struct rfcdetails {
     char rfc_throttle[RFC_VALUE_BUF_SIZE];
     char rfc_topspeed[RFC_VALUE_BUF_SIZE];
@@ -106,6 +99,6 @@ int isMtlsEnabled(const char *);
 int isIncremetalCDLEnable(const char *file_name);
 bool isMmgbleNotifyEnabled(void);
 bool isDebugServicesEnabled(void);
-eDeviceType getDeviceType(void);
+const char* getDeviceType(void);
 
 #endif /* VIDEO_RFCINTERFACE_RFCINTERFACE_H_ */
