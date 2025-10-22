@@ -190,7 +190,7 @@ size_t RunCommand( SYSCMD eSysCmd, const char *pArgs, char *pResult, size_t szRe
             }
             else
             {
-                SWLOG_ERROR( "%s fread fails:%zu\n", __FUNCTION__, nbytes_read );
+                SWLOG_ERROR( "%s fread fails:%d\n", __FUNCTION__, nbytes_read );
             }
 //            SWLOG_INFO( "output=%s\n", pResult );
         }

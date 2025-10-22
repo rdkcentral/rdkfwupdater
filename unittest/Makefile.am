@@ -33,7 +33,7 @@ COMMON_CXXFLAGS = -frtti -fprofile-arcs -ftest-coverage -fpermissive
 rdkfw_device_status_gtest_SOURCES = device_status_helper_gtest.cpp ./mocks/device_status_helper_mock.cpp ../src/device_status_helper.c ../src/download_status_helper.c
 rdkfw_deviceutils_gtest_SOURCES = deviceutils/device_api_gtest.cpp deviceutils/deviceutils_gtest.cpp deviceutils/json_parse.c ./mocks/deviceutils_mock.cpp ../src/deviceutils/device_api.c ../src/deviceutils/deviceutils.c
 
-rdkfw_main_gtest_SOURCES = basic_rdkv_main_gtest.cpp ../src/rdkv_main.c ../src/flash.c ../src/json_process.c ../src/deviceutils/device_api.c  deviceutils/json_parse.c ./mocks/deviceutils_mock.cpp  ../src/deviceutils/deviceutils.c
+rdkfw_main_gtest_SOURCES = basic_rdkv_main_gtest.cpp ../src/rdkv_main.c ../src/chunk.c ../src/flash.c ../src/json_process.c ../src/deviceutils/device_api.c  deviceutils/json_parse.c ./mocks/deviceutils_mock.cpp  ../src/deviceutils/deviceutils.c
 
 rdkfw_interface_gtest_SOURCES = fwdl_interface_gtest.cpp ./mocks/interface_mock.cpp ./mocks/rbus_mock.c ../src/rbusInterface/rbusInterface.c deviceutils/json_parse.c
 
@@ -49,7 +49,7 @@ rdkfw_deviceutils_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
 rdkfw_deviceutils_gtest_CFLAGS = $(COMMON_CXXFLAGS)
 
 rdkfw_main_gtest_CPPFLAGS = $(COMMON_CPPFLAGS)
-rdkfw_main_gtest_LDADD = $(COMMON_LDADD) ../librdksw_upgrade.la
+rdkfw_main_gtest_LDADD = $(COMMON_LDADD)
 rdkfw_main_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
 rdkfw_main_gtest_CFLAGS = $(COMMON_CXXFLAGS)
 
