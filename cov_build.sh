@@ -3,6 +3,12 @@ export ROOT=/usr
 export INSTALL_DIR=${ROOT}/local
 mkdir -p $INSTALL_DIR
 
+git clone https://github.com/rdkcentral/common_utilities.git
+cd common_utilitites
+git checkout topic/RDK-59276-modularization/
+make 
+make && make install
+
 # Below dependencies are available in native build containers 
 # 1] utilities
 # 2] libsyswrapper
