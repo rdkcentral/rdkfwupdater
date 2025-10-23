@@ -1451,7 +1451,7 @@ bool GetDbgBuildValue(char *pBuf, size_t szBufSize)
     }
 
     while (fgets(buf, sizeof(buf), fp)) {
-        if (strncmp(buf, key, sizeof(key)-1 ) == 0) {
+        if (strncmp(buf, key, strlen(key)) == 0) {
             eVal = strchr(buf, '=');
             if (eVal) {
                 ++eVal;
@@ -1483,7 +1483,7 @@ bool GetDbgBuildValue(char *pBuf, size_t szBufSize)
         ++eBuf;
     }
 
-    if (strstr(firmware, "DbgBuild_ProdHw") && strstr(pBuf, "true"))
+    if (strstr(firmware, "dbgbuild_prodhw") && strstr(pBuf, "true"))
         isEnabled = true;
     return isEnabled;
 }
