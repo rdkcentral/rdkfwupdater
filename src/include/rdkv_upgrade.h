@@ -7,6 +7,8 @@ extern "C" {
 
 #include "rdkv_cdl.h"
 #include "rfcinterface.h"
+#include "deviceutils.h"
+#include "device_api.h"
 
 /**
  * @brief Input context structure for rdkv_upgrade_request function
