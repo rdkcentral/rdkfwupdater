@@ -20,6 +20,7 @@
 #define _JSON_PROCESS_H_
 
 #include <stddef.h>
+#include "common_device_api.h"
 #define CLD_URL_MAX_LEN 512
 
 typedef struct xconf_response {
