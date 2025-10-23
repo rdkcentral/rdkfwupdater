@@ -7,6 +7,7 @@
 #include "deviceutils.h"
 #include "rdk_logger_milestone.h"
 #include "codebigUtils.h"
+#include "mtlsUtils.h"
 #include "downloadUtil.h"
 #include "flash.h"
 

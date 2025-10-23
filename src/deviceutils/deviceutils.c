@@ -29,6 +29,7 @@
 
 #include "rdkv_cdl_log_wrapper.h"
 #include "deviceutils.h"
+#include "mtlsUtils.h"
 #include "json_parse.h"
 #include <dirent.h>
 
