@@ -27,8 +27,17 @@ AM_LDFLAGS += -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lp
 lib_LTLIBRARIES = librdksw_upgrade.la librdksw_rfcIntf.la librdksw_iarmIntf.la librdksw_jsonparse.la librdksw_flash.la librdksw_fwutils.la
 
 librdksw_upgrade_la_SOURCES = \
-    ${top_srcdir}/src/rdkv_upgrade.c
+    ${top_srcdir}/src/rdkv_upgrade.c\
     ${top_srcdir}/src/chunk.c
+if USE_CPC_CODE
+librdksw_upgrade_la_SOURCES += \
+    ${top_srcdir}/src/cedmInterface-cpc/codebigUtils.c\
+    ${top_srcdir}/src/cedmInterface-cpc/mtlsUtils.c
+else
+librdksw_upgrade_la_SOURCES += \
+    ${top_srcdir}/src/cedmInterface/codebigUtils.c\
+    ${top_srcdir}/src/cedmInterface/mtlsUtils.c
+endif
 
 librdksw_rfcIntf_la_SOURCES = \
     ${top_srcdir}/src/rfcInterface/rfcinterface.c
@@ -75,25 +84,25 @@ endif
 if USE_CPC_CODE
 librdksw_upgrade_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
 librdksw_upgrade_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
-librdksw_iarmIntf_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
-librdksw_iarmIntf_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
-librdksw_jsonparse_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
-librdksw_jsonparse_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
-librdksw_flash_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
-librdksw_flash_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
-librdksw_fwutils_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
-librdksw_fwutils_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+#librdksw_iarmIntf_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+#librdksw_iarmIntf_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+#librdksw_jsonparse_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+#librdksw_jsonparse_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+#librdksw_flash_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+#librdksw_flash_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+#librdksw_fwutils_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+#librdksw_fwutils_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
 else
 librdksw_upgrade_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
 librdksw_upgrade_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
-librdksw_iarmIntf_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
-librdksw_iarmIntf_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
-librdksw_jsonparse_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
-librdksw_jsonparse_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
-librdksw_flash_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
-librdksw_flash_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
-librdksw_fwutils_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
-librdksw_fwutils_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
+#librdksw_iarmIntf_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
+#librdksw_iarmIntf_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
+#librdksw_jsonparse_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
+#librdksw_jsonparse_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
+#librdksw_flash_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
+#librdksw_flash_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
+#librdksw_fwutils_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
+#librdksw_fwutils_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
 endif
 
 # Configure for shared library generation with proper flags
@@ -162,30 +171,30 @@ rdkvfwupgrader_include_HEADERS = \
 rdkvfwupgrader_CFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
 rdkvfwupgrader_CPPFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
 
-if USE_CPC_CODE
-rdkvfwupgrader_SOURCES += \
-    ${top_srcdir}/src/cedmInterface-cpc/codebigUtils.c \
-    ${top_srcdir}/src/cedmInterface-cpc/mtlsUtils.c
+#if USE_CPC_CODE
+#ridkvfwupgrader_SOURCES += \
+ #   ${top_srcdir}/src/cedmInterface-cpc/codebigUtils.c \
+  #  ${top_srcdir}/src/cedmInterface-cpc/mtlsUtils.c
 
-rdkvfwupgrader_include_HEADERS += \
-    ${top_srcdir}/src/cedmInterface-cpc/codebigUtils.h \
-    ${top_srcdir}/src/cedmInterface-cpc/mtlsUtils.h
+#rdkvfwupgrader_include_HEADERS += \
+ #   ${top_srcdir}/src/cedmInterface-cpc/codebigUtils.h \
+  #  ${top_srcdir}/src/cedmInterface-cpc/mtlsUtils.h
 
-rdkvfwupgrader_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
-rdkvfwupgrader_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
-else
-rdkvfwupgrader_SOURCES += \
-    ${top_srcdir}/src/cedmInterface/codebigUtils.c \
-    ${top_srcdir}/src/cedmInterface/mtlsUtils.c
+#rdkvfwupgrader_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+#rdkvfwupgrader_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+#else
+#rdkvfwupgrader_SOURCES += \
+ #   ${top_srcdir}/src/cedmInterface/codebigUtils.c \
+  #  ${top_srcdir}/src/cedmInterface/mtlsUtils.c
 
-rdkvfwupgrader_include_HEADERS += \
-    ${top_srcdir}/src/cedmInterface/codebigUtils.h \
-    ${top_srcdir}/src/cedmInterface/mtlsUtils.h
+#rdkvfwupgrader_include_HEADERS += \
+ #   ${top_srcdir}/src/cedmInterface/codebigUtils.h \
+  #  ${top_srcdir}/src/cedmInterface/mtlsUtils.h
 
-rdkvfwupgrader_CFLAGS += -I${top_srcdir}/src/cedmInterface
-rdkvfwupgrader_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
+#rdkvfwupgrader_CFLAGS += -I${top_srcdir}/src/cedmInterface
+#rdkvfwupgrader_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
 
-endif
+#endif
 
 rdkvfwupgrader_includedir = ${includedir}
 
