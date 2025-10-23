@@ -35,8 +35,8 @@
 #include "device_status_helper.h"
 #include "iarmInterface.h"
 #include "rfcinterface.h"
-#include "codebigUtils.h"
-#include "mtlsUtils.h"
+//#include "codebigUtils.h"
+//#include "mtlsUtils.h"
 #ifndef GTEST_ENABLE
 #include "rdk_fwdl_utils.h"
 #include "system_utils.h"
