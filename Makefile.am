@@ -84,23 +84,23 @@ endif
 if USE_CPC_CODE
 librdksw_upgrade_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
 librdksw_upgrade_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
-librdksw_iarmIntf_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
-librdksw_iarmIntf_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
-librdksw_jsonparse_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
-librdksw_jsonparse_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
-librdksw_flash_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
-librdksw_flash_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+#librdksw_iarmIntf_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+#librdksw_iarmIntf_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+#librdksw_jsonparse_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+#librdksw_jsonparse_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+#librdksw_flash_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
+#librdksw_flash_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
 librdksw_fwutils_la_CFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
 librdksw_fwutils_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface-cpc
 else
 librdksw_upgrade_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
 librdksw_upgrade_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
-librdksw_iarmIntf_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
-librdksw_iarmIntf_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
-librdksw_jsonparse_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
-librdksw_jsonparse_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
-librdksw_flash_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
-librdksw_flash_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
+#librdksw_iarmIntf_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
+#librdksw_iarmIntf_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
+#librdksw_jsonparse_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
+#librdksw_jsonparse_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
+#librdksw_flash_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
+#librdksw_flash_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
 librdksw_fwutils_la_CFLAGS += -I${top_srcdir}/src/cedmInterface
 librdksw_fwutils_la_CPPFLAGS += -I${top_srcdir}/src/cedmInterface
 endif
