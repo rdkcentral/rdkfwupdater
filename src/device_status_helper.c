@@ -15,7 +15,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-
+ 
 #include "device_status_helper.h"
 #include "rdkv_cdl.h"
 #include "rdkv_cdl_log_wrapper.h"
