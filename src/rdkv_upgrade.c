@@ -956,11 +956,11 @@ SWLOG_INFO("==========================================\n");
                 *curl = doCurlInit();
 	            if (curl != NULL) {
 	                (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_INPROGRESS) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_INPROGRESS);
-                    curl_ret_code = doHttpFileDownload(curl, &file_dwnl, &sec, max_dwnl_speed, NULL, httpCode);
+                    curl_ret_code = doHttpFileDownload(*curl, &file_dwnl, &sec, max_dwnl_speed, NULL, httpCode);
 	                (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_EXIT) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_EXIT);
                     if (curl != NULL) {
-                        doStopDownload(curl);
-	                    curl = NULL;
+                        doStopDownload(*curl);
+	                    *curl = NULL;
                     }
 	                if (*force_exit == 1 && (curl_ret_code == 23)) {
 	                    uninitialize(INITIAL_VALIDATION_SUCCESS);
@@ -978,11 +978,11 @@ SWLOG_INFO("==========================================\n");
                       *curl = doCurlInit();
                       if (curl != NULL) {
                           (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_INPROGRESS) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_INPROGRESS);
-                          curl_ret_code = doHttpFileDownload(curl, &file_dwnl, &sec, max_dwnl_speed, NULL, httpCode);
+                          curl_ret_code = doHttpFileDownload(*curl, &file_dwnl, &sec, max_dwnl_speed, NULL, httpCode);
                           (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_EXIT) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_EXIT);
                           if (curl != NULL) {
-                            doStopDownload(curl);
-                            curl = NULL;
+                            doStopDownload(*curl);
+                            *curl = NULL;
                           }
 	                  if (*force_exit == 1 && (curl_ret_code == 23)) {
 	                      uninitialize(INITIAL_VALIDATION_SUCCESS);
@@ -1000,11 +1000,11 @@ SWLOG_INFO("==========================================\n");
                     *curl = doCurlInit();
                     if (curl != NULL) {
                         (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_INPROGRESS) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_INPROGRESS);
-                        curl_ret_code = doHttpFileDownload(curl, &file_dwnl, NULL, max_dwnl_speed, NULL, httpCode);
+                        curl_ret_code = doHttpFileDownload(*curl, &file_dwnl, NULL, max_dwnl_speed, NULL, httpCode);
                         (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_EXIT) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_EXIT);
                         if (curl != NULL) {
-                            doStopDownload(curl);
-                            curl = NULL;
+                            doStopDownload(*curl);
+                            *curl = NULL;
                         }
 	                if (*force_exit == 1 && (curl_ret_code == 23)) {
 	                    uninitialize(INITIAL_VALIDATION_SUCCESS);
