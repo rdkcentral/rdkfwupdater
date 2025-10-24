@@ -61,6 +61,7 @@ int getRFCSettings(Rfc_t *rfc_list) {
         rfc_list->rfc_incr_cdl[RFC_VALUE_BUF_SIZE - 1] = '\0';
 	SWLOG_INFO("getRFCSettings() rfc IncrementalCDL= %s\n", rfc_list->rfc_incr_cdl);
     }
+#ifdef MTLS_DEFAULT_DISABLE
     ret = read_RFCProperty("MTLS", RFC_MTLS, data, sizeof(data));
     if(ret == -1) {
         SWLOG_ERROR("getRFCSettings() rfc= %s failed Status %d\n", RFC_MTLS, ret);
@@ -69,6 +70,11 @@ int getRFCSettings(Rfc_t *rfc_list) {
 	rfc_list->rfc_mtls[RFC_VALUE_BUF_SIZE - 1] = '\0';
         SWLOG_INFO("getRFCSettings() rfc mtls= %s\n", rfc_list->rfc_mtls);
     }
+#else
+    SWLOG_INFO(" getRFCSettings() MTLS Default Enabled");
+    strncpy(rfc_list->rfc_mtls, "true", RFC_VALUE_BUF_SIZE - 1);
+    rfc_list->rfc_mtls[RFC_VALUE_BUF_SIZE - 1] = '\0';
+#endif
     return 0;
 }
 
@@ -166,6 +172,7 @@ int write_RFCProperty(char* type, const char* key, const char *value, RFCVALDATA
 #endif
 int isMtlsEnabled(const char *device_name)
 {
+#ifdef MTLS_DEFAULT_DISABLE
     int mtls_check = 0;
     int ret = UTILS_FAIL;
     char *dev_prop_name = "FORCE_MTLS";
@@ -197,6 +204,10 @@ int isMtlsEnabled(const char *device_name)
         mtls_check = 1;
     }
     return mtls_check;
+#else
+    SWLOG_INFO("MTLS prefered\n");  
+    return 1;
+#endif
 }
 
 int isIncremetalCDLEnable(const char *file_name)
