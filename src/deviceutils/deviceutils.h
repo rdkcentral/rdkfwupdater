@@ -23,7 +23,6 @@
 #include "urlHelper.h"
 #endif
 #include "json_parse.h"     // needed for JSON struct definition
-//#include "mtlsUtils.h"
 #include "common_device_api.h"
 
 #ifndef GETRDMMANIFESTVERSION_IN_SCRIPT

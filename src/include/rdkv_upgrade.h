@@ -15,32 +15,20 @@ extern "C" {
  * Contains all input parameters passed to the upgrade request function
  */
 typedef struct {
-    int upgrade_type;                           ///< Type of upgrade
-    int server_type;                           ///< Server type
-    const char* artifactLocationUrl;          ///< URL of the firmware artifact to download
-    const void* dwlloc;                       ///< Download location (INPUT parameter)
-    char* pPostFields;                        ///< POST data for the request
-    const char* immed_reboot_flag;           ///< Immediate reboot flag
-    int delay_dwnl;                          ///< Download delay
-    const char* lastrun;                     ///< Last run information
-    char* disableStatsUpdate;                ///< Disable stats update flag
-    const DeviceProperty_t* device_info;     ///< Device info structure
-    int* force_exit;                         ///< Force exit flag pointer
-    int trigger_type;                        ///< Trigger type
-    const Rfc_t* rfc_list;                  ///< RFC list
+    int upgrade_type;                           // Type of upgrade
+    int server_type;                            //  Server type
+    const char* artifactLocationUrl;           //   URL of the firmware artifact to download
+    const void* dwlloc;                        //   Download location (INPUT parameter)
+    char* pPostFields;                        //   POST data for the request
+    const char* immed_reboot_flag;            //   Immediate reboot flag
+    int delay_dwnl;                           //   Download delay
+    const char* lastrun;                     //    Last run information
+    char* disableStatsUpdate;                //    Disable stats update flag
+    const DeviceProperty_t* device_info;     //    Device info structure
+    int* force_exit;                         //    Force exit flag pointer
+    int trigger_type;                        //    Trigger type
+    const Rfc_t* rfc_list;                  //     RFC list
 } RdkUpgradeContext_t;
-
-/**
- * @brief Initialize the RDK firmware utility library
- * @return 0 on success, -1 on failure
- */
-int rdkv_utils_init(void);
-
-/**
- * @brief Cleanup the RDK firmware utility library
- */
-void rdkv_utils_cleanup(void);
-
 
 /**
  * @brief Firmware upgrade request function with context structure
@@ -59,9 +47,6 @@ int retryDownload(int server_type, const char* artifactLocationUrl, const void* 
 
 int fallBack(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char *pPostFields, int *httpCode, void **curl, int *force_exit,const char *immed_reboot_flag, const DeviceProperty_t *device_info,const char *lastrun,const Rfc_t *rfc_list, char *disableStatsUpdate);
 
-//void t2CountNotify(char *marker, int val);
-
-//void t2ValNotify(char *marker, char *val);
 
 void dwnlError(int curl_code, int http_code, int server_type,const DeviceProperty_t *device_info,const char *lastrun, char *disableStatsUpdate);
 

@@ -40,7 +40,6 @@ MtlsAuthStatus getMtlscert(MtlsAuth_t *sec, rdkcertselector_h* pthisCertSel) {
     char *certFile = NULL;
 
     state_red = isInStateRed();
-    SWLOG_ERROR("MADHU --  In getMtlscert\n");
     if(state_red == 1) {
         rdkcertselectorStatus_t stateredcertStat = rdkcertselector_getCert(*pthisCertSel, &certUri, &certPass);
 
@@ -53,7 +52,6 @@ MtlsAuthStatus getMtlscert(MtlsAuth_t *sec, rdkcertselector_h* pthisCertSel) {
                 SWLOG_ERROR("%s, state red Cert selector memory free failed\n", __FUNCTION__);
             }
             SWLOG_ERROR("%s, All attempts/tries to retrieve certs are exhausted\n", __FUNCTION__);
-    SWLOG_INFO(" --- MADHU_ returning form getMtlscert() \n");
             return STATE_RED_CERT_FETCH_FAILURE; // Return error
         }
 
@@ -67,7 +65,6 @@ MtlsAuthStatus getMtlscert(MtlsAuth_t *sec, rdkcertselector_h* pthisCertSel) {
             SWLOG_ERROR("%s, Certificate file name too long (%zu chars), maximum allowed: %zu\n",
                        __FUNCTION__, certFile_len, sizeof(sec->cert_name) - 1);
             rdkcertselector_free(pthisCertSel);
-    SWLOG_INFO(" --- MADHU_ returning form getMtlscert() \n");
             return STATE_RED_CERT_FETCH_FAILURE;
         }
         strncpy(sec->cert_name, certFile, sizeof(sec->cert_name));
@@ -77,7 +74,6 @@ MtlsAuthStatus getMtlscert(MtlsAuth_t *sec, rdkcertselector_h* pthisCertSel) {
             SWLOG_ERROR("%s, Certificate password too long (%zu chars), maximum allowed: %zu\n",
                        __FUNCTION__, certPass_len, sizeof(sec->key_pas) - 1);
             rdkcertselector_free(pthisCertSel);
-    SWLOG_INFO(" --- MADHU_ returning form getMtlscert() \n");
             return STATE_RED_CERT_FETCH_FAILURE;
         }
         strncpy(sec->key_pas, certPass, sizeof(sec->key_pas));
@@ -91,7 +87,6 @@ MtlsAuthStatus getMtlscert(MtlsAuth_t *sec, rdkcertselector_h* pthisCertSel) {
                  SWLOG_ERROR("%s, Engine name too long (%zu chars), maximum allowed: %zu\n",
                             __FUNCTION__, engine_len, sizeof(sec->engine) - 1);
                  rdkcertselector_free(pthisCertSel);
-    SWLOG_INFO(" --- MADHU_ returning form getMtlscert() \n");
                  return STATE_RED_CERT_FETCH_FAILURE;
              }
              strncpy(sec->engine, engine, sizeof(sec->engine));
@@ -114,7 +109,6 @@ MtlsAuthStatus getMtlscert(MtlsAuth_t *sec, rdkcertselector_h* pthisCertSel) {
             }else{
                  SWLOG_ERROR("%s, Cert selector memory free failed\n", __FUNCTION__);
             }
-    SWLOG_INFO(" --- MADHU_ returning form getMtlscert() \n");
             return MTLS_CERT_FETCH_FAILURE; // Return error
         }
 
@@ -128,7 +122,6 @@ MtlsAuthStatus getMtlscert(MtlsAuth_t *sec, rdkcertselector_h* pthisCertSel) {
             SWLOG_ERROR("%s, Certificate file name too long (%zu chars), maximum allowed: %zu\n",
                        __FUNCTION__, certFile_len, sizeof(sec->cert_name) - 1);
             rdkcertselector_free(pthisCertSel);
-    SWLOG_INFO(" --- MADHU_ returning form getMtlscert() \n");
             return MTLS_CERT_FETCH_FAILURE;
         }
         strncpy(sec->cert_name, certFile, sizeof(sec->cert_name));
@@ -139,7 +132,6 @@ MtlsAuthStatus getMtlscert(MtlsAuth_t *sec, rdkcertselector_h* pthisCertSel) {
             SWLOG_ERROR("%s, Certificate password too long (%zu chars), maximum allowed: %zu\n",
                        __FUNCTION__, certPass_len, sizeof(sec->key_pas) - 1);
             rdkcertselector_free(pthisCertSel);
-    SWLOG_INFO(" --- MADHU_ returning form getMtlscert() \n");
             return MTLS_CERT_FETCH_FAILURE;
         }
         strncpy(sec->key_pas, certPass, sizeof(sec->key_pas));
@@ -153,7 +145,6 @@ MtlsAuthStatus getMtlscert(MtlsAuth_t *sec, rdkcertselector_h* pthisCertSel) {
                  SWLOG_ERROR("%s, Engine name too long (%zu chars), maximum allowed: %zu\n",
                             __FUNCTION__, engine_len, sizeof(sec->engine) - 1);
                  rdkcertselector_free(pthisCertSel);
-    SWLOG_INFO(" --- MADHU_ returning form getMtlscert() \n");
                  return MTLS_CERT_FETCH_FAILURE;
              }
              strncpy(sec->engine, engine, sizeof(sec->engine));
@@ -163,7 +154,6 @@ MtlsAuthStatus getMtlscert(MtlsAuth_t *sec, rdkcertselector_h* pthisCertSel) {
 
         SWLOG_INFO("%s, MTLS dynamic/static cert success. cert=%s, type=%s, engine=%s\n", __FUNCTION__, sec->cert_name, sec->cert_type, sec->engine);
     }
-    SWLOG_INFO(" --- MADHU_ returning form getMtlscert() \n");
     return MTLS_CERT_FETCH_SUCCESS; // Return success
 }
 #else

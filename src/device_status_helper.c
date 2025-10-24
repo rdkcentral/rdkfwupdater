@@ -593,7 +593,6 @@ int isDwnlBlock(int type)
     unsigned int modification_time = 0;
     int remtime = 0;
     int block = 0;
-    SWLOG_INFO("MADHU- In isDwnlBlock\n");
     if (type == HTTP_SSR_DIRECT || type == HTTP_XCONF_DIRECT) {
         snprintf(file_name, sizeof(file_name), "%s", DIRECT_BLOCK_FILENAME);
         block_time = 86400;
@@ -604,7 +603,7 @@ int isDwnlBlock(int type)
         return ret;
     }
     char *req_type = ((type == HTTP_SSR_DIRECT || type == HTTP_XCONF_DIRECT) ? "direct" : "codebig");
-    SWLOG_INFO(" %s : Checking for %s\n", __FUNCTION__, req_type); //MADHU 3
+    SWLOG_INFO(" %s : Checking for %s\n", __FUNCTION__, req_type)
     last_mod_time = getFileLastModifyTime(file_name);
     if (last_mod_time != 0) {
         current_time = getCurrentSysTimeSec();

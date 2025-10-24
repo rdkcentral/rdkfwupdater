@@ -549,9 +549,9 @@ size_t GetAccountID( char *pAccountID, size_t szBufSize )
     return i;
 }
 /* function GetEstbMac - gets the eSTB MAC address of the device.
-
+ 
         Usage: size_t GetEstbMac <char *pEstbMac> <size_t szBufSize>
-
+ 
             pEstbMac - pointer to a char buffer to store the output string.
 
             szBufSize - the size of the character buffer in argument 1.
@@ -576,7 +576,7 @@ size_t GetEstbMac( char *pEstbMac, size_t szBufSize )
             fclose( fp );
             i = stripinvalidchar( pEstbMac, szBufSize );
             SWLOG_INFO("GetEstbMac: After reading ESTB_MAC_FILE value=%s\n", pEstbMac);
-            /* Below condition if ESTB_MAC_FILE file having empty data and pEstbMac does not have 17 character
+	    /* Below condition if ESTB_MAC_FILE file having empty data and pEstbMac does not have 17 character
             * including total mac address with : separate */
             if (pEstbMac[0] == '\0' || pEstbMac[0] == '\n' || i != MAC_ADDRESS_LEN)
             {

@@ -21,6 +21,7 @@
 
 #include <stdbool.h>
 #include <time.h>
+
 #include "system_utils.h"
 #define DNS_RESOLV_FILE "/etc/resolv.dnsmasq"
 #define IP_ROUTE_FLAG "/tmp/route_available"

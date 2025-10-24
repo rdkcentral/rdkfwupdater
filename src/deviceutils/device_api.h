@@ -29,7 +29,6 @@ extern char* strcasestr(const char* s1, const char* s2);
 #endif
 
 #include "common_device_api.h"
-
 #define URL_MAX_LEN 512
 
 typedef enum {
@@ -157,6 +156,7 @@ size_t GetInstalledBundles(char *pBundles, size_t szBufSize);
             RETURN - number of characters copied to the output buffer.
 */
 size_t GetPartnerId(char *pPartnerId, size_t szBufSize);
+
 /* function GetOsClass - gets the OsClass of the device.
  
         Usage: size_t GetOsClass( char *pOsClass, size_t szBufSize )
@@ -231,6 +231,8 @@ size_t GetAccountID(char *pAccountID, size_t szBufSize);
             RETURN - number of characters copied to the output buffer.
 */
 size_t GetEstbMac(char *pEstbMac, size_t szBufSize);
+
+
 /* function GetRemoteInfo - gets the remote info of the device.
  
         Usage: size_t GetRemoteInfo <char *pRemoteInfo> <size_t szBufSize>

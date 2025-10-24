@@ -320,7 +320,6 @@ bool isConnectedToInternet (void)
 
 #else
 
-
 // Do nothing act as pass through function .
 // Iarm eventing is not the main purpose of the code download module
 void eventManager(const char *cur_event_name, const char *event_status) {
@@ -339,6 +338,4 @@ bool isConnectedToInternet (void)
 {
     return true;
 }
-
-
 #endif
