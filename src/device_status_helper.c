@@ -603,7 +603,7 @@ int isDwnlBlock(int type)
         return ret;
     }
     char *req_type = ((type == HTTP_SSR_DIRECT || type == HTTP_XCONF_DIRECT) ? "direct" : "codebig");
-    SWLOG_INFO(" %s : Checking for %s\n", __FUNCTION__, req_type)
+    SWLOG_INFO(" %s : Checking for %s\n", __FUNCTION__, req_type);
     last_mod_time = getFileLastModifyTime(file_name);
     if (last_mod_time != 0) {
         current_time = getCurrentSysTimeSec();
