@@ -231,6 +231,7 @@ AM_LDFLAGS += -lIARMBus
 endif
 
 if IS_LIBRDKCERTSEL_ENABLED
+librdksw_upgrade_la_CFLAGS += $(LIBRDKCERTSEL_FLAG)
 rdkvfwupgrader_CFLAGS += $(LIBRDKCERTSEL_FLAG)
 AM_LDFLAGS += -lRdkCertSelector
 endif
