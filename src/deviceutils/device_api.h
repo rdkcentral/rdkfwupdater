@@ -414,9 +414,9 @@ size_t GetServURL(char *pServURL, size_t szBufSize);
 */
 size_t GetFileContents(char **pOut, char *pFileName);
 
-/* function GetLabsignedValue - gets the LABSIGNED_ENABLED value from /etc/device.properties.
+/* function isLabSignedEnabled - gets the LABSIGNED_ENABLED value from /etc/device.properties.
 
-        Usage: bool GetLabsignedValue <char> *pBuf, <size_t> szBufSize
+        Usage: bool isLabSignedEnabled <char> *pBuf, <size_t> szBufSize
 
             pBuf - pointer to a char buffer to store the output string.
 
@@ -424,7 +424,7 @@ size_t GetFileContents(char **pOut, char *pFileName);
 
             RETURN - if firmware version has LABSIGNED and LABSIGNED_ENABLE is true, then TRUE shall be returned. Else, false.
 */
-bool GetDbgBuildValue(char *pBuf, size_t szBufSize);
+bool isLabSignedEnabled(char *pBuf, size_t szBufSize);
 
-bool Debug_Services_Enabled(bool DbgBuild, BUILDTYPE eBuildType, bool dbgServices, const char* deviceType);
+bool Debug_Services_Enabled(bool isLabSigned, BUILDTYPE eBuildType, bool dbgServices, const char* deviceType);
 #endif
