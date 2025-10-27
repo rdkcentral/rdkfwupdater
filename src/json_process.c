@@ -163,8 +163,16 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
             ret = 0;
         }
         ret_status = lastDwnlImg(last_dwnl_img, sizeof(last_dwnl_img));
+        if(ret_status == false)
+        {
+            SWLOG_INFO("Failed to get Last Downloaded Image details!!!");
+        }
 	SWLOG_INFO("last_dwnl_status=%i\n", ret_status);
         ret_status = currentImg(current_img, sizeof(current_img));
+        if(ret_status == false)
+        {
+            SWLOG_INFO("Failed to get Current Image details!!!");
+        }
 	SWLOG_INFO("current_img_status=%i\n", ret_status);
         SWLOG_INFO("myFWVersion = %s\n", myfwversion);
         SWLOG_INFO("myFWFile = %s\n", current_img);
