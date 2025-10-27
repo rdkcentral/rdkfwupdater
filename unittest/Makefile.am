@@ -39,17 +39,17 @@ rdkfw_interface_gtest_SOURCES = fwdl_interface_gtest.cpp ./mocks/interface_mock.
 
 # Apply common properties to each program
 rdkfw_device_status_gtest_CPPFLAGS = $(COMMON_CPPFLAGS)
-rdkfw_device_status_gtest_LDADD = $(COMMON_LDADD)
+rdkfw_device_status_gtest_LDADD = $(COMMON_LDADD) -lrdksw_upgrade -lrdksw_rfcIntf -lrdksw_iarmIntf -lrdksw_jsonparse -lrdksw_flash -lrdksw_fwutils -lfwutils -ldwnlutil
 rdkfw_device_status_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
 rdkfw_device_status_gtest_CFLAGS = $(COMMON_CXXFLAGS)
 
 rdkfw_deviceutils_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -DDEVICE_API
-rdkfw_deviceutils_gtest_LDADD = $(COMMON_LDADD)
+rdkfw_deviceutils_gtest_LDADD = $(COMMON_LDADD) -lrdksw_upgrade -lrdksw_rfcIntf -lrdksw_iarmIntf -lrdksw_jsonparse -lrdksw_flash -lrdksw_fwutils -lfwutils -ldwnlutil
 rdkfw_deviceutils_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
 rdkfw_deviceutils_gtest_CFLAGS = $(COMMON_CXXFLAGS)
 
 rdkfw_main_gtest_CPPFLAGS = $(COMMON_CPPFLAGS)
-rdkfw_main_gtest_LDADD = $(COMMON_LDADD) ../librdksw_upgrade.la
+rdkfw_main_gtest_LDADD = $(COMMON_LDADD) ../librdksw_upgrade.la -lrdksw_upgrade -lrdksw_rfcIntf -lrdksw_iarmIntf -lrdksw_jsonparse -lrdksw_flash
 rdkfw_main_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
 rdkfw_main_gtest_CFLAGS = $(COMMON_CXXFLAGS)
 

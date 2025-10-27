@@ -57,7 +57,7 @@ public:
     MOCK_METHOD(int, getDeviceProperties, (DeviceProperty_t*), ());
     MOCK_METHOD(int, getImageDetails, (ImageDetails_t*), ());
     MOCK_METHOD(int, createDir, (const char*), ());
-    MOCK_METHOD(void, createFile, (const char*), ());
+    //MOCK_METHOD(void, createFile, (const char*), ());
     MOCK_METHOD(void, t2_uninit, (), ());
     MOCK_METHOD(void, log_exit, (), ());
     MOCK_METHOD(int, doHttpFileDownload, (void*, FileDwnl_t*, MtlsAuth_t*, unsigned int, char*, int*), ());
@@ -94,7 +94,7 @@ public:
     MOCK_METHOD(bool, lastDwnlImg, (char*, size_t), ());
     MOCK_METHOD(bool, currentImg, (char*, size_t), ());
     MOCK_METHOD(bool, CurrentRunningInst, (const char*), ());
-    MOCK_METHOD(void, eraseTGZItemsMatching, (const char*, const char*), ());
+    //MOCK_METHOD(void, eraseTGZItemsMatching, (const char*, const char*), ());
     MOCK_METHOD(bool, prevFlashedFile, (char*, size_t), ());
     MOCK_METHOD(int, doCodeBigSigning, (int, const char*, char*, size_t, char*, size_t), ());
 };
@@ -157,7 +157,7 @@ extern "C" {
         }
         return global_mockexternal_ptr->createDir(dirname);
     }
-
+/*
     void createFile(const char *file_name) {
         if (global_mockexternal_ptr == nullptr) {
             FILE *file = fopen(file_name, "w");
@@ -170,7 +170,7 @@ extern "C" {
         }
         global_mockexternal_ptr->createFile(file_name);
     }
-
+*/
     void t2_uninit(void) {
         if (global_mockexternal_ptr == nullptr) {
             return; // Return default value if global_mockexternal_ptr is NULL
@@ -429,14 +429,14 @@ extern "C" {
         }
         return global_mockexternal_ptr->CurrentRunningInst(file);
     }
-
+/*
     void eraseTGZItemsMatching(const char *path, const char *pattern) {
         if (global_mockexternal_ptr == nullptr) {
             return; // Return default value if global_mockexternal_ptr is NULL
         }
         global_mockexternal_ptr->eraseTGZItemsMatching(path, pattern);
     }
-
+*/
     bool prevFlashedFile(char *img_name, size_t img_name_size) {
         if (global_mockexternal_ptr == nullptr) {
             return false; // Return default value if global_mockexternal_ptr is NULL

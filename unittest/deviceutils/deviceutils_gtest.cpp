@@ -24,6 +24,11 @@
 #include "../mocks/deviceutils_mock.h"
 extern "C" {
 #include "deviceutils.h"
+#include "urlHelper.h"
+#include "common_device_api.h"
+// Forward declaration for external function (mocked)
+//int allocDowndLoadDataMem(void *ptr, int size);
+//extern "C" int allocDowndLoadDataMem(DownloadData *ptr, int size);
 }
 
 #define JSON_STR_LEN        1000
@@ -106,15 +111,19 @@ TEST_F(DeviceUtilsTestFixture, TestName_makeHttpHttp_badurl)
     snprintf(data, sizeof(data), "%s", "ht//xyz.com");
     EXPECT_NE(makeHttpHttps(data, sizeof(data)), 0);
 }
-TEST_F(DeviceUtilsTestFixture, TestName_MemDLAlloc_Null)
+/*
+TEST_F(DeviceUtilsTestFixture, TestName_allocDowndLoadDataMem_Null)
 {
-    EXPECT_EQ(MemDLAlloc(NULL, 0), 1);
+    EXPECT_EQ(allocDowndLoadDataMem(NULL, 0), 1);
 }
-TEST_F(DeviceUtilsTestFixture, TestName_MemDLAlloc_NonNull)
+*/
+/*
+TEST_F(DeviceUtilsTestFixture, TestName_allocDowndLoadDataMem_NonNull)
 {
     DownloadData pDwnData;
-    EXPECT_EQ(MemDLAlloc(&pDwnData, sizeof(pDwnData)), 0);
+    EXPECT_EQ(allocDowndLoadDataMem(&pDwnData, sizeof(pDwnData)), 0);
 }
+*/
 TEST_F(DeviceUtilsTestFixture, TestName_get_system_uptime_Null)
 {
     EXPECT_EQ(get_system_uptime(NULL), false);

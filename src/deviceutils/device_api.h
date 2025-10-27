@@ -25,6 +25,7 @@
 
 #ifndef GTEST_ENABLE
 #include "rdk_fwdl_utils.h"
+#include "rdkv_cdl_log_wrapper.h"
 extern char* strcasestr(const char* s1, const char* s2);
 #endif
 

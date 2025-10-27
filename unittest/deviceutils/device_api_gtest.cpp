@@ -24,6 +24,8 @@
 #include "../mocks/deviceutils_mock.h"
 extern "C" {
 #include "device_api.h"
+#include "common_device_api.h"
+#include "urlHelper.h"
 }
 
 #define JSON_STR_LEN        1000

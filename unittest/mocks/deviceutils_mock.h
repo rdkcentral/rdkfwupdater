@@ -20,8 +20,8 @@
 #define DEVICE_UTILS_MOCK
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
-
-#include "rdkv_cdl_log_wrapper.h"
+#include "urlHelper.h"
+//#include "rdkv_cdl_log_wrapper.h"
 #define RDK_API_SUCCESS 0
 
 class DeviceUtilsInterface

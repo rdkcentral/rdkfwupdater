@@ -26,6 +26,7 @@ extern "C" {
 #include "device_status_helper.h"
 #include "download_status_helper.h"
 //#include "json_process.h"
+//#include "rdk_fwdl_utils.h"
 int copyFile(const char *src, const char *target);
 }
 
@@ -72,7 +73,7 @@ extern "C" {
     int getDeviceProperties(DeviceProperty_t *pDevice_info);
     int getImageDetails(ImageDetails_t *);
     int createDir(const char *dirname);
-    void createFile(const char *file_name);
+    //void createFile(const char *file_name);
     void t2_uninit(void);
     void log_exit();
     int doHttpFileDownload(void *in_curl, FileDwnl_t *pfile_dwnl, MtlsAuth_t *auth, unsigned int max_dwnl_speed, char *dnl_start_pos, int *out_httpCode );

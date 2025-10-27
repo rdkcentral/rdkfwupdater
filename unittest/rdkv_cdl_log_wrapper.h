@@ -22,7 +22,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-
+//#include "urlHelper.h"
 #define SWLOG_INFO(format, ...)        printf(format, ##__VA_ARGS__)
 #define SWLOG_ERROR(format, ...)        printf(format, ##__VA_ARGS__)
 
@@ -42,21 +42,24 @@
 #define DEVICE_PROPERTIES_FILE "/tmp/device_gtest.prop"
 #define UTILS_SUCCESS 0
 #define UTILS_FAIL -1
-
+/*
 typedef struct credential {
         char cert_name[64];
         char cert_type[16];
         char key_pas[32];
 }MtlsAuth_t;
-
+*/
 /* Below structure use for download file data */
+/*
 typedef struct CommonDownloadData {
     void* pvOut;
     size_t datasize;        // data size
     size_t memsize;         // allocated memory size (if applicable)
 } DownloadData;
+*/
 
 /* Structure Use for Hash Value and Time*/
+/*
 typedef struct hashParam {
     char *hashvalue;
     char *hashtime;
@@ -73,7 +76,8 @@ typedef struct filedwnl {
         bool sslverify;
         hashParam_t *hashData;
 }FileDwnl_t;
-
+*/
+/*
 typedef enum {
     eUNKNOWN,
     eDEV,
@@ -81,5 +85,5 @@ typedef enum {
     ePROD,
     eQA
 } BUILDTYPE;
-
+*/
 #endif

@@ -24,6 +24,7 @@
 #endif
 #include "json_parse.h"     // needed for JSON struct definition
 #include "common_device_api.h"
+#include "rdkv_cdl_log_wrapper.h" 
 
 #ifndef GETRDMMANIFESTVERSION_IN_SCRIPT
     #define GETRDMMANIFESTVERSION_IN_SCRIPT

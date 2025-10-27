@@ -186,16 +186,18 @@ extern "C" int IARM_Bus_Term()
     printf("Inside Mock Function IARM_Bus_Term\n");
     return g_InterfaceMock->IARM_Bus_Term();
 }
-extern "C" int MemDLAlloc(void *ptr, int size)
+/*
+extern "C" int allocDowndLoadDataMem(void *ptr, int size)
 {
     if (!g_InterfaceMock)
     {
         cout << "g_InterfaceMock object is NULL" << endl;
         return -1;
     }
-    printf("Inside Mock Function MemDLAlloc\n");
-    return g_InterfaceMock->MemDLAlloc(ptr, size);
+    printf("Inside Mock Function allocDowndLoadDataMem\n");
+    return g_InterfaceMock->allocDowndLoadDataMem(ptr, size);
 }
+*/
 extern "C" int getJsonRpc(char *data, void *ptr)
 {
     if (!g_InterfaceMock)

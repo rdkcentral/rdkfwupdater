@@ -23,6 +23,10 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+
+/* Forward declarations for types that may not be available in all contexts */
+typedef struct filedwnl FileDwnl_t;
+typedef struct credential MtlsAuth_t;
 #include <inttypes.h>
 #include <ctype.h>
 

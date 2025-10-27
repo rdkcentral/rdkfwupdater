@@ -31,7 +31,7 @@
 
 #include "rdkv_cdl.h"
 #include "json_parse.h"
-#include "rdkv_cdl_log_wrapper.h"
+#include "urlHelper.h"
 #include "device_api.h"
 #include "deviceutils.h"
 #include "device_status_helper.h"

@@ -18,11 +18,10 @@
 
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
-#include "json_process.h"
 #include <iostream>
 #include <unistd.h>
-
 extern "C" {
+#include "json_process.h"
 #include "device_status_helper.h"
 #include "download_status_helper.h"
 #include "rfcinterface.h"
