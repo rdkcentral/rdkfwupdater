@@ -39,9 +39,61 @@
 
 #define MAC_ADDRESS_LEN 17
 
-bool Debug_Services_Enabled(bool isLabSigned, BUILDTYPE eBuildType, bool dbgServices, const char* deviceType) { 
-    return ((isLabSigned && (eBuildType == ePROD) && dbgServices && (strcmp(deviceType, "test") == 0))
-            || (eBuildType == eDEV));
+bool isSecureDbgServicesEnabled(void) { 
+    bool dbgServices = isDebugServicesEnabled(); //check debug services enabled
+	const char* deviceType = getDeviceTypeRFC(); //Check if device type is TEST
+	BUILDTYPE eBuildType; //To check the build value
+	bool isDebugServicesUnlocked = false;// return value
+	const char* key = "LABSIGNED_ENABLED="; // key from /etc/device.properties
+	FILE *fp = fopen(DEVICE_PROPERTIES_FILE, "r");
+	char buf[150] = {0};
+	char Buf[URL_MAX_LEN];
+	char pBuf[URL_MAX_LEN];
+	char *eVal = NULL;
+	char *eBuf = NULL;
+	int i = 0;
+
+	GetBuildType( buf, sizeof(buf), &eBuildType );
+    if (eBuildType ==eDEV)
+		isDebugServicesUnlocked = true;
+	else if (eBuildType ==ePROD){
+	    //Read LABSIGNED_ENABLED value from /etc/device.properties
+	    if (!fp) {
+            COMMONUTILITIES_ERROR("isLabSignedEnabled: can't open properties file\n");
+            return isDebugServicesUnlocked;
+        }
+
+        while (fgets(buf, sizeof(buf), fp)) {
+            if (strncmp(buf, key, strlen(key)) == 0) {
+                eVal = strchr(buf, '=');
+                if (eVal) {
+                    ++eVal;
+                    i = snprintf(pBuf, sizeof(pBuf), "%s", eVal);
+                    i = stripinvalidchar(pBuf, i);
+                    eBuf = pBuf;
+                    while (*eBuf) {
+                        *eBuf = tolower((unsigned char)*eBuf);
+                        ++eBuf;
+                    }
+                }
+                break;
+            }
+        }
+        fclose(fp);
+
+        if (*pBuf == '\0') {
+            COMMONUTILITIES_ERROR("isLabSignedEnabled: LABSIGNED_ENABLED property not found or empty\n");
+            return isDebugServicesUnlocked;
+        }
+
+	    if(strstr(pBuf, "true")){
+			if((strcmp(deviceType, "test") == 0) && dbgServices){
+				SWLOG_INFO( "isSecureDbgServicesEnabled  : Enabling the debug services...\n" );
+				isDebugServicesUnlocked = true;
+		}
+	}
+	return isDebugServicesUnlocked;
+}
 }
 /* function GetServerUrlFile - scans a file for a URL. 
         Usage: size_t GetServerUrlFile <char *pServUrl> <size_t szBufSize> <char *pFileName>
@@ -1288,20 +1340,15 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
     size_t len = 0;
     BUILDTYPE eBuildType;
     char buf[URL_MAX_LEN];
-	char buf2[URL_MAX_LEN];
     bool skip = false;
-    bool dbgServices = isDebugServicesEnabled(); //check debug services enabled
-	bool isLabSigned = isLabSignedEnabled(buf2, sizeof(buf2));
-	const char* deviceType = getDeviceType();
 
     if( pServURL != NULL )
     {
         *pServURL = 0;
-        GetBuildType( buf, sizeof(buf), &eBuildType );
         if( isInStateRed() )
         {
             //if(( eBuildType != ePROD )  || ( dbgServices == true ))
-			if(Debug_Services_Enabled(isLabSigned, eBuildType, dbgServices, deviceType))
+			if(isSecureDbgServicesEnabled)
             {
                 len = GetServerUrlFile( pServURL, szBufSize, STATE_RED_CONF );
             }
@@ -1313,7 +1360,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
         else
         {
             //if(( eBuildType != ePROD )  || ( dbgServices == true ))
-			if(Debug_Services_Enabled(isLabSigned, eBuildType, dbgServices, deviceType))
+			if(isSecureDbgServicesEnabled)
             {
                 if( (filePresentCheck( SWUPDATE_CONF ) == RDK_API_SUCCESS) )    // if the file exists
                 {
@@ -1419,7 +1466,8 @@ size_t GetFileContents( char **pOut, char *pFileName )
     return len;
 }
 
-/* function GetLabsignedValue - gets the LABSIGNED_ENABLED value from /etc/device.properties.
+/*
+ function GetLabsignedValue - gets the LABSIGNED_ENABLED value from /etc/device.properties.
 
         Usage: bool GetLabsignedValue <char> *pBuf, <size_t> szBufSize
 
@@ -1428,7 +1476,7 @@ size_t GetFileContents( char **pOut, char *pFileName )
             szBufSize - the size of the character buffer in argument 1.
 
             RETURN - if firmware version has LABSIGNED and LABSIGNED_ENABLE is true, then TRUE shall be returned. Else, false.
-*/
+
 bool isLabSignedEnabled(char *pBuf, size_t szBufSize)
 {
     FILE *fp;
@@ -1487,3 +1535,4 @@ bool isLabSignedEnabled(char *pBuf, size_t szBufSize)
         isEnabled = true;
     return isEnabled;
 }
+*/
