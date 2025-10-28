@@ -39,7 +39,7 @@
 
 #define MAC_ADDRESS_LEN 17
 
-bool isSecureDbgServicesEnabled(void) { 
+bool enableDebugServices(void) { 
     bool dbgServices = isDebugServicesEnabled(); //check debug services enabled
 	const char* deviceType = getDeviceTypeRFC(); //Check if device type is TEST
 	BUILDTYPE eBuildType; //To check the build value
@@ -47,7 +47,6 @@ bool isSecureDbgServicesEnabled(void) {
 	const char* key = "LABSIGNED_ENABLED="; // key from /etc/device.properties
 	FILE *fp = fopen(DEVICE_PROPERTIES_FILE, "r");
 	char buf[150] = {0};
-	char Buf[URL_MAX_LEN];
 	char pBuf[URL_MAX_LEN];
 	char *eVal = NULL;
 	char *eBuf = NULL;
@@ -82,18 +81,18 @@ bool isSecureDbgServicesEnabled(void) {
         fclose(fp);
 
         if (*pBuf == '\0') {
-            COMMONUTILITIES_ERROR("isLabSignedEnabled: LABSIGNED_ENABLED property not found or empty\n");
+            COMMONUTILITIES_ERROR("enableDebugServices: LABSIGNED_ENABLED property not found or empty\n");
             return isDebugServicesUnlocked;
         }
 
 	    if(strstr(pBuf, "true")){
 			if((strcmp(deviceType, "test") == 0) && dbgServices){
-				SWLOG_INFO( "isSecureDbgServicesEnabled  : Enabling the debug services...\n" );
+				SWLOG_INFO( "enableDebugServices  : Enabling the debug services...\n" );
 				isDebugServicesUnlocked = true;
+			}
 		}
 	}
 	return isDebugServicesUnlocked;
-}
 }
 /* function GetServerUrlFile - scans a file for a URL. 
         Usage: size_t GetServerUrlFile <char *pServUrl> <size_t szBufSize> <char *pFileName>
@@ -1338,8 +1337,6 @@ size_t GetTR181Url( TR181URL eURL, char *pUrlOut, size_t szBufSize )
 size_t GetServURL( char *pServURL, size_t szBufSize )
 {
     size_t len = 0;
-    BUILDTYPE eBuildType;
-    char buf[URL_MAX_LEN];
     bool skip = false;
 
     if( pServURL != NULL )
@@ -1348,7 +1345,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
         if( isInStateRed() )
         {
             //if(( eBuildType != ePROD )  || ( dbgServices == true ))
-			if(isSecureDbgServicesEnabled)
+			if(enableDebugServices)
             {
                 len = GetServerUrlFile( pServURL, szBufSize, STATE_RED_CONF );
             }
@@ -1360,7 +1357,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
         else
         {
             //if(( eBuildType != ePROD )  || ( dbgServices == true ))
-			if(isSecureDbgServicesEnabled)
+			if(enableDebugServices)
             {
                 if( (filePresentCheck( SWUPDATE_CONF ) == RDK_API_SUCCESS) )    // if the file exists
                 {
