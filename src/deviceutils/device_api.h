@@ -98,11 +98,6 @@ typedef enum {
 #define BOOTSTRAPURL        "BsXconfUrl"
 #define BOOTSTRAPDEFAULT    NO_URL
 
-/*
-#define Debug_Services_Enabled(labSigned, eBuildType, dbgServices, deviceType) \
-    ( ((labSigned) && ((eBuildType) == ePROD) && (dbgServices) && ((deviceType) == DEVICE_TYPE_TEST)) || ((eBuildType) == eDEV) )
-*/
-
 /* function GetServerUrlFile - scans a file for a URL. 
         Usage: size_t GetServerUrlFile <char *pServUrl> <size_t szBufSize> <char *pFileName>
  
@@ -414,17 +409,14 @@ size_t GetServURL(char *pServURL, size_t szBufSize);
 */
 size_t GetFileContents(char **pOut, char *pFileName);
 
-/* function isLabSignedEnabled - gets the LABSIGNED_ENABLED value from /etc/device.properties.
+/* function enableDebugServices - checks for DbgService RFC, DeviceType RFC, build type and 
+                                  LABSIGNED_ENABLED property
+                                  value from /etc/device.properties
 
-        Usage: bool isLabSignedEnabled <char> *pBuf, <size_t> szBufSize
+        Usage: bool enableDebugServices()
 
-            pBuf - pointer to a char buffer to store the output string.
-
-            szBufSize - the size of the character buffer in argument 1.
-
-            RETURN - if firmware version has LABSIGNED and LABSIGNED_ENABLE is true, then TRUE shall be returned. Else, false.
+        RETURN - returns true  if build type is dev or "build type is Prod, DbgServices RFC enabled and 
+		          DeviceType is Test and LABSIGNED_ENABLED is set to true. Else, false.
 */
-bool isLabSignedEnabled(char *pBuf, size_t szBufSize);
-
-bool Debug_Services_Enabled(bool isLabSigned, BUILDTYPE eBuildType, bool dbgServices, const char* deviceType);
+bool enableDebugServices(void);
 #endif
