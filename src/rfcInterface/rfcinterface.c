@@ -288,7 +288,11 @@ bool isDebugServicesEnabled(void)
     return status;
 }
 
-const char* getDeviceType(void) {
+/* Description: Checking device type rfc value
+ * @param type : void
+ * @return test, if deviceType RFC is set to test, prod if deviceType is set to prod else unknown
+ * */
+const char* getDeviceTypeRFC(void) {
     static char deviceType[16] = "unknown";  // default
     char rfc_data[RFC_VALUE_BUF_SIZE] = {0};
     int ret = read_RFCProperty("LABSGND", RFC_DEVICETYPE, rfc_data, sizeof(rfc_data));
