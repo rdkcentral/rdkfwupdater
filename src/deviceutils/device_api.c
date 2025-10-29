@@ -40,8 +40,8 @@
 #define MAC_ADDRESS_LEN 17
 
 bool enableDebugServices(void) { 
-    bool dbgServices = isDebugServicesEnabled(); //check debug services enabled
-	const char* deviceType = getDeviceTypeRFC(); //Check if device type is TEST
+    bool dbgServices = isDebugServicesEnabled(); //check debug services enabled from RFC
+	const char* deviceType = getDeviceTypeRFC(); //Check if device type is TEST from RFC
 	BUILDTYPE eBuildType; //To check the build value
 	bool isDebugServicesUnlocked = false;// return value
 	const char* key = "LABSIGNED_ENABLED="; // key from /etc/device.properties
@@ -1344,7 +1344,6 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
         *pServURL = 0;
         if( isInStateRed() )
         {
-            //if(( eBuildType != ePROD )  || ( dbgServices == true ))
 			if(enableDebugServices)
             {
                 len = GetServerUrlFile( pServURL, szBufSize, STATE_RED_CONF );
@@ -1356,7 +1355,6 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
         }
         else
         {
-            //if(( eBuildType != ePROD )  || ( dbgServices == true ))
 			if(enableDebugServices)
             {
                 if( (filePresentCheck( SWUPDATE_CONF ) == RDK_API_SUCCESS) )    // if the file exists
@@ -1462,74 +1460,3 @@ size_t GetFileContents( char **pOut, char *pFileName )
     }
     return len;
 }
-
-/*
- function GetLabsignedValue - gets the LABSIGNED_ENABLED value from /etc/device.properties.
-
-        Usage: bool GetLabsignedValue <char> *pBuf, <size_t> szBufSize
-
-            pBuf - pointer to a char buffer to store the output string.
-
-            szBufSize - the size of the character buffer in argument 1.
-
-            RETURN - if firmware version has LABSIGNED and LABSIGNED_ENABLE is true, then TRUE shall be returned. Else, false.
-
-bool isLabSignedEnabled(char *pBuf, size_t szBufSize)
-{
-    FILE *fp;
-    bool isEnabled = false;
-    char buf[150] = {0};
-    char firmware[150] = {0};
-    char *eVal, *eBuf;
-    int i = 0;
-	const char* key = "LABSIGNED_ENABLED=";
-
-    if (!pBuf || szBufSize == 0)
-        return false;
-
-    *pBuf = '\0';
-
-    fp = fopen(DEVICE_PROPERTIES_FILE, "r");
-    if (!fp) {
-        COMMONUTILITIES_ERROR("isLabSignedEnabled: can't open properties file\n");
-        return isEnabled;
-    }
-
-    while (fgets(buf, sizeof(buf), fp)) {
-        if (strncmp(buf, key, strlen(key)) == 0) {
-            eVal = strchr(buf, '=');
-            if (eVal) {
-                ++eVal;
-                i = snprintf(pBuf, szBufSize, "%s", eVal);
-                i = stripinvalidchar(pBuf, i);
-                eBuf = pBuf;
-                while (*eBuf) {
-                    *eBuf = tolower((unsigned char)*eBuf);
-                    ++eBuf;
-                }
-            }
-            break;
-        }
-    }
-    fclose(fp);
-
-    if (*pBuf == '\0') {
-        COMMONUTILITIES_ERROR("isLabSignedEnabled: LABSIGNED_ENABLED property not found or empty\n");
-        return isEnabled;
-    }
-
-    if (GetFirmwareVersion(firmware, sizeof(firmware)) == 0 || *firmware == '\0') {
-        COMMONUTILITIES_ERROR("isLabSignedEnabled: GetFirmwareVersion failed or empty\n");
-        return isEnabled;
-    }
-    eBuf = firmware;
-    while (*eBuf) {
-        *eBuf = tolower((unsigned char)*eBuf);
-        ++eBuf;
-    }
-
-    if (strstr(firmware, "labsigned") && strstr(pBuf, "true"))
-        isEnabled = true;
-    return isEnabled;
-}
-*/
