@@ -84,7 +84,7 @@ extern "C" size_t GetAdditionalFwVerInfo( char *pAdditionalFwVerInfo, size_t szB
     }
     return g_DeviceStatusMock->GetAdditionalFwVerInfo(pAdditionalFwVerInfo, szBufSize);
 }
-
+/*
 extern "C" size_t GetBuildType( char *pBuildType, size_t szBufSize, BUILDTYPE *peBuildTypeOut )
 {
     if (!g_DeviceStatusMock)
@@ -96,7 +96,7 @@ extern "C" size_t GetBuildType( char *pBuildType, size_t szBufSize, BUILDTYPE *p
     snprintf(pBuildType, szBufSize, "%s", "prod");
     return g_DeviceStatusMock->GetBuildType(pBuildType, szBufSize, peBuildTypeOut);
 }
-
+*/
 extern "C" size_t GetModelNum( char *pModelNum, size_t szBufSize )
 {
     if (!g_DeviceStatusMock)

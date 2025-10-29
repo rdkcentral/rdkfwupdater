@@ -31,8 +31,6 @@ extern "C" int v_secure_system(const char *mode, ...)
         return NULL;  // Return error code instead of NULL
     }
     printf("Inside Mock Function v_secure_system\n");
-    // Note: v_secure_system returns int, but mock returns FILE*
-    // This is a type mismatch - just return success
     return g_DeviceUtilsMock->v_secure_system(mode, NULL, NULL);
 }
 //extern "C" FILE* v_secure_popen(const char *mode, const char *cmd, const char *opt )
@@ -297,17 +295,66 @@ extern "C" size_t GetFileContents(char **ppFileContents, const char *pFileName)
     return 0;
 }
 */
+
+// Forward declaration for stripinvalidchar (defined later in this file)
+extern "C" size_t stripinvalidchar(char *pIn, size_t szIn);
+
 extern "C" size_t GetBuildType(char *pBuildType, size_t szBufSize, BUILDTYPE *peBuildTypeOut)
 {
     // Mock for external function from common_utilities
-    // Returns "prod" build type (ePROD enum value)
+    // Reads from /tmp/device_gtest.prop to match test expectations
     // Possible values: "dev" (eDEV), "vbn" (eVBN), "prod" (ePROD), "qa" (eQA)
+    FILE *fp;
+    char *pTmp;
+    size_t i = 0;
+    BUILDTYPE eBuildType = eUNKNOWN;
+    char buf[150];
+
     if (pBuildType != NULL && szBufSize > 0) {
-        snprintf(pBuildType, szBufSize, "prod");
-        if (peBuildTypeOut) {
-            *peBuildTypeOut = ePROD;  // Use ePROD instead of PRODUCTION
+        *pBuildType = 0;
+        if ((fp = fopen("/tmp/device_gtest.prop", "r")) != NULL) {
+            while (fgets(buf, sizeof(buf), fp) != NULL) {
+                pTmp = strstr(buf, "BUILD_TYPE=");
+                if (pTmp && pTmp == buf) {
+                    pTmp = strchr(pTmp, '=');
+                    if (pTmp != NULL) {
+                        ++pTmp;
+                        i = snprintf(pBuildType, szBufSize, "%s", pTmp);
+                        // Strip invalid characters (newline, etc.)
+                        i = stripinvalidchar(pBuildType, i);
+                        // Convert to lowercase
+                        char *pLower = pBuildType;
+                        while (*pLower) {
+                            *pLower = tolower(*pLower);
+                            ++pLower;
+                        }
+                    }
+                }
+            }
+            fclose(fp);
         }
-        return strlen(pBuildType);
+        
+        // If file not found or no BUILD_TYPE, default to "prod"
+        if (*pBuildType == 0) {
+            i = snprintf(pBuildType, szBufSize, "prod");
+            eBuildType = ePROD;
+        } else {
+            // Determine eBuildType from string
+            if (strstr(pBuildType, "vbn") != NULL) {
+                eBuildType = eVBN;
+            } else if (strstr(pBuildType, "prod") != NULL) {
+                eBuildType = ePROD;
+            } else if (strstr(pBuildType, "qa") != NULL) {
+                eBuildType = eQA;
+            } else if (strstr(pBuildType, "dev") != NULL) {
+                eBuildType = eDEV;
+            }
+        }
+        
+        if (peBuildTypeOut) {
+            *peBuildTypeOut = eBuildType;
+        }
+        return i;
     }
     return 0;
 }
