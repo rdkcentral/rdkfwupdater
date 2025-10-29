@@ -28,12 +28,12 @@ extern "C" int v_secure_system(const char *mode, ...)
     if (!g_DeviceUtilsMock)
     {
         cout << "v_secure_system g_DeviceUtilsMock object is NULL" << endl;
-        return -1;  // Return error code instead of NULL
+        return NULL;  // Return error code instead of NULL
     }
     printf("Inside Mock Function v_secure_system\n");
     // Note: v_secure_system returns int, but mock returns FILE*
     // This is a type mismatch - just return success
-    return 0;
+    return g_DeviceUtilsMock->v_secure_system(mode, NULL, NULL);
 }
 //extern "C" FILE* v_secure_popen(const char *mode, const char *cmd, const char *opt )
 extern "C" FILE* v_secure_popen(const char *mode, ...)
@@ -311,7 +311,7 @@ extern "C" size_t GetBuildType(char *pBuildType, size_t szBufSize, BUILDTYPE *pe
     }
     return 0;
 }
-
+/*
 extern "C" int stripinvalidchar(char *pStr, int len)
 {
     // Mock for external function from common_utilities
@@ -322,7 +322,7 @@ extern "C" int stripinvalidchar(char *pStr, int len)
     }
     return 0;
 }
-
+*/
 extern "C" int makeHttpHttps(char *pStr, int len)
 {
     // Mock for external function from common_utilities
@@ -348,6 +348,29 @@ extern "C" int allocDowndLoadDataMem(void *ptr, int size)
     // This function allocates memory for download data
     // For testing purposes, just return success
     return 0;
+}
+
+extern "C" size_t stripinvalidchar(char *pIn, size_t szIn)
+{
+    // Mock for external function from common_utilities (libfwutils)
+    // This function truncates a string when a space or control character is encountered
+    size_t i = 0;
+
+    if (pIn != NULL)
+    {
+        while (*pIn && szIn)
+        {
+            if (isspace(*pIn) || iscntrl(*pIn))
+            {
+                *pIn = 0;
+                break;
+            }
+            ++pIn;
+            --szIn;
+            ++i;
+        }
+    }
+    return i;
 }
 
 #endif
