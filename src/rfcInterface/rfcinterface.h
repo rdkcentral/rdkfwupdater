@@ -99,6 +99,6 @@ int isMtlsEnabled(const char *);
 int isIncremetalCDLEnable(const char *file_name);
 bool isMmgbleNotifyEnabled(void);
 bool isDebugServicesEnabled(void);
-const char* getDeviceType(void);
+const char* getDeviceTypeRFC(void);
 
 #endif /* VIDEO_RFCINTERFACE_RFCINTERFACE_H_ */
