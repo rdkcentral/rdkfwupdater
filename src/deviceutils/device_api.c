@@ -48,7 +48,7 @@ bool enableDebugServices(void) {
 	const char* key = "LABSIGNED_ENABLED="; // key from /etc/device.properties
 	char buf[150] = {0};
 	char tBuf[URL_MAX_LEN];
-	char pBuf[URL_MAX_LEN];
+	char pBuf[URL_MAX_LEN] ={0};
 	char *eVal = NULL;
 	char *eBuf = NULL;
 	int i = 0;
