@@ -39,7 +39,11 @@ jobs:
       - name: Start l2-container service with mTLS enabled
         run: |
           docker run -d --name native-platform --link mockxconf -e ENABLE_MTLS=true -v ${{ github.workspace }}:/mnt/L2_CONTAINER_SHARED_VOLUME ghcr.io/rdkcentral/docker-device-mgt-service-test/native-platform:latest
-
+    
+      - name: Check rdmfile files inside test-xconf container
+        run: |
+          docker exec mockxconf ls -l /etc/xconf/certs/
+    
       - name: Enter Inside Platform native container and run L2 Test
         run: |
           docker exec -i native-platform /bin/bash -c "cd /mnt/L2_CONTAINER_SHARED_VOLUME/ && export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/lib/aarch64-linux-gnu:/usr/local/lib: && sh run_l2.sh" 
