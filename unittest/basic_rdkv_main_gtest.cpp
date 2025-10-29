@@ -962,7 +962,7 @@ TEST(MainHelperFunctionTest, HandlesNullFilename) {
 }
 
 TEST(MainHelperFunctionTest,flashImageTestNull){
-    EXPECT_EQ(flashImage(NULL, NULL, "false", "2", 0, "false"), -1);
+    EXPECT_EQ(flashImage(NULL, NULL, "false", "2", 0, "false",1), -1);
 }
 TEST(MainHelperFunctionTest,flashImageTest){
     MockExternal mockexternal;
@@ -976,7 +976,7 @@ TEST(MainHelperFunctionTest,flashImageTest){
     EXPECT_CALL(mockexternal,updateFWDownloadStatus(_,_)).Times(1);
     EXPECT_CALL(DeviceMock, getDevicePropertyData(_,_,_)).WillRepeatedly(Return(0));
     //int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint)
-    EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "false", "2", 0, "false"), 0);
+    EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "false", "2", 0, "false",2), 0);
     global_mockexternal_ptr = NULL;
 }
 TEST(MainHelperFunctionTest,flashImageTestRedState){
@@ -992,7 +992,7 @@ TEST(MainHelperFunctionTest,flashImageTestRedState){
     EXPECT_CALL(DeviceMock, getDevicePropertyData(_,_,_)).WillRepeatedly(Return(0));
     EXPECT_CALL(DeviceMock, isInStateRed()).Times(1).WillOnce(Return(true));
     //int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint)
-    EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "false", "2", 0, "false"), 0);
+    EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "false", "2", 0, "false",6), 0);
     global_mockexternal_ptr = NULL;
 }
 TEST(MainHelperFunctionTest,flashImageTestFail){
@@ -1008,7 +1008,7 @@ TEST(MainHelperFunctionTest,flashImageTestFail){
     EXPECT_CALL(mockexternal,updateFWDownloadStatus(_,_)).Times(1);
     EXPECT_CALL(DeviceMock, getDevicePropertyData(_,_,_)).WillRepeatedly(Return(0));
     //int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint)
-    EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "false", "2", 0, "false"), 1);
+    EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "false", "2", 0, "false",3), 1);
     global_mockexternal_ptr = NULL;
 }
 TEST(MainHelperFunctionTest,flashImageTestFail1){
@@ -1024,7 +1024,7 @@ TEST(MainHelperFunctionTest,flashImageTestFail1){
     EXPECT_CALL(mockexternal,updateFWDownloadStatus(_,_)).Times(1);
     EXPECT_CALL(DeviceMock, getDevicePropertyData(_,_,_)).WillRepeatedly(Return(0));
     //int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint)
-    EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "false", "2", 0, "false"), 1);
+    EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "false", "2", 0, "false",1), 1);
     global_mockexternal_ptr = NULL;
 }
 TEST(MainHelperFunctionTest,flashImageTestFail2){
@@ -1040,7 +1040,7 @@ TEST(MainHelperFunctionTest,flashImageTestFail2){
     EXPECT_CALL(mockexternal,updateFWDownloadStatus(_,_)).Times(1);
     EXPECT_CALL(DeviceMock, getDevicePropertyData(_,_,_)).WillRepeatedly(Return(1));
     //int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint)
-    EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "false", "2", 0, "false"), 1);
+    EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "false", "2", 0, "false",5), 1);
     global_mockexternal_ptr = NULL;
 }
 TEST(MainHelperFunctionTest,flashImageTestRebootTrue){
@@ -1055,7 +1055,7 @@ TEST(MainHelperFunctionTest,flashImageTestRebootTrue){
     EXPECT_CALL(mockexternal,updateFWDownloadStatus(_,_)).Times(1);
     EXPECT_CALL(DeviceMock, getDevicePropertyData(_,_,_)).WillRepeatedly(Return(0));
     //int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint)
-    EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "true", "2", 0, "false"), 0);
+    EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "true", "2", 0, "false",2), 0);
     global_mockexternal_ptr = NULL;
 }
 TEST(MainHelperFunctionTest,flashImageTestPdri){
@@ -1070,7 +1070,7 @@ TEST(MainHelperFunctionTest,flashImageTestPdri){
     EXPECT_CALL(mockexternal,updateFWDownloadStatus(_,_)).Times(1);
     EXPECT_CALL(DeviceMock, getDevicePropertyData(_,_,_)).WillRepeatedly(Return(0));
     //int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint)
-    EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "false", "2", 1, "false"), 0);
+    EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "false", "2", 1, "false",6), 0);
     global_mockexternal_ptr = NULL;
 }
 
@@ -1086,7 +1086,7 @@ TEST(MainHelperFunctionTest,flashImageTestMaintTrue){
     EXPECT_CALL(mockexternal,updateFWDownloadStatus(_,_)).Times(1);
     EXPECT_CALL(DeviceMock, getDevicePropertyData(_,_,_)).WillRepeatedly(Return(0));
     //int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint)
-    EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "true", "2", 0, "true"), 0);
+    EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "true", "2", 0, "true",1), 0);
     global_mockexternal_ptr = NULL;
 }
 TEST(MainHelperFunctionTest,flashImageTestMaintFalse){
@@ -1101,7 +1101,7 @@ TEST(MainHelperFunctionTest,flashImageTestMaintFalse){
     EXPECT_CALL(mockexternal,updateFWDownloadStatus(_,_)).Times(1);
     EXPECT_CALL(DeviceMock, getDevicePropertyData(_,_,_)).WillRepeatedly(Return(0));
     //int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint)
-    EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "true", "2", 0, "false"), 0);
+    EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "true", "2", 0, "false",2), 0);
     global_mockexternal_ptr = NULL;
 }
 TEST(MainHelperFunctionTest,getXconfResTest){

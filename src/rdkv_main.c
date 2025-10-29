@@ -27,9 +27,9 @@
 #include "rdkv_cdl.h"
 #include "rdkv_upgrade.h"
 #include "rdkv_cdl_log_wrapper.h"
+#include "urlHelper.h"
 #ifndef GTEST_ENABLE
 #include "downloadUtil.h"
-#include "urlHelper.h"
 #endif
 #include "download_status_helper.h"
 #include "device_status_helper.h"
