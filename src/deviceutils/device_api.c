@@ -1463,3 +1463,5 @@ size_t GetFileContents( char **pOut, char *pFileName )
     }
     return len;
 }
+
+
