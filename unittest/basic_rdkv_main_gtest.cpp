@@ -22,6 +22,7 @@
 #include <iostream>
 #include <unistd.h>
 
+#include "rdkv_cdl_log_wrapper.h"
 extern "C" {
 #include "device_status_helper.h"
 #include "download_status_helper.h"

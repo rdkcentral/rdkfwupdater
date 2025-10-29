@@ -21,7 +21,10 @@ AUTOMAKE_OPTIONS = subdir-objects
 bin_PROGRAMS = rdkfw_device_status_gtest rdkfw_deviceutils_gtest rdkfw_main_gtest rdkfw_interface_gtest
 
 # Define the include directories
-COMMON_CPPFLAGS = -std=c++11 -I/usr/include/cjson -I../src -I../src/cedmInterface -I../src/deviceutils/ -I../src/include/ -I../src/rbusInterface/ -I./mocks/ -I./deviceutils/ -DGTEST_ENABLE -DGTEST_BASIC -DIARM_ENABLED -DRFC_API_ENABLED -DT2_EVENT_ENABLED
+# NOTE: We explicitly use -I. to prioritize local test headers over system headers
+# This prevents conflicts with external library headers in /usr/local/include/
+# rdk_fwdl_utils.h includes rdkv_cdl_log_wrapper.h inside common_utilities. to over come this ,  
+COMMON_CPPFLAGS = -std=c++11 -I. -I/usr/include/cjson -I../src -I../src/cedmInterface -I../src/deviceutils/ -I../src/include/ -I../src/rbusInterface/ -I./mocks/ -I./deviceutils/ -DGTEST_ENABLE -DGTEST_BASIC -DIARM_ENABLED -DRFC_API_ENABLED -DT2_EVENT_ENABLED
 
 # Define the libraries to link against
 COMMON_LDADD =  -lgtest -lgtest_main -lgmock_main -lgmock -lcjson -lgcov
@@ -39,17 +42,17 @@ rdkfw_interface_gtest_SOURCES = fwdl_interface_gtest.cpp ./mocks/interface_mock.
 
 # Apply common properties to each program
 rdkfw_device_status_gtest_CPPFLAGS = $(COMMON_CPPFLAGS)
-rdkfw_device_status_gtest_LDADD = $(COMMON_LDADD) -lrdksw_upgrade -lrdksw_rfcIntf -lrdksw_iarmIntf -lrdksw_jsonparse -lrdksw_flash -lrdksw_fwutils -lfwutils -ldwnlutil
+rdkfw_device_status_gtest_LDADD = $(COMMON_LDADD) 
 rdkfw_device_status_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
 rdkfw_device_status_gtest_CFLAGS = $(COMMON_CXXFLAGS)
 
 rdkfw_deviceutils_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -DDEVICE_API
-rdkfw_deviceutils_gtest_LDADD = $(COMMON_LDADD) -lrdksw_upgrade -lrdksw_rfcIntf -lrdksw_iarmIntf -lrdksw_jsonparse -lrdksw_flash -lrdksw_fwutils -lfwutils -ldwnlutil
+rdkfw_deviceutils_gtest_LDADD = $(COMMON_LDADD) 
 rdkfw_deviceutils_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
 rdkfw_deviceutils_gtest_CFLAGS = $(COMMON_CXXFLAGS)
 
 rdkfw_main_gtest_CPPFLAGS = $(COMMON_CPPFLAGS)
-rdkfw_main_gtest_LDADD = $(COMMON_LDADD) ../librdksw_upgrade.la -lrdksw_upgrade -lrdksw_rfcIntf -lrdksw_iarmIntf -lrdksw_jsonparse -lrdksw_flash
+rdkfw_main_gtest_LDADD = $(COMMON_LDADD) -lrdksw_upgrade 
 rdkfw_main_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
 rdkfw_main_gtest_CFLAGS = $(COMMON_CXXFLAGS)
 

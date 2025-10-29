@@ -48,7 +48,7 @@
 #define DWNL_UNPAUSE_FAIL -2
 
 /* Below structure contains data from /etc/device.property */
-/*
+
 typedef struct deviceproperty {
         BUILDTYPE eBuildType;           // keep buildtype as an enum, easier to compare
         char dev_name[MIN_BUFF_SIZE1];
@@ -61,7 +61,7 @@ typedef struct deviceproperty {
         char model[MIN_BUFF_SIZE1];
         char sw_optout[MIN_BUFF_SIZE1];
 }DeviceProperty_t;
-*/
+
 
 
 typedef enum {
@@ -71,11 +71,11 @@ typedef enum {
 
 
 /* Below structure contails data from /version.txt */
-/*
+
 typedef struct imagedetails {
         char cur_img_name[MIN_BUFF_SIZE];
 }ImageDetails_t;
-*/
+
 // define the functions to avoid compiler errors
 
 #endif

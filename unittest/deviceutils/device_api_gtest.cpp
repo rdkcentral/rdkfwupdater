@@ -22,10 +22,11 @@
 #include <unistd.h>
 
 #include "../mocks/deviceutils_mock.h"
+#include "rdkv_cdl_log_wrapper.h"
 extern "C" {
 #include "device_api.h"
-#include "common_device_api.h"
-#include "urlHelper.h"
+//#include "common_device_api.h"
+//#include "urlHelper.h"
 }
 
 #define JSON_STR_LEN        1000
@@ -105,6 +106,7 @@ TEST(TestGetServerUrlFile, TestName_filenotpresent)
     EXPECT_EQ(GetServerUrlFile(serverurl, sizeof(serverurl), "/tmp/swupdate1.conf"), 0);
 }
 
+/* COMMENTED OUT: GetTimezone is now in common_utilities
 TEST_F(DeviceApiTestFixture,TestName_Nullcheck)
 {
     EXPECT_EQ(GetTimezone(NULL, NULL, 0), 0);
@@ -166,6 +168,8 @@ TEST_F(DeviceApiTestFixture,TestName_gettimeskydevicearm)
         }));
     EXPECT_NE(GetTimezone(output, "arm", sizeof(output)), 0);
 }
+*/
+
 TEST_F(DeviceApiTestFixture,TestName_getadditionfw_nullcheck)
 {
     EXPECT_EQ(GetAdditionalFwVerInfo(NULL, 0), 0);
@@ -219,6 +223,7 @@ TEST_F(DeviceApiTestFixture,TestName_bundle_Fail)
     EXPECT_EQ(GetInstalledBundles(pBundles, sizeof(pBundles)), 0);
 }
 
+/* COMMENTED OUT: GetUTCTime and GetCapabilities are now in common_utilities
 TEST(TestGetUTCTime, TestName_Nullcheck)
 {
     EXPECT_EQ(GetUTCTime(NULL, 0), 0);
@@ -239,6 +244,7 @@ TEST(TestGetCapabilities, TestName_Success)
     EXPECT_NE(GetCapabilities(capability, sizeof(capability)), 0);
     printf("capabilities = %s\n", capability);
 }
+*/
 
 TEST_F(DeviceApiTestFixture,TestName_GetPartnerId_Nullcheck)
 {
@@ -392,6 +398,8 @@ TEST_F(DeviceApiTestFixture,TestName_GetAccountID_Fail)
    EXPECT_NE(GetAccountID(output, sizeof(output)), 0);
    printf("GetAccountID = %s\n", output);
 }
+
+/* COMMENTED OUT: GetFirmwareVersion, GetModelNum, GetMFRName are now in common_utilities
 TEST(TestGetFirmwareVersion, TestName_GetFirmwareVersion_Nullcheck)
 {
     EXPECT_EQ(GetFirmwareVersion(NULL, 0), 0);
@@ -438,6 +446,8 @@ TEST_F(DeviceApiTestFixture, GetMFRName_file_not_found)
     char data[32];
     EXPECT_EQ(GetMFRName(data, 7),0);
 }
+*/
+
 TEST_F(DeviceApiTestFixture, TestName_GetEstbMac_Nullcheck)
 {
     EXPECT_EQ(GetEstbMac(NULL, 0), 0);
@@ -463,6 +473,7 @@ TEST(TestGetRdmManifestVersion, TestName_GetRdmManifestVersion_Nullcheck)
     EXPECT_EQ(GetRdmManifestVersion(NULL, 0), 0);
 }
 
+/* COMMENTED OUT: GetFileContents is now in common_utilities
 TEST_F(DeviceApiTestFixture, TestName_GetFileContents_Nullcheck)
 {
     EXPECT_EQ(GetFileContents(NULL, NULL), 0);
@@ -483,6 +494,8 @@ TEST_F(DeviceApiTestFixture, TestName_GetFileContents_Fail)
 {
     EXPECT_EQ(GetFileContents(NULL, NULL), 0);
 }
+*/
+
 TEST_F(DeviceApiTestFixture, TestName_GetServURL_Nullcheck)
 {
     EXPECT_EQ(GetServURL(NULL, 0), 0);
@@ -656,6 +669,8 @@ TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessSwupdate_Prod_DebugServi
     ret = system("rm -f /tmp/device_gtest.prop");
     printf("Server URL = %s\n", output);
 }
+
+/* COMMENTED OUT: GetBuildType is now in common_utilities
 TEST_F(DeviceApiTestFixture, TestName_GetBuildType_Success)
 {
     int ret;
@@ -666,6 +681,8 @@ TEST_F(DeviceApiTestFixture, TestName_GetBuildType_Success)
     ret = system("rm -f /tmp/device_gtest.prop");
     printf("Build Type = %s\n", output);
 }
+*/
+
 //TODO: Need to write more test case
 TEST_F(DeviceApiTestFixture, TestName_GetExperience_Nullcheck)
 {

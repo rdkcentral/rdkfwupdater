@@ -26,8 +26,6 @@
 
 #include "rdkv_cdl.h"
 #include "rdkv_upgrade.h"
-#include "rdkv_cdl_log_wrapper.h"
-#include "urlHelper.h"
 #ifndef GTEST_ENABLE
 #include "downloadUtil.h"
 #endif
@@ -36,16 +34,18 @@
 #include "iarmInterface.h"
 #include "rfcinterface.h"
 #ifndef GTEST_ENABLE
+#include "common_device_api.h"
+#include "urlHelper.h"
 #include "rdk_fwdl_utils.h"
 #include "system_utils.h"
 #include "rdk_logger_milestone.h"
 #else
+#include "rdkv_cdl_log_wrapper.h"
 #include "miscellaneous.h"
 #endif
 #include "json_process.h"
 #include "device_api.h"
 #include "deviceutils.h"
-#include "common_device_api.h"
 #include "iarmInterface.h"
 
 #include <stdlib.h>

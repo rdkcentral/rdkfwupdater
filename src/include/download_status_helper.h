@@ -21,6 +21,7 @@
 
 #include "rdkv_cdl.h"
 #include "rfcinterface.h"
+#include "rdkv_cdl_log_wrapper.h"
 #define MIN_BUFF_SIZE2 MIN_BUFF_SIZE1 + 40
 #define MIN_BUFF_SIZE3 MIN_BUFF_SIZE + 64
 

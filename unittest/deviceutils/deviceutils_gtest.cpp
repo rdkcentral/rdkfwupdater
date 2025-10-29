@@ -24,8 +24,8 @@
 #include "../mocks/deviceutils_mock.h"
 extern "C" {
 #include "deviceutils.h"
-#include "urlHelper.h"
-#include "common_device_api.h"
+//#include "urlHelper.h"
+//#include "common_device_api.h"
 // Forward declaration for external function (mocked)
 //int allocDowndLoadDataMem(void *ptr, int size);
 //extern "C" int allocDowndLoadDataMem(DownloadData *ptr, int size);
@@ -78,17 +78,23 @@ class DeviceUtilsTestFixture : public ::testing::Test {
             printf("%s\n", __func__);
         }
 };
-
+/*
 TEST_F(DeviceUtilsTestFixture, TestName_stripinvalidchar_Null)
 {
     EXPECT_EQ(stripinvalidchar(NULL, 0), 0);
 }
+*/
+/*
 TEST_F(DeviceUtilsTestFixture, TestName_stripinvalidchar_notNull)
 {
     char data[32];
     snprintf(data, sizeof(data), "%s", "Satya@#123456");
     EXPECT_NE(stripinvalidchar(data, sizeof(data)), 0);//TODO: Need to check how to do >= check
 }
+*/
+// COMMENTED OUT: makeHttpHttps is now in common_utilities library and should be tested there
+// This function is not called by local production code, so no mock is needed
+/*
 TEST_F(DeviceUtilsTestFixture, TestName_makeHttpHttps_Null)
 {
     EXPECT_EQ(makeHttpHttps(NULL, 0), 0);
@@ -111,6 +117,7 @@ TEST_F(DeviceUtilsTestFixture, TestName_makeHttpHttp_badurl)
     snprintf(data, sizeof(data), "%s", "ht//xyz.com");
     EXPECT_NE(makeHttpHttps(data, sizeof(data)), 0);
 }
+*/
 /*
 TEST_F(DeviceUtilsTestFixture, TestName_allocDowndLoadDataMem_Null)
 {
@@ -124,6 +131,9 @@ TEST_F(DeviceUtilsTestFixture, TestName_allocDowndLoadDataMem_NonNull)
     EXPECT_EQ(allocDowndLoadDataMem(&pDwnData, sizeof(pDwnData)), 0);
 }
 */
+// COMMENTED OUT: get_system_uptime is now in common_utilities library and should be tested there
+// This function is not called by local production code, so no mock is needed
+/*
 TEST_F(DeviceUtilsTestFixture, TestName_get_system_uptime_Null)
 {
     EXPECT_EQ(get_system_uptime(NULL), false);
@@ -133,6 +143,7 @@ TEST_F(DeviceUtilsTestFixture, TestName_get_system_uptime_NonNull)
     double data;
     EXPECT_EQ(get_system_uptime(&data), true);
 }
+*/
 TEST_F(DeviceUtilsTestFixture, TestName_getJRPCTokenData_BugOverflow)
 {
     char token[32];

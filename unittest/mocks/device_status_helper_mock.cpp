@@ -89,7 +89,7 @@ extern "C" size_t GetBuildType( char *pBuildType, size_t szBufSize, BUILDTYPE *p
 {
     if (!g_DeviceStatusMock)
     {
-	cout << "GetBuildType  g_DeviceStatusMock object is NULL" << endl;
+        cout << "GetBuildType  g_DeviceStatusMock object is NULL" << endl;
         return 0;
     }
     printf("Inside Mock Function GetBuildType\n");
@@ -358,4 +358,12 @@ extern "C" void t2ValNotify(char *marker, char *val)
     }
     printf("Inside Mock Function t2ValNotify\n");
     return g_DeviceStatusMock->t2ValNotify(marker, val);
+}
+
+// Mock for swLog (logging function from common_utilities)
+extern "C" int swLog(int level, const char* format, ...)
+{
+    // Simple stub - just return success without actually logging
+    // In real code, this would write to syslog/files, but for tests we just ignore it
+    return 0;
 }

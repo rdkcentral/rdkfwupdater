@@ -10,6 +10,9 @@ extern "C" {
 #include "deviceutils.h"
 #include "device_api.h"
 
+#ifdef GTEST_ENABLE
+#include "miscellaneous.h"
+#endif
 /**
  * @brief Input context structure for rdkv_upgrade_request function
  * Contains all input parameters passed to the upgrade request function

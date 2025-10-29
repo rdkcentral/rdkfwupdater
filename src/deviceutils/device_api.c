@@ -31,12 +31,12 @@
 
 #include "rdkv_cdl.h"
 #include "json_parse.h"
-#include "urlHelper.h"
 #include "device_api.h"
 #include "deviceutils.h"
 #include "device_status_helper.h"
 #include "rfcinterface.h"
 #include "mtlsUtils.h"
+#include "rdkv_cdl_log_wrapper.h"
 
 #define MAC_ADDRESS_LEN 17
 

@@ -22,7 +22,9 @@
 #include <stdbool.h>
 #include <time.h>
 
+#ifndef GTEST_ENABLE
 #include "system_utils.h"
+#endif
 #define DNS_RESOLV_FILE "/etc/resolv.dnsmasq"
 #define IP_ROUTE_FLAG "/tmp/route_available"
 #define GATEWAYIP_FILE "/tmp/.GatewayIP_dfltroute"
@@ -37,6 +39,7 @@
 #include <fcntl.h>           /* Definition of AT_* constants */
 #include <sys/stat.h>
 #endif
+#include "rdkv_cdl_log_wrapper.h"
 
 bool isDeviceReadyForDownload();
 int isStateRedSupported(void);

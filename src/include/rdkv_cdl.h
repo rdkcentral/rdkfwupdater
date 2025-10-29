@@ -35,11 +35,10 @@ typedef struct credential MtlsAuth_t;
 #ifndef GTEST_ENABLE
 #ifdef T2_EVENT_ENABLED
 #include <telemetry_busmessage_sender.h>
-#endif
-#include <secure_wrapper.h>
 #include "urlHelper.h"
 #endif
-
+#include <secure_wrapper.h>
+#endif
 #include "json_process.h"
 
 #define SUCCESS 1

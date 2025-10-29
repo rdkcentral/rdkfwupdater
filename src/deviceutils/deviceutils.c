@@ -25,12 +25,19 @@
 #ifndef GTEST_ENABLE
 #include <secure_wrapper.h>
 #include "downloadUtil.h"
+#include "urlHelper.h"
+#include "mtlsUtils.h"
+#else
+// For GTEST mode, we need type definitions and macros but not implementations
+//#include "urlHelper.h"  // For MtlsAuth_t, DownloadData, FileDwnl_t types
+#include "mtlsUtils.h"  // For RDKSSACLI macro
+// Forward declare v_secure_popen and v_secure_pclose (mocked in tests)
+FILE* v_secure_popen(const char *mode, ...);
+int v_secure_pclose(FILE *fp);
 #endif
 
 //#include "rdkv_cdl_log_wrapper.h"
-#include "urlHelper.h"
 #include "deviceutils.h"
-#include "mtlsUtils.h"
 #include "json_parse.h"
 #include <dirent.h>
 

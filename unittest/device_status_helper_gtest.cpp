@@ -131,6 +131,8 @@ TEST_F(CreateJsonTestFixture, TestName_isPDRIEnable)
     EXPECT_CALL(*g_DeviceStatusMock, getDevicePropertyData(_, _, _)).Times(1).WillOnce(Return(0));
     EXPECT_EQ(isPDRIEnable(), true);
 }
+
+/* COMMENTED OUT: createJsonString is in json_process.c, should be tested in rdkfw_main_gtest (basic_rdkv_main_gtest.cpp)
 TEST_F(CreateJsonTestFixture, TestName) {
 
     EXPECT_CALL(*g_DeviceStatusMock, getDevicePropertyData(_, _, _)).Times(3).WillRepeatedly(Return(0));
@@ -180,6 +182,7 @@ TEST_F(CreateJsonTestFixture, TestName) {
 	    pJSONStr = NULL;
     }
 }
+*/
 
 TEST_F(CreateJsonTestFixture, TestName_CheckIProuteConnectivity_NullCheck)
 {
