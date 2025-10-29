@@ -1337,11 +1337,14 @@ size_t GetTR181Url( TR181URL eURL, char *pUrlOut, size_t szBufSize )
 size_t GetServURL( char *pServURL, size_t szBufSize )
 {
     size_t len = 0;
+	BUILDTYPE eBuildType;
+    char buf[URL_MAX_LEN];
     bool skip = false;
 
     if( pServURL != NULL )
     {
         *pServURL = 0;
+		GetBuildType( buf, sizeof(buf), &eBuildType );
         if( isInStateRed() )
         {
 			if(enableDebugServices)
