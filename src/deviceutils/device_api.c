@@ -44,19 +44,21 @@ bool enableDebugServices(void) {
 	const char* deviceType = getDeviceTypeRFC(); //Check if device type is TEST from RFC
 	BUILDTYPE eBuildType; //To check the build value
 	bool isDebugServicesUnlocked = false;// return value
+	FILE *fp;
 	const char* key = "LABSIGNED_ENABLED="; // key from /etc/device.properties
 	char buf[150] = {0};
+	char tBuf[URL_MAX_LEN];
 	char pBuf[URL_MAX_LEN];
 	char *eVal = NULL;
 	char *eBuf = NULL;
 	int i = 0;
 
-	GetBuildType( buf, sizeof(buf), &eBuildType );
-    if (eBuildType ==eDEV)
+	GetBuildType( tBuf, sizeof(tBuf), &eBuildType );
+    if (eBuildType == eDEV)
 		isDebugServicesUnlocked = true;
-	else if (eBuildType ==ePROD){
+	else if (eBuildType == ePROD){
 	    //Read LABSIGNED_ENABLED value from /etc/device.properties
-	    FILE *fp = fopen(DEVICE_PROPERTIES_FILE, "r");
+	    fp = fopen(DEVICE_PROPERTIES_FILE, "r");
 	    if (!fp) {
             COMMONUTILITIES_ERROR("isLabSignedEnabled: can't open properties file\n");
             return isDebugServicesUnlocked;
@@ -1347,7 +1349,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
         GetBuildType( buf, sizeof(buf), &eBuildType );
         if( isInStateRed() )
         {
-            if(enableDebugServices)
+            if(enableDebugServices())
             {
                 len = GetServerUrlFile( pServURL, szBufSize, STATE_RED_CONF );
             }
@@ -1358,7 +1360,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
         }
         else
         {
-            if(enableDebugServices)
+            if(enableDebugServices())
             {
                 if( (filePresentCheck( SWUPDATE_CONF ) == RDK_API_SUCCESS) )    // if the file exists
                 {
