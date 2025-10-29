@@ -409,14 +409,14 @@ size_t GetServURL(char *pServURL, size_t szBufSize);
 */
 size_t GetFileContents(char **pOut, char *pFileName);
 
-/* function enableDebugServices - checks for DbgService RFC, DeviceType RFC, build type and 
+/* function isSecureDbgSrvUnlocked - checks for DbgService RFC, DeviceType RFC, build type and 
                                   LABSIGNED_ENABLED property
                                   value from /etc/device.properties
 
-        Usage: bool enableDebugServices()
+        Usage: bool isSecureDbgSrvUnlocked()
 
         RETURN - returns true  if build type is dev or "build type is Prod, DbgServices RFC enabled and 
 		          DeviceType is Test and LABSIGNED_ENABLED is set to true. Else, false.
 */
-bool enableDebugServices(void);
+bool isSecureDbgSrvUnlocked(void);
 #endif
