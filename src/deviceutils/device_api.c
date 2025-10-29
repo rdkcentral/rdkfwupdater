@@ -45,7 +45,6 @@ bool enableDebugServices(void) {
 	BUILDTYPE eBuildType; //To check the build value
 	bool isDebugServicesUnlocked = false;// return value
 	const char* key = "LABSIGNED_ENABLED="; // key from /etc/device.properties
-	FILE *fp = fopen(DEVICE_PROPERTIES_FILE, "r");
 	char buf[150] = {0};
 	char pBuf[URL_MAX_LEN];
 	char *eVal = NULL;
@@ -57,6 +56,7 @@ bool enableDebugServices(void) {
 		isDebugServicesUnlocked = true;
 	else if (eBuildType ==ePROD){
 	    //Read LABSIGNED_ENABLED value from /etc/device.properties
+	    FILE *fp = fopen(DEVICE_PROPERTIES_FILE, "r");
 	    if (!fp) {
             COMMONUTILITIES_ERROR("isLabSignedEnabled: can't open properties file\n");
             return isDebugServicesUnlocked;
