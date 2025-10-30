@@ -63,13 +63,20 @@ bool isSecureDbgSrvUnlocked(void) {
         while (fgets(buf, sizeof(buf), fp)) {
             if (strncmp(buf, key, strlen(key)) == 0) {
                 char *eVal = buf + strlen(key);
-                if (strcasecmp(eVal, "true") == 0) {
+				char pBuf[URL_MAX_LEN] = {0};
+                snprintf(pBuf, sizeof(pBuf), "%s", eVal);
+                stripinvalidchar(pBuf, strlen(pBuf));
+                if (strcasecmp(pBuf, "true") == 0) {
                     if ((strcmp(deviceType, "test") == 0) && dbgServices) {
                         SWLOG_INFO("isSecureDbgSrvUnlocked: Enabling debug services...\n");
+						SWLOG_INFO("isSecureDbgSrvUnlocked: dbgServices=%s, deviceType=%s, LABSIGNED_ENABLED=%s\n",dbgServices ? "true" : "false", deviceType, pBuf);
                         isDebugServicesUnlocked = true;
-                    }
-                }
-                break;
+                    } else {
+						SWLOG_INFO("isSecureDbgSrvUnlocked: unable to enable debug services...\n");
+						SWLOG_INFO("isSecureDbgSrvUnlocked: dbgServices=%s, deviceType=%s, LABSIGNED_ENABLED=%s\n",dbgServices ? "true" : "false", deviceType, pBuf);
+                	}
+				}
+            	break;
             }
         }
         fclose(fp);
