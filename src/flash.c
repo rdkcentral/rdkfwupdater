@@ -41,7 +41,17 @@
  * @param marker: use for send marker details
  * @return : void
  * */
-void t2CountNotify(char *marker, int val) {
+
+/* Renamed to flashT2CountNotify to avoid symbol collision with rdkv_upgrade.c
+ * ISSUE: Both flash.c (librdksw_flash.so) and rdkv_upgrade.c (librdksw_upgrade.so) need their own
+ *        telemetry notification functions to maintain stateless, independent libraries.
+ * SOLUTION: Rename flash.c's version to flashT2CountNotify to prevent linker multiple definition error.
+ * REASONING: 
+ *   - Maintains library independence (no reverse dependency between flash and upgrade modules)
+ *   - Both libraries remain stateless
+ * ERROR FIXED: "multiple definition of `t2CountNotify'"
+ */
+void flashT2CountNotify(char *marker, int val) {
 #ifdef T2_EVENT_ENABLED
     t2_event_d(marker, val);
 #endif
@@ -124,11 +134,11 @@ int flashImage(const char *server_url, const char *upgrade_file, const char *reb
     }
     if (flash_status == 0 && (upgrade_type != PDRI_UPGRADE)) {
         SWLOG_INFO("doCDL success.\n");
-        t2CountNotify("SYST_INFO_CDLSuccess", 1);
+        flashT2CountNotify("SYST_INFO_CDLSuccess", 1);
     }
     if (flash_status != 0) {
          SWLOG_INFO("Image Flashing failed\n");
-         t2CountNotify("SYST_ERR_imageflsfail", 1);
+         flashT2CountNotify("SYST_ERR_imageflsfail", 1);
  	 if (false == mediaclient) {
 	     failureReason = "RCDL Upgrade Failed";
 	     if ((strncmp(cpu_arch, "x86", 3)) == 0) {
@@ -150,7 +160,7 @@ int flashImage(const char *server_url, const char *upgrade_file, const char *reb
          updateUpgradeFlag(2);// Remove file TODO: Logic need to change
     } else if (true == mediaclient) {
          SWLOG_INFO("Image Flashing is success\n");
-         t2CountNotify("SYST_INFO_ImgFlashOK", 1);
+         flashT2CountNotify("SYST_INFO_ImgFlashOK", 1);
 	 //updateFWDownloadStatus "$cloudProto" "Success" "$cloudImmediateRebootFlag" "" "$dnldVersion" "$cloudFWFile" "$runtime" "Validation complete" "$DelayDownloadXconf"
          snprintf(fwdls.status, sizeof(fwdls.status), "Status|Success\n");
          snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Validation complete\n");
@@ -379,11 +389,11 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
 	    if(res_val != NULL) {
                 if(0 == strcasecmp("ON", res_val->valuestring)) {
                     SWLOG_INFO("Defer Reboot for Canary Firmware Upgrade since power state is ON\n");
-                    t2CountNotify("SYS_INFO_DEFER_CANARY_REBOOT", 1);
+                    flashT2CountNotify("SYS_INFO_DEFER_CANARY_REBOOT", 1);
                 }
 #ifndef GTEST_ENABLE
                 else {
-                    t2CountNotify("SYS_INFO_CANARY_Update", 1);
+                    flashT2CountNotify("SYS_INFO_CANARY_Update", 1);
 					// Call rbus method - Device.X_RDKCENTRAL-COM_T2.UploadDCMReport
                     if( RBUS_ERROR_SUCCESS != invokeRbusDCMReport()) {
 		        SWLOG_ERROR("Error in uploading telemetry report\n");

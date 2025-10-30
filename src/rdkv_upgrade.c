@@ -8,7 +8,9 @@
 #include "rdk_logger_milestone.h"
 #include "codebigUtils.h"
 #include "mtlsUtils.h"
+#ifndef GTEST_ENABLE
 #include "downloadUtil.h"
+#endif
 #include "flash.h"
 
 /* Description: Use for save process id and store inside file.

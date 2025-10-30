@@ -34,11 +34,42 @@ COMMON_CXXFLAGS = -frtti -fprofile-arcs -ftest-coverage -fpermissive
 
 # Define the source files
 rdkfw_device_status_gtest_SOURCES = device_status_helper_gtest.cpp ./mocks/device_status_helper_mock.cpp ../src/device_status_helper.c ../src/download_status_helper.c
+
 rdkfw_deviceutils_gtest_SOURCES = deviceutils/device_api_gtest.cpp deviceutils/deviceutils_gtest.cpp deviceutils/json_parse.c ./mocks/deviceutils_mock.cpp ../src/deviceutils/device_api.c ../src/deviceutils/deviceutils.c
 
-rdkfw_main_gtest_SOURCES = basic_rdkv_main_gtest.cpp ../src/rdkv_main.c ../src/flash.c ../src/json_process.c ../src/deviceutils/device_api.c  deviceutils/json_parse.c ./mocks/deviceutils_mock.cpp  ../src/deviceutils/deviceutils.c
+# rdkfw_main_gtest: Tests core firmware upgrade logic (rdkv_main.c and rdkv_upgrade.c)
+# REFACTORED: Uses mocks instead of real helper implementations to avoid multiple definition errors
+# Key decisions:
+#   1. REMOVED download_status_helper.c - mocked in miscellaneous_mock.cpp (updateFWDownloadStatus, notifyDwnlStatus)
+#   2. REMOVED device_status_helper.c - mocked in miscellaneous_mock.cpp (CurrentRunningInst, isDnsResolve, etc.)
+#   3. KEPT chunk.c - core upgrade logic, not mocked
+#   4. KEPT flash.c - core flashing logic, not mocked
+#   5. KEPT json_process.c - core JSON parsing, not mocked
+#   6. KEPT deviceutils/* - device utility functions with separate deviceutils_mock.cpp
+# Note: The original design (develop/) also excluded these helper files, relying on mocks
+rdkfw_main_gtest_SOURCES = basic_rdkv_main_gtest.cpp \
+    ../src/rdkv_main.c \
+    ../src/rdkv_upgrade.c \
+    ../src/chunk.c \
+    ../src/flash.c \
+    ../src/json_process.c \
+    ../src/deviceutils/device_api.c \
+    ../src/deviceutils/deviceutils.c \
+    deviceutils/json_parse.c \
+    ./mocks/deviceutils_mock.cpp
 
-rdkfw_interface_gtest_SOURCES = fwdl_interface_gtest.cpp ./mocks/interface_mock.cpp ./mocks/rbus_mock.c ../src/rbusInterface/rbusInterface.c deviceutils/json_parse.c
+# rdkfw_interface_gtest: Tests RDK interface wrappers (RFC, IARM, RBus)
+# FIXED: Restored missing interface sources that were present in original test design:
+#   - rfcInterface/rfcinterface.c: Tests RFC (Remote Feature Control) interface (librdksw_rfcIntf.so)
+#   - iarmInterface/iarmInterface.c: Tests IARM bus interface (librdksw_iarmIntf.so)
+#   Note: rbusInterface already included, all three interfaces now tested together
+rdkfw_interface_gtest_SOURCES = fwdl_interface_gtest.cpp \
+    ./mocks/interface_mock.cpp \
+    ../src/rfcInterface/rfcinterface.c \
+    ../src/iarmInterface/iarmInterface.c \
+    ./mocks/rbus_mock.c \
+    ../src/rbusInterface/rbusInterface.c \
+    deviceutils/json_parse.c
 
 # Apply common properties to each program
 rdkfw_device_status_gtest_CPPFLAGS = $(COMMON_CPPFLAGS)
@@ -52,7 +83,7 @@ rdkfw_deviceutils_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
 rdkfw_deviceutils_gtest_CFLAGS = $(COMMON_CXXFLAGS)
 
 rdkfw_main_gtest_CPPFLAGS = $(COMMON_CPPFLAGS)
-rdkfw_main_gtest_LDADD = $(COMMON_LDADD) -lrdksw_upgrade 
+rdkfw_main_gtest_LDADD = $(COMMON_LDADD) 
 rdkfw_main_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
 rdkfw_main_gtest_CFLAGS = $(COMMON_CXXFLAGS)
 

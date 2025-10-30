@@ -18,6 +18,7 @@
 
 #include <gmock/gmock.h>
 #include "miscellaneous.h"
+#include "rdkv_upgrade.h"  // For RdkUpgradeContext_t
 
 
 class MockDownloadFile {
@@ -57,7 +58,7 @@ public:
     MOCK_METHOD(int, getDeviceProperties, (DeviceProperty_t*), ());
     MOCK_METHOD(int, getImageDetails, (ImageDetails_t*), ());
     MOCK_METHOD(int, createDir, (const char*), ());
-    //MOCK_METHOD(void, createFile, (const char*), ());
+    MOCK_METHOD(void, createFile, (const char*), ());  // Uncommented for common_utilities mock
     MOCK_METHOD(void, t2_uninit, (), ());
     MOCK_METHOD(void, log_exit, (), ());
     MOCK_METHOD(int, doHttpFileDownload, (void*, FileDwnl_t*, MtlsAuth_t*, unsigned int, char*, int*), ());
@@ -94,9 +95,22 @@ public:
     MOCK_METHOD(bool, lastDwnlImg, (char*, size_t), ());
     MOCK_METHOD(bool, currentImg, (char*, size_t), ());
     MOCK_METHOD(bool, CurrentRunningInst, (const char*), ());
-    //MOCK_METHOD(void, eraseTGZItemsMatching, (const char*, const char*), ());
+    MOCK_METHOD(void, eraseTGZItemsMatching, (const char*, const char*), ());  // Uncommented for common_utilities
     MOCK_METHOD(bool, prevFlashedFile, (char*, size_t), ());
     MOCK_METHOD(int, doCodeBigSigning, (int, const char*, char*, size_t, char*, size_t), ());
+    
+    // REFACTORING FIX: Add mocks for common_utilities functions moved during stateless refactoring
+    MOCK_METHOD(void*, allocDowndLoadDataMem, (size_t), ());
+    MOCK_METHOD(int, GetFileContents, (const char*, char**, size_t*), ());
+    MOCK_METHOD(int, GetFirmwareVersion, (char*, size_t), ());
+    MOCK_METHOD(int, GetBuildType, (char*, size_t), ());
+    MOCK_METHOD(int, GetMFRName, (char*, size_t), ());
+    MOCK_METHOD(int, GetUTCTime, (char*, size_t), ());
+    MOCK_METHOD(int, GetTimezone, (char*, size_t), ());
+    MOCK_METHOD(void, waitForNtp, (), ());
+    MOCK_METHOD(int, GetCapabilities, (char*, size_t), ());
+    MOCK_METHOD(int, stripinvalidchar, (char*), ());
+    MOCK_METHOD(int, makeHttpHttps, (char*), ());
 };
 
 MockExternal* global_mockexternal_ptr;
@@ -157,7 +171,7 @@ extern "C" {
         }
         return global_mockexternal_ptr->createDir(dirname);
     }
-/*
+
     void createFile(const char *file_name) {
         if (global_mockexternal_ptr == nullptr) {
             FILE *file = fopen(file_name, "w");
@@ -170,7 +184,7 @@ extern "C" {
         }
         global_mockexternal_ptr->createFile(file_name);
     }
-*/
+
     void t2_uninit(void) {
         if (global_mockexternal_ptr == nullptr) {
             return; // Return default value if global_mockexternal_ptr is NULL
@@ -429,14 +443,14 @@ extern "C" {
         }
         return global_mockexternal_ptr->CurrentRunningInst(file);
     }
-/*
+
     void eraseTGZItemsMatching(const char *path, const char *pattern) {
         if (global_mockexternal_ptr == nullptr) {
             return; // Return default value if global_mockexternal_ptr is NULL
         }
         global_mockexternal_ptr->eraseTGZItemsMatching(path, pattern);
     }
-*/
+
     bool prevFlashedFile(char *img_name, size_t img_name_size) {
         if (global_mockexternal_ptr == nullptr) {
             return false; // Return default value if global_mockexternal_ptr is NULL
@@ -449,6 +463,90 @@ extern "C" {
             return 0; // Return default value if global_mockexternal_ptr is NULL
         }
         return global_mockexternal_ptr->doCodeBigSigning(server_type, SignInput, signurl, signurlsize, outhheader, outHeaderSize);
+    }
+
+    // REFACTORING FIX: Extern C wrappers for common_utilities functions
+    void* allocDowndLoadDataMem(size_t size) {
+        if (global_mockexternal_ptr == nullptr) {
+            return malloc(size);
+        }
+        return global_mockexternal_ptr->allocDowndLoadDataMem(size);
+    }
+
+    int GetFileContents(const char *filename, char **buffer, size_t *size) {
+        if (global_mockexternal_ptr == nullptr) {
+            return -1;
+        }
+        return global_mockexternal_ptr->GetFileContents(filename, buffer, size);
+    }
+
+    int GetFirmwareVersion(char *buffer, size_t size) {
+        if (global_mockexternal_ptr == nullptr) {
+            snprintf(buffer, size, "1.0.0.0");
+            return 0;
+        }
+        return global_mockexternal_ptr->GetFirmwareVersion(buffer, size);
+    }
+
+    int GetBuildType(char *buffer, size_t size) {
+        if (global_mockexternal_ptr == nullptr) {
+            snprintf(buffer, size, "PROD");
+            return 0;
+        }
+        return global_mockexternal_ptr->GetBuildType(buffer, size);
+    }
+
+    int GetMFRName(char *buffer, size_t size) {
+        if (global_mockexternal_ptr == nullptr) {
+            snprintf(buffer, size, "TestMFR");
+            return 0;
+        }
+        return global_mockexternal_ptr->GetMFRName(buffer, size);
+    }
+
+    int GetUTCTime(char *buffer, size_t size) {
+        if (global_mockexternal_ptr == nullptr) {
+            snprintf(buffer, size, "2025-10-31T00:00:00Z");
+            return 0;
+        }
+        return global_mockexternal_ptr->GetUTCTime(buffer, size);
+    }
+
+    int GetTimezone(char *buffer, size_t size) {
+        if (global_mockexternal_ptr == nullptr) {
+            snprintf(buffer, size, "UTC");
+            return 0;
+        }
+        return global_mockexternal_ptr->GetTimezone(buffer, size);
+    }
+
+    void waitForNtp(void) {
+        if (global_mockexternal_ptr == nullptr) {
+            return 0;
+        }
+        return global_mockexternal_ptr->waitForNtp();
+    }
+
+    int GetCapabilities(char *buffer, size_t size) {
+        if (global_mockexternal_ptr == nullptr) {
+            snprintf(buffer, size, "capabilities");
+            return 0;
+        }
+        return global_mockexternal_ptr->GetCapabilities(buffer, size);
+    }
+
+    int stripinvalidchar(char *str) {
+        if (global_mockexternal_ptr == nullptr) {
+            return 0;
+        }
+        return global_mockexternal_ptr->stripinvalidchar(str);
+    }
+
+    int makeHttpHttps(char *url) {
+        if (global_mockexternal_ptr == nullptr) {
+            return 0;
+        }
+        return global_mockexternal_ptr->makeHttpHttps(url);
     }
 }
 
