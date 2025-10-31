@@ -371,10 +371,12 @@ TEST(DwnlErrorTest, HandlesCurlCode0) {
     int curl_code = 0;
     int http_code = 200;
     int server_type = 0;
+    DeviceProperty_t device_info = {0};
+    strcpy(device_info.dev_type, "mediaclient");
     MockExternal mockexternal;
     global_mockexternal_ptr = &mockexternal;
     EXPECT_CALL(mockexternal,checkAndEnterStateRed(_,_)).Times(1);
-    dwnlError(curl_code, http_code, server_type, NULL, NULL, NULL);
+    dwnlError(curl_code, http_code, server_type,  &device_info, NULL, NULL);
     global_mockexternal_ptr = NULL;
 
 }
@@ -383,12 +385,14 @@ TEST(DwnlErrorTest, HandlesCurlCode22) {
     int curl_code = 22;
     int http_code = 200;
     int server_type = 0;
+    DeviceProperty_t device_info = {0};
+    strcpy(device_info.dev_type, "mediaclient");
     MockExternal mockexternal;
     global_mockexternal_ptr = &mockexternal;
     EXPECT_CALL(mockexternal,eventManager(_,_)).Times(1);
     EXPECT_CALL(mockexternal,checkAndEnterStateRed(_,_)).Times(1);
     EXPECT_CALL(mockexternal,updateFWDownloadStatus(_,_)).Times(1);
-    dwnlError(curl_code, http_code, server_type, NULL, NULL, NULL);
+    dwnlError(curl_code, http_code, server_type,  &device_info, NULL, NULL);
     global_mockexternal_ptr = NULL;
 
 }
@@ -397,13 +401,15 @@ TEST(DwnlErrorTest, HandlesCurlCode18) {
     int curl_code = 18;
     int http_code = 0;
     int server_type = 0;
+    DeviceProperty_t device_info = {0};
+    strcpy(device_info.dev_type, "mediaclient");
     MockExternal mockexternal;
     global_mockexternal_ptr = &mockexternal;
     strcpy(device_info.dev_type,"mediaclient");
     EXPECT_CALL(mockexternal,eventManager(_,_)).Times(1);
     EXPECT_CALL(mockexternal,checkAndEnterStateRed(_,_)).Times(1);
     EXPECT_CALL(mockexternal,updateFWDownloadStatus(_,_)).Times(1);
-    dwnlError(curl_code, http_code, server_type, NULL, NULL, NULL);
+    dwnlError(curl_code, http_code, server_type,  &device_info, NULL, NULL);
     global_mockexternal_ptr = NULL;
 
 }
@@ -412,13 +418,14 @@ TEST(DwnlErrorTest, HandlesCurlCode91) {
     int curl_code = 91;
     int http_code = 200;
     int server_type = 0;
+    DeviceProperty_t device_info = {0};
+    strcpy(device_info.dev_type, "mediaclient1");
     MockExternal mockexternal;
     global_mockexternal_ptr = &mockexternal;
-    strcpy(device_info.dev_type,"mediaclient1");
     EXPECT_CALL(mockexternal,eventManager(_,_)).Times(1);
     EXPECT_CALL(mockexternal,checkAndEnterStateRed(_,_)).Times(1);
     EXPECT_CALL(mockexternal,updateFWDownloadStatus(_,_)).Times(1);
-    dwnlError(curl_code, http_code, server_type, NULL, NULL, NULL);
+    dwnlError(curl_code, http_code, server_type,  &device_info, NULL, NULL);
     global_mockexternal_ptr = NULL;
 
 }
