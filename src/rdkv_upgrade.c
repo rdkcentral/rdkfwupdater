@@ -5,10 +5,11 @@
 #include "iarmInterface.h"
 #include "rfcinterface.h"
 #include "deviceutils.h"
+#ifndef GTEST_ENABLE
+//FIX for ../src/rdkv_upgrade.c:8:10: fatal error: rdk_logger_milestone.h: No such file or directory 
 #include "rdk_logger_milestone.h"
 #include "codebigUtils.h"
 #include "mtlsUtils.h"
-#ifndef GTEST_ENABLE
 #include "downloadUtil.h"
 #endif
 #include "flash.h"
