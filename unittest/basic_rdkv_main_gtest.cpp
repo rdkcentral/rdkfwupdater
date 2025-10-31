@@ -441,10 +441,10 @@ TEST(MainHelperFunctionTest,rdkv_upgrade_requestTest){
     context.pPostFields = (char*)"test2";
 
     void* curl = NULL;
-    int http_code = 0;
+    int* http_code = NULL;
 
     //EXPECT_CALL(mockexternal,checkForValidPCIUpgrade(_,_,_,_)).Times(1).WillOnce(Return(false));
-    EXPECT_EQ(rdkv_upgrade_request(&context, &curl, &http_code), -1);
+    EXPECT_EQ(rdkv_upgrade_request(&context, &curl, http_code), -1);
     global_mockexternal_ptr = NULL;
 }
 
