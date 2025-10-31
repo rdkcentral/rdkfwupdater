@@ -58,11 +58,6 @@ rdkfw_main_gtest_SOURCES = basic_rdkv_main_gtest.cpp \
     deviceutils/json_parse.c \
     ./mocks/deviceutils_mock.cpp
 
-# rdkfw_interface_gtest: Tests RDK interface wrappers (RFC, IARM, RBus)
-# FIXED: Restored missing interface sources that were present in original test design:
-#   - rfcInterface/rfcinterface.c: Tests RFC (Remote Feature Control) interface (librdksw_rfcIntf.so)
-#   - iarmInterface/iarmInterface.c: Tests IARM bus interface (librdksw_iarmIntf.so)
-#   Note: rbusInterface already included, all three interfaces now tested together
 rdkfw_interface_gtest_SOURCES = fwdl_interface_gtest.cpp \
     ./mocks/interface_mock.cpp \
     ../src/rfcInterface/rfcinterface.c \

@@ -63,9 +63,9 @@ extern "C" {
     bool checkt2ValNotify( int iCurlCode, int iUpgradeType, char *Url  );
     unsigned int doGetDwnlBytes(void *in_curl);
     bool checkForTlsErrors(int curl_code, const char *type);
-    int retryDownload(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char *pPostFields, int retry_cnt, int delay, int *httpCode );
+    int retryDownload(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char *pPostFields, int retry_cnt, int delay, int *httpCode, void **curl, int *force_exit, const char *immed_reboot_flag, const DeviceProperty_t *device_info, const char *lastrun, const Rfc_t *rfc_list, char *disableStatsUpdate);
 
-    int downloadFile( int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode );
+    int downloadFile(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode, void **curl, int *force_exit, const char *immed_reboot_flag, const DeviceProperty_t *device_info, const char *lastrun, const Rfc_t *rfc_list, char *disableStatsUpdate);
     int checkTriggerUpgrade(XCONFRES *response, const char *model_num);
     void setForceStop(int value);
     T2ERROR t2_event_s(char* marker, char* value);
@@ -86,11 +86,11 @@ extern "C" {
     int doCurlPutRequest(void *in_curl, FileDwnl_t *pfile_dwnl, char *jsonrpc_auth_token, int *out_httpCode);
     int getOPTOUTValue(const char *filename);
     void getPidStore(const char *key, const char *value);
-    void dwnlError(int curl_code, int http_code, int server_type);
+    void dwnlError(int curl_code, int http_code, int server_type, const DeviceProperty_t *device_info, const char *lastrun, char *disableStatsUpdate);
     int peripheral_firmware_dndl(char *pCloudFWLocation, char *pPeripheralFirmwares);
-    int fallBack(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char *pPostFields, int *httpCode);
-    void saveHTTPCode(int http_code);
-    int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocationUrl, const void* dwlloc, char *pPostFields, int *pHttp_code);
+    int fallBack(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char *pPostFields, int *httpCode, void **curl, int *force_exit, const char *immed_reboot_flag, const DeviceProperty_t *device_info, const char *lastrun, const Rfc_t *rfc_list, char *disableStatsUpdate);
+    void saveHTTPCode(int http_code, const char *lastrun);
+    int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* pHttp_code);
     size_t getContentLength(const char *file);
     int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_limit, int *httpcode);
 }
@@ -274,7 +274,7 @@ TEST(MainHelperFunctionTest, checkForTlsErrorspositive){
 }
 
 TEST(MainHelperFunctionTest, retryDownloadtest){
-    EXPECT_EQ(retryDownload(1, NULL, NULL, NULL, 1, 0,NULL), -1);
+    EXPECT_EQ(retryDownload(1, NULL, NULL, NULL, 1, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL), -1);
 }
 
 TEST(MainHelperFunctionTest, retryDownloadtest1){
@@ -282,7 +282,9 @@ TEST(MainHelperFunctionTest, retryDownloadtest1){
     global_mockdownloadfileops_ptr = &mockfileops;
     EXPECT_CALL(mockfileops, downloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(CURL_SUCCESS));
     int code = HTTP_SUCCESS;
-    EXPECT_EQ(retryDownload(HTTP_SSR_DIRECT, "test", "test1", "test2", 1, 0,&code), CURL_SUCCESS);
+    int force_exit = 0;
+    void *curl = NULL;
+    EXPECT_EQ(retryDownload(HTTP_SSR_DIRECT, "test", "test1", (char*)"test2", 1, 0, &code, &curl, &force_exit, NULL, NULL, NULL, NULL, NULL), CURL_SUCCESS);
     global_mockdownloadfileops_ptr = NULL;
 }
 TEST(MainHelperFunctionTest, retryDownloadtest2){
@@ -290,7 +292,9 @@ TEST(MainHelperFunctionTest, retryDownloadtest2){
     global_mockdownloadfileops_ptr = &mockfileops;
     EXPECT_CALL(mockfileops, downloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(CURL_SUCCESS));
     int code = HTTP_CHUNK_SUCCESS;
-    EXPECT_EQ(retryDownload(HTTP_XCONF_DIRECT, "test", "test1", "test2", 1, 0,&code), CURL_SUCCESS);
+    int force_exit = 0;
+    void *curl = NULL;
+    EXPECT_EQ(retryDownload(HTTP_XCONF_DIRECT, "test", "test1", (char*)"test2", 1, 0, &code, &curl, &force_exit, NULL, NULL, NULL, NULL, NULL), CURL_SUCCESS);
     global_mockdownloadfileops_ptr = NULL;
 }
 
@@ -299,7 +303,9 @@ TEST(MainHelperFunctionTest, retryDownloadtest3){
     global_mockdownloadfileops_ptr = &mockfileops;
     EXPECT_CALL(mockfileops, downloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(!CURL_SUCCESS));
     int code = HTTP_PAGE_NOT_FOUND;
-    EXPECT_EQ(retryDownload(HTTP_XCONF_DIRECT, "test", "test1", "test2", 1, 0,&code), !CURL_SUCCESS);
+    int force_exit = 0;
+    void *curl = NULL;
+    EXPECT_EQ(retryDownload(HTTP_XCONF_DIRECT, "test", "test1", (char*)"test2", 1, 0, &code, &curl, &force_exit, NULL, NULL, NULL, NULL, NULL), !CURL_SUCCESS);
     global_mockdownloadfileops_ptr = NULL;
 }
 
@@ -308,7 +314,9 @@ TEST(MainHelperFunctionTest, retryDownloadtest4){
     global_mockdownloadfileops_ptr = &mockfileops;
     EXPECT_CALL(mockfileops, downloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(!CURL_SUCCESS));
     int code = DWNL_BLOCK;
-    EXPECT_EQ(retryDownload(HTTP_XCONF_DIRECT, "test", "test1", "test2", 1, 0,&code), !CURL_SUCCESS);
+    int force_exit = 0;
+    void *curl = NULL;
+    EXPECT_EQ(retryDownload(HTTP_XCONF_DIRECT, "test", "test1", (char*)"test2", 1, 0, &code, &curl, &force_exit, NULL, NULL, NULL, NULL, NULL), !CURL_SUCCESS);
     global_mockdownloadfileops_ptr = NULL;
 }
 
@@ -317,7 +325,9 @@ TEST(MainHelperFunctionTest, retryDownloadtest5){
     global_mockdownloadfileops_ptr = &mockfileops;
     EXPECT_CALL(mockfileops, downloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(!CURL_SUCCESS));
     int code = HTTP_SUCCESS;
-    EXPECT_EQ(retryDownload(HTTP_SSR_DIRECT, "test", "test1", "test2", 1, 0,&code), !CURL_SUCCESS);
+    int force_exit = 0;
+    void *curl = NULL;
+    EXPECT_EQ(retryDownload(HTTP_SSR_DIRECT, "test", "test1", (char*)"test2", 1, 0, &code, &curl, &force_exit, NULL, NULL, NULL, NULL, NULL), !CURL_SUCCESS);
     global_mockdownloadfileops_ptr = NULL;
 
 }
@@ -327,7 +337,9 @@ TEST(MainHelperFunctionTest, retryDownloadtest6){
     global_mockdownloadfileops_ptr = &mockfileops;
     EXPECT_CALL(mockfileops, codebigdownloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(CURL_SUCCESS));
     int code = HTTP_SUCCESS;
-    EXPECT_EQ(retryDownload(HTTP_SSR_CODEBIG, "test", "test1", "test2", 1, 0,&code), CURL_SUCCESS);
+    int force_exit = 0;
+    void *curl = NULL;
+    EXPECT_EQ(retryDownload(HTTP_SSR_CODEBIG, "test", "test1", (char*)"test2", 1, 0, &code, &curl, &force_exit, NULL, NULL, NULL, NULL, NULL), CURL_SUCCESS);
     global_mockdownloadfileops_ptr = NULL;
 
 }
@@ -337,7 +349,9 @@ TEST(MainHelperFunctionTest, retryDownloadtest7){
     global_mockdownloadfileops_ptr = &mockfileops;
     EXPECT_CALL(mockfileops, codebigdownloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(!CURL_SUCCESS));
     int code = HTTP_PAGE_NOT_FOUND;
-    EXPECT_EQ(retryDownload(HTTP_SSR_CODEBIG, "test", "test1", "test2", 1, 0,&code), !CURL_SUCCESS);
+    int force_exit = 0;
+    void *curl = NULL;
+    EXPECT_EQ(retryDownload(HTTP_SSR_CODEBIG, "test", "test1", (char*)"test2", 1, 0, &code, &curl, &force_exit, NULL, NULL, NULL, NULL, NULL), !CURL_SUCCESS);
     global_mockdownloadfileops_ptr = NULL;
 
 }
@@ -347,7 +361,9 @@ TEST(MainHelperFunctionTest, retryDownloadtest8){
     global_mockdownloadfileops_ptr = &mockfileops;
     EXPECT_CALL(mockfileops, codebigdownloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(!CURL_SUCCESS));
     int code = HTTP_SUCCESS;
-    EXPECT_EQ(retryDownload(HTTP_SSR_CODEBIG, "test", "test1", "test2", 1, 1,&code), !CURL_SUCCESS);
+    int force_exit = 0;
+    void *curl = NULL;
+    EXPECT_EQ(retryDownload(HTTP_SSR_CODEBIG, "test", "test1", (char*)"test2", 1, 1, &code, &curl, &force_exit, NULL, NULL, NULL, NULL, NULL), !CURL_SUCCESS);
     global_mockdownloadfileops_ptr = NULL;
 }
 
@@ -358,7 +374,7 @@ TEST(DwnlErrorTest, HandlesCurlCode0) {
     MockExternal mockexternal;
     global_mockexternal_ptr = &mockexternal;
     EXPECT_CALL(mockexternal,checkAndEnterStateRed(_,_)).Times(1);
-    dwnlError(curl_code, http_code, server_type);
+    dwnlError(curl_code, http_code, server_type, NULL, NULL, NULL);
     global_mockexternal_ptr = NULL;
 
 }
@@ -372,7 +388,7 @@ TEST(DwnlErrorTest, HandlesCurlCode22) {
     EXPECT_CALL(mockexternal,eventManager(_,_)).Times(1);
     EXPECT_CALL(mockexternal,checkAndEnterStateRed(_,_)).Times(1);
     EXPECT_CALL(mockexternal,updateFWDownloadStatus(_,_)).Times(1);
-    dwnlError(curl_code, http_code, server_type);
+    dwnlError(curl_code, http_code, server_type, NULL, NULL, NULL);
     global_mockexternal_ptr = NULL;
 
 }
@@ -387,7 +403,7 @@ TEST(DwnlErrorTest, HandlesCurlCode18) {
     EXPECT_CALL(mockexternal,eventManager(_,_)).Times(1);
     EXPECT_CALL(mockexternal,checkAndEnterStateRed(_,_)).Times(1);
     EXPECT_CALL(mockexternal,updateFWDownloadStatus(_,_)).Times(1);
-    dwnlError(curl_code, http_code, server_type);
+    dwnlError(curl_code, http_code, server_type, NULL, NULL, NULL);
     global_mockexternal_ptr = NULL;
 
 }
@@ -402,15 +418,26 @@ TEST(DwnlErrorTest, HandlesCurlCode91) {
     EXPECT_CALL(mockexternal,eventManager(_,_)).Times(1);
     EXPECT_CALL(mockexternal,checkAndEnterStateRed(_,_)).Times(1);
     EXPECT_CALL(mockexternal,updateFWDownloadStatus(_,_)).Times(1);
-    dwnlError(curl_code, http_code, server_type);
+    dwnlError(curl_code, http_code, server_type, NULL, NULL, NULL);
     global_mockexternal_ptr = NULL;
 
 }
-TEST(MainHelperFunctionTest,upgradeRequestTest){
+TEST(MainHelperFunctionTest,rdkv_upgrade_requestTest){
     MockExternal mockexternal;
     global_mockexternal_ptr = &mockexternal;
+    // Create context structure with test values
+    RdkUpgradeContext_t context = {0};
+    context.upgrade_type = 1;
+    context.server_type = 1;
+    context.artifactLocationUrl = "test";
+    context.dwlloc = "test1";
+    context.pPostFields = (char*)"test2";
+
+    void* curl = NULL;
+    int http_code = 0;
+
     //EXPECT_CALL(mockexternal,checkForValidPCIUpgrade(_,_,_,_)).Times(1).WillOnce(Return(false));
-    EXPECT_EQ(upgradeRequest(1, 1, "test", "test1", "test2", NULL), -1);
+    EXPECT_EQ(rdkv_upgrade_request(&context, &curl, &http_code), -1);
     global_mockexternal_ptr = NULL;
 }
 
@@ -808,15 +835,17 @@ TEST(checkTriggerUpgradeTest, TestPdriUpgradeSuccess) {
 }
 
 TEST(MainHelperFunctionTest, fallBackTestNULL){
-    EXPECT_EQ(fallBack(1, NULL, NULL, NULL, NULL), -1);   
+     EXPECT_EQ(fallBack(1, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL), -1);   
 }
 
 TEST(MainHelperFunctionTest, fallBackTestSuccess){
     MockDownloadFileOps mockfileops;
     global_mockdownloadfileops_ptr = &mockfileops;
     int http_code = 200;
+    int force_exit = 0;
+    void *curl = NULL;
     EXPECT_CALL(mockfileops, downloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(CURL_SUCCESS));
-    EXPECT_EQ(fallBack(HTTP_XCONF_DIRECT, "test", "test1", "test2", &http_code), CURL_SUCCESS);
+    EXPECT_EQ(fallBack(HTTP_XCONF_DIRECT, "test", "test1", (char*)"test2", &http_code, &curl, &force_exit, NULL, NULL, NULL, NULL, NULL), CURL_SUCCESS);
     global_mockdownloadfileops_ptr = NULL;
 }
 
@@ -824,8 +853,10 @@ TEST(MainHelperFunctionTest, fallBackTestFailure){
     MockDownloadFileOps mockfileops;
     global_mockdownloadfileops_ptr = &mockfileops;
     int http_code = 200;
+    int force_exit = 0;
+    void *curl = NULL;
     EXPECT_CALL(mockfileops, downloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(!CURL_SUCCESS));
-    EXPECT_EQ(fallBack(HTTP_XCONF_DIRECT, "test", "test1", "test2", &http_code), !CURL_SUCCESS);
+    EXPECT_EQ(fallBack(HTTP_XCONF_DIRECT, "test", "test1", (char*)"test2", &http_code, &curl, &force_exit, NULL, NULL, NULL, NULL, NULL), !CURL_SUCCESS);
     global_mockdownloadfileops_ptr = NULL;
 }
 
@@ -833,8 +864,10 @@ TEST(MainHelperFunctionTest, fallBackTestSuccessCodebig){
     MockDownloadFileOps mockfileops;
     global_mockdownloadfileops_ptr = &mockfileops;
     int http_code = 200;
+    int force_exit = 0;
+    void *curl = NULL;
     EXPECT_CALL(mockfileops, codebigdownloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(CURL_SUCCESS));
-    EXPECT_EQ(fallBack(HTTP_SSR_CODEBIG, "test", "test1", "test2", &http_code), CURL_SUCCESS);
+    EXPECT_EQ(fallBack(HTTP_SSR_CODEBIG, "test", "test1", (char*)"test2", &http_code, &curl, &force_exit, NULL, NULL, NULL, NULL, NULL), CURL_SUCCESS);
     global_mockdownloadfileops_ptr = NULL;
 }
 
@@ -842,8 +875,10 @@ TEST(MainHelperFunctionTest, fallBackTestFailureCodebig){
     MockDownloadFileOps mockfileops;
     global_mockdownloadfileops_ptr = &mockfileops;
     int http_code = 200;
+    int force_exit = 0;
+    void *curl = NULL;
     EXPECT_CALL(mockfileops, codebigdownloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(!CURL_SUCCESS));
-    EXPECT_EQ(fallBack(HTTP_SSR_CODEBIG, "test", "test1", "test2", &http_code), !CURL_SUCCESS);
+    EXPECT_EQ(fallBack(HTTP_SSR_CODEBIG, "test", "test1", (char*)"test2", &http_code, &curl, &force_exit, NULL, NULL, NULL, NULL, NULL), !CURL_SUCCESS);
     global_mockdownloadfileops_ptr = NULL;
 }
 
@@ -902,7 +937,7 @@ TEST(MainHelperFunctionTest,initializeTest1){
 }
 
 TEST(MainHelperFunctionTest,saveHTTPCodeTest){
-    saveHTTPCode(200);
+    saveHTTPCode(200, NULL);
     fflush(NULL);
     char buff[16] = {0};
     FILE *fp = NULL;

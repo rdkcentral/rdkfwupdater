@@ -38,11 +38,11 @@ public:
 MockDownloadFileOps* global_mockdownloadfileops_ptr;
 
 extern "C" {
-    int downloadFile(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode) {
+    int downloadFile(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode, void **curl, int *force_exit, const char *immed_reboot_flag, const DeviceProperty_t *device_info, const char *lastrun, const Rfc_t *rfc_list, char *disableStatsUpdate) {
         return global_mockdownloadfileops_ptr->downloadFile(server_type, artifactLocationUrl, localDownloadLocation, pPostFields, httpCode);
     }
 
-    int codebigdownloadFile(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode) {
+    int codebigdownloadFile(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode, void **curl, int *force_exit, const char *immed_reboot_flag, const DeviceProperty_t *device_info, const char *lastrun, const Rfc_t *rfc_list, char *disableStatsUpdate) {
         return global_mockdownloadfileops_ptr->codebigdownloadFile(server_type, artifactLocationUrl, localDownloadLocation, pPostFields, httpCode);
     }
 }
@@ -257,7 +257,7 @@ extern "C" {
 
     int getRFCSettings(Rfc_t *rfc_list) {
         if (global_mockexternal_ptr == nullptr) {
-            return; // Return default value if global_mockexternal_ptr is NULL
+            return 0; // Return default value if global_mockexternal_ptr is NULL
         }
         return global_mockexternal_ptr->getRFCSettings(rfc_list);
     }
@@ -466,11 +466,27 @@ extern "C" {
     }
 
     // REFACTORING FIX: Extern C wrappers for common_utilities functions
-    void* allocDowndLoadDataMem(size_t size) {
-        if (global_mockexternal_ptr == nullptr) {
-            return malloc(size);
+    // allocDowndLoadDataMem: Local function used by rdkv_main.c, flash.c, device_api.c
+    // Signature: int allocDowndLoadDataMem(void *ptr, int size)
+    int allocDowndLoadDataMem(void *ptr, int size) {
+        // Cast ptr to DownloadData* and allocate memory
+        DownloadData *pDwnData = (DownloadData *)ptr;
+        
+        if (pDwnData == NULL || size <= 0) {
+            return -1;
         }
-        return global_mockexternal_ptr->allocDowndLoadDataMem(size);
+        
+        // Allocate memory
+        pDwnData->pvOut = malloc(size);
+        if (pDwnData->pvOut == NULL) {
+            return -1;
+        }
+        
+        pDwnData->memsize = size;
+        pDwnData->datasize = 0;
+        memset(pDwnData->pvOut, 0, size);
+        
+        return 0;
     }
 
     int GetFileContents(const char *filename, char **buffer, size_t *size) {
@@ -522,9 +538,9 @@ extern "C" {
 
     void waitForNtp(void) {
         if (global_mockexternal_ptr == nullptr) {
-            return 0;
+            return;
         }
-        return global_mockexternal_ptr->waitForNtp();
+        global_mockexternal_ptr->waitForNtp();
     }
 
     int GetCapabilities(char *buffer, size_t size) {
@@ -560,7 +576,7 @@ public:
     MOCK_METHOD(bool, checkForValidPCIUpgrade, (int trigger_type, const char* cur_img_name, const char* cloudFWVersion, const char* cloudFWFile));
     MOCK_METHOD(int, getOPTOUTValue, (const char* path));
     MOCK_METHOD(void, uninitialize, (int status));
-    MOCK_METHOD(int, upgradeRequest, (int upgrade_type, int http_ssr_direct, const char* imageHTTPURL, const char* dwlpath_filename, void* arg, int* http_code));
+    MOCK_METHOD(int, rdkv_upgrade_request, (const RdkUpgradeContext_t* context, void** curl, int* pHttp_code));
     MOCK_METHOD(bool, isPDRIEnable, ());
     MOCK_METHOD(int, filePresentCheck, (const char* path));
     MOCK_METHOD(int, peripheral_firmware_dndl, (const char* cloudFWLocation, const char* peripheralFirmwares));
