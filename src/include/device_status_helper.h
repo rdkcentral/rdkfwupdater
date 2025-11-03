@@ -65,7 +65,6 @@ bool CheckIProuteConnectivity(const char *file_name);
 bool isDnsResolve(const char *dns_file_name);
 bool checkCodebigAccess(void);
 bool CurrentRunningInst(const char *file);
-bool lastDwnlImg(char *img_name, size_t img_name_size);
 void waitForNtp(void);
 bool prevFlashedFile(char *img_name, size_t img_name_size);
 unsigned int getFileLastModifyTime(char *file_name);
