@@ -145,6 +145,7 @@ def test_delay_dwnl():
 def test_fallback_codebig():
     ERROR_MSG1 = "isDelayFWDownloadActive: Device configured with download delay of 1 minutes"
     assert grep_log_file("/opt/logs/swupdate.txt.0", ERROR_MSG1), f"Expected '{ERROR_MSG1}' in log file."
+
 @pytest.mark.run(order=10)
 def test_rebooten_dwnl():
     remove_file("/tmp/fw_preparing_to_reboot")
