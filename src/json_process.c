@@ -25,8 +25,8 @@
 #ifndef GTEST_ENABLE
 #include "rdk_fwdl_utils.h"
 #include "system_utils.h"
-#include "common_device_api.h"
 #endif
+#include "common_device_api.h"
 #include "json_parse.h"
 #include "deviceutils.h"
 #include "device_api.h"
