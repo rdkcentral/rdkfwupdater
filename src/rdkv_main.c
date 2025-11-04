@@ -88,18 +88,14 @@ static int app_mode = 1; // 1: fore ground and 0: background
 int force_exit = 0; //This use when rdkvfwupgrader rcv appmode background and thottle speed is set to zero.
 
 void t2CountNotify(char *marker, int val) {
-    SWLOG_INFO("DEBUG LOG:  t2CountNotify in rdkv_main.c\n");
 #ifdef T2_EVENT_ENABLED
-    SWLOG_INFO("DEBUG LOG: T2_EVENT_ENABLED defined; calling t2_event_d\n");
     t2_event_d(marker, val);
 #endif
 }
 
 void t2ValNotify( char *marker, char *val )
 {
-SWLOG_INFO("DEBUG LOG:  t2ValNotify in rdkv_main.c\n");
 #ifdef T2_EVENT_ENABLED
-SWLOG_INFO("DEBUG LOG: T2_EVENT_ENABLED defined; calling t2_event_s\n");
     t2_event_s(marker, val);
 #endif
 }
