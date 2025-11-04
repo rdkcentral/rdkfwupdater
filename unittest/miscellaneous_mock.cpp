@@ -25,14 +25,14 @@ class MockDownloadFile {
 public:
     virtual ~MockDownloadFile() {}  // Add a virtual destructor
     virtual int downloadFile( int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode ) =0;
-    virtual int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode )=0;
+    virtual int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode, void **curl, int *force_exit )=0;
 };
 
 
 class MockDownloadFileOps {
 public:
     MOCK_METHOD(int, downloadFile, (int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode), ());
-    MOCK_METHOD(int, codebigdownloadFile, (int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode), ());
+    MOCK_METHOD(int, codebigdownloadFile, (int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode, void **curl, int *force_exit), ());
 };
 
 MockDownloadFileOps* global_mockdownloadfileops_ptr;
@@ -42,8 +42,8 @@ extern "C" {
         return global_mockdownloadfileops_ptr->downloadFile(server_type, artifactLocationUrl, localDownloadLocation, pPostFields, httpCode);
     }
 
-    int codebigdownloadFile(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode, void **curl, int *force_exit, const char *immed_reboot_flag, const DeviceProperty_t *device_info, const char *lastrun, const Rfc_t *rfc_list, char *disableStatsUpdate) {
-        return global_mockdownloadfileops_ptr->codebigdownloadFile(server_type, artifactLocationUrl, localDownloadLocation, pPostFields, httpCode);
+    int codebigdownloadFile(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode, void **curl, int *force_exit) {
+        return global_mockdownloadfileops_ptr->codebigdownloadFile(server_type, artifactLocationUrl, localDownloadLocation, pPostFields, httpCode, curl, force_exit);
     }
 }
 

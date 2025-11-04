@@ -1,3 +1,21 @@
+/*
+ * Copyright 2023 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 #include "rdkv_upgrade.h"
 #include "rdkv_cdl_log_wrapper.h"
 #include "device_status_helper.h"
@@ -80,10 +98,9 @@ bool checkForTlsErrors(int curl_code, const char *type)
  * @param: http_code : http return status
  * @return void:
  * */
-void dwnlError(int curl_code, int http_code, int server_type,const DeviceProperty_t *device_info,const char *lastrun,char *disableStatsUpdate)
+void dwnlError(int curl_code, int http_code, int server_type, const char *device_type, const char *lastrun, char *disableStatsUpdate)
 {
     char telemetry_data[32];
-    char device_type[32];
     struct FWDownloadStatus fwdls;
     char failureReason[128];
     char *type = "Direct"; //TODO: Need to pass this type as a function parameter
@@ -101,7 +118,6 @@ void dwnlError(int curl_code, int http_code, int server_type,const DevicePropert
         t2CountNotify("CDLsuspended_split", curl_code);
     }
     checkForTlsErrors(curl_code, type);
-    snprintf( device_type, sizeof(device_type), "%s", device_info->dev_type );
     if(curl_code != 0 || (http_code != 200 && http_code != 206) || http_code == 495) {
         if (server_type == HTTP_SSR_DIRECT) {
             SWLOG_ERROR("%s : Failed to download image from normal SSR code download server with ret:%d, httpcode:%d\n", __FUNCTION__, curl_code, http_code);
@@ -162,7 +178,7 @@ void dwnlError(int curl_code, int http_code, int server_type,const DevicePropert
  * @param: http_code : http value after curl command return
  * @return: void
  * */
-void saveHTTPCode(int http_code,const char *lastrun)
+void saveHTTPCode(int http_code)
 {
     char http[8] = { 0 };
     FILE *fp = NULL;
@@ -254,6 +270,54 @@ bool checkt2ValNotify( int iCurlCode, int iUpgradeType, char *Url  )
  */
 int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* pHttp_code)
 {
+    // Parameter NULL checks
+    if (context == NULL) {
+        SWLOG_ERROR("%s: context parameter is NULL\n", __FUNCTION__);
+        return -1;
+    }
+    
+    if (curl == NULL) {
+        SWLOG_ERROR("%s: curl parameter is NULL\n", __FUNCTION__);
+        return -1;
+    }
+    
+    if (pHttp_code == NULL) {
+        SWLOG_ERROR("%s: pHttp_code parameter is NULL\n", __FUNCTION__);
+        return -1;
+    }
+
+    // Additional validation for critical context fields
+    if (context->artifactLocationUrl == NULL) {
+        SWLOG_ERROR("%s: artifactLocationUrl in context is NULL\n", __FUNCTION__);
+        return -1;
+    }
+    
+    if (context->dwlloc == NULL) {
+        SWLOG_ERROR("%s: dwlloc in context is NULL\n", __FUNCTION__);
+        return -1;
+    }
+
+    // Validate critical context fields that are dereferenced in the function
+    if (context->device_info == NULL) {
+        SWLOG_ERROR("%s: device_info in context is NULL\n", __FUNCTION__);
+        return -1;
+    }
+
+    if (context->force_exit == NULL) {
+        SWLOG_ERROR("%s: force_exit in context is NULL\n", __FUNCTION__);
+        return -1;
+    }
+
+    if (context->immed_reboot_flag == NULL) {
+        SWLOG_ERROR("%s: immed_reboot_flag in context is NULL\n", __FUNCTION__);
+        return -1;
+    }
+
+    if (context->rfc_list == NULL) {
+        SWLOG_ERROR("%s: rfc_list in context is NULL\n", __FUNCTION__);
+        return -1;
+    }
+
     int upgrade_type = context->upgrade_type;
     int server_type = context->server_type;
     const char* artifactLocationUrl = context->artifactLocationUrl;
@@ -283,11 +347,6 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
     FILE *fp = NULL;
     int flash_status = -1;
 
-
-    if (context == NULL || artifactLocationUrl == NULL || dwlloc == NULL || pHttp_code == NULL) {
-        SWLOG_ERROR("%s: Parameter is NULL\n", __FUNCTION__);
-        return ret_curl_code;
-    }
     if (upgrade_type == XCONF_UPGRADE) {
         SWLOG_INFO("Trying to communicate with XCONF server");
         t2CountNotify("SYST_INFO_XCONFConnect", 1);
@@ -374,7 +433,7 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
         snprintf(fwdls.dnldVersn, sizeof(fwdls.dnldVersn), "Failure|" );
         snprintf(fwdls.dnldfile, sizeof(fwdls.dnldfile), "DnldFile|%s\n", dwlpath_filename ? dwlpath_filename : "XCONF");
         snprintf(fwdls.dnldurl, sizeof(fwdls.dnldurl), "DnldURL|%s\n", artifactLocationUrl);
-        snprintf(fwdls.lastrun, sizeof(fwdls.lastrun),"LastRun|%.240s\n", lastrun);
+        snprintf(fwdls.lastrun, sizeof(fwdls.lastrun),"LastRun|%s\n", lastrun);
         snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Downloading\n" );
         snprintf(fwdls.DelayDownload, sizeof(fwdls.DelayDownload), "DelayDownload|%d\n", delay_dwnl);
          
@@ -444,7 +503,7 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
             }
         }
         else if (server_type == HTTP_SSR_CODEBIG || server_type == HTTP_XCONF_CODEBIG) {
-            ret_curl_code = codebigdownloadFile(server_type, artifactLocationUrl, dwlloc, pPostFields, pHttp_code,curl,force_exit,immed_reboot_flag,device_info,lastrun,rfc_list,disableStatsUpdate);
+            ret_curl_code = codebigdownloadFile(server_type, artifactLocationUrl, dwlloc, pPostFields, pHttp_code,curl,force_exit);
             if (ret_curl_code != CURL_SUCCESS ||
                 (*pHttp_code != HTTP_SUCCESS && *pHttp_code != HTTP_CHUNK_SUCCESS && *pHttp_code != HTTP_PAGE_NOT_FOUND)) {
                 if( ret_curl_code != CODEBIG_SIGNING_FAILED )
@@ -567,24 +626,46 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
  * @return int: success/failure
  * */
 #ifndef GTEST_BASIC
-int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode, void **curl,int *force_exit,const char *immed_reboot_flag, const DeviceProperty_t *device_info,const char *lastrun,const Rfc_t *rfc_list,char *disableStatsUpdate) {	
+int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode, void **curl,int *force_exit) {	
     int signFailed = 1;           // 0 for success, 1 indicates failed
     FileDwnl_t file_dwnl;
     char oAuthHeader[BIG_BUF_LEN]  = "Authorization: OAuth realm=\"\", ";
     int curl_ret_code = -1;
     char headerInfoFile[136];
 
-    if (artifactLocationUrl == NULL || localDownloadLocation == NULL || httpCode == NULL) {
-        SWLOG_ERROR("%s: Parameter is NULL\n", __FUNCTION__);
+    // Parameter NULL checks
+    if (artifactLocationUrl == NULL) {
+        SWLOG_ERROR("%s: artifactLocationUrl parameter is NULL\n", __FUNCTION__);
         return curl_ret_code;
     }
+    
+    if (localDownloadLocation == NULL) {
+        SWLOG_ERROR("%s: localDownloadLocation parameter is NULL\n", __FUNCTION__);
+        return curl_ret_code;
+    }
+    
+    if (httpCode == NULL) {
+        SWLOG_ERROR("%s: httpCode parameter is NULL\n", __FUNCTION__);
+        return curl_ret_code;
+    }
+    
+    if (curl == NULL) {
+        SWLOG_ERROR("%s: curl parameter is NULL\n", __FUNCTION__);
+        return curl_ret_code;
+    }
+    
+    if (force_exit == NULL) {
+        SWLOG_ERROR("%s: force_exit parameter is NULL\n", __FUNCTION__);
+        return curl_ret_code;
+    }
+
     *httpCode = 0;
 
 #ifdef DEBUG_CODEBIG_CDL
     if( filePresentCheck( "/tmp/.forceCodebigFailure" ) == RDK_API_SUCCESS )
     {
         SWLOG_ERROR("%s:  Forcing Codebig Failure!!\n", __FUNCTION__);
-        saveHTTPCode(*httpCode,lastrun);
+        saveHTTPCode(*httpCode);
         return CURLTIMEOUT;     // timeout error
     }
 #endif
@@ -697,7 +778,7 @@ int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const
         curl_ret_code = CODEBIG_SIGNING_FAILED;
         SWLOG_ERROR( "%s : Codebig signing failed, server type = %d, aborting download!!\n", __FUNCTION__, server_type );
     }
-    saveHTTPCode(*httpCode,lastrun);
+    saveHTTPCode(*httpCode);
     return curl_ret_code;
 }
 #endif
@@ -816,7 +897,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
         chunk_dwnl = isIncremetalCDLEnable(file_dwnl.pathname);
     }
 #ifndef LIBRDKCERTSELECTOR	
-    SWLOG_INFO("1 Fetching MTLS credential for SSR/XCONF\n");
+    SWLOG_INFO("Fetching MTLS credential for SSR/XCONF\n");
     ret = getMtlscert(&sec);
     if (-1 == ret) {
         SWLOG_ERROR("%s : getMtlscert() Featching MTLS fail. Going For NON MTLS:%d\n", __FUNCTION__, ret);
@@ -829,7 +910,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
     (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_INIT) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_INIT);
 #ifdef LIBRDKCERTSELECTOR
     do {
-        SWLOG_INFO("2 Fetching MTLS credential for SSR/XCONF\n");
+        SWLOG_INFO("Fetching MTLS credential for SSR/XCONF\n");
         ret = getMtlscert(&sec, &thisCertSel);
         SWLOG_INFO("%s, getMtlscert function ret value = %d\n", __FUNCTION__, ret);
 
@@ -943,14 +1024,14 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
     }else {
         SWLOG_ERROR("%s : Direct Image upgrade Fail: curl ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *httpCode);
         (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_FAILED) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_FAILED);
-        dwnlError(curl_ret_code, *httpCode, server_type,device_info,lastrun,disableStatsUpdate);
+        dwnlError(curl_ret_code, *httpCode, server_type, device_info->dev_type, lastrun, disableStatsUpdate);
         if( *(file_dwnl.pathname) != 0 )
         {
             unlink(file_dwnl.pathname);
             unlink(headerInfoFile);
         }
     }
-    saveHTTPCode(*httpCode,lastrun);
+    saveHTTPCode(*httpCode);
     return curl_ret_code;
 }
 #endif
@@ -1009,7 +1090,7 @@ int retryDownload(int server_type, const char* artifactLocationUrl, const void* 
     } else if (server_type == HTTP_SSR_CODEBIG || server_type == HTTP_XCONF_CODEBIG) {
         while(retry_completed <= retry_cnt) {
             sleep(delay);
-            curl_ret_code = codebigdownloadFile(server_type, artifactLocationUrl, localDownloadLocation, pPostFields, httpCode, curl, force_exit,immed_reboot_flag,device_info,lastrun,rfc_list,disableStatsUpdate);
+            curl_ret_code = codebigdownloadFile(server_type, artifactLocationUrl, localDownloadLocation, pPostFields, httpCode, curl, force_exit);
             if ((curl_ret_code == CURL_SUCCESS) && (*httpCode == HTTP_SUCCESS || *httpCode == HTTP_CHUNK_SUCCESS)) {
                 SWLOG_INFO("%s : Codebig Image upgrade Success: ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *httpCode);
                 break;

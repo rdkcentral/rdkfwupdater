@@ -86,10 +86,10 @@ extern "C" {
     int doCurlPutRequest(void *in_curl, FileDwnl_t *pfile_dwnl, char *jsonrpc_auth_token, int *out_httpCode);
     int getOPTOUTValue(const char *filename);
     void getPidStore(const char *key, const char *value);
-    void dwnlError(int curl_code, int http_code, int server_type, const DeviceProperty_t *device_info, const char *lastrun, char *disableStatsUpdate);
+    void dwnlError(int curl_code, int http_code, int server_type, const char *device_type, const char *lastrun, char *disableStatsUpdate);
     int peripheral_firmware_dndl(char *pCloudFWLocation, char *pPeripheralFirmwares);
     int fallBack(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char *pPostFields, int *httpCode, void **curl, int *force_exit, const char *immed_reboot_flag, const DeviceProperty_t *device_info, const char *lastrun, const Rfc_t *rfc_list, char *disableStatsUpdate);
-    void saveHTTPCode(int http_code, const char *lastrun);
+    void saveHTTPCode(int http_code);
     int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* pHttp_code);
     size_t getContentLength(const char *file);
     int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_limit, int *httpcode);
@@ -335,7 +335,7 @@ TEST(MainHelperFunctionTest, retryDownloadtest5){
 TEST(MainHelperFunctionTest, retryDownloadtest6){
     MockDownloadFileOps mockfileops;
     global_mockdownloadfileops_ptr = &mockfileops;
-    EXPECT_CALL(mockfileops, codebigdownloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(CURL_SUCCESS));
+    EXPECT_CALL(mockfileops, codebigdownloadFile(_,_,_,_,_,_,_)).Times(1).WillOnce(testing::Return(CURL_SUCCESS));
     int code = HTTP_SUCCESS;
     int force_exit = 0;
     void *curl = NULL;
@@ -347,7 +347,7 @@ TEST(MainHelperFunctionTest, retryDownloadtest6){
 TEST(MainHelperFunctionTest, retryDownloadtest7){
     MockDownloadFileOps mockfileops;
     global_mockdownloadfileops_ptr = &mockfileops;
-    EXPECT_CALL(mockfileops, codebigdownloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(!CURL_SUCCESS));
+    EXPECT_CALL(mockfileops, codebigdownloadFile(_,_,_,_,_,_,_)).Times(1).WillOnce(testing::Return(!CURL_SUCCESS));
     int code = HTTP_PAGE_NOT_FOUND;
     int force_exit = 0;
     void *curl = NULL;
@@ -359,7 +359,7 @@ TEST(MainHelperFunctionTest, retryDownloadtest7){
 TEST(MainHelperFunctionTest, retryDownloadtest8){
     MockDownloadFileOps mockfileops;
     global_mockdownloadfileops_ptr = &mockfileops;
-    EXPECT_CALL(mockfileops, codebigdownloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(!CURL_SUCCESS));
+    EXPECT_CALL(mockfileops, codebigdownloadFile(_,_,_,_,_,_,_)).Times(1).WillOnce(testing::Return(!CURL_SUCCESS));
     int code = HTTP_SUCCESS;
     int force_exit = 0;
     void *curl = NULL;
@@ -371,12 +371,11 @@ TEST(DwnlErrorTest, HandlesCurlCode0) {
     int curl_code = 0;
     int http_code = 200;
     int server_type = 0;
-    DeviceProperty_t device_info = {0};
-    strcpy(device_info.dev_type, "mediaclient");
+    const char *device_type = "mediaclient";
     MockExternal mockexternal;
     global_mockexternal_ptr = &mockexternal;
     EXPECT_CALL(mockexternal,checkAndEnterStateRed(_,_)).Times(1);
-    dwnlError(curl_code, http_code, server_type,  &device_info, NULL, NULL);
+    dwnlError(curl_code, http_code, server_type, device_type, NULL, NULL);
     global_mockexternal_ptr = NULL;
 
 }
@@ -385,14 +384,13 @@ TEST(DwnlErrorTest, HandlesCurlCode22) {
     int curl_code = 22;
     int http_code = 200;
     int server_type = 0;
-    DeviceProperty_t device_info = {0};
-    strcpy(device_info.dev_type, "mediaclient");
+    const char *device_type = "mediaclient";
     MockExternal mockexternal;
     global_mockexternal_ptr = &mockexternal;
     EXPECT_CALL(mockexternal,eventManager(_,_)).Times(1);
     EXPECT_CALL(mockexternal,checkAndEnterStateRed(_,_)).Times(1);
     EXPECT_CALL(mockexternal,updateFWDownloadStatus(_,_)).Times(1);
-    dwnlError(curl_code, http_code, server_type,  &device_info, NULL, NULL);
+    dwnlError(curl_code, http_code, server_type, device_type, NULL, NULL);
     global_mockexternal_ptr = NULL;
 
 }
@@ -401,15 +399,13 @@ TEST(DwnlErrorTest, HandlesCurlCode18) {
     int curl_code = 18;
     int http_code = 0;
     int server_type = 0;
-    DeviceProperty_t device_info = {0};
-    strcpy(device_info.dev_type, "mediaclient");
+    const char *device_type = "mediaclient";
     MockExternal mockexternal;
     global_mockexternal_ptr = &mockexternal;
-    strcpy(device_info.dev_type,"mediaclient");
     EXPECT_CALL(mockexternal,eventManager(_,_)).Times(1);
     EXPECT_CALL(mockexternal,checkAndEnterStateRed(_,_)).Times(1);
     EXPECT_CALL(mockexternal,updateFWDownloadStatus(_,_)).Times(1);
-    dwnlError(curl_code, http_code, server_type,  &device_info, NULL, NULL);
+    dwnlError(curl_code, http_code, server_type, device_type, NULL, NULL);
     global_mockexternal_ptr = NULL;
 
 }
@@ -418,14 +414,13 @@ TEST(DwnlErrorTest, HandlesCurlCode91) {
     int curl_code = 91;
     int http_code = 200;
     int server_type = 0;
-    DeviceProperty_t device_info = {0};
-    strcpy(device_info.dev_type, "mediaclient1");
+    const char *device_type = "mediaclient1";
     MockExternal mockexternal;
     global_mockexternal_ptr = &mockexternal;
     EXPECT_CALL(mockexternal,eventManager(_,_)).Times(1);
     EXPECT_CALL(mockexternal,checkAndEnterStateRed(_,_)).Times(1);
     EXPECT_CALL(mockexternal,updateFWDownloadStatus(_,_)).Times(1);
-    dwnlError(curl_code, http_code, server_type,  &device_info, NULL, NULL);
+    dwnlError(curl_code, http_code, server_type, device_type, NULL, NULL);
     global_mockexternal_ptr = NULL;
 
 }
@@ -682,7 +677,7 @@ TEST(PeripheralFirmwareDndlTest, HandlesValidInput) {
     char *pCloudFWLocation = "http://example.com";
     char *pPeripheralFirmwares = "firmware1,firmware2";
     EXPECT_CALL(mockdownloadfileops, downloadFile(_,_,_,_,_)).WillRepeatedly(Return(0));
-    EXPECT_CALL(mockdownloadfileops, codebigdownloadFile(_,_,_,_,_)).WillRepeatedly(Return(CODEBIG_SIGNING_FAILED));
+    EXPECT_CALL(mockdownloadfileops, codebigdownloadFile(_,_,_,_,_,_,_)).WillRepeatedly(Return(CODEBIG_SIGNING_FAILED));
 
     EXPECT_CALL(DeviceMock,getFileSize(_)).WillRepeatedly(Return(-1));
     int result = peripheral_firmware_dndl(pCloudFWLocation, pPeripheralFirmwares);
@@ -700,7 +695,7 @@ TEST(PeripheralFirmwareDndlTest, HandlesValidInput404) {
     char *pCloudFWLocation = "http://example.com";
     char *pPeripheralFirmwares = "firmware1,firmware2";
     EXPECT_CALL(mockdownloadfileops, downloadFile(_,_,_,_,_)).WillRepeatedly(Return(HTTP_PAGE_NOT_FOUND));
-    EXPECT_CALL(mockdownloadfileops, codebigdownloadFile(_,_,_,_,_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockdownloadfileops, codebigdownloadFile(_,_,_,_,_,_,_)).WillRepeatedly(Return(0));
     int result = peripheral_firmware_dndl(pCloudFWLocation, pPeripheralFirmwares);
 
     // Check the result of the function
@@ -873,7 +868,7 @@ TEST(MainHelperFunctionTest, fallBackTestSuccessCodebig){
     int http_code = 200;
     int force_exit = 0;
     void *curl = NULL;
-    EXPECT_CALL(mockfileops, codebigdownloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(CURL_SUCCESS));
+    EXPECT_CALL(mockfileops, codebigdownloadFile(_,_,_,_,_,_,_)).Times(1).WillOnce(testing::Return(CURL_SUCCESS));
     EXPECT_EQ(fallBack(HTTP_SSR_CODEBIG, "test", "test1", (char*)"test2", &http_code, &curl, &force_exit, NULL, NULL, NULL, NULL, NULL), CURL_SUCCESS);
     global_mockdownloadfileops_ptr = NULL;
 }
@@ -884,7 +879,7 @@ TEST(MainHelperFunctionTest, fallBackTestFailureCodebig){
     int http_code = 200;
     int force_exit = 0;
     void *curl = NULL;
-    EXPECT_CALL(mockfileops, codebigdownloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(!CURL_SUCCESS));
+    EXPECT_CALL(mockfileops, codebigdownloadFile(_,_,_,_,_,_,_)).Times(1).WillOnce(testing::Return(!CURL_SUCCESS));
     EXPECT_EQ(fallBack(HTTP_SSR_CODEBIG, "test", "test1", (char*)"test2", &http_code, &curl, &force_exit, NULL, NULL, NULL, NULL, NULL), !CURL_SUCCESS);
     global_mockdownloadfileops_ptr = NULL;
 }
@@ -944,7 +939,7 @@ TEST(MainHelperFunctionTest,initializeTest1){
 }
 
 TEST(MainHelperFunctionTest,saveHTTPCodeTest){
-    saveHTTPCode(200, NULL);
+    saveHTTPCode(200);
     fflush(NULL);
     char buff[16] = {0};
     FILE *fp = NULL;
