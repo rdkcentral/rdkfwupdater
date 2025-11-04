@@ -28,6 +28,9 @@ git clone https://github.com/rdkcentral/common_utilities.git
 ls
 cd common_utilities
 git checkout topic/RDK-59276-modularization
+# Configure and build common_utilities with proper paths
+autoreconf -i
+./configure --prefix=${INSTALL_DIR}
 make && make install
 
 # Return to main rdkfwupdater directory
@@ -35,7 +38,7 @@ cd ..
 
 #Build rdkfwupdater
 autoreconf -i
-./configure --prefix=${INSTALL_DIR} --enable-rdkcertselector=yes --enable-mountutils=yes --enable-rfcapi=yes CFLAGS="-DRDK_LOGGER"
+./configure --prefix=${INSTALL_DIR} --enable-rdkcertselector=yes --enable-mountutils=yes --enable-rfcapi=yes CFLAGS="-DRDK_LOGGER -I/usr/local/include" LDFLAGS="-L/usr/local/lib"
 make && make install
 
 
