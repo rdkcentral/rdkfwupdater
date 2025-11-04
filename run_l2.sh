@@ -31,10 +31,6 @@ fi
 ls
 cd common_utilities
 git checkout topic/RDK-59276-modularization
-# ddConfigure and build common_utilities with proper paths
-#autoreconf -i
-#./configure --prefix=${INSTALL_DIR} CFLAGS="-Wno-error"
-#make && make install
 # Build common utilities
 autoreconf -i
 ./configure --prefix=${INSTALL_DIR} CFLAGS=" -DRDK_LOGGER"
