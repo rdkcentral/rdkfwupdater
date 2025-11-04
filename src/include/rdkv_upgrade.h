@@ -54,9 +54,7 @@ int fallBack(int server_type, const char* artifactLocationUrl, const void* local
 void dwnlError(int curl_code, int http_code, int server_type,const DeviceProperty_t *device_info,const char *lastrun, char *disableStatsUpdate);
 
 void saveHTTPCode(int http_code, const char *lastrun);
-
 void t2CountNotify(char *marker, int val); 
-
 void t2ValNotify( char *marker, char *val );
 #ifdef __cplusplus
 }
