@@ -143,8 +143,10 @@ def test_delay_dwnl():
 
 @pytest.mark.run(order=9)
 def test_fallback_codebig():
+    log_file = "/opt/logs/swupdate.txt.0"
+    assert os.path.exists(log_file), f"Log file '{log_file}' does not exist! RDK logger may not be initialized properly."
     ERROR_MSG1 = "isDelayFWDownloadActive: Device configured with download delay of 1 minutes"
-    assert grep_log_file("/opt/logs/swupdate.txt.0", ERROR_MSG1), f"Expected '{ERROR_MSG1}' in log file."
+    assert grep_log_file(log_file, ERROR_MSG1), f"Expected '{ERROR_MSG1}' in log file."
 
 @pytest.mark.run(order=10)
 def test_rebooten_dwnl():
@@ -161,5 +163,7 @@ def test_rebooten_dwnl():
     remove_file("/tmp/fw_preparing_to_reboot")
     remove_file("/tmp/currently_running_image_name")
     remove_file("/opt/cdl_flashed_file_name")
+    log_file = "/opt/logs/swupdate.txt.0"
+    assert os.path.exists(log_file), f"Log file '{log_file}' does not exist! RDK logger may not be initialized properly."
     ERROR_MSG1 = "sleep for 2 sec to send reboot pending notification"
-    assert grep_log_file("/opt/logs/swupdate.txt.0", ERROR_MSG1), f"Expected '{ERROR_MSG1}' in log file."
+    assert grep_log_file(log_file, ERROR_MSG1), f"Expected '{ERROR_MSG1}' in log file."
