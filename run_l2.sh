@@ -36,9 +36,6 @@ make && make install
 # Return to main rdkfwupdater directory
 cd ..
 
-# Setup mock certificate selector environment for testing
-bash test/functional-tests/setup_mock_certs.sh
-
 #Build rdkfwupdater
 autoreconf -i
 ./configure --prefix=${INSTALL_DIR} --enable-rdkcertselector=yes --enable-mountutils=yes --enable-rfcapi=yes CFLAGS="-DRDK_LOGGER "
