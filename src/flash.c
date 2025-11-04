@@ -52,9 +52,7 @@
  * ERROR FIXED: "multiple definition of `t2CountNotify'"
  */
 void flashT2CountNotify(char *marker, int val) {
-SWLOG_INFO("DEBUG LOG: In flashT2CountNotify \n");
 #ifdef T2_EVENT_ENABLED
-SWLOG_INFO("DEBUG LOG: T2_EVENT_ENABLED defined; calling t2_event_d\n");
     t2_event_d(marker, val);
 #endif
 }
