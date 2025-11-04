@@ -117,18 +117,17 @@ int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_li
         *httpcode = 0;
     }
     setDwnlState(RDKV_FWDNLD_DOWNLOAD_INIT);
-    *curl = doCurlInit();
+    curl = doCurlInit();
     setDwnlState(RDKV_FWDNLD_DOWNLOAD_INPROGRESS);
     if (curl != NULL) {
-        curl_ret_code = doHttpFileDownload(*curl, pfile_dwnl, sec, speed_limit, range, httpcode);
+        curl_ret_code = doHttpFileDownload(curl, pfile_dwnl, sec, speed_limit, range, httpcode);
     }else {
 	SWLOG_ERROR( "chunkDownload() error in doCurlInit\n");
         return curl_ret_code;
     } 
     setDwnlState(RDKV_FWDNLD_DOWNLOAD_EXIT);
     if (curl != NULL) {
-        doStopDownload(*curl);
-	*curl = NULL;
+        doStopDownload(curl);
     }
     /*During Download Stop and exit the app. This feature for Throttling
      * when throttle speed limit set to 0*/
@@ -143,19 +142,18 @@ int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_li
             unlink(pfile_dwnl->pathname);
             unlink(headerfile);
             setDwnlState(RDKV_FWDNLD_DOWNLOAD_INIT);
-            *curl = doCurlInit();
+            curl = doCurlInit();
             setDwnlState(RDKV_FWDNLD_DOWNLOAD_INPROGRESS);
             // Triggering Full Download.
     	    if (curl != NULL) {
-                curl_ret_code = doHttpFileDownload(*curl, pfile_dwnl, sec, speed_limit, NULL, httpcode);
+                curl_ret_code = doHttpFileDownload(curl, pfile_dwnl, sec, speed_limit, NULL, httpcode);
     	    }else {
                 SWLOG_ERROR( "chunkDownload() error in doCurlInit after curl return 33 or 36\n");
                 return curl_ret_code;
     	    }
             setDwnlState(RDKV_FWDNLD_DOWNLOAD_EXIT);
             if (curl != NULL) {
-                doStopDownload(*curl);
-		*curl=NULL;
+                doStopDownload(curl);
             }
              /*During Download Stop and exit the app. This feature for Throttling
              * when throttle speed limit set to 0*/
@@ -176,19 +174,18 @@ int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_li
             t2CountNotify("SYST_ERR_DiffFWCTN_FLdnld", 1);
             SWLOG_ERROR( "chunkDownload() File Size=%d and content len=%zu\n", file_size, content_len);
             setDwnlState(RDKV_FWDNLD_DOWNLOAD_INIT);
-            *curl = doCurlInit();
+            curl = doCurlInit();
             setDwnlState(RDKV_FWDNLD_DOWNLOAD_INPROGRESS);
             // Trigger Full Download
             if (curl != NULL) {
-                curl_ret_code = doHttpFileDownload(*curl, pfile_dwnl, sec, speed_limit, NULL, httpcode);
+                curl_ret_code = doHttpFileDownload(curl, pfile_dwnl, sec, speed_limit, NULL, httpcode);
             }else {
                 SWLOG_ERROR( "chunkDownload() error in doCurlInit after content length not match\n");
                 return -1;
             }
             setDwnlState(RDKV_FWDNLD_DOWNLOAD_EXIT);
             if (curl != NULL) {
-                doStopDownload(*curl);
-		*curl = NULL;
+                doStopDownload(curl);
             }
             if (force_exit == 1 && (curl_ret_code == 23)) {
                 uninitialize(INITIAL_VALIDATION_SUCCESS);
