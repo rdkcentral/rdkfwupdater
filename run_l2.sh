@@ -29,8 +29,8 @@ ls
 cd common_utilities
 git checkout topic/RDK-59276-modularization
 # Configure and build common_utilities with proper paths
-#autoreconf -i
-#./configure --prefix=${INSTALL_DIR}
+autoreconf -i
+./configure --prefix=${INSTALL_DIR}
 make && make install
 
 # Return to main rdkfwupdater directory
