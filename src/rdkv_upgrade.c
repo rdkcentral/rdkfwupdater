@@ -656,14 +656,15 @@ int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const
             } else {
                 setDwnlState(RDKV_FWDNLD_DOWNLOAD_INPROGRESS);
             }
-            curl_ret_code = doAuthHttpFileDownload(curl ,&file_dwnl, httpCode); // Handle return status
+            curl_ret_code = doAuthHttpFileDownload(*curl ,&file_dwnl, httpCode); // Handle return status
             if (server_type == HTTP_XCONF_CODEBIG) {
                 setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_EXIT);
             } else {
                 setDwnlState(RDKV_FWDNLD_DOWNLOAD_EXIT);
             }
-
-            doStopDownload(curl);
+            if (*curl != NULL) {
+            doStopDownload(*curl);
+	    }
             // Don't set curl = NULL here - preserve the handle for reuse
             /* Stop the donwload if Throttle speed rfc is set to zero */
             if (*force_exit == 1 && (curl_ret_code == 23)) {
