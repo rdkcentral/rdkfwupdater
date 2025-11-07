@@ -279,11 +279,11 @@ size_t GetAdditionalFwVerInfo( char *pAdditionalFwVerInfo, size_t szBufSize )
     if( pAdditionalFwVerInfo != NULL )
     {
         len = GetPDRIFileName( pAdditionalFwVerInfo, szBufSize );
+		len = stripinvalidchar(pAdditionalFwVerInfo, len); // remove newline etc.
 	if( len < szBufSize )
         {
             len += GetRemoteInfo( (pAdditionalFwVerInfo + len), (szBufSize - len) );
         }
-		len = stripinvalidchar(pAdditionalFwVerInfo, len); // remove newline etc.
     }
     else
     {
