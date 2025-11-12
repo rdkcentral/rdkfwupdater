@@ -22,6 +22,9 @@
 #include <stdbool.h>
 #include <time.h>
 
+#ifndef GTEST_ENABLE
+#include "system_utils.h"
+#endif
 #define DNS_RESOLV_FILE "/etc/resolv.dnsmasq"
 #define IP_ROUTE_FLAG "/tmp/route_available"
 #define GATEWAYIP_FILE "/tmp/.GatewayIP_dfltroute"
@@ -36,6 +39,7 @@
 #include <fcntl.h>           /* Definition of AT_* constants */
 #include <sys/stat.h>
 #endif
+#include "rdkv_cdl_log_wrapper.h"
 
 bool isDeviceReadyForDownload();
 int isStateRedSupported(void);
@@ -56,13 +60,11 @@ bool lastDwnlImg(char *img_name, size_t img_name_size);
 bool currentImg(char *img_name, size_t img_name_size);
 void unsetStateRed(void);
 bool GetPDRIVersion(char *pPdriVersion, size_t szBufSize);
-size_t createJsonString(char *pPostFieldOut, size_t szPostFieldOut);
 bool updateOPTOUTFile(const char *optout_file_name);
 bool CheckIProuteConnectivity(const char *file_name);
 bool isDnsResolve(const char *dns_file_name);
 bool checkCodebigAccess(void);
 bool CurrentRunningInst(const char *file);
-bool lastDwnlImg(char *img_name, size_t img_name_size);
 void waitForNtp(void);
 bool prevFlashedFile(char *img_name, size_t img_name_size);
 unsigned int getFileLastModifyTime(char *file_name);

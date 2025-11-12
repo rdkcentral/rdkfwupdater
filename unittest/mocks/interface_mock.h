@@ -21,7 +21,7 @@
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 
-#include "rdkv_cdl_log_wrapper.h"
+//////////////////#include "rdkv_cdl_log_wrapper.h"
 
 extern "C" {
 #include "rfcinterface.h"
@@ -46,7 +46,7 @@ class FwDlInterface
         virtual int IARM_Bus_UnRegisterEventHandler(const char *name, int mode) = 0;
         virtual int IARM_Bus_Disconnect() = 0;
         virtual int IARM_Bus_Term() = 0;
-        virtual int MemDLAlloc(void *ptr, int size) = 0;
+        virtual int allocDowndLoadDataMem(void *ptr, int size) = 0;
         virtual int getJsonRpc(char *data, void *ptr) = 0;
 };
 
@@ -69,7 +69,7 @@ class FwDlInterfaceMock: public FwDlInterface
         MOCK_METHOD(int, IARM_Bus_UnRegisterEventHandler, (const char *name, int mode), ());
         MOCK_METHOD(int, IARM_Bus_Disconnect, (), ());
         MOCK_METHOD(int, IARM_Bus_Term, (), ());
-        MOCK_METHOD(int, MemDLAlloc, (void *ptr, int size), ());
+        MOCK_METHOD(int, allocDowndLoadDataMem, (void *ptr, int size), ());
         MOCK_METHOD(int, getJsonRpc, (char *data, void *ptr), ());
 };
 

@@ -22,7 +22,8 @@
 #include "rdkv_cdl_log_wrapper.h"
 #include "download_status_helper.h"
 #include "device_status_helper.h"
-#include "iarmInterface/iarmInterface.h"
+#include "iarmInterface.h"
+#include "rfcinterface.h"
 #ifndef GTEST_ENABLE
 #include "urlHelper.h"
 #include "json_parse.h"
@@ -32,12 +33,29 @@
 #else
 #include "rbus_mock.h"
 #endif
-#include "rfcInterface/rfcinterface.h"
 #include <sys/wait.h>
 #include "deviceutils.h"
 
-extern int getTriggerType();
-extern void t2CountNotify(char *marker, int val);
+// TODO - do similar to what is done for IARM eventing. Is not the primary goal of this module
+/* Description: Use for sending telemetry Log
+ * @param marker: use for send marker details
+ * @return : void
+ * */
+
+/* Renamed to flashT2CountNotify to avoid symbol collision with rdkv_upgrade.c
+ * ISSUE: Both flash.c (librdksw_flash.so) and rdkv_upgrade.c (librdksw_upgrade.so) need their own
+ *        telemetry notification functions to maintain stateless, independent libraries.
+ * SOLUTION: Rename flash.c's version to flashT2CountNotify to prevent linker multiple definition error.
+ * REASONING: 
+ *   - Maintains library independence (no reverse dependency between flash and upgrade modules)
+ *   - Both libraries remain stateless
+ * ERROR FIXED: "multiple definition of `t2CountNotify'"
+ */
+void flashT2CountNotify(char *marker, int val) {
+#ifdef T2_EVENT_ENABLED
+    t2_event_d(marker, val);
+#endif
+}
 
 /* Description:Use for Flashing the image
  * @param: server_url : server url
@@ -48,7 +66,7 @@ extern void t2CountNotify(char *marker, int val);
  * @param: maint : maintenance manager enable/disable
  * @return int: 0 : Success other than 0 false
  * */
-int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint)
+int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint,int trigger_type)
 {
     int ret =  -1;
     bool mediaclient = false;
@@ -116,11 +134,11 @@ int flashImage(const char *server_url, const char *upgrade_file, const char *reb
     }
     if (flash_status == 0 && (upgrade_type != PDRI_UPGRADE)) {
         SWLOG_INFO("doCDL success.\n");
-        t2CountNotify("SYST_INFO_CDLSuccess", 1);
+        flashT2CountNotify("SYST_INFO_CDLSuccess", 1);
     }
     if (flash_status != 0) {
          SWLOG_INFO("Image Flashing failed\n");
-         t2CountNotify("SYST_ERR_imageflsfail", 1);
+         flashT2CountNotify("SYST_ERR_imageflsfail", 1);
  	 if (false == mediaclient) {
 	     failureReason = "RCDL Upgrade Failed";
 	     if ((strncmp(cpu_arch, "x86", 3)) == 0) {
@@ -142,7 +160,7 @@ int flashImage(const char *server_url, const char *upgrade_file, const char *reb
          updateUpgradeFlag(2);// Remove file TODO: Logic need to change
     } else if (true == mediaclient) {
          SWLOG_INFO("Image Flashing is success\n");
-         t2CountNotify("SYST_INFO_ImgFlashOK", 1);
+         flashT2CountNotify("SYST_INFO_ImgFlashOK", 1);
 	 //updateFWDownloadStatus "$cloudProto" "Success" "$cloudImmediateRebootFlag" "" "$dnldVersion" "$cloudFWFile" "$runtime" "Validation complete" "$DelayDownloadXconf"
          snprintf(fwdls.status, sizeof(fwdls.status), "Status|Success\n");
          snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Validation complete\n");
@@ -159,7 +177,7 @@ int flashImage(const char *server_url, const char *upgrade_file, const char *reb
          else {
              SWLOG_INFO("Device_X_COMCAST_COM_Xcalibur_Client_xconfCheckNow: File does not exist\n");
          }
-	 if (((strncmp(maint, "true", 4)) == 0) && (0 == (strncmp(reboot_flag, "true", 4))) && ((0 != strcasecmp("CANARY", pXconfCheckNow)) || (getTriggerType() != 3))) {
+	 if (((strncmp(maint, "true", 4)) == 0) && (0 == (strncmp(reboot_flag, "true", 4))) && ((0 != strcasecmp("CANARY", pXconfCheckNow)) || (trigger_type != 3))) {
              eventManager("MaintenanceMGR", MAINT_CRITICAL_UPDATE);
 	     SWLOG_INFO("Posting Critical update");
 	 }
@@ -170,7 +188,7 @@ int flashImage(const char *server_url, const char *upgrade_file, const char *reb
              SWLOG_INFO("flashImage: Flashing completed. Deleting File:%s\n", upgrade_file);
              unlink(upgrade_file);
 	 }
-	 postFlash(maint, file+1, upgrade_type, reboot_flag);
+	 postFlash(maint, file+1, upgrade_type, reboot_flag,trigger_type);
          updateUpgradeFlag(2);// Remove file TODO: Logic need to change
     }
     if (true == mediaclient && (0 == filePresentCheck(upgrade_file))) {
@@ -206,7 +224,7 @@ int flashImage(const char *server_url, const char *upgrade_file, const char *reb
  * @return int: 0
  * */
 
-int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, const char *reboot_flag)
+int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, const char *reboot_flag,int trigger_type)
 {
     DownloadData DwnLoc;
     int ret = -1;
@@ -264,7 +282,7 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
                 startFactoryProtectService();
                 sleep(2);
                 
-                if( MemDLAlloc( &DwnLoc, DEFAULT_DL_ALLOC ) == 0 )
+                if( allocDowndLoadDataMem( &DwnLoc, DEFAULT_DL_ALLOC ) == 0 )
                 {
                     getJsonRpc(post_data, &DwnLoc);//Update security stage to stage2
                     fp = fopen(stage2file, "w");
@@ -323,7 +341,7 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
 	    SWLOG_INFO("Creating flag for preparing to reboot event sent to AS/EPG\n");
 	    fclose(fp);
 	}
-        if ((0 != strcasecmp("CANARY", pXconfCheckNow)) || (getTriggerType() != 3)) {
+        if ((0 != strcasecmp("CANARY", pXconfCheckNow)) || (trigger_type != 3)) {
             eventManager(FW_STATE_EVENT,FW_STATE_PREPARING_TO_REBOOT);
 	}
     }
@@ -336,7 +354,7 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
             fprintf(fp, "%s\n", upgrade_file);
             fclose(fp);
         }
-	if ((0 == strcasecmp("CANARY", pXconfCheckNow)) && (getTriggerType() == 3)) {
+	if ((0 == strcasecmp("CANARY", pXconfCheckNow)) && (trigger_type == 3)) {
 
             char post_data[] = "{\"jsonrpc\":\"2.0\",\"id\":\"42\",\"method\": \"org.rdk.System.getPowerState\"}";
             DownloadData DwnLoc = {NULL, 0, 0};
@@ -344,7 +362,7 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
             JSON *pItem = NULL;
             JSON *res_val = NULL;
 
-            if( MemDLAlloc( &DwnLoc, DEFAULT_DL_ALLOC ) == 0 ) {
+            if( allocDowndLoadDataMem( &DwnLoc, DEFAULT_DL_ALLOC ) == 0 ) {
               if (0 != getJsonRpc(post_data, &DwnLoc)) {
                   SWLOG_INFO("%s :: isconnected JsonRpc call failed\n",__FUNCTION__);
 		  free(pXconfCheckNow);
@@ -371,11 +389,11 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
 	    if(res_val != NULL) {
                 if(0 == strcasecmp("ON", res_val->valuestring)) {
                     SWLOG_INFO("Defer Reboot for Canary Firmware Upgrade since power state is ON\n");
-                    t2CountNotify("SYS_INFO_DEFER_CANARY_REBOOT", 1);
+                    flashT2CountNotify("SYS_INFO_DEFER_CANARY_REBOOT", 1);
                 }
 #ifndef GTEST_ENABLE
                 else {
-                    t2CountNotify("SYS_INFO_CANARY_Update", 1);
+                    flashT2CountNotify("SYS_INFO_CANARY_Update", 1);
 					// Call rbus method - Device.X_RDKCENTRAL-COM_T2.UploadDCMReport
                     if( RBUS_ERROR_SUCCESS != invokeRbusDCMReport()) {
 		        SWLOG_ERROR("Error in uploading telemetry report\n");

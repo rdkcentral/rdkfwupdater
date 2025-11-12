@@ -22,7 +22,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-
+//#include "urlHelper.h"
 #define SWLOG_INFO(format, ...)        printf(format, ##__VA_ARGS__)
 #define SWLOG_ERROR(format, ...)        printf(format, ##__VA_ARGS__)
 
@@ -50,6 +50,7 @@ typedef struct credential {
 }MtlsAuth_t;
 
 /* Below structure use for download file data */
+
 typedef struct CommonDownloadData {
     void* pvOut;
     size_t datasize;        // data size
@@ -57,6 +58,7 @@ typedef struct CommonDownloadData {
 } DownloadData;
 
 /* Structure Use for Hash Value and Time*/
+
 typedef struct hashParam {
     char *hashvalue;
     char *hashtime;
@@ -73,6 +75,7 @@ typedef struct filedwnl {
         bool sslverify;
         hashParam_t *hashData;
 }FileDwnl_t;
+
 
 typedef enum {
     eUNKNOWN,

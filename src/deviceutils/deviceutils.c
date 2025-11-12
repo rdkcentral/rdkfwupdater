@@ -25,9 +25,18 @@
 #ifndef GTEST_ENABLE
 #include <secure_wrapper.h>
 #include "downloadUtil.h"
+#include "urlHelper.h"
+#include "mtlsUtils.h"
+#else
+// For GTEST mode, we need type definitions and macros but not implementations
+//#include "urlHelper.h"  // For MtlsAuth_t, DownloadData, FileDwnl_t types
+#include "mtlsUtils.h"  // For RDKSSACLI macro
+// Forward declare v_secure_popen and v_secure_pclose (mocked in tests)
+FILE* v_secure_popen(const char *mode, ...);
+int v_secure_pclose(FILE *fp);
 #endif
 
-#include "rdkv_cdl_log_wrapper.h"
+//#include "rdkv_cdl_log_wrapper.h"
 #include "deviceutils.h"
 #include "json_parse.h"
 #include <dirent.h>
@@ -88,127 +97,6 @@ char *pPeripheralName[MAX_PERIPHERAL_ITEMS] = {
     "DspVer",
     "KwModelVer"
 };
-/* function stripinvalidchar - truncates a string when a space or control
-    character is encountered.
- 
-        Usage: size_t stripinvalidchar <char *pIn> <size_t szIn>
- 
-            pIn - pointer to a char buffer to check/modify.
-
-            szIn - the size of the character buffer in argument 1.
-
-            RETURN - number of characters in the buffer upon exit.
- 
-            PITFALLS - does not check for NULL input
-*/
-size_t stripinvalidchar( char *pIn, size_t szIn )
-{
-    size_t i = 0;
-
-    if( pIn != NULL )
-    {
-        while( *pIn && szIn )
-        {
-            if( isspace( *pIn ) || iscntrl( *pIn ) )
-            {
-                *pIn = 0;
-                break;
-            }
-            ++pIn;
-            --szIn;
-            ++i;
-        }
-    }
-    return i;
-}
-
-/* function makeHttpHttps - checks a URL for "http:" and, if found,
-    makes it "https:"
- 
-        Usage: size_t makeHttpHttps <char *pIn> <size_t szpInSize>
- 
-            pIn - pointer to a char buffer to check/modify.
-
-            szpInSize - the size of the character buffer in argument 1.
-
-            RETURN - number of characters in the buffer upon exit.
- 
-            PITFALLS - does not check for NULL input
-*/
-size_t makeHttpHttps( char *pIn, size_t szpInSize )
-{
-    char *pTmp, *pEnd;
-    int i;
-    //CID:306160-Initialization-fixed
-    size_t len = 0;
-
-    if( pIn != NULL && szpInSize )
-    {
-       pEnd = pIn;
-        i = szpInSize - 1;
-        while( *pEnd && i )
-        {
-            --i;
-            ++pEnd;     // should be left pointing to '\0' with room to insert
-        }
-        len = pEnd - pIn;
-        if( i )     // check if room to insert
-        {
-            if( (pTmp = strstr( pIn, "http://" )) != NULL )
-            {
-                pTmp += 3;
-                while( pEnd > pTmp )
-                {
-                    *(pEnd + 1) = *pEnd;    // copy current char 1 position to right
-                    --pEnd;
-                }
-                ++pTmp;
-                *pTmp = 's';
-                ++len;
-            }
-        }
-    }
-    return len;
-}
-
-
-/* function MemDLAlloc - allocates a memory block and fills in data structure used for curl
-                          memory downloads.
- 
-        Usage: int MemDLAlloc <DownloadData *pDwnData>
- 
-            pDwnData - pointer to a DownloadData structure to hold download allocation data.
-
-            RETURN - 0 on success, non-zero otherwise
- 
-            Function Notes - The caller is responsible for freeing the dynamically allocated
-            memory pointed to by the pvOut member of the DownloadData structure pointer.
-*/
-int MemDLAlloc( DownloadData *pDwnData, size_t szDataSize )
-{
-    void *ptr;
-    int iRet = 1;
-
-    if( pDwnData != NULL )
-    {
-        pDwnData->datasize = 0;
-        ptr = malloc( szDataSize );
-        pDwnData->pvOut = ptr;
-        pDwnData->datasize = 0;
-        if( ptr != NULL )
-        {
-            pDwnData->memsize = szDataSize;
-            *(char *)ptr = 0;
-            iRet = 0;
-        }
-        else
-        {
-            pDwnData->memsize = 0;
-            SWLOG_ERROR( "MemDLAlloc: Failed to allocate memory for XCONF download\n" );
-        }
-    }
-    return iRet;
-}
 
 /* function RunCommand - runs a predefined system command using v_secure_popen
  
@@ -311,7 +199,7 @@ size_t RunCommand( SYSCMD eSysCmd, const char *pArgs, char *pResult, size_t szRe
             }
             else
             {
-                SWLOG_ERROR( "%s fread fails:%d\n", __FUNCTION__, nbytes_read );
+                SWLOG_ERROR( "%s fread fails:%zu\n", __FUNCTION__, nbytes_read );
             }
 //            SWLOG_INFO( "output=%s\n", pResult );
         }
@@ -618,17 +506,3 @@ metaDataFileList_st * mergeLists(metaDataFileList_st *nvmList, metaDataFileList_
   
 }
 
-bool get_system_uptime(double *uptime) {
-    FILE* uptime_file = fopen("/proc/uptime", "r");
-    if ((uptime_file != NULL) && (uptime != NULL)) {
-        if (fscanf(uptime_file, "%lf", uptime) == 1) {
-            fclose(uptime_file);
-            return true;
-        }
-    }
-    if( uptime_file != NULL)
-    {
-        fclose(uptime_file); 
-    }
-    return false;
-}

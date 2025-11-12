@@ -40,7 +40,6 @@ MtlsAuthStatus getMtlscert(MtlsAuth_t *sec, rdkcertselector_h* pthisCertSel) {
     char *certFile = NULL;
 
     state_red = isInStateRed();
-
     if(state_red == 1) {
         rdkcertselectorStatus_t stateredcertStat = rdkcertselector_getCert(*pthisCertSel, &certUri, &certPass);
 

@@ -28,7 +28,7 @@ extern "C" int v_secure_system(const char *mode, ...)
     if (!g_DeviceUtilsMock)
     {
         cout << "v_secure_system g_DeviceUtilsMock object is NULL" << endl;
-        return NULL;
+        return NULL;  // Return error code instead of NULL
     }
     printf("Inside Mock Function v_secure_system\n");
     return g_DeviceUtilsMock->v_secure_system(mode, NULL, NULL);
@@ -229,4 +229,195 @@ extern "C" void t2ValNotify(char *marker, char *val)
     printf("Inside Mock Function t2ValNotify\n");
     return g_DeviceUtilsMock->t2ValNotify(marker, val);
 }
+
+// ========== Mocks for external functions (moved to common_utilities) ==========
+/*
+extern "C" size_t GetTimezone(char *pTimezone, const char *arch, size_t szBufSize)
+{
+    // Simple stub for external function
+    if (pTimezone != NULL && szBufSize > 0) {
+        snprintf(pTimezone, szBufSize, "UTC");
+        return strlen(pTimezone);
+    }
+    return 0;
+}
+
+extern "C" size_t GetCapabilities(char *pCapabilities, size_t szBufSize)
+{
+    // Simple stub for external function
+    if (pCapabilities != NULL && szBufSize > 0) {
+        snprintf(pCapabilities, szBufSize, "HDR");
+        return strlen(pCapabilities);
+    }
+    return 0;
+}
+
+extern "C" size_t GetUTCTime(char *pUTCTime, size_t szBufSize)
+{
+    // Simple stub for external function
+    if (pUTCTime != NULL && szBufSize > 0) {
+        snprintf(pUTCTime, szBufSize, "12345");
+        return strlen(pUTCTime);
+    }
+    return 0;
+}
+
+extern "C" size_t GetFirmwareVersion(char *pFWVersion, size_t szBufSize)
+{
+    // Simple stub for external function
+    if (pFWVersion != NULL && szBufSize > 0) {
+        snprintf(pFWVersion, szBufSize, "1.0.0");
+        return strlen(pFWVersion);
+    }
+    return 0;
+}
+
+extern "C" size_t GetMFRName(char *pMFRName, size_t szBufSize)
+{
+    // Simple stub for external function
+    if (pMFRName != NULL && szBufSize > 0) {
+        snprintf(pMFRName, szBufSize, "Comcast");
+        return strlen(pMFRName);
+    }
+    return 0;
+}
+
+extern "C" size_t GetFileContents(char **ppFileContents, const char *pFileName)
+{
+    // Simple stub for external function
+    if (ppFileContents != NULL && pFileName != NULL) {
+        *ppFileContents = (char *)malloc(20);
+        if (*ppFileContents) {
+            snprintf(*ppFileContents, 20, "File contents");
+            return strlen(*ppFileContents);
+        }
+    }
+    return 0;
+}
+*/
+
+// Forward declaration for stripinvalidchar (defined later in this file)
+extern "C" size_t stripinvalidchar(char *pIn, size_t szIn);
+
+extern "C" size_t GetBuildType(char *pBuildType, size_t szBufSize, BUILDTYPE *peBuildTypeOut)
+{
+    // Mock for external function from common_utilities
+    // Reads from /tmp/device_gtest.prop to match test expectations
+    // Possible values: "dev" (eDEV), "vbn" (eVBN), "prod" (ePROD), "qa" (eQA)
+    FILE *fp;
+    char *pTmp;
+    size_t i = 0;
+    BUILDTYPE eBuildType = eUNKNOWN;
+    char buf[150];
+
+    if (pBuildType != NULL && szBufSize > 0) {
+        *pBuildType = 0;
+        if ((fp = fopen("/tmp/device_gtest.prop", "r")) != NULL) {
+            while (fgets(buf, sizeof(buf), fp) != NULL) {
+                pTmp = strstr(buf, "BUILD_TYPE=");
+                if (pTmp && pTmp == buf) {
+                    pTmp = strchr(pTmp, '=');
+                    if (pTmp != NULL) {
+                        ++pTmp;
+                        i = snprintf(pBuildType, szBufSize, "%s", pTmp);
+                        // Strip invalid characters (newline, etc.)
+                        i = stripinvalidchar(pBuildType, i);
+                        // Convert to lowercase
+                        char *pLower = pBuildType;
+                        while (*pLower) {
+                            *pLower = tolower(*pLower);
+                            ++pLower;
+                        }
+                    }
+                }
+            }
+            fclose(fp);
+        }
+        
+        // If file not found or no BUILD_TYPE, default to "prod"
+        if (*pBuildType == 0) {
+            i = snprintf(pBuildType, szBufSize, "prod");
+            eBuildType = ePROD;
+        } else {
+            // Determine eBuildType from string
+            if (strstr(pBuildType, "vbn") != NULL) {
+                eBuildType = eVBN;
+            } else if (strstr(pBuildType, "prod") != NULL) {
+                eBuildType = ePROD;
+            } else if (strstr(pBuildType, "qa") != NULL) {
+                eBuildType = eQA;
+            } else if (strstr(pBuildType, "dev") != NULL) {
+                eBuildType = eDEV;
+            }
+        }
+        
+        if (peBuildTypeOut) {
+            *peBuildTypeOut = eBuildType;
+        }
+        return i;
+    }
+    return 0;
+}
+/*
+extern "C" int stripinvalidchar(char *pStr, int len)
+{
+    // Mock for external function from common_utilities
+    // Returns the length after stripping invalid characters
+    // For testing purposes, just return the original length
+    if (pStr != NULL && len > 0) {
+        return len;
+    }
+    return 0;
+}
+*/
+extern "C" int makeHttpHttps(char *pStr, int len)
+{
+    // Mock for external function from common_utilities
+    // This function converts http:// URLs to https://
+    // For testing purposes, just return success
+    if (pStr != NULL && len > 0) {
+        return 1; // Return success
+    }
+    return 0;
+}
+
+extern "C" void swLog(const char *file, const char *func, int line, int level, const char *format, ...)
+{
+    // Mock for external function from common_utilities (libfwutils)
+    // This is a logging function - for testing purposes, we can just ignore it
+    // or optionally print to stdout for debugging
+    return;
+}
+
+extern "C" int allocDowndLoadDataMem(void *ptr, int size)
+{
+    // Mock for external function from common_utilities (libdwnutils)
+    // This function allocates memory for download data
+    // For testing purposes, just return success
+    return 0;
+}
+
+extern "C" size_t stripinvalidchar(char *pIn, size_t szIn)
+{
+    // Mock for external function from common_utilities (libfwutils)
+    // This function truncates a string when a space or control character is encountered
+    size_t i = 0;
+
+    if (pIn != NULL)
+    {
+        while (*pIn && szIn)
+        {
+            if (isspace(*pIn) || iscntrl(*pIn))
+            {
+                *pIn = 0;
+                break;
+            }
+            ++pIn;
+            --szIn;
+            ++i;
+        }
+    }
+    return i;
+}
+
 #endif

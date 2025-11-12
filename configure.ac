@@ -139,6 +139,9 @@ AC_SUBST(IARM_EVENT_FLAG)
 
 PKG_CHECK_MODULES([cjson], [libcjson])
 PKG_CHECK_MODULES([curl], [libcurl])
+PKG_CHECK_MODULES([GLIB], [glib-2.0 gio-2.0])
+AC_SUBST([GLIB_CFLAGS])
+AC_SUBST([GLIB_LIBS])
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_HEADER_STDBOOL
@@ -152,4 +155,7 @@ AC_SUBST(TRACE_LIBS)
 AC_CONFIG_FILES(
     Makefile
     )
+# D-Bus support (enabled by default)
+AC_DEFINE([ENABLE_DBUS], [1], [D-Bus support enabled])
+AM_CONDITIONAL([ENABLE_DBUS], [true])
 AC_OUTPUT

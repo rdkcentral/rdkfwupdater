@@ -31,11 +31,12 @@
 
 #include "rdkv_cdl.h"
 #include "json_parse.h"
-#include "rdkv_cdl_log_wrapper.h"
 #include "device_api.h"
 #include "deviceutils.h"
 #include "device_status_helper.h"
-#include "../rfcInterface/rfcinterface.h"
+#include "rfcinterface.h"
+#include "mtlsUtils.h"
+#include "rdkv_cdl_log_wrapper.h"
 
 #define MAC_ADDRESS_LEN 17
 
@@ -105,160 +106,6 @@ size_t GetServerUrlFile( char *pServUrl, size_t szBufSize, char *pFileName )
     else
     {
         SWLOG_ERROR( "GetServerUrlFile: Error, input argument NULL\n" );
-    }
-    return i;
-}
-
-/* function GetTimezone - returns the timezone for the device. 
-        Usage: size_t GetTimezone <char *pTimezone> <size_t szBufSize>
- 
-            pTimezone - pointer to a char buffer to store the output string.
-
-            szBufSize - the size of the character buffer in argument 1.
-
-            RETURN - number of characters copied to the output buffer.
-*/
-size_t GetTimezone( char *pTimezone, const char *cpuArch, size_t szBufSize )
-{
-
-    int ret;
-    FILE *fp;
-    char *pTmp;
-    size_t i = 0;
-    char buf[256];
-    char *timezonefile;
-    char *defaultimezone = "Universal";
-    char device_name[32];
-    char timeZone_offset_map[50];
-    char *zoneValue = NULL;
-
-    if( pTimezone != NULL )
-    {
-        *pTimezone = 0;
-        *timeZone_offset_map = 0;
-
-        ret = getDevicePropertyData("DEVICE_NAME", device_name, sizeof(device_name));
-        if (ret == UTILS_SUCCESS)
-        {
-            if (0 == (strncmp(device_name, "PLATCO", 6)))
-            {
-                if((fp = fopen( TIMEZONE_DST_FILE, "r" )) != NULL )
-                {
-                    SWLOG_INFO("%s: Reading Timezone value from %s file...\n", __FUNCTION__, TIMEZONE_DST_FILE );
-                    if (fgets( buf, sizeof(buf), fp ) != NULL)      // only read first line in file, timezone should be there
-                    {
-                        i = stripinvalidchar( buf, sizeof(buf) );
-                        SWLOG_INFO("%s: Device TimeZone:%s\n", __FUNCTION__, buf );
-                    }
-                    fclose( fp );
-                }
-
-                if( i == 0 )    // either TIMEZONE_DST_FILE non-existent or empty, set a default in pTimezone
-                {
-                    SWLOG_INFO("%s: %s is empty or non-existent, default timezone America/New_York applied\n",__FUNCTION__, TIMEZONE_DST_FILE);
-                    snprintf( buf, sizeof(buf), "America/New_York");
-                }
-
-                if((fp = fopen( TIMEZONE_OFFSET_MAP, "r" )) != NULL )
-                {
-                    while ( fgets(timeZone_offset_map, sizeof(timeZone_offset_map), fp ) != NULL )
-                    {
-                        if( strstr( timeZone_offset_map, buf ) != NULL )
-                        {
-                            zoneValue = strtok(timeZone_offset_map, ":");
-                            if( zoneValue != NULL )  // there's more after ':'
-                            {
-                                zoneValue = strtok(NULL, ":");
-                            }
-                            break; //match found, breaks the while loop
-                        }
-                    }
-                    fclose( fp );
-                }
-
-                if( zoneValue != NULL )
-                {
-                    i = snprintf( pTimezone, szBufSize, "%s", zoneValue );
-                }
-                else
-                {
-                    i = snprintf( pTimezone, szBufSize, "US/Eastern" );
-                    SWLOG_INFO("%s: Given TimeZone not supported by XConf - default timezone US/Eastern is applied\n", __FUNCTION__);
-                }
-                SWLOG_INFO("%s: TimeZone Information after mapping : pTimezone = %s\n", __FUNCTION__, pTimezone );
-            }
-            else
-            {
-                if( cpuArch != NULL && (0 == (strncmp( cpuArch, "x86", 3 ))) )
-                {
-                    timezonefile = OUTPUT_JSON_FILE_X86; //For cpu arch x86 file path is /tmp
-                }
-                else
-                {
-                    timezonefile = OUTPUT_JSON_FILE;      //File path is /opt
-                }
-
-                if( (fp = fopen( timezonefile, "r" )) != NULL )
-                {
-                    SWLOG_INFO("%s: Reading Timezone value from %s file...\n", __FUNCTION__, timezonefile );
-                    while( fgets( buf, sizeof(buf), fp ) != NULL )
-                    {
-                        if( (pTmp = strstr( buf, "timezone" )) != NULL )
-                        {
-                            while( *pTmp && *pTmp != ':' )  // should be left pointing to ':' at end of while
-                            {
-                                ++pTmp;
-                            }
-
-                            while( !isalnum( *pTmp ) )  // at end of while we should be pointing to first alphanumeric char after ':', this is timezone
-                            {
-                                ++pTmp;
-                            }
-                            i = snprintf( pTimezone, szBufSize, "%s", pTmp );
-                            i = stripinvalidchar( pTimezone, i );
-                            pTmp = pTimezone;
-                            i = 0;
-                            while( *pTmp != '"' && *pTmp )     // see if we have an end quote
-                            {
-                                ++i;    // recount chars for safety
-                                ++pTmp;
-                            }
-                            *pTmp = 0;                  // either we're pointing to the end " character or a 0
-                            SWLOG_INFO("%s: Got timezone using %s successfully, value:%s\n", __FUNCTION__, timezonefile, pTimezone );
-                            t2ValNotify("TimeZone_split", pTimezone);
-                            break;
-                        }
-                    }
-                    fclose( fp );
-                }
-
-                if( !i && (fp = fopen( TIMEZONE_DST_FILE, "r" )) != NULL )    // if we didn't find it above, try default
-                {
-                    SWLOG_INFO("%s: Timezone value from output.json is empty, Reading from %s file...\n", __FUNCTION__, TIMEZONE_DST_FILE );
-                    if (fgets( buf, sizeof(buf), fp ) != NULL)              // only read first line
-                    {
-                        i = snprintf( pTimezone, szBufSize, "%s", buf );
-                        i = stripinvalidchar( pTimezone, i );
-                        SWLOG_INFO("%s: Got timezone using %s successfully, value:%s\n", __FUNCTION__, TIMEZONE_DST_FILE, pTimezone );
-                    }
-                    fclose( fp );
-                }
-
-                if ( !i )
-                {
-                    i = snprintf( pTimezone, szBufSize, "%s", defaultimezone );
-                    SWLOG_INFO("%s: Timezone files %s and %s not found, proceeding with default timezone=%s\n", __FUNCTION__, timezonefile, TIMEZONE_DST_FILE, pTimezone);
-                }
-            }
-        }
-        else
-        {
-            SWLOG_ERROR("%s: getDevicePropertyData() for device_name fail\n", __FUNCTION__);
-        }
-    }
-    else
-    {
-        SWLOG_ERROR("%s: Error, input argument NULL\n", __FUNCTION__);
     }
     return i;
 }
@@ -399,66 +246,6 @@ size_t GetInstalledBundles(char *pBundles, size_t szBufSize)
 
     return szRunningLen;
 }
-
-/* function GetUTCTime - gets a formatted UTC device time. Example;
-    Tue Jul 12 21:56:06 UTC 2022 
-        Usage: size_t GetUTCTime <char *pUTCTime> <size_t szBufSize>
- 
-            pUTCTime - pointer to a char buffer to store the output string.
-
-            szBufSize - the size of the character buffer in argument 1.
-
-            RETURN - number of characters copied to the output buffer.
-*/
-size_t GetUTCTime( char *pUTCTime, size_t szBufSize )
-{
-    struct tm gmttime;
-    time_t seconds;
-    size_t i = 0;
-
-    if( pUTCTime != NULL )
-    {
-        time( &seconds );
-        gmtime_r( &seconds, &gmttime );
-        gmttime.tm_isdst = 0;           // UTC doesn't know about DST, perhaps unnecessary but be safe
-        i = strftime( pUTCTime, szBufSize, "%a %b %d %X UTC %Y", &gmttime );
-        if( !i )    // buffer wasn't big enough for strftime call above
-        {
-            *pUTCTime = 0;
-        }
-    }
-    else
-    {
-        SWLOG_ERROR( "GetUTCTime: Error, input argument NULL\n" );
-    }
-    return i;
-}
-
-/* function GetCapabilities - gets the device capabilities.
- 
-        Usage: size_t GetCapabilities <char *pCapabilities> <size_t szBufSize>
- 
-            pCapabilities - pointer to a char buffer to store the output string.
-
-            szBufSize - the size of the character buffer in argument 1.
-
-            RETURN - number of characters copied to the output buffer.
-*/
-size_t GetCapabilities( char *pCapabilities, size_t szBufSize )
-{
-    size_t i = 0;
-
-    if( pCapabilities != NULL )
-    {
-        i = snprintf( pCapabilities, szBufSize, "%s", DEVICE_CAPABILITIES );
-    }
-    else
-    {
-        SWLOG_ERROR( "GetCapabilities: Error, input argument NULL\n" );
-    }
-    return i;
-}
-
 /* function GetPartnerId - gets the partner ID of the device.
  
         Usage: size_t GetPartnerId <char *pPartnerId> <size_t szBufSize>
@@ -471,6 +258,7 @@ size_t GetCapabilities( char *pCapabilities, size_t szBufSize )
 */
 size_t GetPartnerId( char *pPartnerId, size_t szBufSize )
 {
+    SWLOG_ERROR("%s calling from librdksw_fwutils.so\n", __FUNCTION__);
     char *pTmp;
     FILE *fp;
     size_t i = 0;
@@ -580,7 +368,7 @@ size_t GetOsClass( char *pOsClass, size_t szBufSize )
             i = read_RFCProperty( "OsClass", RFC_OS_CLASS, pOsClass, szBufSize );
             if( i == READ_RFC_FAILURE )
             {
-                SWLOG_ERROR( "GetOsClass: read_RFCProperty() failed Status %d\n", i );
+                SWLOG_ERROR( "GetOsClass: read_RFCProperty() failed Status %zu\n", i );
                 i = snprintf( pOsClass, szBufSize, "Not Available" );
             }
             else
@@ -621,7 +409,7 @@ size_t GetSerialNum( char *pSerialNum, size_t szBufSize )
         i = read_RFCProperty( "SerialNumber", RFC_SERIALNUM, pSerialNum, szBufSize );
         if( i == READ_RFC_FAILURE )
         {
-            SWLOG_ERROR( "GetSerialNum: read_RFCProperty() failed Status %d\n", i );
+            SWLOG_ERROR( "GetSerialNum: read_RFCProperty() failed Status %zu\n", i );
             i = snprintf( pSerialNum, szBufSize, "Not Available" );
         }
         else
@@ -652,7 +440,7 @@ size_t GetSerialNum( char *pSerialNum, size_t szBufSize )
          if( i == READ_RFC_FAILURE )
          {
              i = 0;
-             SWLOG_ERROR( "GetMigrationReady: read_RFCProperty() failed Status %d\n", i );
+             SWLOG_ERROR( "GetMigrationReady: read_RFCProperty() failed Status %zu\n", i );
          }
          else
          {
@@ -688,7 +476,7 @@ size_t GetExperience( char *pExperience, size_t szBufSize )
     {
         *pExperience = 0;
 
-        if( MemDLAlloc( &DwnLoc, DEFAULT_DL_ALLOC ) == 0 )
+        if( allocDowndLoadDataMem( &DwnLoc, DEFAULT_DL_ALLOC ) == 0 )
         {
             getJsonRpc( post_data, &DwnLoc );
 
@@ -746,7 +534,7 @@ size_t GetAccountID( char *pAccountID, size_t szBufSize )
         if( i == READ_RFC_FAILURE )
         {
             i = snprintf( pAccountID, szBufSize, "Unknown" );
-            SWLOG_ERROR( "GetAccountID: read_RFCProperty() failed Status %d\n", i );
+            SWLOG_ERROR( "GetAccountID: read_RFCProperty() failed Status %zu\n", i );
         }
         else
         {
@@ -760,190 +548,6 @@ size_t GetAccountID( char *pAccountID, size_t szBufSize )
     }
     return i;
 }
-
-/* function GetMFRName - gets the  manufacturer name of the device.
-        Usage: size_t GetMFRName <char *pMFRName> <size_t szBufSize>
-            pMFRName - pointer to a char buffer to store the output string.
-
-            szBufSize - the size of the character buffer in argument 1.
-
-            RETURN - number of characters copied to the output buffer.
-*/
-size_t GetMFRName( char *pMFRName, size_t szBufSize )
-{
-    size_t i = 0;
-    FILE *fp;
-    if( pMFRName != NULL )
-    {
-        *pMFRName = 0;
-	if( (fp = fopen( "/tmp/.manufacturer", "r" )) != NULL )
-	{
-            fgets(pMFRName, szBufSize, fp);
-            i = stripinvalidchar( pMFRName, szBufSize );      // remove newline etc.
-            fclose( fp );
-	}
-        else
-        {
-            SWLOG_ERROR( "GetMFRName: Cannot open %s for reading\n", "/tmp/.manufacturer" );
-        }
-    }
-    else
-    {
-        SWLOG_ERROR( "GetMFRName: Error, input argument NULL\n" );
-    }
-    return i;
-
-}
-
-/* function GetBuildType - gets the build type of the device in lowercase. Optionally, sets an enum
-    indication the build type.
-    Example: vbn or prod or qa or dev
- 
-        Usage: size_t GetBuildType <char *pBuildType> <size_t szBufSize> <BUILDTYPE *peBuildTypeOut>
- 
-            pBuildType - pointer to a char buffer to store the output string.
-
-            szBufSize - the size of the character buffer in argument 1.
- 
-            peBuildTypeOut - a pointer to a BUILDTYPE enum or NULL if not needed by the caller.
-                Contains an enum indicating the buildtype if not NULL on function exit.
-
-            RETURN - number of characters copied to the output buffer.
-*/
-size_t GetBuildType( char *pBuildType, size_t szBufSize, BUILDTYPE *peBuildTypeOut )
-{
-    FILE *fp;
-    char *pTmp, *pOut = NULL;
-    size_t i = 0;
-    BUILDTYPE eBuildType = eUNKNOWN;
-    char buf[150];
-
-    if( pBuildType != NULL )
-    {
-        *pBuildType = 0;
-        if( (fp = fopen( DEVICE_PROPERTIES_FILE, "r" )) != NULL )
-        {
-            while( fgets( buf, sizeof(buf), fp ) != NULL )
-            {
-                pTmp = strstr( buf, "BUILD_TYPE=" );
-                if( pTmp == buf )   // if match found (!= NULL is implied since buf address cannot be NULL) and match is first character on line
-                {
-                    pTmp += 11;     // point to char after '='
-                    i = snprintf( pBuildType, szBufSize, "%s", pTmp );
-                    i = stripinvalidchar( pBuildType, i );
-                    pTmp = pBuildType;
-                    while( *pTmp )
-                    {
-                        *pTmp = tolower( *pTmp );
-                        ++pTmp;
-                    }
-                }
-            }
-            fclose( fp );
-        }
-        if( *pBuildType == 0 )
-        {
-            GetFirmwareVersion( buf, sizeof(buf) );
-            pTmp = buf;
-            while( *pTmp )
-            {
-                *pTmp = tolower( *pTmp );
-                ++pTmp;
-            }
-        }
-        else
-        {
-            pTmp = pBuildType;
-        }
-
-        // run the following series of checks to set eBuildType
-        // pBuildType must also be set if the value was found with GetFirmwareVersion()
-        if( strstr( pTmp, "vbn" ) != NULL )
-        {
-            pOut = "vbn";
-            eBuildType = eVBN;
-        }
-        else if( strstr( pTmp, "prod" ) != NULL )
-        {
-            pOut = "prod";
-            eBuildType = ePROD;
-        }
-        else if( strstr( pTmp, "qa" ) != NULL )
-        {
-            pOut = "qa";
-            eBuildType = eQA;
-        }
-        else if( strstr( pTmp, "dev" ) != NULL )
-        {
-            pOut = "dev";
-            eBuildType = eDEV;
-        }
-
-        if( *pBuildType == 0 && pOut != NULL )
-        {
-            i = snprintf( pBuildType, szBufSize, "%s", pOut );
-        }
-    }
-    else
-    {
-        SWLOG_ERROR( "GetBuildType: Error, input argument NULL\n" );
-    }
-    if( peBuildTypeOut != NULL )
-    {
-        *peBuildTypeOut = eBuildType;
-    }
-    return i;
-}
-
-/* function GetFirmwareVersion - gets the firmware version of the device.
- 
-        Usage: size_t GetFirmwareVersion <char *pFWVersion> <size_t szBufSize>
- 
-            pFWVersion - pointer to a char buffer to store the output string.
-
-            szBufSize - the size of the character buffer in argument 1.
-
-            RETURN - number of characters copied to the output buffer.
-*/
-size_t GetFirmwareVersion( char *pFWVersion, size_t szBufSize )
-{
-    FILE *fp;
-    size_t i = 0;
-    char *pTmp;
-    char buf[150];
-
-    if( pFWVersion != NULL )
-    {
-        *pFWVersion = 0;
-        if( (fp = fopen( VERSION_FILE, "r" )) != NULL )
-        {
-            pTmp = NULL;
-            while( fgets( buf, sizeof(buf), fp ) != NULL )
-            {
-                if( (pTmp = strstr( buf, "imagename:" )) != NULL )
-                {
-                    while( *pTmp++ != ':' )
-                    {
-                        ;
-                    }
-                    break;
-                }
-            }
-            fclose( fp );
-            if( pTmp )
-            {
-                i = snprintf( pFWVersion, szBufSize, "%s", pTmp );
-                i = stripinvalidchar( pFWVersion, i );
-            }
-        }
-    }
-    else
-    {
-        SWLOG_INFO( "GetFirmwareVersion: Error, input argument NULL\n" );
-    }
-    return i;
-}
-
 /* function GetEstbMac - gets the eSTB MAC address of the device.
  
         Usage: size_t GetEstbMac <char *pEstbMac> <size_t szBufSize>
@@ -956,6 +560,7 @@ size_t GetFirmwareVersion( char *pFWVersion, size_t szBufSize )
 */
 size_t GetEstbMac( char *pEstbMac, size_t szBufSize )
 {
+    SWLOG_ERROR("%s calling from librdksw_fwutils.so\n", __FUNCTION__);
     FILE *fp;
     size_t i = 0;
     char estb_interface[8] = {0};
@@ -971,7 +576,7 @@ size_t GetEstbMac( char *pEstbMac, size_t szBufSize )
             fclose( fp );
             i = stripinvalidchar( pEstbMac, szBufSize );
             SWLOG_INFO("GetEstbMac: After reading ESTB_MAC_FILE value=%s\n", pEstbMac);
-            /* Below condition if ESTB_MAC_FILE file having empty data and pEstbMac does not have 17 character 
+	    /* Below condition if ESTB_MAC_FILE file having empty data and pEstbMac does not have 17 character
             * including total mac address with : separate */
             if (pEstbMac[0] == '\0' || pEstbMac[0] == '\n' || i != MAC_ADDRESS_LEN)
             {
@@ -1353,61 +958,3 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
     }
     return len;
 }
-
-/* function GetFileContents - gets the contents of a file into a dynamically allocated buffer.
- 
-        Usage: size_t GetFileContents <char **pOut> <char *pFileName>
- 
-            pOut - the address of a char pointer (char **) where the dynamically allocated
-                    character buffer will be located.
-
-            pFileName - the name of the file to read.
-
-            RETURN - number of characters copied to the output buffer.
- 
-            Notes - GetFileContents uses malloc to allocate the the buffer where the string is stored.
-                    The caller must use free(*pOut) when done using the buffer to avoid memory leaks.
-*/
-
-size_t GetFileContents( char **pOut, char *pFileName )
-{
-    FILE *fp;
-    char *pBuf = NULL;
-    char *pPtr;
-    size_t len = 0;
-    if( pOut != NULL && pFileName != NULL )
-    {
-        SWLOG_INFO( "GetFileContents: pFileName = %s\n", pFileName );
-        if( (len=(size_t)getFileSize( pFileName )) != -1 )
-        {
-            SWLOG_INFO( "GetFileContents: file len = %zu\n", len );
-            if( (fp=fopen( pFileName, "r" )) != NULL )
-            {
-                ++len;  // room for NULL, included in return value
-                pBuf = malloc( len );
-                if( pBuf != NULL )
-                {
-                    pPtr = pBuf;
-                    while( ((*pPtr=(char)fgetc( fp )) != EOF) && !feof( fp ) )
-                    {
-                        ++pPtr;
-                    }
-                    *pPtr = 0;
-                }
-                else
-                {
-                    len = 0;
-                }
-                fclose( fp );
-            }
-        }
-        *pOut = pBuf;
-    }
-    else
-    {
-        SWLOG_ERROR( "GetFileContents: Error, input argument NULL\n" );
-    }
-    return len;
-}
-
-

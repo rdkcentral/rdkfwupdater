@@ -18,7 +18,9 @@
 
 #ifndef _MISCELLANEOUS_H_
 #define _MISCELLANEOUS_H_
-#include "rdkv_cdl_log_wrapper.h"
+//#include "urlHelper.h"
+//#include "common_device_api.h"
+//#include "rdkv_cdl_log_wrapper.h"
 
 #define TLS_LOG_FILE "/opt/logs/tlsError.log"
 #define DEBUG_INI_NAME  "/etc/debug.ini"
@@ -46,6 +48,7 @@
 #define DWNL_UNPAUSE_FAIL -2
 
 /* Below structure contains data from /etc/device.property */
+
 typedef struct deviceproperty {
         BUILDTYPE eBuildType;           // keep buildtype as an enum, easier to compare
         char dev_name[MIN_BUFF_SIZE1];
@@ -59,11 +62,16 @@ typedef struct deviceproperty {
         char sw_optout[MIN_BUFF_SIZE1];
 }DeviceProperty_t;
 
+
+
 typedef enum {
     T2ERROR_SUCCESS,
     T2ERROR_FAILURE
 } T2ERROR;
+
+
 /* Below structure contails data from /version.txt */
+
 typedef struct imagedetails {
         char cur_img_name[MIN_BUFF_SIZE];
 }ImageDetails_t;
