@@ -88,6 +88,11 @@ void dwnlError(int curl_code, int http_code, int server_type,const DevicePropert
     char failureReason[128];
     char *type = "Direct"; //TODO: Need to pass this type as a function parameter
 
+    if (device_info == NULL) {
+        SWLOG_ERROR("%s: device_info parameter is NULL\n", __FUNCTION__);
+        return;
+    }
+
     *failureReason = 0;
     if(curl_code == 22) {
         snprintf(telemetry_data, sizeof(telemetry_data), "swdl_failed");
@@ -254,20 +259,6 @@ bool checkt2ValNotify( int iCurlCode, int iUpgradeType, char *Url  )
  */
 int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* pHttp_code)
 {
-    int upgrade_type = context->upgrade_type;
-    int server_type = context->server_type;
-    const char* artifactLocationUrl = context->artifactLocationUrl;
-    const void* dwlloc = context->dwlloc;
-    char* pPostFields = context->pPostFields;
-    const char* immed_reboot_flag = context->immed_reboot_flag;
-    int delay_dwnl = context->delay_dwnl;
-    const char* lastrun = context->lastrun;
-    char* disableStatsUpdate = context->disableStatsUpdate;
-    const DeviceProperty_t* device_info = context->device_info;
-    int* force_exit = context->force_exit;
-    int trigger_type = context->trigger_type;
-    const Rfc_t* rfc_list = context->rfc_list;
-
     const char* dwlpath_filename = NULL;
     int ret_curl_code = -1;
     char dwnl_status[64];
@@ -283,8 +274,26 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
     FILE *fp = NULL;
     int flash_status = -1;
 
+    if (context == NULL || pHttp_code == NULL) {
+        SWLOG_ERROR("%s: Parameter is NULL\n", __FUNCTION__);
+        return ret_curl_code;
+    }
 
-    if (context == NULL || artifactLocationUrl == NULL || dwlloc == NULL || pHttp_code == NULL) {
+    int upgrade_type = context->upgrade_type;
+    int server_type = context->server_type;
+    const char* artifactLocationUrl = context->artifactLocationUrl;
+    const void* dwlloc = context->dwlloc;
+    char* pPostFields = context->pPostFields;
+    const char* immed_reboot_flag = context->immed_reboot_flag;
+    int delay_dwnl = context->delay_dwnl;
+    const char* lastrun = context->lastrun;
+    char* disableStatsUpdate = context->disableStatsUpdate;
+    const DeviceProperty_t* device_info = context->device_info;
+    int* force_exit = context->force_exit;
+    int trigger_type = context->trigger_type;
+    const Rfc_t* rfc_list = context->rfc_list;
+
+    if (artifactLocationUrl == NULL || dwlloc == NULL) {
         SWLOG_ERROR("%s: Parameter is NULL\n", __FUNCTION__);
         return ret_curl_code;
     }
@@ -574,7 +583,7 @@ int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const
     int curl_ret_code = -1;
     char headerInfoFile[136];
 
-    if (artifactLocationUrl == NULL || localDownloadLocation == NULL || httpCode == NULL) {
+    if (artifactLocationUrl == NULL || localDownloadLocation == NULL || httpCode == NULL || curl == NULL) {
         SWLOG_ERROR("%s: Parameter is NULL\n", __FUNCTION__);
         return curl_ret_code;
     }
@@ -650,7 +659,7 @@ int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const
             setDwnlState(RDKV_FWDNLD_DOWNLOAD_INIT);
         }
         // Use the passed curl handle instead of creating a new one
-        if (curl != NULL) {
+        if (curl != NULL && *curl != NULL) {
             if (server_type == HTTP_XCONF_CODEBIG) {
                 setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_INPROGRESS);
             } else {
@@ -662,9 +671,7 @@ int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const
             } else {
                 setDwnlState(RDKV_FWDNLD_DOWNLOAD_EXIT);
             }
-            if (*curl != NULL) {
             doStopDownload(*curl);
-	    }
             // Don't set curl = NULL here - preserve the handle for reuse
             /* Stop the donwload if Throttle speed rfc is set to zero */
             if (*force_exit == 1 && (curl_ret_code == 23)) {
@@ -728,9 +735,9 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
     int mtls_enable = 1; //Setting mtls by default enable
     char headerInfoFile[136] = {0};
 
-    if (artifactLocationUrl == NULL || localDownloadLocation == NULL || httpCode == NULL) {
+    if (artifactLocationUrl == NULL || localDownloadLocation == NULL || httpCode == NULL || curl == NULL) {
         SWLOG_ERROR("%s: Parameter is NULL\n", __FUNCTION__);
-        return ret;
+        return curl_ret_code;
     }
     app_mode = getAppMode();
     memset(&sec, '\0', sizeof(MtlsAuth_t));
@@ -856,15 +863,15 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
 	            curl_ret_code = chunkDownload(&file_dwnl, &sec, max_dwnl_speed, httpCode);
 	            break;
 	        }else {
-                *curl = doCurlInit();
-	            if (curl != NULL) {
+                if (curl != NULL) {
+                    *curl = doCurlInit();
+                }
+	            if (curl != NULL && *curl != NULL) {
 	                (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_INPROGRESS) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_INPROGRESS);
                     curl_ret_code = doHttpFileDownload(*curl, &file_dwnl, &sec, max_dwnl_speed, NULL, httpCode);
 	                (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_EXIT) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_EXIT);
-                    if (curl != NULL) {
-                        doStopDownload(*curl);
-	                    *curl = NULL;
-                    }
+                    doStopDownload(*curl);
+	                *curl = NULL;
 	                if (*force_exit == 1 && (curl_ret_code == 23)) {
 	                    uninitialize(INITIAL_VALIDATION_SUCCESS);
 	                    exit(1);
@@ -878,15 +885,15 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
 	              break;
                   } else {
                       SWLOG_INFO("Calling  doHttpFileDownload() with cert mTlsXConfDownload enable\n");
-                      *curl = doCurlInit();
                       if (curl != NULL) {
+                          *curl = doCurlInit();
+                      }
+                      if (curl != NULL && *curl != NULL) {
                           (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_INPROGRESS) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_INPROGRESS);
                           curl_ret_code = doHttpFileDownload(*curl, &file_dwnl, &sec, max_dwnl_speed, NULL, httpCode);
                           (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_EXIT) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_EXIT);
-                          if (curl != NULL) {
-                            doStopDownload(*curl);
-                            *curl = NULL;
-                          }
+                          doStopDownload(*curl);
+                          *curl = NULL;
 	                  if (*force_exit == 1 && (curl_ret_code == 23)) {
 	                      uninitialize(INITIAL_VALIDATION_SUCCESS);
 	                      exit(1);
@@ -900,15 +907,15 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
 	            break;
                 } else {
                     SWLOG_INFO("Calling doHttpFileDownload() with cert mTlsXConfDownload disable\n");
-                    *curl = doCurlInit();
                     if (curl != NULL) {
+                        *curl = doCurlInit();
+                    }
+                    if (curl != NULL && *curl != NULL) {
                         (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_INPROGRESS) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_INPROGRESS);
                         curl_ret_code = doHttpFileDownload(*curl, &file_dwnl, NULL, max_dwnl_speed, NULL, httpCode);
                         (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_EXIT) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_EXIT);
-                        if (curl != NULL) {
-                            doStopDownload(*curl);
-                            *curl = NULL;
-                        }
+                        doStopDownload(*curl);
+                        *curl = NULL;
 	                if (*force_exit == 1 && (curl_ret_code == 23)) {
 	                    uninitialize(INITIAL_VALIDATION_SUCCESS);
 	                    exit(1);
@@ -916,7 +923,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
                     }
                 }
             }
-            if (strcmp(disableStatsUpdate, "yes") && (CHUNK_DWNL_ENABLE != chunk_dwnl)) {
+            if (disableStatsUpdate != NULL && (strcmp(disableStatsUpdate, "yes")) && (CHUNK_DWNL_ENABLE != chunk_dwnl)) {
                 chunk_dwnl = isIncremetalCDLEnable(file_dwnl.pathname);
             }
             SWLOG_INFO("%s : After curl request the curl status = %d and http=%d and chunk download=%d\n", __FUNCTION__, curl_ret_code, *httpCode, chunk_dwnl);
@@ -970,7 +977,7 @@ int retryDownload(int server_type, const char* artifactLocationUrl, const void* 
     int curl_ret_code = -1;
     int retry_completed = 1;
     
-    if (artifactLocationUrl == NULL || localDownloadLocation == NULL || httpCode == NULL) {
+    if (artifactLocationUrl == NULL || localDownloadLocation == NULL || httpCode == NULL || curl == NULL) {
         SWLOG_ERROR("%s: Parameter is NULL\n", __FUNCTION__);
         return curl_ret_code;
     }
@@ -1042,7 +1049,7 @@ int retryDownload(int server_type, const char* artifactLocationUrl, const void* 
 int fallBack(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char *pPostFields, int *httpCode, void **curl, int *force_exit, const char *immed_reboot_flag, const DeviceProperty_t *device_info,const char *lastrun,const Rfc_t *rfc_list,char *disableStatsUpdate) {
     int curl_ret_code = -1;
 
-    if (artifactLocationUrl == NULL || localDownloadLocation == NULL || httpCode == NULL) {
+    if (artifactLocationUrl == NULL || localDownloadLocation == NULL || httpCode == NULL || curl == NULL) {
         SWLOG_ERROR("%s: Parameter is NULL\n", __FUNCTION__);
         return curl_ret_code;
     }
