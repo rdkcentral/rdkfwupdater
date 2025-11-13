@@ -23,6 +23,10 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+
+/* Forward declarations for types that may not be available in all contexts */
+typedef struct filedwnl FileDwnl_t;
+typedef struct credential MtlsAuth_t;
 #include <inttypes.h>
 #include <ctype.h>
 
@@ -31,12 +35,10 @@
 #ifndef GTEST_ENABLE
 #ifdef T2_EVENT_ENABLED
 #include <telemetry_busmessage_sender.h>
-#endif
-#include <secure_wrapper.h>
 #include "urlHelper.h"
 #endif
-
-#include "mtlsUtils.h"
+#include <secure_wrapper.h>
+#endif
 #include "json_process.h"
 
 #define SUCCESS 1
@@ -140,17 +142,13 @@
 #define APP_BACKGROUND 0
 #define APP_FOREGROUND 1
 
-int downloadFile( int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode );
-int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char *pPostFields, int *httpCode );
 int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_limit, int *httpcode);
-int retryDownload(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char *pPostFields, int retry_cnt, int delay, int *httpCode );
-int fallBack(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char *pPostFields, int *httpCode);
 void uninitialize(int);
 int initialize(void);
 int logFileData(const char *file_path);
-int upgradeRequest(int upgrade_type, int server_type, const char* artifactLocationUrl, const void* dwlloc, char *pPostFields, int *pHttp_code);
-int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint);
-int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, const char *reboot_flag);
+int checkTriggerUpgrade(XCONFRES *pResponse, const char *model);
+int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint,int trigger_type);
+int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, const char *reboot_flag,int trigger_type);
 void updateUpgradeFlag(int action);
 void t2CountNotify(char *marker, int val);
 void t2ValNotify(char *marker, char *val);

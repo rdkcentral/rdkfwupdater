@@ -18,6 +18,7 @@
 
 #include <gmock/gmock.h>
 #include "miscellaneous.h"
+#include "rdkv_upgrade.h"  // For RdkUpgradeContext_t
 
 
 class MockDownloadFile {
@@ -37,11 +38,11 @@ public:
 MockDownloadFileOps* global_mockdownloadfileops_ptr;
 
 extern "C" {
-    int downloadFile(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode) {
+    int downloadFile(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode, void **curl, int *force_exit, const char *immed_reboot_flag, const DeviceProperty_t *device_info, const char *lastrun, const Rfc_t *rfc_list, char *disableStatsUpdate) {
         return global_mockdownloadfileops_ptr->downloadFile(server_type, artifactLocationUrl, localDownloadLocation, pPostFields, httpCode);
     }
 
-    int codebigdownloadFile(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode) {
+    int codebigdownloadFile(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode, void **curl, int *force_exit, const char *immed_reboot_flag, const DeviceProperty_t *device_info, const char *lastrun, const Rfc_t *rfc_list, char *disableStatsUpdate) {
         return global_mockdownloadfileops_ptr->codebigdownloadFile(server_type, artifactLocationUrl, localDownloadLocation, pPostFields, httpCode);
     }
 }
@@ -57,7 +58,7 @@ public:
     MOCK_METHOD(int, getDeviceProperties, (DeviceProperty_t*), ());
     MOCK_METHOD(int, getImageDetails, (ImageDetails_t*), ());
     MOCK_METHOD(int, createDir, (const char*), ());
-    MOCK_METHOD(void, createFile, (const char*), ());
+    MOCK_METHOD(void, createFile, (const char*), ());  // Uncommented for common_utilities mock
     MOCK_METHOD(void, t2_uninit, (), ());
     MOCK_METHOD(void, log_exit, (), ());
     MOCK_METHOD(int, doHttpFileDownload, (void*, FileDwnl_t*, MtlsAuth_t*, unsigned int, char*, int*), ());
@@ -94,9 +95,22 @@ public:
     MOCK_METHOD(bool, lastDwnlImg, (char*, size_t), ());
     MOCK_METHOD(bool, currentImg, (char*, size_t), ());
     MOCK_METHOD(bool, CurrentRunningInst, (const char*), ());
-    MOCK_METHOD(void, eraseTGZItemsMatching, (const char*, const char*), ());
+    MOCK_METHOD(void, eraseTGZItemsMatching, (const char*, const char*), ());  // Uncommented for common_utilities
     MOCK_METHOD(bool, prevFlashedFile, (char*, size_t), ());
     MOCK_METHOD(int, doCodeBigSigning, (int, const char*, char*, size_t, char*, size_t), ());
+    
+    // REFACTORING FIX: Add mocks for common_utilities functions moved during stateless refactoring
+    MOCK_METHOD(void*, allocDowndLoadDataMem, (size_t), ());
+    MOCK_METHOD(int, GetFileContents, (const char*, char**, size_t*), ());
+    MOCK_METHOD(int, GetFirmwareVersion, (char*, size_t), ());
+    MOCK_METHOD(int, GetBuildType, (char*, size_t), ());
+    MOCK_METHOD(int, GetMFRName, (char*, size_t), ());
+    MOCK_METHOD(int, GetUTCTime, (char*, size_t), ());
+    MOCK_METHOD(int, GetTimezone, (char*, size_t), ());
+    MOCK_METHOD(void, waitForNtp, (), ());
+    MOCK_METHOD(int, GetCapabilities, (char*, size_t), ());
+    MOCK_METHOD(int, stripinvalidchar, (char*), ());
+    MOCK_METHOD(int, makeHttpHttps, (char*), ());
 };
 
 MockExternal* global_mockexternal_ptr;
@@ -243,7 +257,7 @@ extern "C" {
 
     int getRFCSettings(Rfc_t *rfc_list) {
         if (global_mockexternal_ptr == nullptr) {
-            return; // Return default value if global_mockexternal_ptr is NULL
+            return 0; // Return default value if global_mockexternal_ptr is NULL
         }
         return global_mockexternal_ptr->getRFCSettings(rfc_list);
     }
@@ -450,6 +464,106 @@ extern "C" {
         }
         return global_mockexternal_ptr->doCodeBigSigning(server_type, SignInput, signurl, signurlsize, outhheader, outHeaderSize);
     }
+
+    // REFACTORING FIX: Extern C wrappers for common_utilities functions
+    // allocDowndLoadDataMem: Local function used by rdkv_main.c, flash.c, device_api.c
+    // Signature: int allocDowndLoadDataMem(void *ptr, int size)
+    int allocDowndLoadDataMem(void *ptr, int size) {
+        // Cast ptr to DownloadData* and allocate memory
+        DownloadData *pDwnData = (DownloadData *)ptr;
+        
+        if (pDwnData == NULL || size <= 0) {
+            return -1;
+        }
+        
+        // Allocate memory
+        pDwnData->pvOut = malloc(size);
+        if (pDwnData->pvOut == NULL) {
+            return -1;
+        }
+        
+        pDwnData->memsize = size;
+        pDwnData->datasize = 0;
+        memset(pDwnData->pvOut, 0, size);
+        
+        return 0;
+    }
+
+    int GetFileContents(const char *filename, char **buffer, size_t *size) {
+        if (global_mockexternal_ptr == nullptr) {
+            return -1;
+        }
+        return global_mockexternal_ptr->GetFileContents(filename, buffer, size);
+    }
+
+    int GetFirmwareVersion(char *buffer, size_t size) {
+        if (global_mockexternal_ptr == nullptr) {
+            snprintf(buffer, size, "1.0.0.0");
+            return 0;
+        }
+        return global_mockexternal_ptr->GetFirmwareVersion(buffer, size);
+    }
+
+    int GetBuildType(char *buffer, size_t size) {
+        if (global_mockexternal_ptr == nullptr) {
+            snprintf(buffer, size, "PROD");
+            return 0;
+        }
+        return global_mockexternal_ptr->GetBuildType(buffer, size);
+    }
+
+    int GetMFRName(char *buffer, size_t size) {
+        if (global_mockexternal_ptr == nullptr) {
+            snprintf(buffer, size, "TestMFR");
+            return 0;
+        }
+        return global_mockexternal_ptr->GetMFRName(buffer, size);
+    }
+
+    int GetUTCTime(char *buffer, size_t size) {
+        if (global_mockexternal_ptr == nullptr) {
+            snprintf(buffer, size, "2025-10-31T00:00:00Z");
+            return 0;
+        }
+        return global_mockexternal_ptr->GetUTCTime(buffer, size);
+    }
+
+    int GetTimezone(char *buffer, size_t size) {
+        if (global_mockexternal_ptr == nullptr) {
+            snprintf(buffer, size, "UTC");
+            return 0;
+        }
+        return global_mockexternal_ptr->GetTimezone(buffer, size);
+    }
+
+    void waitForNtp(void) {
+        if (global_mockexternal_ptr == nullptr) {
+            return;
+        }
+        global_mockexternal_ptr->waitForNtp();
+    }
+
+    int GetCapabilities(char *buffer, size_t size) {
+        if (global_mockexternal_ptr == nullptr) {
+            snprintf(buffer, size, "capabilities");
+            return 0;
+        }
+        return global_mockexternal_ptr->GetCapabilities(buffer, size);
+    }
+
+    int stripinvalidchar(char *str) {
+        if (global_mockexternal_ptr == nullptr) {
+            return 0;
+        }
+        return global_mockexternal_ptr->stripinvalidchar(str);
+    }
+
+    int makeHttpHttps(char *url) {
+        if (global_mockexternal_ptr == nullptr) {
+            return 0;
+        }
+        return global_mockexternal_ptr->makeHttpHttps(url);
+    }
 }
 
 class MockFunctionsInternal {
@@ -462,7 +576,7 @@ public:
     MOCK_METHOD(bool, checkForValidPCIUpgrade, (int trigger_type, const char* cur_img_name, const char* cloudFWVersion, const char* cloudFWFile));
     MOCK_METHOD(int, getOPTOUTValue, (const char* path));
     MOCK_METHOD(void, uninitialize, (int status));
-    MOCK_METHOD(int, upgradeRequest, (int upgrade_type, int http_ssr_direct, const char* imageHTTPURL, const char* dwlpath_filename, void* arg, int* http_code));
+    MOCK_METHOD(int, rdkv_upgrade_request, (const RdkUpgradeContext_t* context, void** curl, int* pHttp_code));
     MOCK_METHOD(bool, isPDRIEnable, ());
     MOCK_METHOD(int, filePresentCheck, (const char* path));
     MOCK_METHOD(int, peripheral_firmware_dndl, (const char* cloudFWLocation, const char* peripheralFirmwares));

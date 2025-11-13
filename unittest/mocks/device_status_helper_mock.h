@@ -23,6 +23,7 @@
 
 #include "rdkv_cdl_log_wrapper.h"
 #include "rfcinterface.h"
+//#include "rdk_fwdl_utils.h"  // Add this for BUILDTYPE from system library
 #define RDK_API_SUCCESS 0
 //int getDevicePropertyData(const char *model, char *data, int size);
 class DeviceStatusInterface
