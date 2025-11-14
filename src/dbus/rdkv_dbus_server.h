@@ -14,6 +14,7 @@ typedef struct {
 } ProcessInfo;
 
 // Task context for async operations
+/*
 typedef struct {
     gchar *process_name;           // App id (the registration id returned to app while registration)
     gchar *sender_id;             // D-Bus sender ID ( in string format ":1.50")
@@ -21,6 +22,20 @@ typedef struct {
     //gchar *NextImageVersion;      //get used in UpgradeFirmware
     GDBusMethodInvocation *invocation; // used to send Response back to app
    // gint64 start_time;            // task starting time
+} TaskContext;
+*/
+typedef struct {
+    // Handler data
+    gchar *process_name;                // From handler_process_name
+    gchar *sender_id;                   // D-Bus sender ID
+
+    // FwData from client (what they send us)
+    gchar *client_fwdata_version;       // fwdata_version from client
+    gchar *client_fwdata_availableVersion; // fwdata_availableVersion (usually empty)
+    gchar *client_fwdata_updateDetails;    // fwdata_updateDetails (usually empty)
+    gchar *client_fwdata_status;           // fwdata_status from client
+
+    GDBusMethodInvocation *invocation;
 } TaskContext;
 
 typedef struct {

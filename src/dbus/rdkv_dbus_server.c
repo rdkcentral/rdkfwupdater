@@ -31,12 +31,14 @@ static GHashTable *registered_processes = NULL;  // handler_id -> ProcessInfo;
 static const gchar introspection_xml[] =
 "<node>"
 "  <interface name='org.rdkfwupdater.Interface'>"
-"    <method name='CheckForUpdate'>"
-"      <arg type='s' name='handler' direction='in'/>"
-"      <arg type='s' name='version' direction='in'/>"
-"      <arg type='s' name='AvailableVersion' direction='out'/>"
-"      <arg type='s' name='IsXconfComSuccess' direction='out'/>"
-"    </method>"
+"<method name='CheckForUpdate'>"
+"<arg type='s' name='handler_process_name' direction='in'/>" //Handler structure
+//FwData structure - Empty struture input from client
+"<arg type='s' name='fwdata_version' direction='inout'/>" //Client sends, server fills 
+"<arg type='s' name='fwdata_availableVersion' direction='inout'/>" //Client: empty, Server: filled
+"<arg type='s' name='fwdata_updateDetails' direction='inout'/>" //Client: empty, Server: filled
+"<arg type='s' name='fwdata_status' direction='inout'/>"//Client: empty, Server: filled
+"</method>"
 "    <method name='DownloadFirmware'>"
 "      <arg type='s' name='handler' direction='in'/>" //this is a struct as per requirement, for now taking it as string.  handler argument will be the process_name in dbus_handlers
 "      <arg type='s' name='ImageToDownload' direction='in'/>"
@@ -71,7 +73,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
                              const gchar *rdkv_req_method,
                              GVariant *rdkv_req_payload,
                              GDBusMethodInvocation *rdkv_resp_ctx,
-                             gpointer rdkv_user_ctx);
+			     gpointer rdkv_user_ctx);
 
 /*Initialize process tracking*/
 static void init_process_tracking()
@@ -171,8 +173,15 @@ void complete_CheckUpdate_waiting_tasks(const gchar *availableVersion, const gch
 		TaskContext *context = g_hash_table_lookup(active_tasks, GUINT_TO_POINTER(task_id));
 		if (context != NULL) {
 			SWLOG_INFO("[Waiting task_id in -%d] Sending response to app_id : %s\n",task_id, context->process_name);
-			// Send D-Bus response
-			g_dbus_method_invocation_return_value(context->invocation,g_variant_new("(ss)", availableVersion, successMsg));
+			// Send D-Bus response - after processJsonResponse
+
+/*			g_dbus_method_invocation_return_value(context->invocation,
+					g_variant_new("(ssss)",
+						context->client_fwdata_version,    // Current Fw Verison
+						real_available_version,            // From XConf
+						real_update_details,               // From XConf
+						real_status));                     // UPDATE_AVAILABLE/etc. */
+
 			// Remove task_id from active_tasks
 			g_hash_table_remove(active_tasks, GUINT_TO_POINTER(task_id));
 		} else {
@@ -266,7 +275,13 @@ static gboolean check_update_task(gpointer user_data)
 		IsCheckUpdateInProgress = TRUE;
 		waiting_checkUpdate_ids = g_slist_append(waiting_checkUpdate_ids,GUINT_TO_POINTER(task_id));
 		//sleep(300);  // will get replaced by actual check logic  Keepin sleep here blocks main loop ; cannot use sleep it is blocking
-		int isDone = XConfCom();
+		//int isDone = XConfCom();
+		
+		// Use real handler ID and client's version
+		gchar *handler_id = g_strdup(data->CheckupdateTask_ctx->process_name);
+		gchar *current_version = g_strdup(data->CheckupdateTask_ctx->client_fwdata_version);
+		SWLOG_INFO("[CheckUpdate task-%d] Using client version: %s, handler: %s",task_id, current_version, handler_id);
+		int isDone = rdkFwupdateMgr_checkForUpdate(handler_id, current_version,&available_version, &update_details, &status);
 		if(isDone == 1 ) {
 			g_timeout_add_seconds(10, CheckUpdate_complete_callback,data->CheckupdateTask_ctx); //  once the xconf communication is done, delay 10 seconds and then call CheckUpdate_complete_callback
 		}
@@ -336,9 +351,27 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 	/* CHECK UPDATE REQUEST*/
 	//extract process name and libversion from the payload -  inputs provided by app
 	if (g_strcmp0(rdkv_req_method, "CheckForUpdate") == 0) {
-		gchar *app_id=NULL;
-		gchar *CurrFWVersion=NULL; //app_id the registration id given by dbus server to app.
-		g_variant_get(rdkv_req_payload, "(ss)", &app_id, &CurrFWVersion);
+		/*
+		 * gchar *app_id=NULL;
+		 * gchar *CurrFWVersion=NULL; //app_id the registration id given by dbus server to app.
+		 * g_variant_get(rdkv_req_payload, "(ss)", &app_id, &CurrFWVersion);
+		 * */
+
+		// Extract full Handler + FwData structure
+		gchar *handler_process_name = NULL;
+		gchar *fwdata_version = NULL;
+		gchar *fwdata_availableVersion = NULL;
+		gchar *fwdata_updateDetails = NULL;
+		gchar *fwdata_status = NULL;
+		
+		// Extract all 5 parameters from new D-Bus payload
+		g_variant_get(rdkv_req_payload, "(sssss)",&handler_process_name,
+							  &fwdata_version,
+              						  &fwdata_availableVersion,  // Usually empty from client
+              						  &fwdata_updateDetails,     // Usually empty from client
+              						  &fwdata_status);           // Optional from client
+										     //
+		
 		CheckUpdate_TaskData *user_data = g_malloc(sizeof(CheckUpdate_TaskData));
 		SWLOG_INFO("[D-BUS] CheckForUpdate request : app_id:%s ,CurrFWVersion:%s---------\n",app_id,CurrFWVersion);
 		//REgistreation Check
