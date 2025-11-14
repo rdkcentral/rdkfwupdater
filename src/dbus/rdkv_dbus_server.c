@@ -4,6 +4,7 @@
 #include <signal.h>
 #include <unistd.h>
 #include "rdkv_dbus_server.h"
+#include "rdkFwupdateMgr_handlers.h"
 #include "rdkv_cdl_log_wrapper.h"
 static gboolean IsCheckUpdateInProgress = FALSE; 
 static gboolean IsDownloadInProgress = FALSE; 
@@ -135,10 +136,10 @@ void init_task_system()
 }
 
 // Create context for each app/procces's request - for sending back the intermediate/final responses to apps
-static TaskContext* create_task_context(const gchar* app_id,                                                                                                                 const gchar* sender_id,                                                                                                              GDBusMethodInvocation *invocation)
+static TaskContext* create_task_context(const gchar*  handler_process_name,const gchar* sender_id,GDBusMethodInvocation *invocation)
 {
 	TaskContext *ctx = g_malloc0(sizeof(TaskContext));
-	ctx->process_name = g_strdup(app_id);
+	ctx->process_name = g_strdup(handler_process_name);
 	ctx->sender_id = g_strdup(sender_id);
 	ctx->invocation = invocation;
 	SWLOG_INFO("Created task context\n");
@@ -280,11 +281,24 @@ static gboolean check_update_task(gpointer user_data)
 		// Use real handler ID and client's version
 		gchar *handler_id = g_strdup(data->CheckupdateTask_ctx->process_name);
 		gchar *current_version = g_strdup(data->CheckupdateTask_ctx->client_fwdata_version);
+		
+		// Declare output variables for the handler function
+		gchar *available_version = NULL;
+		gchar *update_details = NULL;
+		gchar *status = NULL;
+		
 		SWLOG_INFO("[CheckUpdate task-%d] Using client version: %s, handler: %s",task_id, current_version, handler_id);
 		int isDone = rdkFwupdateMgr_checkForUpdate(handler_id, current_version,&available_version, &update_details, &status);
 		if(isDone == 1 ) {
 			g_timeout_add_seconds(10, CheckUpdate_complete_callback,data->CheckupdateTask_ctx); //  once the xconf communication is done, delay 10 seconds and then call CheckUpdate_complete_callback
 		}
+		
+		// Clean up allocated memory
+		g_free(handler_id);
+		g_free(current_version);
+		g_free(available_version);
+		g_free(update_details);
+		g_free(status);
 	}
 	return G_SOURCE_REMOVE;
 }
@@ -365,7 +379,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		gchar *fwdata_status = NULL;
 		
 		// Extract all 5 parameters from new D-Bus payload
-		g_variant_get(rdkv_req_payload, "(sssss)",&handler_process_name,
+		g_variant_get(rdkv_req_payload, "(sssss)",&handler_process_name,     // this is the app's handler_id 
 							  &fwdata_version,
               						  &fwdata_availableVersion,  // Usually empty from client
               						  &fwdata_updateDetails,     // Usually empty from client
@@ -373,10 +387,10 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 										     //
 		
 		CheckUpdate_TaskData *user_data = g_malloc(sizeof(CheckUpdate_TaskData));
-		SWLOG_INFO("[D-BUS] CheckForUpdate request : app_id:%s ,CurrFWVersion:%s---------\n",app_id,CurrFWVersion);
+		SWLOG_INFO("[D-BUS] CheckForUpdate request : app_id:%s ,CurrFWVersion:%s---------\n",handler_process_name,fwdata_version);
 		//REgistreation Check
-		gboolean is_registered = g_hash_table_contains(registered_processes, GINT_TO_POINTER(g_ascii_strtoull(app_id, NULL, 10)));
-		SWLOG_INFO("[D-BUS] is_registered:%d app_id searched for : %"G_GUINT64_FORMAT" \n",is_registered,g_ascii_strtoull(app_id,NULL,10));
+		gboolean is_registered = g_hash_table_contains(registered_processes, GINT_TO_POINTER(g_ascii_strtoull(handler_process_name, NULL, 10)));
+		SWLOG_INFO("[D-BUS] is_registered:%d app_id searched for : %"G_GUINT64_FORMAT" \n",is_registered,g_ascii_strtoull(handler_process_name,NULL,10));
 		if (!is_registered) {
 			SWLOG_INFO("[D-BUS] REJECTED: CheckUpdate from unregistered sender '%s'\n", rdkv_req_caller_id);
 			return;
@@ -385,11 +399,10 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			SWLOG_INFO("App is registered\n");
 		}
 
-		SWLOG_INFO("[D-BUS] CheckForUpdate request: process='%s', currFWVersion='%s', sender(dbus assigned caller id)='%s'\n",
-				app_id, CurrFWVersion, rdkv_req_caller_id);
+		SWLOG_INFO("[D-BUS] CheckForUpdate request: process='%s', currFWVersion='%s', sender(dbus assigned caller id)='%s'\n",handler_process_name, fwdata_version, rdkv_req_caller_id);
 
 		// Create task context (stores all request info)
-		TaskContext *CheckUpdateTask_ctx = create_task_context(app_id, rdkv_req_caller_id, resp_ctx);
+		TaskContext *CheckUpdateTask_ctx = create_task_context(handler_process_name, rdkv_req_caller_id, resp_ctx);
 
 		// Assign unique task ID and track it
 		guint CheckUpdateTask_id = next_task_id++; // this will be the key in active_tasks hash table
@@ -400,8 +413,11 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		user_data->CheckupdateTask_ctx = CheckUpdateTask_ctx;
 		// Start async task
 		g_timeout_add(100, check_update_task, user_data);
-		g_free(app_id);
-		g_free(CurrFWVersion);
+		g_free(handler_process_name);
+		g_free(fwdata_version);
+		g_free(fwdata_availableVersion);
+		g_free(fwdata_updateDetails);
+		g_free(fwdata_status);
 	}
 
 	/* DOWNLOAD REQUEST  */
