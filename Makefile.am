@@ -169,7 +169,7 @@ bin_PROGRAMS= rdkvfwupgrader_deamon
 
 
 rdkvfwupgrader_deamon_SOURCES = \
-    ${top_srcdir}/src/rdkv_deamon.c\
+    ${top_srcdir}/src/rdkFwupdateMgr.c\
     ${top_srcdir}/src/chunk.c \
     ${top_srcdir}/src/device_status_helper.c \
     ${top_srcdir}/src/rbusInterface/rbusInterface.c

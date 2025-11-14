@@ -17,13 +17,13 @@
 # limitations under the License.
 ##########################################################################
 [Unit]
-Description=To start rdkvfwupgrader
+Description=To start rdkFwupdateMgr
 After=tr69hostif.service dbus.service
 Requires=tr69hostif.service
 
 [Service]
 Type=simple
-ExecStart=/bin/bash -c '/usr/bin/rdkvfwupgrader_deamon 0 1 > /opt/logs/swupdate.log 2>&1'
+ExecStart=/bin/bash -c '/usr/bin/rdkFwupdateMgr 0 1 > /opt/logs/swupdate.log 2>&1'
 RemainAfterExit=yes
 #ExecStop=/usr/bin/killall rdkvfwupgrader
 #Restart=always
