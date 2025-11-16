@@ -33,12 +33,12 @@ static const gchar introspection_xml[] =
 "<node>"
 "  <interface name='org.rdkfwupdater.Interface'>"
 "<method name='CheckForUpdate'>"
-"<arg type='s' name='handler_process_name' direction='in'/>" //Handler structure
-//FwData structure - Empty struture input from client
-"<arg type='s' name='fwdata_version' direction='inout'/>" //Client sends, server fills 
-"<arg type='s' name='fwdata_availableVersion' direction='inout'/>" //Client: empty, Server: filled
-"<arg type='s' name='fwdata_updateDetails' direction='inout'/>" //Client: empty, Server: filled
-"<arg type='s' name='fwdata_status' direction='inout'/>"//Client: empty, Server: filled
+"<arg type='s' name='handler_process_name' direction='in'/>" //Handler/Client ID - only input needed
+//FwData structure - All output parameters filled by server
+"<arg type='s' name='fwdata_version' direction='out'/>" //Current firmware version (detected by server)
+"<arg type='s' name='fwdata_availableVersion' direction='out'/>" //Available version (from XConf)
+"<arg type='s' name='fwdata_updateDetails' direction='out'/>" //Update details (from XConf)  
+"<arg type='i' name='fwdata_status' direction='out'/>" //Status code (0=available, 1=not_available, 2=error)
 "</method>"
 "    <method name='DownloadFirmware'>"
 "      <arg type='s' name='handler' direction='in'/>" //this is a struct as per requirement, for now taking it as string.  handler argument will be the process_name in dbus_handlers
@@ -221,18 +221,35 @@ void complete_CheckUpdate_waiting_tasks(TaskContext *ctx)
 			const gchar *status = context->data.check_update.client_fwdata_status ? 
 			                     context->data.check_update.client_fwdata_status : "";
 			
-			SWLOG_INFO("[CheckUpdate task-%d] Sending to client - version: %s, available: %s, details: %s, status: %s\n",
-			           task_id, version, available, details, status);
+			SWLOG_INFO("=== [CHECK_UPDATE] Task Completion - Sending Response ===\n");
+			SWLOG_INFO("[CHECK_UPDATE] Task ID: %d\n", task_id);
+			SWLOG_INFO("[CHECK_UPDATE] Response data:\n");
+			SWLOG_INFO("[CHECK_UPDATE]   - Current FW Version: '%s'\n", version);
+			SWLOG_INFO("[CHECK_UPDATE]   - Available Version: '%s'\n", available);
+			SWLOG_INFO("[CHECK_UPDATE]   - Update Details: '%s'\n", details);
+			SWLOG_INFO("[CHECK_UPDATE]   - Status Code: %d ", (gint32)context->data.check_update.result_code);
 			
+			// Log status meaning
+			switch(context->data.check_update.result_code) {
+				case 0: SWLOG_INFO("(UPDATE_AVAILABLE)\n"); break;
+				case 1: SWLOG_INFO("(UPDATE_NOT_AVAILABLE)\n"); break;
+				case 2: SWLOG_INFO("(UPDATE_ERROR)\n"); break;
+				default: SWLOG_INFO("(UNKNOWN_STATUS)\n"); break;
+			}
+			
+			SWLOG_INFO("[CHECK_UPDATE] Sending D-Bus response to client...\n");
 			g_dbus_method_invocation_return_value(context->invocation,
-				g_variant_new("(ssss)",
-					version,     // Current Fw Version (client input)
+				g_variant_new("(sssi)",
+					version,     // Current/Detected Fw Version (from server)
 					available,   // Available Version (from XConf)
 					details,     // Update Details (from XConf)
-					status));    // Status Message (UPDATE_AVAILABLE/etc.)
+					(gint32)context->data.check_update.result_code));    // Status Code (0=UPDATE_AVAILABLE, 1=UPDATE_NOT_AVAILABLE, 2=UPDATE_ERROR)
 
+			SWLOG_INFO("[CHECK_UPDATE] Response sent successfully to client\n");
 			// Remove task_id from active_tasks
 			g_hash_table_remove(active_tasks, GUINT_TO_POINTER(task_id));
+			SWLOG_INFO("[CHECK_UPDATE] Task-%d removed from active tasks\n", task_id);
+			SWLOG_INFO("=== [CHECK_UPDATE] Task Completion - SUCCESS ===\n\n");
 		} else {
 			SWLOG_INFO("Task-%d not found in active_tasks\n", task_id);
 		}
@@ -306,23 +323,33 @@ static gboolean check_update_task(gpointer user_data)
 {
 	CheckUpdate_TaskData *data = (CheckUpdate_TaskData*)user_data;
 	guint task_id = data->update_task_id;
-	//  guint task_id= (guint)(int)(g_hash_table_lookup(active_tasks, data->update_task_id)); // index of the current task's ctx in active_tasks table. i.e unique task id that is assigned earlier. CheckUpdateTask_id
 
-	SWLOG_INFO("[TASK[task_id extracted from active_tasks]-%d] Starting CheckUpdate for app_id : %s (sender: %s)\n", task_id, data->CheckupdateTask_ctx->process_name, data->CheckupdateTask_ctx->sender_id);
+	SWLOG_INFO("=== [CHECK_UPDATE_TASK] Async Task Execution Started ===\n");
+	SWLOG_INFO("[CHECK_UPDATE_TASK] Task details:\n");
+	SWLOG_INFO("[CHECK_UPDATE_TASK]   - Task ID: %d\n", task_id);
+	SWLOG_INFO("[CHECK_UPDATE_TASK]   - Handler ID: %s\n", data->CheckupdateTask_ctx->process_name);
+	SWLOG_INFO("[CHECK_UPDATE_TASK]   - D-Bus Sender: %s\n", data->CheckupdateTask_ctx->sender_id);
+	SWLOG_INFO("[CHECK_UPDATE_TASK]   - Current check in progress: %s\n", IsCheckUpdateInProgress ? "YES" : "NO");
+
 	//  Call checkWithXconf logic here
 	// ret =  checkWithXConf(ctx->process_name);
 
 	// For now, simulating the with logs
 	if (IsCheckUpdateInProgress == TRUE) {
-		SWLOG_INFO("Checkupdate is in progress. Adding task to waiting queue. Will send response once done\n");
-		waiting_checkUpdate_ids = g_slist_append(waiting_checkUpdate_ids,GUINT_TO_POINTER(task_id));
-		SWLOG_INFO("[CheckUpdate task-%d] Added to waiting queue (total waiting: %d)\n",task_id, g_slist_length(waiting_checkUpdate_ids));
+		SWLOG_INFO("[CHECK_UPDATE_TASK] Another CheckUpdate operation is in progress\n");
+		SWLOG_INFO("[CHECK_UPDATE_TASK] Adding task-%d to waiting queue...\n", task_id);
+		waiting_checkUpdate_ids = g_slist_append(waiting_checkUpdate_ids, GUINT_TO_POINTER(task_id));
+		SWLOG_INFO("[CHECK_UPDATE_TASK] Task-%d added to waiting queue (total waiting: %d)\n", 
+			   task_id, g_slist_length(waiting_checkUpdate_ids));
+		SWLOG_INFO("[CHECK_UPDATE_TASK] Will send response once current operation completes\n");
 
-	}else{
-		SWLOG_INFO("Starting new CheckUpdate operation for task %d\n\n", task_id);
-		SWLOG_INFO("[CheckUpdate task-%d] Contacting xconf server for process-id: %s...\n", task_id, data->CheckupdateTask_ctx->process_name);
+	} else {
+		SWLOG_INFO("[CHECK_UPDATE_TASK] Starting NEW CheckUpdate operation for task-%d\n", task_id);
+		SWLOG_INFO("[CHECK_UPDATE_TASK] Setting IsCheckUpdateInProgress = TRUE\n");
 		IsCheckUpdateInProgress = TRUE;
-		waiting_checkUpdate_ids = g_slist_append(waiting_checkUpdate_ids,GUINT_TO_POINTER(task_id));
+		waiting_checkUpdate_ids = g_slist_append(waiting_checkUpdate_ids, GUINT_TO_POINTER(task_id));
+		
+		SWLOG_INFO("[CHECK_UPDATE_TASK] Initiating XConf communication and device queries...\n");
 		//sleep(300);  // will get replaced by actual check logic  Keepin sleep here blocks main loop ; cannot use sleep it is blocking
 		//int isDone = XConfCom();
 		
@@ -331,25 +358,44 @@ static gboolean check_update_task(gpointer user_data)
 		
 		// Verify this is a CheckUpdate task
 		if (ctx->type != TASK_TYPE_CHECK_UPDATE) {
-			SWLOG_ERROR("[CheckUpdate task-%d] ERROR: Wrong task type %d, expected %d\n", 
-			           task_id, ctx->type, TASK_TYPE_CHECK_UPDATE);
+			SWLOG_ERROR("[CHECK_UPDATE_TASK] ERROR: Wrong task type %d, expected %d\n", 
+			           ctx->type, TASK_TYPE_CHECK_UPDATE);
+			SWLOG_ERROR("[CHECK_UPDATE_TASK] Task-%d FAILED due to type mismatch\n", task_id);
 			return G_SOURCE_REMOVE;
 		}
 		
 		gchar *handler_id = g_strdup(ctx->process_name);
 		gchar *current_version = g_strdup(ctx->data.check_update.client_fwdata_version ? 
 		                                 ctx->data.check_update.client_fwdata_version : "");
+		SWLOG_INFO("[CHECK_UPDATE_TASK] Executing firmware check with:\n");
+		SWLOG_INFO("[CHECK_UPDATE_TASK]   - Handler ID: '%s'\n", handler_id);
+		SWLOG_INFO("[CHECK_UPDATE_TASK]   - Current Version: '%s'\n", current_version);
 		
-		SWLOG_INFO("[CheckUpdate task-%d] Using client handler_id: %s, current_version: %s", 
-		           task_id, handler_id, current_version);
+		SWLOG_INFO("[CHECK_UPDATE_TASK] Calling rdkFwupdateMgr_checkForUpdate()...\n");
+		SWLOG_INFO("[CHECK_UPDATE_TASK] This will perform:\n");
+		SWLOG_INFO("[CHECK_UPDATE_TASK]   1. RFC settings retrieval\n");
+		SWLOG_INFO("[CHECK_UPDATE_TASK]   2. Device properties gathering\n");
+		SWLOG_INFO("[CHECK_UPDATE_TASK]   3. XConf server communication\n");
+		SWLOG_INFO("[CHECK_UPDATE_TASK]   4. Firmware version comparison\n");
 		
 		// Use new return structure approach (no double pointers)
 		CheckUpdateResponse response = rdkFwupdateMgr_checkForUpdate(handler_id, current_version);
 		
-		SWLOG_INFO("[CheckUpdate task-%d] Result: %d, Available: %s", 
-		           task_id, response.result_code, 
+		SWLOG_INFO("[CHECK_UPDATE_TASK] rdkFwupdateMgr_checkForUpdate() completed!\n");
+		SWLOG_INFO("[CHECK_UPDATE_TASK] Results:\n");
+		SWLOG_INFO("[CHECK_UPDATE_TASK]   - Result Code: %d", response.result_code);
+		switch(response.result_code) {
+			case 0: SWLOG_INFO(" (UPDATE_AVAILABLE)\n"); break;
+			case 1: SWLOG_INFO(" (UPDATE_NOT_AVAILABLE)\n"); break;
+			case 2: SWLOG_INFO(" (UPDATE_ERROR)\n"); break;
+			default: SWLOG_INFO(" (UNKNOWN_STATUS)\n"); break;
+		}
+		SWLOG_INFO("[CHECK_UPDATE_TASK]   - Available Version: '%s'\n", 
 		           response.available_version ? response.available_version : "NULL");
+		SWLOG_INFO("[CHECK_UPDATE_TASK]   - Update Details: '%s'\n", 
+		           response.update_details ? response.update_details : "NULL");
 		
+		SWLOG_INFO("[CHECK_UPDATE_TASK] Storing results in task context...\n");
 		// Store response in TaskContext for callback to use
 		ctx->data.check_update.result_code = response.result_code;
 		g_free(ctx->data.check_update.client_fwdata_availableVersion);
@@ -360,13 +406,19 @@ static gboolean check_update_task(gpointer user_data)
 		ctx->data.check_update.client_fwdata_updateDetails = g_strdup(response.update_details ? response.update_details : "");
 		ctx->data.check_update.client_fwdata_status = g_strdup(response.status_message ? response.status_message : "");
 		
+		SWLOG_INFO("[CHECK_UPDATE_TASK] Results stored successfully in task context\n");
+		SWLOG_INFO("[CHECK_UPDATE_TASK] Scheduling completion callback in 10 seconds...\n");
+		
 		// ALWAYS schedule callback - client needs response regardless of result
 		g_timeout_add_seconds(10, CheckUpdate_complete_callback, data->CheckupdateTask_ctx);
 		
+		SWLOG_INFO("[CHECK_UPDATE_TASK] Callback scheduled - cleanup and exit\n");
 		// Clean up allocated memory
 		g_free(handler_id);
 		g_free(current_version);
 		checkupdate_response_free(&response);  // Clean up response structure
+		
+		SWLOG_INFO("=== [CHECK_UPDATE_TASK] Async Task Execution Complete ===\n\n");
 	}
 	return G_SOURCE_REMOVE;
 }
@@ -439,62 +491,85 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		 * g_variant_get(rdkv_req_payload, "(ss)", &app_id, &CurrFWVersion);
 		 * */
 
-		// Extract full Handler + FwData structure
+		// Extract only the Handler ID
 		gchar *handler_process_name = NULL; 
-		gchar *fwdata_version = NULL;
-		gchar *fwdata_availableVersion = NULL;
-		gchar *fwdata_updateDetails = NULL;
-		gchar *fwdata_status = NULL;
 		
-		// Extract all 5 parameters from  D-Bus payload
-		g_variant_get(rdkv_req_payload, "(sssss)",&handler_process_name,     // this is the app's handler_id 
-							  &fwdata_version,
-              						  &fwdata_availableVersion,  // Usually empty from client
-              						  &fwdata_updateDetails,     // Usually empty from client
-              						  &fwdata_status);           // Optional from client
-										     //
+		// Extract only 1 parameter from D-Bus payload
+		g_variant_get(rdkv_req_payload, "(s)", &handler_process_name);     // Only the app's handler_id needed
 		
-		CheckUpdate_TaskData *user_data = g_malloc(sizeof(CheckUpdate_TaskData));
-		SWLOG_INFO("[D-BUS] CheckForUpdate request : app_id:%s ,CurrFWVersion:%s---------\n",handler_process_name,fwdata_version); //possibly 
-		//REgistreation Check
-		gboolean is_registered = g_hash_table_contains(registered_processes, GINT_TO_POINTER(g_ascii_strtoull(handler_process_name, NULL, 10)));
-		SWLOG_INFO("[D-BUS] is_registered:%d app_id searched for : %"G_GUINT64_FORMAT" \n",is_registered,g_ascii_strtoull(handler_process_name,NULL,10));
-		if (!is_registered) {
-			SWLOG_INFO("[D-BUS] REJECTED: CheckUpdate from unregistered sender '%s'\n", rdkv_req_caller_id);
+		SWLOG_INFO("=== [CHECK_UPDATE] Starting Firmware Update Check ===\n");
+		SWLOG_INFO("[CHECK_UPDATE] Request details:\n");
+		SWLOG_INFO("[CHECK_UPDATE]   - Handler ID: '%s'\n", handler_process_name ? handler_process_name : "NULL");
+		SWLOG_INFO("[CHECK_UPDATE]   - D-Bus Sender: '%s'\n", rdkv_req_caller_id);
+		SWLOG_INFO("[CHECK_UPDATE]   - Active tasks before: %d\n", g_hash_table_size(active_tasks));
+
+		// Validate handler ID
+		if (!handler_process_name || strlen(handler_process_name) == 0) {
+			SWLOG_ERROR("[CHECK_UPDATE] ERROR: Invalid handler ID provided\n");
+			g_dbus_method_invocation_return_error(resp_ctx, 
+				G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, 
+				"Invalid handler ID");
+			g_free(handler_process_name);
 			return;
 		}
-		else{
-			SWLOG_INFO("App is registered\n");
+
+		CheckUpdate_TaskData *user_data = g_malloc(sizeof(CheckUpdate_TaskData));
+		
+		// Registration Check
+		guint64 handler_id_numeric = g_ascii_strtoull(handler_process_name, NULL, 10);
+		gboolean is_registered = g_hash_table_contains(registered_processes, GINT_TO_POINTER(handler_id_numeric));
+		
+		SWLOG_INFO("[CHECK_UPDATE] Registration verification:\n");
+		SWLOG_INFO("[CHECK_UPDATE]   - Handler ID (numeric): %"G_GUINT64_FORMAT"\n", handler_id_numeric);
+		SWLOG_INFO("[CHECK_UPDATE]   - Is registered: %s\n", is_registered ? "YES" : "NO");
+		SWLOG_INFO("[CHECK_UPDATE]   - Total registered processes: %d\n", g_hash_table_size(registered_processes));
+
+		if (!is_registered) {
+			SWLOG_ERROR("[CHECK_UPDATE] REJECTED: CheckUpdate from unregistered handler ID '%s'\n", handler_process_name);
+			SWLOG_ERROR("[CHECK_UPDATE] Client must register first using RegisterProcess method\n");
+			g_dbus_method_invocation_return_error(resp_ctx, 
+				G_DBUS_ERROR, G_DBUS_ERROR_ACCESS_DENIED, 
+				"Handler not registered. Call RegisterProcess first.");
+			g_free(handler_process_name);
+			g_free(user_data);
+			return;
 		}
 
-		SWLOG_INFO("[D-BUS] CheckForUpdate request: process='%s', currFWVersion='%s', sender(dbus assigned caller id)='%s'\n",handler_process_name, fwdata_version, rdkv_req_caller_id);
+		SWLOG_INFO("[CHECK_UPDATE] SUCCESS: Handler ID verified and registered\n");
+		SWLOG_INFO("[CHECK_UPDATE] Proceeding with firmware update check...\n");
 
 		// Create CheckUpdate-specific task context
+		SWLOG_INFO("[CHECK_UPDATE] Creating async task context...\n");
 		TaskContext *CheckUpdateTask_ctx = create_task_context(TASK_TYPE_CHECK_UPDATE, 
 		                                                     handler_process_name, 
 		                                                     rdkv_req_caller_id, 
 		                                                     resp_ctx);
 		
-		// Populate CheckUpdate-specific fields in the union
-		CheckUpdateTask_ctx->data.check_update.client_fwdata_version = g_strdup(fwdata_version);
-		CheckUpdateTask_ctx->data.check_update.client_fwdata_availableVersion = g_strdup(fwdata_availableVersion);
-		CheckUpdateTask_ctx->data.check_update.client_fwdata_updateDetails = g_strdup(fwdata_updateDetails);
-		CheckUpdateTask_ctx->data.check_update.client_fwdata_status = g_strdup(fwdata_status);
+		// Populate CheckUpdate-specific fields in the union (initialize with empty values - server will fill them)
+		CheckUpdateTask_ctx->data.check_update.client_fwdata_version = g_strdup("");  // Will be filled by server
+		CheckUpdateTask_ctx->data.check_update.client_fwdata_availableVersion = g_strdup("");  // Will be filled by server
+		CheckUpdateTask_ctx->data.check_update.client_fwdata_updateDetails = g_strdup("");  // Will be filled by server
+		CheckUpdateTask_ctx->data.check_update.client_fwdata_status = g_strdup("");  // Will be filled by server
 
 		// Assign unique task ID and track it
 		guint CheckUpdateTask_id = next_task_id++; // this will be the key in active_tasks hash table
 		g_hash_table_insert(active_tasks, GUINT_TO_POINTER(CheckUpdateTask_id), CheckUpdateTask_ctx);
 
-		SWLOG_INFO("[D-BUS] Spawning ASYNC CheckUpdate task-%d \n",CheckUpdateTask_id);
+		SWLOG_INFO("[CHECK_UPDATE] Task created successfully:\n");
+		SWLOG_INFO("[CHECK_UPDATE]   - Task ID: %d\n", CheckUpdateTask_id);
+		SWLOG_INFO("[CHECK_UPDATE]   - Task Type: CHECK_UPDATE\n");
+		SWLOG_INFO("[CHECK_UPDATE]   - Active tasks after creation: %d\n", g_hash_table_size(active_tasks));
+
 		user_data->update_task_id = CheckUpdateTask_id;
 		user_data->CheckupdateTask_ctx = CheckUpdateTask_ctx;
+
+		SWLOG_INFO("[CHECK_UPDATE] Spawning ASYNC CheckUpdate task (task-%d)...\n", CheckUpdateTask_id);
+		
 		// Start async task
 		g_timeout_add(100, check_update_task, user_data);
+		
+		SWLOG_INFO("=== [CHECK_UPDATE] Async Task Initiated ===\n\n");
 		g_free(handler_process_name);
-		g_free(fwdata_version);
-		g_free(fwdata_availableVersion);
-		g_free(fwdata_updateDetails);
-		g_free(fwdata_status);
 	}
 
 	/* DOWNLOAD REQUEST  */
@@ -556,17 +631,38 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		gchar *process_name, *lib_version;
 		g_variant_get(rdkv_req_payload, "(ss)", &process_name, &lib_version);
 
-		SWLOG_INFO("[D-BUS] RegisterProcess: process='%s', lib='%s', sender='%s'\n",
-				process_name, lib_version, rdkv_req_caller_id);
+		SWLOG_INFO("=== [REGISTER] Starting Registration Process ===\n");
+		SWLOG_INFO("[REGISTER] Request details:\n");
+		SWLOG_INFO("[REGISTER]   - Process Name: '%s'\n", process_name ? process_name : "NULL");
+		SWLOG_INFO("[REGISTER]   - Library Version: '%s'\n", lib_version ? lib_version : "NULL");
+		SWLOG_INFO("[REGISTER]   - D-Bus Sender: '%s'\n", rdkv_req_caller_id);
+		SWLOG_INFO("[REGISTER]   - Current registered processes: %d\n", g_hash_table_size(registered_processes));
 
-		// Add to process trackiing system
-		guint64 handler_id = add_process_to_tracking(process_name, lib_version,rdkv_req_caller_id);
+		// Validate inputs
+		if (!process_name || strlen(process_name) == 0) {
+			SWLOG_ERROR("[REGISTER] ERROR: Invalid process name provided\n");
+			g_dbus_method_invocation_return_error(resp_ctx, 
+				G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, 
+				"Invalid process name");
+			g_free(process_name);
+			g_free(lib_version);
+			return;
+		}
 
-		SWLOG_INFO("[D-BUS] Process registered with handler ID: %"G_GUINT64_FORMAT"\n", handler_id);
+		// Add to process tracking system
+		SWLOG_INFO("[REGISTER] Adding process to tracking system...\n");
+		guint64 handler_id = add_process_to_tracking(process_name, lib_version, rdkv_req_caller_id);
+
+		SWLOG_INFO("[REGISTER] SUCCESS: Process registered successfully!\n");
+		SWLOG_INFO("[REGISTER]   - Assigned Handler ID: %"G_GUINT64_FORMAT"\n", handler_id);
+		SWLOG_INFO("[REGISTER]   - Total registered processes: %d\n", g_hash_table_size(registered_processes));
 
 		// Send immediate response (no async task needed)
 		g_dbus_method_invocation_return_value(resp_ctx,
 				g_variant_new("(t)", handler_id)); // convert the handler_id into integer
+
+		SWLOG_INFO("[REGISTER] Response sent to client with handler ID: %"G_GUINT64_FORMAT"\n", handler_id);
+		SWLOG_INFO("=== [REGISTER] Registration Complete ===\n\n");
 
 		g_free(process_name);
 		g_free(lib_version);
@@ -577,18 +673,41 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		guint64 handler;
 		g_variant_get(rdkv_req_payload, "(t)", &handler);
 
-		SWLOG_INFO("[D-BUS] UnregisterProcess: handler=%"G_GUINT64_FORMAT", sender='%s'\n", handler, rdkv_req_caller_id);
+		SWLOG_INFO("=== [UNREGISTER] Starting Unregistration Process ===\n");
+		SWLOG_INFO("[UNREGISTER] Request details:\n");
+		SWLOG_INFO("[UNREGISTER]   - Handler ID: %"G_GUINT64_FORMAT"\n", handler);
+		SWLOG_INFO("[UNREGISTER]   - D-Bus Sender: '%s'\n", rdkv_req_caller_id);
+		SWLOG_INFO("[UNREGISTER]   - Current registered processes: %d\n", g_hash_table_size(registered_processes));
 
-		// Remove from basic tracking system
+		// Validate handler ID
+		if (handler == 0) {
+			SWLOG_ERROR("[UNREGISTER] ERROR: Invalid handler ID (0) provided\n");
+			g_dbus_method_invocation_return_error(resp_ctx, 
+				G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, 
+				"Invalid handler ID");
+			return;
+		}
+
+		// Remove from tracking system
+		SWLOG_INFO("[UNREGISTER] Attempting to remove process from tracking...\n");
 		if (remove_process_from_tracking(handler)) {
-			SWLOG_INFO("[D-BUS] Process unregistered successfully\n");
+			SWLOG_INFO("[UNREGISTER] SUCCESS: Process unregistered successfully!\n");
+			SWLOG_INFO("[UNREGISTER]   - Removed Handler ID: %"G_GUINT64_FORMAT"\n", handler);
+			SWLOG_INFO("[UNREGISTER]   - Remaining registered processes: %d\n", g_hash_table_size(registered_processes));
+			
 			g_dbus_method_invocation_return_value(resp_ctx,
 					g_variant_new("(b)", TRUE));
+			SWLOG_INFO("[UNREGISTER] Response sent: SUCCESS (true)\n");
 		} else {
-			SWLOG_INFO("[D-BUS]Failed to unregister process\n");
+			SWLOG_ERROR("[UNREGISTER] FAILED: Process not found or already unregistered\n");
+			SWLOG_ERROR("[UNREGISTER]   - Handler ID: %"G_GUINT64_FORMAT" not found\n", handler);
+			SWLOG_INFO("[UNREGISTER]   - Current registered processes: %d\n", g_hash_table_size(registered_processes));
+			
 			g_dbus_method_invocation_return_value(resp_ctx,
 					g_variant_new("(b)", FALSE));
+			SWLOG_INFO("[UNREGISTER] Response sent: FAILED (false)\n");
 		}
+		SWLOG_INFO("=== [UNREGISTER] Unregistration Complete ===\n\n");
 	}
 
 	/* UNKNOWN METHOD*/
