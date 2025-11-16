@@ -24,7 +24,6 @@ AM_LDFLAGS += $(cjson_LIBS) $(curl_LIBS)
 AM_LDFLAGS += -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread -lrbus
 
 AM_CFLAGS += $(GLIB_CFLAGS)
-rdkvfwupgrader_deamon_LDADD = $(GLIB_LIBS)
 # Build the RDK upgrade shared library
 lib_LTLIBRARIES = librdksw_upgrade.la librdksw_rfcIntf.la librdksw_iarmIntf.la librdksw_jsonparse.la librdksw_flash.la librdksw_fwutils.la
 
@@ -139,7 +138,7 @@ librdksw_jsonparse_includedir = ${includedir}
 librdksw_flash_includedir = ${includedir}
 librdksw_fwutils_includedir = ${includedir}
 
-bin_PROGRAMS= rdkvfwupgrader
+bin_PROGRAMS= rdkvfwupgrader rdkFwupdateMgr
 
 
 rdkvfwupgrader_SOURCES = \
@@ -165,10 +164,7 @@ rdkvfwupgrader_CPPFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/device
 rdkvfwupgrader_includedir = ${includedir}
 
 
-bin_PROGRAMS= rdkvfwupgrader_deamon
-
-
-rdkvfwupgrader_deamon_SOURCES = \
+rdkFwupdateMgr_SOURCES = \
     ${top_srcdir}/src/rdkFwupdateMgr.c\
     ${top_srcdir}/src/chunk.c \
     ${top_srcdir}/src/device_status_helper.c \
@@ -176,10 +172,10 @@ rdkvfwupgrader_deamon_SOURCES = \
     ${top_srcdir}/src/dbus/rdkv_dbus_server.c \
     ${top_srcdir}/src/dbus/rdkFwupdateMgr_handlers.c
 # Link against the RDK upgrade shared library AND new interface libraries
-rdkvfwupgrader_deamon_LDADD += librdksw_jsonparse.la librdksw_upgrade.la librdksw_rfcIntf.la librdksw_iarmIntf.la librdksw_flash.la librdksw_fwutils.la $(cjson_LIBS) $(curl_LIBS) -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread -lrbus
+rdkFwupdateMgr_LDADD = librdksw_jsonparse.la librdksw_upgrade.la librdksw_rfcIntf.la librdksw_iarmIntf.la librdksw_flash.la librdksw_fwutils.la $(cjson_LIBS) $(curl_LIBS) -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread -lrbus $(GLIB_LIBS)
 
-rdkvfwupgrader_deamon_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
-rdkvfwupgrader_deamon_include_HEADERS = \
+rdkFwupdateMgr_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
+rdkFwupdateMgr_include_HEADERS = \
     ${top_srcdir}/src/rbusInterface/rbusInterface.h \
     ${top_srcdir}/src/include/rfcinterface.h \
     ${top_srcdir}/src/include/iarmInterface.h \
@@ -187,10 +183,10 @@ rdkvfwupgrader_deamon_include_HEADERS = \
     ${top_srcdir}/src/dbus/rdkv_dbus_server.h \
     ${top_srcdir}/src/dbus/rdkFwupdateMgr_handlers.h
 
-rdkvfwupgrader_deamon_CFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/dbus $(GLIB_CFLAGS) -DENABLE_DBUS
-rdkvfwupgrader_deamon_CPPFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/dbus $(GLIB_CFLAGS) -DENABLE_DBUS
+rdkFwupdateMgr_CFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/dbus $(GLIB_CFLAGS) -DENABLE_DBUS
+rdkFwupdateMgr_CPPFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/dbus $(GLIB_CFLAGS) -DENABLE_DBUS
 
-rdkvfwupgrader_deamon_includedir = ${includedir}
+rdkFwupdateMgr_includedir = ${includedir}
 
 if INSTALL_TEST_FWUPGRADER
 bin_PROGRAMS += testrdkvfwupgrader
@@ -210,16 +206,19 @@ endif
 
 if IS_TELEMETRY2_ENABLED
 rdkvfwupgrader_CFLAGS +=  $(T2_EVENT_FLAG)
+rdkFwupdateMgr_CFLAGS +=  $(T2_EVENT_FLAG)
 AM_LDFLAGS += -ltelemetry_msgsender -lt2utils
 endif
 
 if IS_LIBRFCAPI_ENABLED
 rdkvfwupgrader_CFLAGS += $(LIBRFCAPI_FLAG)
+rdkFwupdateMgr_CFLAGS += $(LIBRFCAPI_FLAG)
 AM_LDFLAGS += -lrfcapi
 endif
 
 if IS_IARMEVENT_ENABLED
 rdkvfwupgrader_CFLAGS += $(IARM_EVENT_FLAG)
+rdkFwupdateMgr_CFLAGS += $(IARM_EVENT_FLAG)
 testrdkvfwupgrader_CFLAGS = $(IARM_EVENT_FLAG)
 AM_LDFLAGS += -lIARMBus
 endif
@@ -227,11 +226,12 @@ endif
 if IS_LIBRDKCERTSEL_ENABLED
 librdksw_upgrade_la_CFLAGS += $(LIBRDKCERTSEL_FLAG)
 rdkvfwupgrader_CFLAGS += $(LIBRDKCERTSEL_FLAG)
+rdkFwupdateMgr_CFLAGS += $(LIBRDKCERTSEL_FLAG)
 AM_LDFLAGS += -lRdkCertSelector
 endif
 
 if IS_LIBRDKCONFIG_ENABLED
 rdkvfwupgrader_CFLAGS += $(LIBRDKCONFIG_FLAG)
+rdkFwupdateMgr_CFLAGS += $(LIBRDKCONFIG_FLAG)
 AM_LDFLAGS += -lrdkconfig
 endif
-
