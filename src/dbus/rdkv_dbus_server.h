@@ -3,6 +3,7 @@
 
 #include <glib.h>
 #include <gio/gio.h>
+#include "rdkFwupdateMgr_handlers.h"  // For CheckForUpdateResult enum
 
 //structure to track registered processes
 typedef struct {
@@ -14,40 +15,64 @@ typedef struct {
 } ProcessInfo;
 
 // Task context for async operations
-/*
+// Task type enumeration for union-based polymorphism
+typedef enum {
+    TASK_TYPE_CHECK_UPDATE,
+    TASK_TYPE_DOWNLOAD,
+    TASK_TYPE_UPDATE,
+    TASK_TYPE_REGISTER,  // For future use
+    TASK_TYPE_UNREGISTER
+} TaskType;
+
+// Union-based TaskContext for memory efficiency and type safety
 typedef struct {
-    gchar *process_name;           // App id (the registration id returned to app while registration)
-    gchar *sender_id;             // D-Bus sender ID ( in string format ":1.50")
-    //gchar *CurrImageVersion;      // will be used in checkUpdate,DownloadFirmwar and UpgradeFirmware methods
-    //gchar *NextImageVersion;      //get used in UpgradeFirmware
-    GDBusMethodInvocation *invocation; // used to send Response back to app
-   // gint64 start_time;            // task starting time
-} TaskContext;
-*/
-typedef struct {
-    // Handler data
+    // Common fields for all task types
+    TaskType type;                      // Task type identifier
+    guint32 padding;                    // Alignment padding
     gchar *process_name;                // From handler_process_name
     gchar *sender_id;                   // D-Bus sender ID
-
-    // FwData from client (what they send us)
-    gchar *client_fwdata_version;       // fwdata_version from client
-    gchar *client_fwdata_availableVersion; // fwdata_availableVersion (usually empty)
-    gchar *client_fwdata_updateDetails;    // fwdata_updateDetails (usually empty)
-    gchar *client_fwdata_status;           // fwdata_status from client
-
-    GDBusMethodInvocation *invocation;
+    GDBusMethodInvocation *invocation;  // Used to send response back to app
+    
+    // Method-specific data (union - only one is active at runtime)
+    union {
+        // CheckUpdate-specific fields
+        struct {
+            gchar *client_fwdata_version;       // fwdata_version from client
+            gchar *client_fwdata_availableVersion; // fwdata_availableVersion (usually empty)
+            gchar *client_fwdata_updateDetails;    // fwdata_updateDetails (usually empty)
+            gchar *client_fwdata_status;           // fwdata_status from client
+            CheckForUpdateResult result_code;      // Result status from CheckForUpdate call
+        } check_update;
+        
+        // Download-specific fields
+        struct {
+            gchar *image_to_download;    // Image name to download
+            gchar *download_url;         // Download URL (if different from image name)
+            guint64 file_size;          // Expected file size
+            guint32 progress_percent;    // Download progress
+        } download;
+        
+        // Update/Flash-specific fields
+        struct {
+            gchar *firmware_path;        // Path to firmware file
+            gboolean immediate_reboot;   // Whether to reboot immediately after flash
+            guint32 flash_progress;      // Flash progress percentage
+            guint32 reserved;           // Reserved for future use
+        } update;
+    } data;
 } TaskContext;
 
+// Task data structures for async operations
 typedef struct {
-        guint update_task_id;
-        TaskContext *CheckupdateTask_ctx;
-}CheckUpdate_TaskData;
+    guint update_task_id;
+    TaskContext *CheckupdateTask_ctx;  // Points to TaskContext with type TASK_TYPE_CHECK_UPDATE
+} CheckUpdate_TaskData;
 
 typedef struct {
-        guint download_task_id;
-        TaskContext *DownloadFWTask_ctx;
-        gchar* ImageToDownload;
-}DownloadFW_TaskData;
+    guint download_task_id;
+    TaskContext *DownloadFWTask_ctx;   // Points to TaskContext with type TASK_TYPE_DOWNLOAD
+    gchar* ImageToDownload;            // TODO: Move this into TaskContext.data.download
+} DownloadFW_TaskData;
 
 /*D-Bus service information*/
 #define BUS_NAME "org.rdkfwupdater.Service"

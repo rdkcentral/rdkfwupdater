@@ -135,30 +135,66 @@ void init_task_system()
 	init_process_tracking();
 }
 
-// Create context for each app/procces's request - for sending back the intermediate/final responses to apps
-static TaskContext* create_task_context(const gchar*  handler_process_name,const gchar* sender_id,GDBusMethodInvocation *invocation)
+// Create base task context with common fields
+static TaskContext* create_task_context(TaskType type,
+                                        const gchar* handler_process_name,
+                                        const gchar* sender_id,
+                                        GDBusMethodInvocation *invocation)
 {
 	TaskContext *ctx = g_malloc0(sizeof(TaskContext));
+	ctx->type = type;
 	ctx->process_name = g_strdup(handler_process_name);
 	ctx->sender_id = g_strdup(sender_id);
 	ctx->invocation = invocation;
-	SWLOG_INFO("Created task context\n");
+	
+	// Union fields are automatically zeroed by g_malloc0
+	SWLOG_INFO("Created task context for type: %d\n", type);
 	return ctx;
 }
 
-/* Free task context when done*/
+/* Free task context when done - handles union-based design */
 static void free_task_context(TaskContext *ctx)
 {
 	if (!ctx) return;
+	
+	// Free common fields
 	g_free(ctx->process_name);
 	g_free(ctx->sender_id);
+	
+	// Free union-specific fields based on task type
+	switch (ctx->type) {
+		case TASK_TYPE_CHECK_UPDATE:
+			g_free(ctx->data.check_update.client_fwdata_version);
+			g_free(ctx->data.check_update.client_fwdata_availableVersion);
+			g_free(ctx->data.check_update.client_fwdata_updateDetails);
+			g_free(ctx->data.check_update.client_fwdata_status);
+			break;
+		
+		case TASK_TYPE_DOWNLOAD:
+			g_free(ctx->data.download.image_to_download);
+			g_free(ctx->data.download.download_url);
+			break;
+		
+		case TASK_TYPE_UPDATE:
+			g_free(ctx->data.update.firmware_path);
+			break;
+		
+		case TASK_TYPE_REGISTER:
+			// No additional fields to free for register tasks
+			break;
+		
+		default:
+			SWLOG_ERROR("Unknown task type in free_task_context: %d\n", ctx->type);
+			break;
+	}
+	
 	g_free(ctx);
 }
 
 /* Description: send the xconf server response to apps and clear the task from task tracking system */
-void complete_CheckUpdate_waiting_tasks(const gchar *availableVersion, const gchar *successMsg, TaskContext *ctx) 
-{ 
-	// in the arguments Message string will be XConf server resp
+void complete_CheckUpdate_waiting_tasks(TaskContext *ctx) 
+{
+	// Send responses to all waiting CheckUpdate tasks using their stored result data
 	SWLOG_INFO("Completing %d waiting CheckUpdate tasks\n",g_slist_length(waiting_checkUpdate_ids));
 	// Iterate through each task_id in waiting_checkUpdate_ids
 	GSList *current = waiting_checkUpdate_ids;
@@ -174,14 +210,26 @@ void complete_CheckUpdate_waiting_tasks(const gchar *availableVersion, const gch
 		TaskContext *context = g_hash_table_lookup(active_tasks, GUINT_TO_POINTER(task_id));
 		if (context != NULL) {
 			SWLOG_INFO("[Waiting task_id in -%d] Sending response to app_id : %s\n",task_id, context->process_name);
-			// Send D-Bus response - after processJsonResponse
-
-/*			g_dbus_method_invocation_return_value(context->invocation,
-					g_variant_new("(ssss)",
-						context->client_fwdata_version,    // Current Fw Verison
-						real_available_version,            // From XConf
-						real_update_details,               // From XConf
-						real_status));                     // UPDATE_AVAILABLE/etc. */
+			
+			// Send D-Bus response using the stored result data
+			const gchar *version = context->data.check_update.client_fwdata_version ? 
+			                      context->data.check_update.client_fwdata_version : "";
+			const gchar *available = context->data.check_update.client_fwdata_availableVersion ? 
+			                        context->data.check_update.client_fwdata_availableVersion : "";
+			const gchar *details = context->data.check_update.client_fwdata_updateDetails ? 
+			                      context->data.check_update.client_fwdata_updateDetails : "";
+			const gchar *status = context->data.check_update.client_fwdata_status ? 
+			                     context->data.check_update.client_fwdata_status : "";
+			
+			SWLOG_INFO("[CheckUpdate task-%d] Sending to client - version: %s, available: %s, details: %s, status: %s\n",
+			           task_id, version, available, details, status);
+			
+			g_dbus_method_invocation_return_value(context->invocation,
+				g_variant_new("(ssss)",
+					version,     // Current Fw Version (client input)
+					available,   // Available Version (from XConf)
+					details,     // Update Details (from XConf)
+					status));    // Status Message (UPDATE_AVAILABLE/etc.)
 
 			// Remove task_id from active_tasks
 			g_hash_table_remove(active_tasks, GUINT_TO_POINTER(task_id));
@@ -232,7 +280,7 @@ void complete_CheckUpdate_waiting_tasks(const gchar *availableVersion, const gch
 static gboolean CheckUpdate_complete_callback(gpointer user_data) {
 	TaskContext *ctx = (TaskContext *)user_data;
 	SWLOG_INFO("In CheckUpdate_complete_callback\n");
-	complete_CheckUpdate_waiting_tasks("SKY_AvailableVersion.bin", "YES",ctx);
+	complete_CheckUpdate_waiting_tasks(ctx);
 	SWLOG_INFO(" back from complete_CheckUpdate_waiting_tasks\n");
 	return G_SOURCE_REMOVE;  // Don't repeat this timeout
 }
@@ -278,27 +326,47 @@ static gboolean check_update_task(gpointer user_data)
 		//sleep(300);  // will get replaced by actual check logic  Keepin sleep here blocks main loop ; cannot use sleep it is blocking
 		//int isDone = XConfCom();
 		
-		// Use real handler ID and client's version
-		gchar *handler_id = g_strdup(data->CheckupdateTask_ctx->process_name);
-		gchar *current_version = g_strdup(data->CheckupdateTask_ctx->client_fwdata_version);
+		// Use real handler ID and client's version from union
+		TaskContext *ctx = data->CheckupdateTask_ctx;
 		
-		// Declare output variables for the handler function
-		gchar *available_version = NULL;
-		gchar *update_details = NULL;
-		gchar *status = NULL;
-		
-		SWLOG_INFO("[CheckUpdate task-%d] Using client version: %s, handler: %s",task_id, current_version, handler_id);
-		int isDone = rdkFwupdateMgr_checkForUpdate(handler_id, current_version,&available_version, &update_details, &status);
-		if(isDone == 1 ) {
-			g_timeout_add_seconds(10, CheckUpdate_complete_callback,data->CheckupdateTask_ctx); //  once the xconf communication is done, delay 10 seconds and then call CheckUpdate_complete_callback
+		// Verify this is a CheckUpdate task
+		if (ctx->type != TASK_TYPE_CHECK_UPDATE) {
+			SWLOG_ERROR("[CheckUpdate task-%d] ERROR: Wrong task type %d, expected %d\n", 
+			           task_id, ctx->type, TASK_TYPE_CHECK_UPDATE);
+			return G_SOURCE_REMOVE;
 		}
+		
+		gchar *handler_id = g_strdup(ctx->process_name);
+		gchar *current_version = g_strdup(ctx->data.check_update.client_fwdata_version ? 
+		                                 ctx->data.check_update.client_fwdata_version : "");
+		
+		SWLOG_INFO("[CheckUpdate task-%d] Using client handler_id: %s, current_version: %s", 
+		           task_id, handler_id, current_version);
+		
+		// Use new return structure approach (no double pointers)
+		CheckUpdateResponse response = rdkFwupdateMgr_checkForUpdate(handler_id, current_version);
+		
+		SWLOG_INFO("[CheckUpdate task-%d] Result: %d, Available: %s", 
+		           task_id, response.result_code, 
+		           response.available_version ? response.available_version : "NULL");
+		
+		// Store response in TaskContext for callback to use
+		ctx->data.check_update.result_code = response.result_code;
+		g_free(ctx->data.check_update.client_fwdata_availableVersion);
+		g_free(ctx->data.check_update.client_fwdata_updateDetails); 
+		g_free(ctx->data.check_update.client_fwdata_status);
+		
+		ctx->data.check_update.client_fwdata_availableVersion = g_strdup(response.available_version ? response.available_version : "");
+		ctx->data.check_update.client_fwdata_updateDetails = g_strdup(response.update_details ? response.update_details : "");
+		ctx->data.check_update.client_fwdata_status = g_strdup(response.status_message ? response.status_message : "");
+		
+		// ALWAYS schedule callback - client needs response regardless of result
+		g_timeout_add_seconds(10, CheckUpdate_complete_callback, data->CheckupdateTask_ctx);
 		
 		// Clean up allocated memory
 		g_free(handler_id);
 		g_free(current_version);
-		g_free(available_version);
-		g_free(update_details);
-		g_free(status);
+		checkupdate_response_free(&response);  // Clean up response structure
 	}
 	return G_SOURCE_REMOVE;
 }
@@ -363,7 +431,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 	SWLOG_INFO("\n==== [D-BUS] INCOMING REQUEST: %s from %s ====\n", rdkv_req_method, rdkv_req_caller_id);
 
 	/* CHECK UPDATE REQUEST*/
-	//extract process name and libversion from the payload -  inputs provided by app
+	//extract process handler_id and FwData from the payload -  inputs provided by client app
 	if (g_strcmp0(rdkv_req_method, "CheckForUpdate") == 0) {
 		/*
 		 * gchar *app_id=NULL;
@@ -372,13 +440,13 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		 * */
 
 		// Extract full Handler + FwData structure
-		gchar *handler_process_name = NULL;
+		gchar *handler_process_name = NULL; 
 		gchar *fwdata_version = NULL;
 		gchar *fwdata_availableVersion = NULL;
 		gchar *fwdata_updateDetails = NULL;
 		gchar *fwdata_status = NULL;
 		
-		// Extract all 5 parameters from new D-Bus payload
+		// Extract all 5 parameters from  D-Bus payload
 		g_variant_get(rdkv_req_payload, "(sssss)",&handler_process_name,     // this is the app's handler_id 
 							  &fwdata_version,
               						  &fwdata_availableVersion,  // Usually empty from client
@@ -387,7 +455,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 										     //
 		
 		CheckUpdate_TaskData *user_data = g_malloc(sizeof(CheckUpdate_TaskData));
-		SWLOG_INFO("[D-BUS] CheckForUpdate request : app_id:%s ,CurrFWVersion:%s---------\n",handler_process_name,fwdata_version);
+		SWLOG_INFO("[D-BUS] CheckForUpdate request : app_id:%s ,CurrFWVersion:%s---------\n",handler_process_name,fwdata_version); //possibly 
 		//REgistreation Check
 		gboolean is_registered = g_hash_table_contains(registered_processes, GINT_TO_POINTER(g_ascii_strtoull(handler_process_name, NULL, 10)));
 		SWLOG_INFO("[D-BUS] is_registered:%d app_id searched for : %"G_GUINT64_FORMAT" \n",is_registered,g_ascii_strtoull(handler_process_name,NULL,10));
@@ -401,8 +469,17 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 
 		SWLOG_INFO("[D-BUS] CheckForUpdate request: process='%s', currFWVersion='%s', sender(dbus assigned caller id)='%s'\n",handler_process_name, fwdata_version, rdkv_req_caller_id);
 
-		// Create task context (stores all request info)
-		TaskContext *CheckUpdateTask_ctx = create_task_context(handler_process_name, rdkv_req_caller_id, resp_ctx);
+		// Create CheckUpdate-specific task context
+		TaskContext *CheckUpdateTask_ctx = create_task_context(TASK_TYPE_CHECK_UPDATE, 
+		                                                     handler_process_name, 
+		                                                     rdkv_req_caller_id, 
+		                                                     resp_ctx);
+		
+		// Populate CheckUpdate-specific fields in the union
+		CheckUpdateTask_ctx->data.check_update.client_fwdata_version = g_strdup(fwdata_version);
+		CheckUpdateTask_ctx->data.check_update.client_fwdata_availableVersion = g_strdup(fwdata_availableVersion);
+		CheckUpdateTask_ctx->data.check_update.client_fwdata_updateDetails = g_strdup(fwdata_updateDetails);
+		CheckUpdateTask_ctx->data.check_update.client_fwdata_status = g_strdup(fwdata_status);
 
 		// Assign unique task ID and track it
 		guint CheckUpdateTask_id = next_task_id++; // this will be the key in active_tasks hash table
@@ -439,7 +516,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			SWLOG_INFO("App is registered\n");
 		}
 
-		TaskContext *DownloadFWTask_ctx = create_task_context(app_id, rdkv_req_caller_id, resp_ctx);
+		TaskContext *DownloadFWTask_ctx = create_task_context(TASK_TYPE_DOWNLOAD, app_id, rdkv_req_caller_id, resp_ctx);
 		guint DownloadFWTask_id = next_task_id++;
 		g_hash_table_insert(active_tasks, GUINT_TO_POINTER(DownloadFWTask_id), DownloadFWTask_ctx);
 
@@ -463,7 +540,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 				app_id, rdkv_req_caller_id);
 		SWLOG_INFO("[D-BUS] WARNING: This will flash firmware and reboot system!\n");
 
-		TaskContext *ctx = create_task_context(app_id, rdkv_req_caller_id, resp_ctx);
+		TaskContext *ctx = create_task_context(TASK_TYPE_UPDATE, app_id, rdkv_req_caller_id, resp_ctx);
 		guint task_id = next_task_id++;
 		g_hash_table_insert(active_tasks, GUINT_TO_POINTER(task_id), ctx);
 
