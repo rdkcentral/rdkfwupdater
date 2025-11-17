@@ -218,8 +218,6 @@ void complete_CheckUpdate_waiting_tasks(TaskContext *ctx)
 			                        context->data.check_update.client_fwdata_availableVersion : "";
 			const gchar *details = context->data.check_update.client_fwdata_updateDetails ? 
 			                      context->data.check_update.client_fwdata_updateDetails : "";
-			const gchar *status = context->data.check_update.client_fwdata_status ? 
-			                     context->data.check_update.client_fwdata_status : "";
 			
 			SWLOG_INFO("=== [CHECK_UPDATE] Task Completion - Sending Response ===\n");
 			SWLOG_INFO("[CHECK_UPDATE] Task ID: %d\n", task_id);
