@@ -263,33 +263,10 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
             g_free(update_details);
             return result;
         } else {
-            // No update or processing failed
-            if (response.cloudFWVersion[0]) {
-                // XConf returned a version but processJsonResponse rejected it
-                SWLOG_INFO("[rdkFwupdateMgr] Update rejected - Cloud version: %s", 
-                          response.cloudFWVersion);
-                
-                // Check if versions are the same
-                if (strcmp(response.cloudFWVersion, current_version) == 0) {
-                    return create_result_response(UPDATE_NOT_AVAILABLE, 
-                        "UPDATE_NOT_AVAILABLE: Already on latest version");
-                } else {
-                    return create_result_response(UPDATE_NOT_AVAILABLE, 
-                        "UPDATE_NOT_AVAILABLE: Image not valid for this device model");
-                }
-            } else {
-                // XConf didn't return any version
-                SWLOG_INFO("[rdkFwupdateMgr] No firmware version in XConf response");
-                return create_result_response(UPDATE_NOT_AVAILABLE, 
-                    "UPDATE_NOT_AVAILABLE: No firmware configured for this device");
-            }
-        }
-    } else {
-        // XConf communication failed
-        SWLOG_ERROR("[rdkFwupdateMgr] XConf communication failed: ret=%d, http=%d", 
-                    ret, http_code);
-        return create_result_response(UPDATE_ERROR, "UPDATE_ERROR");
-    }
+		// No update or processing failed
+                SWLOG_ERROR("[rdkFwupdateMgr] XConf communication failed: ret=%d, http=%d",ret, http_code);
+		return create_result_response(UPDATE_ERROR, "UPDATE_ERROR");
+	}
 }
 
 // TODO: Other wrapper functions will be implemented in subsequent subtasks
