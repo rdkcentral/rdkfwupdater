@@ -2,6 +2,7 @@
 #include "rdkv_cdl_log_wrapper.h"
 #include "rdkv_cdl.h"           // For device_info, cur_img_detail
 #include "json_process.h"       // For processJsonResponse
+#include "device_status_helper.h" // For currentImg function
 #ifndef GTEST_ENABLE
 #include "downloadUtil.h"       // For DownloadData and related functions
 #include "urlHelper.h"         // For DownloadData, FileDwnl_t, MtlsAuth_t types
@@ -140,10 +141,24 @@ static CheckUpdateResponse create_success_response(const gchar *available_versio
                                                    const gchar *update_details,
                                                    const gchar *status_message) {
     CheckUpdateResponse response = {0};
+    char current_img_buffer[256] = {0};
+    
+    // Get the current running image version using currentImg function
+    bool img_status = currentImg(current_img_buffer, sizeof(current_img_buffer));
+    
+    SWLOG_INFO("[rdkFwupdateMgr] create_success_response: Getting current image info\n");
+    SWLOG_INFO("[rdkFwupdateMgr]   - currentImg status: %s\n", img_status ? "SUCCESS" : "FAILED");
+    SWLOG_INFO("[rdkFwupdateMgr]   - current_img_buffer: '%s'\n", current_img_buffer);
+
     response.result_code = UPDATE_AVAILABLE;
+    response.current_img_version = g_strdup(img_status ? current_img_buffer : "Unknown");
     response.available_version = g_strdup(available_version ? available_version : "");
     response.update_details = g_strdup(update_details ? update_details : "");
     response.status_message = g_strdup(status_message ? status_message : "UPDATE_AVAILABLE");
+    
+    SWLOG_INFO("[rdkFwupdateMgr] create_success_response: Response created with current image: '%s', available: '%s'\n", 
+               response.current_img_version, response.available_version);
+    
     return response;
 }
 
@@ -151,15 +166,28 @@ static CheckUpdateResponse create_success_response(const gchar *available_versio
 static CheckUpdateResponse create_result_response(CheckForUpdateResult result_code,
                                                   const gchar *status_message) {
     CheckUpdateResponse response = {0};
+    char current_img_buffer[256] = {0};
+    
+    // Get the current running image version using currentImg function
+    bool img_status = currentImg(current_img_buffer, sizeof(current_img_buffer));
+    
+    SWLOG_INFO("[rdkFwupdateMgr] create_result_response: Getting current image info\n");
+    SWLOG_INFO("[rdkFwupdateMgr]   - currentImg status: %s\n", img_status ? "SUCCESS" : "FAILED");
+    SWLOG_INFO("[rdkFwupdateMgr]   - current_img_buffer: '%s'\n", current_img_buffer);
+    
     response.result_code = result_code;
+    response.current_img_version = g_strdup(img_status ? current_img_buffer : "Unknown");
     response.available_version = g_strdup("");
     response.update_details = g_strdup("");
     response.status_message = g_strdup(status_message ? status_message : "");
+    
+    SWLOG_INFO("[rdkFwupdateMgr] create_result_response: Response created with current image: '%s'\n", 
+               response.current_img_version);
+    
     return response;
 }
 
-CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id,
-                                                  const gchar *current_version) {
+CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
     
     SWLOG_INFO("[rdkFwupdateMgr] CheckForUpdate: handler=%s\n",handler_id);
     
@@ -168,32 +196,55 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id,
     int http_code = 0;
     int server_type = 1;  // HTTP server type
     
-    // Real XConf communication
+    *response.cloudFWFile = 0;
+    *response.cloudFWLocation = 0;
+    *response.ipv6cloudFWLocation = 0;
+    *response.cloudFWVersion = 0;
+    *response.cloudDelayDownload = 0;
+    *response.cloudProto = 0;
+    *response.cloudImmediateRebootFlag = 0;
+    *response.peripheralFirmwares = 0;
+    *response.dlCertBundle = 0;
+    *response.cloudPDRIVersion = 0;
+
+    //  XConf communication
     int ret = MakeXconfComms(&response, server_type, &http_code);
     
-    SWLOG_INFO("[rdkFwupdateMgr] XConf call result: ret=%d, http_code=%d", 
-               ret, http_code);
+    SWLOG_INFO("[rdkFwupdateMgr] XConf call completed with result: ret=%d\n",ret);
     
     if (ret == 0 && http_code == 200) {
-        // Log what XConf returned before processing
-        SWLOG_INFO("[rdkFwupdateMgr] XConf Response - FW Version: '%s', File: '%s', Location: '%s'",
-                   response.cloudFWVersion[0] ? response.cloudFWVersion : "(empty)",
-                   response.cloudFWFile[0] ? response.cloudFWFile : "(empty)", 
+        // Comprehensive logging of all XConf response variables
+        SWLOG_INFO("=== [rdkFwupdateMgr] XConf Response - Complete Data ===\n");
+        SWLOG_INFO("[rdkFwupdateMgr] Core Firmware Data:\n");
+        SWLOG_INFO("[rdkFwupdateMgr]   - cloudFWVersion: '%s'\n", 
+                   response.cloudFWVersion[0] ? response.cloudFWVersion : "(empty)");
+        SWLOG_INFO("[rdkFwupdateMgr]   - cloudFWFile: '%s'\n", 
+                   response.cloudFWFile[0] ? response.cloudFWFile : "(empty)");
+        SWLOG_INFO("[rdkFwupdateMgr]   - cloudFWLocation: '%s'\n", 
                    response.cloudFWLocation[0] ? response.cloudFWLocation : "(empty)");
+        SWLOG_INFO("[rdkFwupdateMgr]   - ipv6cloudFWLocation: '%s'\n", 
+                   response.ipv6cloudFWLocation[0] ? response.ipv6cloudFWLocation : "(empty)");
         
-        // Use existing JSON processing
-        int json_res = processJsonResponse(&response, current_version, 
-                                         device_info.model, device_info.maint_status);
+        SWLOG_INFO("[rdkFwupdateMgr] Download Control:\n");
+        SWLOG_INFO("[rdkFwupdateMgr]   - cloudDelayDownload: '%s'\n", 
+                   response.cloudDelayDownload[0] ? response.cloudDelayDownload : "(empty)");
+        SWLOG_INFO("[rdkFwupdateMgr]   - cloudProto: '%s'\n", 
+                   response.cloudProto[0] ? response.cloudProto : "(empty)");
+        SWLOG_INFO("[rdkFwupdateMgr]   - cloudImmediateRebootFlag: '%s'\n", 
+                   response.cloudImmediateRebootFlag[0] ? response.cloudImmediateRebootFlag : "(empty)");
         
-        SWLOG_INFO("[rdkFwupdateMgr] JSON processing result: %d", json_res);
-        
-        if (json_res == 0) {
-            // Update available - create comprehensive success response with full XConf data
-            SWLOG_INFO("[rdkFwupdateMgr] Update available: %s", 
-                      response.cloudFWVersion[0] ? response.cloudFWVersion : "Unknown");
-            
-            // Create detailed update information from XConf response
-            gchar *update_details = g_strdup_printf(
+        SWLOG_INFO("[rdkFwupdateMgr] Additional Components:\n");
+        SWLOG_INFO("[rdkFwupdateMgr]   - peripheralFirmwares: '%s'\n", 
+                   response.peripheralFirmwares[0] ? response.peripheralFirmwares : "(empty)");
+        SWLOG_INFO("[rdkFwupdateMgr]   - dlCertBundle: '%s'\n", 
+                   response.dlCertBundle[0] ? response.dlCertBundle : "(empty)");
+        SWLOG_INFO("[rdkFwupdateMgr]   - cloudPDRIVersion: '%s'\n", 
+                   response.cloudPDRIVersion[0] ? response.cloudPDRIVersion : "(empty)");
+        SWLOG_INFO("=== [rdkFwupdateMgr] XConf Response - End ===\n"); 
+       
+
+       // Create detailed update information from XConf response
+       gchar *update_details = g_strdup_printf(
                 "File:%s|Location:%s|Protocol:%s|Reboot:%s|Delay:%s|PDRI:%s", 
                 response.cloudFWFile[0] ? response.cloudFWFile : "N/A",
                 response.cloudFWLocation[0] ? response.cloudFWLocation : "N/A", 
@@ -215,8 +266,8 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id,
             // No update or processing failed
             if (response.cloudFWVersion[0]) {
                 // XConf returned a version but processJsonResponse rejected it
-                SWLOG_INFO("[rdkFwupdateMgr] Update rejected - Cloud version: %s, Current: %s", 
-                          response.cloudFWVersion, current_version);
+                SWLOG_INFO("[rdkFwupdateMgr] Update rejected - Cloud version: %s", 
+                          response.cloudFWVersion);
                 
                 // Check if versions are the same
                 if (strcmp(response.cloudFWVersion, current_version) == 0) {

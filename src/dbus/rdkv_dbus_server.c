@@ -332,7 +332,6 @@ static gboolean check_update_task(gpointer user_data)
 	//  Call checkWithXconf logic here
 	// ret =  checkWithXConf(ctx->process_name);
 
-	// For now, simulating the with logs
 	if (IsCheckUpdateInProgress == TRUE) {
 		SWLOG_INFO("[CHECK_UPDATE_TASK] Another CheckUpdate operation is in progress\n");
 		SWLOG_INFO("[CHECK_UPDATE_TASK] Adding task-%d to waiting queue...\n", task_id);
@@ -348,8 +347,6 @@ static gboolean check_update_task(gpointer user_data)
 		waiting_checkUpdate_ids = g_slist_append(waiting_checkUpdate_ids, GUINT_TO_POINTER(task_id));
 		
 		SWLOG_INFO("[CHECK_UPDATE_TASK] Initiating XConf communication and device queries...\n");
-		//sleep(300);  // will get replaced by actual check logic  Keepin sleep here blocks main loop ; cannot use sleep it is blocking
-		//int isDone = XConfCom();
 		
 		// Use real handler ID and client's version from union
 		TaskContext *ctx = data->CheckupdateTask_ctx;
@@ -363,21 +360,13 @@ static gboolean check_update_task(gpointer user_data)
 		}
 		
 		gchar *handler_id = g_strdup(ctx->process_name);
-		gchar *current_version = g_strdup(ctx->data.check_update.client_fwdata_version ? 
-		                                 ctx->data.check_update.client_fwdata_version : "");
 		SWLOG_INFO("[CHECK_UPDATE_TASK] Executing firmware check with:\n");
 		SWLOG_INFO("[CHECK_UPDATE_TASK]   - Handler ID: '%s'\n", handler_id);
-		SWLOG_INFO("[CHECK_UPDATE_TASK]   - Current Version: '%s'\n", current_version);
 		
 		SWLOG_INFO("[CHECK_UPDATE_TASK] Calling rdkFwupdateMgr_checkForUpdate()...\n");
-		SWLOG_INFO("[CHECK_UPDATE_TASK] This will perform:\n");
-		SWLOG_INFO("[CHECK_UPDATE_TASK]   1. RFC settings retrieval\n");
-		SWLOG_INFO("[CHECK_UPDATE_TASK]   2. Device properties gathering\n");
-		SWLOG_INFO("[CHECK_UPDATE_TASK]   3. XConf server communication\n");
-		SWLOG_INFO("[CHECK_UPDATE_TASK]   4. Firmware version comparison\n");
 		
-		// Use new return structure approach (no double pointers)
-		CheckUpdateResponse response = rdkFwupdateMgr_checkForUpdate(handler_id, current_version);
+		// Expecting a response structure in return from rdkFwupdateMgr_checkForUpdate
+		CheckUpdateResponse response = rdkFwupdateMgr_checkForUpdate(handler_id);
 		
 		SWLOG_INFO("[CHECK_UPDATE_TASK] rdkFwupdateMgr_checkForUpdate() completed!\n");
 		SWLOG_INFO("[CHECK_UPDATE_TASK] Results:\n");
@@ -388,6 +377,8 @@ static gboolean check_update_task(gpointer user_data)
 			case 2: SWLOG_INFO(" (UPDATE_ERROR)\n"); break;
 			default: SWLOG_INFO(" (UNKNOWN_STATUS)\n"); break;
 		}
+		SWLOG_INFO("[CHECK_UPDATE_TASK]   - Current Image Version: '%s'\n", 
+		           response.current_img_version ? response.current_img_version : "NULL");
 		SWLOG_INFO("[CHECK_UPDATE_TASK]   - Available Version: '%s'\n", 
 		           response.available_version ? response.available_version : "NULL");
 		SWLOG_INFO("[CHECK_UPDATE_TASK]   - Update Details: '%s'\n", 
@@ -396,10 +387,12 @@ static gboolean check_update_task(gpointer user_data)
 		SWLOG_INFO("[CHECK_UPDATE_TASK] Storing results in task context...\n");
 		// Store response in TaskContext for callback to use
 		ctx->data.check_update.result_code = response.result_code;
+		g_free(ctx->data.check_update.client_fwdata_version);
 		g_free(ctx->data.check_update.client_fwdata_availableVersion);
 		g_free(ctx->data.check_update.client_fwdata_updateDetails); 
 		g_free(ctx->data.check_update.client_fwdata_status);
 		
+		ctx->data.check_update.client_fwdata_version = g_strdup(response.current_img_version ? response.current_img_version : "");
 		ctx->data.check_update.client_fwdata_availableVersion = g_strdup(response.available_version ? response.available_version : "");
 		ctx->data.check_update.client_fwdata_updateDetails = g_strdup(response.update_details ? response.update_details : "");
 		ctx->data.check_update.client_fwdata_status = g_strdup(response.status_message ? response.status_message : "");
@@ -413,7 +406,6 @@ static gboolean check_update_task(gpointer user_data)
 		SWLOG_INFO("[CHECK_UPDATE_TASK] Callback scheduled - cleanup and exit\n");
 		// Clean up allocated memory
 		g_free(handler_id);
-		g_free(current_version);
 		checkupdate_response_free(&response);  // Clean up response structure
 		
 		SWLOG_INFO("=== [CHECK_UPDATE_TASK] Async Task Execution Complete ===\n\n");

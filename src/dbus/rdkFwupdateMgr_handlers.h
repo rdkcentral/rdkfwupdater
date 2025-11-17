@@ -16,14 +16,14 @@ typedef enum {
 // Return structure for rdkFwupdateMgr_checkForUpdate (replaces double pointers)
 typedef struct {
     CheckForUpdateResult result_code;  // Enum result
+    gchar *current_img_version;        //Current running image on device
     gchar *available_version;          // Available firmware version (NULL if no update)
     gchar *update_details;             // Update details/download URL (NULL if no update)
     gchar *status_message;             // Status message for logging/debugging
 } CheckUpdateResponse;
 
 // Updated wrapper function using return structure approach (no double pointers)
-CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id,
-                                                  const gchar *current_version);
+CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id);
 
 // Helper function to free CheckUpdateResponse memory
 void checkupdate_response_free(CheckUpdateResponse *response);
