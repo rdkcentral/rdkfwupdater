@@ -13,6 +13,7 @@
 #include "miscellaneous.h"     // For test context
 #endif
 #include "deviceutils.h"       // For DEFAULT_DL_ALLOC and other constants
+#include "rdkv_cdl.h"          // For HTTP server type constants
 #include "rdkv_upgrade.h"      // For RdkUpgradeContext_t and rdkv_upgrade_request
 #include "device_api.h"        // For device information functions
 #include "iarmInterface.h"     // For RED_RECOVERY_COMPLETED and eventManager
@@ -52,7 +53,10 @@ static int MakeXconfComms( XCONFRES *pResponse, int server_type, int *pHttp_code
                 SWLOG_INFO( "MakeXconfComms: server URL %s\n", pServURL );
                 if( len )
                 {
+                    SWLOG_INFO("MakeXconfComms: Server URL length: %d, preparing device JSON data...\n", (int)len);
                     len = createJsonString( pJSONStr, JSON_STR_LEN );
+                    SWLOG_INFO("MakeXconfComms: Device JSON data prepared (%d bytes)\n", (int)len);
+                    SWLOG_INFO("MakeXconfComms: JSON POST data:\n%s\n", pJSONStr);
 
                     //context structure for XCONF upgrade request - daemon mode initialization
                     RdkUpgradeContext_t xconf_context = {0};
@@ -83,11 +87,34 @@ static int MakeXconfComms( XCONFRES *pResponse, int server_type, int *pHttp_code
                     xconf_context.trigger_type = local_trigger_type;
                     xconf_context.rfc_list = &local_rfc_list;      // NOW USES REAL RFC DATA
 
+                    SWLOG_INFO("MakeXconfComms: Initiating XConf request with server_type=%d\n", server_type);
                     ret = rdkv_upgrade_request(&xconf_context, &curl, pHttp_code);
+                    
+                    SWLOG_INFO("MakeXconfComms: XConf request completed - ret=%d, http_code=%d\n", ret, *pHttp_code);
+                    
                     if( ret == 0 && *pHttp_code == 200 && DwnLoc.pvOut != NULL )
                     {
-                        SWLOG_INFO( "MakeXconfComms: Calling getXconfRespData with input = %s\n", (char *)DwnLoc.pvOut );
+                        SWLOG_INFO("MakeXconfComms: SUCCESS - XConf communication successful\n");
+                        SWLOG_INFO("MakeXconfComms: Raw XConf response (%d bytes):\n%s\n", 
+                                   (int)DwnLoc.datasize, (char *)DwnLoc.pvOut);
+                        SWLOG_INFO("MakeXconfComms: Calling getXconfRespData to parse response...\n");
                         ret = getXconfRespData( pResponse, (char *)DwnLoc.pvOut );
+                        SWLOG_INFO("MakeXconfComms: getXconfRespData returned %d\n", ret);
+                        
+                        // Log parsed XConf response details
+                        if (ret == 0) {
+                            SWLOG_INFO("MakeXconfComms: PARSED XConf Response Data:\n");
+                            SWLOG_INFO("  - firmwareFilename: '%s'\n", pResponse->cloudFWFile);
+                            SWLOG_INFO("  - firmwareLocation: '%s'\n", pResponse->cloudFWLocation);
+                            SWLOG_INFO("  - firmwareVersion: '%s'\n", pResponse->cloudFWVersion);
+                            SWLOG_INFO("  - firmwareProtocol: '%s'\n", pResponse->cloudProto);
+                            SWLOG_INFO("  - rebootImmediately: '%s'\n", pResponse->cloudImmediateRebootFlag);
+                            SWLOG_INFO("  - delayDownload: '%s'\n", pResponse->cloudDelayDownload);
+                            SWLOG_INFO("  - peripheralFirmwares: '%s'\n", pResponse->peripheralFirmwares);
+                            SWLOG_INFO("  - cloudPDRIVersion: '%s'\n", pResponse->cloudPDRIVersion);
+                        } else {
+                            SWLOG_ERROR("MakeXconfComms: ERROR - Failed to parse XConf response\n");
+                        }
                         
                         // Recovery completed event handling - daemon mode
                         #ifndef GTEST_ENABLE
@@ -97,6 +124,17 @@ static int MakeXconfComms( XCONFRES *pResponse, int server_type, int *pHttp_code
                              unlink(RED_STATE_REBOOT);
                         }
                         #endif
+                    }
+                    else
+                    {
+                        SWLOG_ERROR("MakeXconfComms: FAILED - XConf communication failed\n");
+                        SWLOG_ERROR("  - ret=%d (0=success)\n", ret);
+                        SWLOG_ERROR("  - http_code=%d (200=success)\n", *pHttp_code);
+                        SWLOG_ERROR("  - DwnLoc.pvOut=%p (should not be NULL)\n", DwnLoc.pvOut);
+                        if (DwnLoc.pvOut != NULL) {
+                            SWLOG_ERROR("  - Response data size: %d bytes\n", (int)DwnLoc.datasize);
+                            SWLOG_ERROR("  - Response data: '%s'\n", (char *)DwnLoc.pvOut);
+                        }
                     }
                 }
                 else
@@ -194,7 +232,7 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
     // Use existing XConf communication function
     XCONFRES response = {0};
     int http_code = 0;
-    int server_type = 1;  // HTTP server type
+    int server_type = HTTP_XCONF_DIRECT;  // XConf query mode (2), not download mode
     
     *response.cloudFWFile = 0;
     *response.cloudFWLocation = 0;
