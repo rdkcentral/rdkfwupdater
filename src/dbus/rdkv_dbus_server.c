@@ -38,7 +38,8 @@ static const gchar introspection_xml[] =
 "<arg type='s' name='fwdata_version' direction='out'/>" //Current firmware version (detected by server)
 "<arg type='s' name='fwdata_availableVersion' direction='out'/>" //Available version (from XConf)
 "<arg type='s' name='fwdata_updateDetails' direction='out'/>" //Update details (from XConf)  
-"<arg type='i' name='fwdata_status' direction='out'/>" //Status code (0=available, 1=not_available, 2=error)
+"<arg type='s' name='fwdata_status' direction='out'/>" //Status string from FwData structure (optional field)
+"<arg type='i' name='fwdata_status_code' direction='out'/>" //Status code (0=available, 1=not_available, 2=error)
 "</method>"
 "    <method name='DownloadFirmware'>"
 "      <arg type='s' name='handler' direction='in'/>" //this is a struct as per requirement, for now taking it as string.  handler argument will be the process_name in dbus_handlers
@@ -218,6 +219,8 @@ void complete_CheckUpdate_waiting_tasks(TaskContext *ctx)
 			                        context->data.check_update.client_fwdata_availableVersion : "";
 			const gchar *details = context->data.check_update.client_fwdata_updateDetails ? 
 			                      context->data.check_update.client_fwdata_updateDetails : "";
+			const gchar *status_str = context->data.check_update.client_fwdata_status ? 
+			                         context->data.check_update.client_fwdata_status : "";
 			
 			SWLOG_INFO("=== [CHECK_UPDATE] Task Completion - Sending Response ===\n");
 			SWLOG_INFO("[CHECK_UPDATE] Task ID: %d\n", task_id);
@@ -225,6 +228,7 @@ void complete_CheckUpdate_waiting_tasks(TaskContext *ctx)
 			SWLOG_INFO("[CHECK_UPDATE]   - Current FW Version: '%s'\n", version);
 			SWLOG_INFO("[CHECK_UPDATE]   - Available Version: '%s'\n", available);
 			SWLOG_INFO("[CHECK_UPDATE]   - Update Details: '%s'\n", details);
+			SWLOG_INFO("[CHECK_UPDATE]   - Status String: '%s'\n", status_str);
 			SWLOG_INFO("[CHECK_UPDATE]   - Status Code: %d ", (gint32)context->data.check_update.result_code);
 			
 			// Log status meaning
@@ -237,10 +241,11 @@ void complete_CheckUpdate_waiting_tasks(TaskContext *ctx)
 			
 			SWLOG_INFO("[CHECK_UPDATE] Sending D-Bus response to client...\n");
 			g_dbus_method_invocation_return_value(context->invocation,
-				g_variant_new("(sssi)",
+				g_variant_new("(ssssi)",
 					version,     // Current/Detected Fw Version (from server)
 					available,   // Available Version (from XConf)
 					details,     // Update Details (from XConf)
+					status_str,  // Status string from FwData structure (optional field)
 					(gint32)context->data.check_update.result_code));    // Status Code (0=UPDATE_AVAILABLE, 1=UPDATE_NOT_AVAILABLE, 2=UPDATE_ERROR)
 
 			SWLOG_INFO("[CHECK_UPDATE] Response sent successfully to client\n");

@@ -179,7 +179,7 @@ static CheckUpdateResponse create_success_response(const gchar *available_versio
                                                    const gchar *update_details,
                                                    const gchar *status_message) {
     CheckUpdateResponse response = {0};
-    char current_img_buffer[256] = {0};
+    char current_img_buffer[64] = {0};
     
     // Get the current running image version using currentImg function
     bool img_status = currentImg(current_img_buffer, sizeof(current_img_buffer));
@@ -192,10 +192,10 @@ static CheckUpdateResponse create_success_response(const gchar *available_versio
     response.current_img_version = g_strdup(img_status ? current_img_buffer : "Unknown");
     response.available_version = g_strdup(available_version ? available_version : "");
     response.update_details = g_strdup(update_details ? update_details : "");
-    response.status_message = g_strdup(status_message ? status_message : "UPDATE_AVAILABLE");
+    response.status_message = g_strdup(status_message ? status_message : "Firmware update available");
     
-    SWLOG_INFO("[rdkFwupdateMgr] create_success_response: Response created with current image: '%s', available: '%s'\n", 
-               response.current_img_version, response.available_version);
+    SWLOG_INFO("[rdkFwupdateMgr] create_success_response: Response created with current image: '%s', available: '%s', status: '%s'\n", 
+               response.current_img_version, response.available_version, response.status_message);
     
     return response;
 }
@@ -217,10 +217,32 @@ static CheckUpdateResponse create_result_response(CheckForUpdateResult result_co
     response.current_img_version = g_strdup(img_status ? current_img_buffer : "Unknown");
     response.available_version = g_strdup("");
     response.update_details = g_strdup("");
-    response.status_message = g_strdup(status_message ? status_message : "");
     
-    SWLOG_INFO("[rdkFwupdateMgr] create_result_response: Response created with current image: '%s'\n", 
-               response.current_img_version);
+    // Set appropriate status string based on result code
+    const gchar *default_status = "";
+    if (status_message) {
+        default_status = status_message;
+    } else {
+        switch(result_code) {
+            case UPDATE_AVAILABLE:
+                default_status = "Update available";
+                break;
+            case UPDATE_NOT_AVAILABLE:
+                default_status = "No update available";
+                break;
+            case UPDATE_ERROR:
+                default_status = "Error checking for updates";
+                break;
+            default:
+                default_status = "Unknown status";
+                break;
+        }
+    }
+    
+    response.status_message = g_strdup(default_status);
+    
+    SWLOG_INFO("[rdkFwupdateMgr] create_result_response: Response created with current image: '%s', status: '%s'\n", 
+               response.current_img_version, response.status_message);
     
     return response;
 }
@@ -291,20 +313,37 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
                 response.cloudDelayDownload[0] ? response.cloudDelayDownload : "0",
                 response.cloudPDRIVersion[0] ? response.cloudPDRIVersion : "N/A"
             );
+        
+        // Check if we actually received a firmware version from XConf
+        if (response.cloudFWVersion[0] && strlen(response.cloudFWVersion) > 0) {
+            SWLOG_INFO("[rdkFwupdateMgr] XConf returned firmware version: '%s'\n", response.cloudFWVersion);
             
+            // Create success response with firmware update available
             CheckUpdateResponse result = create_success_response(
-                response.cloudFWVersion[0] ? response.cloudFWVersion : "Unknown",
+                response.cloudFWVersion,
                 update_details,
-                "UPDATE_AVAILABLE"
+                "Firmware update available"
             );
             
             g_free(update_details);
             return result;
         } else {
-		// No update or processing failed
-                SWLOG_ERROR("[rdkFwupdateMgr] XConf communication failed: ret=%d, http=%d",ret, http_code);
-		return create_result_response(UPDATE_ERROR, "UPDATE_ERROR");
-	}
+            SWLOG_INFO("[rdkFwupdateMgr] XConf returned no firmware version - no update available\n");
+            
+            // No update available - XConf communication succeeded but no new firmware
+            g_free(update_details);
+            return create_result_response(UPDATE_NOT_AVAILABLE, "No firmware update available");
+        }
+    } else {
+        // XConf communication failed
+        SWLOG_ERROR("[rdkFwupdateMgr] XConf communication failed: ret=%d, http=%d\n", ret, http_code);
+        
+        if (http_code != 200) {
+            return create_result_response(UPDATE_ERROR, "Network error - unable to reach update server");
+        } else {
+            return create_result_response(UPDATE_ERROR, "Update check failed - server communication error");
+        }
+    }
 }
 
 // TODO: Other wrapper functions will be implemented in subsequent subtasks
