@@ -107,13 +107,13 @@ static guint64 add_process_to_tracking(const gchar *process_name,
 /* Remove process from tracking list */
 static gboolean remove_process_from_tracking(guint64 handler_id)
 {
-	ProcessInfo *info = g_hash_table_lookup(registered_processes, &handler_id);
+	ProcessInfo *info = g_hash_table_lookup(registered_processes, GINT_TO_POINTER(handler_id));
 	if (!info) {
 		SWLOG_INFO("[PROCESS_TRACKING] Handler %"G_GUINT64_FORMAT" not found\n", handler_id);
 		return FALSE;
 	}
 	SWLOG_INFO("[PROCESS_TRACKING] Removing: %s (handler: %"G_GUINT64_FORMAT")\n",info->process_name, handler_id);
-	g_hash_table_remove(registered_processes, &handler_id);
+	g_hash_table_remove(registered_processes, GINT_TO_POINTER(handler_id));
 	SWLOG_INFO("[PROCESS_TRACKING] Total registered: %d\n", g_hash_table_size(registered_processes));
 	return TRUE;
 }                                                                                                                                                                                                                  
