@@ -62,7 +62,7 @@ static const gchar introspection_xml[] =
 "      <arg type='t' name='handler_id' direction='out'/>" //handler type  sent to app and app stores it
 "    </method>"
 "    <method name='UnregisterProcess'>"
-"      <arg type='t' name='handler' direction='in'/>" //handler type will be changed to struct a<s> ; for now it is 
+"      <arg type='s' name='handler' direction='in'/>" 
 "      <arg type='b' name='success' direction='out'/>"
 "    </method>"
 "  </interface>"
