@@ -48,7 +48,7 @@ static const gchar introspection_xml[] =
 "      <arg type='s' name='downloadPath' direction='out'/>"
 "    </method>"
 "    <method name='UpdateFirmware'>"
-"      <arg type='s' name='hanlder' direction='in'/>"
+"      <arg type='s' name='handler' direction='in'/>"
 "      <arg type='s' name='currFWVersion' direction='in'/>"
 "      <arg type='s' name='availableVersion' direction='in'/>"
 "      <arg type='s' name='option1' direction='in'/>" // this will be part of UpdateDetails object in FwData ; for now hardcoding to 0and1 and not taking statusOfFw as input yet
@@ -59,12 +59,11 @@ static const gchar introspection_xml[] =
 "    <method name='RegisterProcess'>"
 "      <arg type='s' name='handler' direction='in'/>" //the process name it is
 "      <arg type='s' name='libVersion' direction='in'/>"
-"      <arg type='t' name='handler_id' direction='out'/>" //handler type  sent to app and app stores it
-"    </method>"
-"    <method name='UnregisterProcess'>"
-"      <arg type='s' name='handler' direction='in'/>" 
-"      <arg type='b' name='success' direction='out'/>"
-"    </method>"
+"      <arg type='t' name='handler_id' direction='out'/>" //handler type  sent to app and app stores it    "    </method>"
+    "    <method name='UnregisterProcess'>"
+    "      <arg type='t' name='handler_id' direction='in'/>" 
+    "      <arg type='b' name='success' direction='out'/>"
+    "    </method>"
 "  </interface>"
 "</node>";    
 
@@ -603,14 +602,19 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 
 	/* UPGRADE REQUEST - */
 	else if (g_strcmp0(rdkv_req_method, "UpdateFirmware") == 0) {
-		gchar* app_id=NULL;
-		g_variant_get(rdkv_req_payload, "(s)", &app_id);
+		gchar *handler, *currFWVersion, *availableVersion, *option1, *option2;
+		g_variant_get(rdkv_req_payload, "(sssss)", &handler, &currFWVersion, &availableVersion, &option1, &option2);
 
 		SWLOG_INFO("[D-BUS] UpdateFirmware request: process='%s', sender='%s'\n",
-				app_id, rdkv_req_caller_id);
+				handler, rdkv_req_caller_id);
+		SWLOG_INFO("[D-BUS] UpdateFirmware details:\n");
+		SWLOG_INFO("[D-BUS]   - Current FW Version: %s\n", currFWVersion);
+		SWLOG_INFO("[D-BUS]   - Available Version: %s\n", availableVersion);
+		SWLOG_INFO("[D-BUS]   - Option1: %s\n", option1);
+		SWLOG_INFO("[D-BUS]   - Option2: %s\n", option2);
 		SWLOG_INFO("[D-BUS] WARNING: This will flash firmware and reboot system!\n");
 
-		TaskContext *ctx = create_task_context(TASK_TYPE_UPDATE, app_id, rdkv_req_caller_id, resp_ctx);
+		TaskContext *ctx = create_task_context(TASK_TYPE_UPDATE, handler, rdkv_req_caller_id, resp_ctx);
 		guint task_id = next_task_id++;
 		g_hash_table_insert(active_tasks, GUINT_TO_POINTER(task_id), ctx);
 
@@ -618,7 +622,11 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 
 		g_timeout_add(100, upgrade_task, ctx);
 
-		g_free(app_id);
+		g_free(handler);
+		g_free(currFWVersion);
+		g_free(availableVersion);
+		g_free(option1);
+		g_free(option2);
 	}
 
 	/* REGISTER PROCESS */
