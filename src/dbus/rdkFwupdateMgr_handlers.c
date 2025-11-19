@@ -305,13 +305,17 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
 
        // Create detailed update information from XConf response
        gchar *update_details = g_strdup_printf(
-                "File:%s|Location:%s|Protocol:%s|Reboot:%s|Delay:%s|PDRI:%s", 
+                "File:%s|Location:%s|IPv6Location:%s|Version:%s|Protocol:%s|Reboot:%s|Delay:%s|PDRI:%s|Peripherals:%s|CertBundle:%s", 
                 response.cloudFWFile[0] ? response.cloudFWFile : "N/A",
                 response.cloudFWLocation[0] ? response.cloudFWLocation : "N/A", 
+                response.ipv6cloudFWLocation[0] ? response.ipv6cloudFWLocation : "N/A",
+                response.cloudFWVersion[0] ? response.cloudFWVersion : "N/A",
                 response.cloudProto[0] ? response.cloudProto : "HTTP",
                 response.cloudImmediateRebootFlag[0] ? response.cloudImmediateRebootFlag : "false",
                 response.cloudDelayDownload[0] ? response.cloudDelayDownload : "0",
-                response.cloudPDRIVersion[0] ? response.cloudPDRIVersion : "N/A"
+                response.cloudPDRIVersion[0] ? response.cloudPDRIVersion : "N/A",
+                response.peripheralFirmwares[0] ? response.peripheralFirmwares : "N/A",
+                response.dlCertBundle[0] ? response.dlCertBundle : "N/A"
             );
         
         // Check if we actually received a firmware version from XConf
