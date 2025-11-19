@@ -16,5 +16,5 @@ mkdir -p $INSTALL_DIR
 
 #Build rdkfwupdater
 autoreconf -i
-./configure --prefix=${INSTALL_DIR} CFLAGS="-DRDK_LOGGER"
+./configure --prefix=${INSTALL_DIR} CFLAGS="-DRDK_LOGGER" --enable-dbus-daemon 
 make && make install
