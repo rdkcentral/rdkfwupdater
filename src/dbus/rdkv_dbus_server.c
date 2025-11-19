@@ -62,7 +62,7 @@ static const gchar introspection_xml[] =
 "      <arg type='t' name='handler_id' direction='out'/>" //handler type  sent to app and app stores it
 "    </method>"
 "    <method name='UnregisterProcess'>"
-"      <arg type='s' name='handler' direction='in'/>" 
+"      <arg type='t' name='handler_id' direction='in'/>"
 "      <arg type='b' name='success' direction='out'/>"
 "    </method>"
 "  </interface>"
