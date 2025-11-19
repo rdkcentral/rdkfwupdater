@@ -668,7 +668,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		guint64 handler;
 		g_variant_get(rdkv_req_payload, "(t)", &handler);
 
-		SWLOG_INFO("=== [UNREGISTER] Starting Unregistration Process ===\n");
+		SWLOG_INFO("=== [UNREGISTER] [MADHU] Starting Unregistration Process ===\n");
 		SWLOG_INFO("[UNREGISTER] Request details:\n");
 		SWLOG_INFO("[UNREGISTER]   - Handler ID: %"G_GUINT64_FORMAT"\n", handler);
 		SWLOG_INFO("[UNREGISTER]   - D-Bus Sender: '%s'\n", rdkv_req_caller_id);
