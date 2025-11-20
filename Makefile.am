@@ -143,6 +143,7 @@ bin_PROGRAMS= rdkvfwupgrader
 # Conditionally build rdkFwupdateMgr only if D-Bus daemon is enabled
 if ENABLE_DBUS_DAEMON
 bin_PROGRAMS += rdkFwupdateMgr
+bin_PROGRAMS += testClient
 endif
 
 
@@ -193,6 +194,16 @@ rdkFwupdateMgr_CFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceut
 rdkFwupdateMgr_CPPFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/dbus $(GLIB_CFLAGS) $(ENABLE_DBUS)
 
 rdkFwupdateMgr_includedir = ${includedir}
+
+# Test client binary for testing daemon registration scenarios
+testClient_SOURCES = \
+    ${top_srcdir}/src/test/testClient.c
+
+# Test client only needs GLib/GDBus for D-Bus communication  
+testClient_LDADD = $(GLIB_LIBS)
+testClient_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
+testClient_CFLAGS = $(GLIB_CFLAGS)
+testClient_CPPFLAGS = $(GLIB_CFLAGS)
 endif
 
 if INSTALL_TEST_FWUPGRADER

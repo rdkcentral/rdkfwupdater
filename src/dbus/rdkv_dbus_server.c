@@ -85,22 +85,86 @@ static void init_process_tracking()
     SWLOG_INFO("[TRACKING] process tracking initialized\n");
 }
 
-/* Add process to list for tracking*/
+/*add process to tracking with duplicate prevention */
 static guint64 add_process_to_tracking(const gchar *process_name,
                                       const gchar *lib_version,
                                       const gchar *sender_id)
 {
+	// Check for existing registrations
+	GHashTableIter iter;
+	gpointer key, value;
+	g_hash_table_iter_init(&iter, registered_processes);
+	
+	ProcessInfo *existing_same_client = NULL;
+	ProcessInfo *existing_same_process = NULL;
+	
+	SWLOG_INFO("[PROCESS_TRACKING] Validating registration for process='%s', sender='%s'\n", 
+	           process_name, sender_id);
+	
+	while (g_hash_table_iter_next(&iter, &key, &value)) {
+		ProcessInfo *info = (ProcessInfo*)value;
+		
+		// Check for same sender_id (client)
+		if (g_strcmp0(info->sender_id, sender_id) == 0) {
+			existing_same_client = info;
+			SWLOG_INFO("[PROCESS_TRACKING] Found existing client: process='%s', handler=%"G_GUINT64_FORMAT"\n",
+			           info->process_name, info->handler_id);
+		}
+		
+		// Check for same process_name
+		if (g_strcmp0(info->process_name, process_name) == 0) {
+			existing_same_process = info;
+			SWLOG_INFO("[PROCESS_TRACKING] Found existing process name: sender='%s', handler=%"G_GUINT64_FORMAT"\n",
+			           info->sender_id, info->handler_id);
+		}
+	}
+	
+	
+	// Case 1: Same client, same process name -> Return existing handler_id
+	if (existing_same_client && existing_same_process && 
+	    existing_same_client == existing_same_process) {
+		SWLOG_INFO("[PROCESS_TRACKING] SCENARIO: Same client re-registering same process\n");
+		SWLOG_INFO("[PROCESS_TRACKING] RESULT: Returning existing handler_id %"G_GUINT64_FORMAT"\n", 
+		           existing_same_client->handler_id);
+		return existing_same_client->handler_id;
+	}
+	
+	// Case 2: Same client, different process name -> REJECT
+	if (existing_same_client && (!existing_same_process || existing_same_client != existing_same_process)) {
+		SWLOG_ERROR("[PROCESS_TRACKING] SCENARIO: Same client attempting different process name\n");
+		SWLOG_ERROR("[PROCESS_TRACKING] CONFLICT: Client already registered as '%s' (handler=%"G_GUINT64_FORMAT")\n",
+		            existing_same_client->process_name, existing_same_client->handler_id);
+		SWLOG_ERROR("[PROCESS_TRACKING] RESULT: REJECTED - One registration per client\n");
+		return 0; // Error code
+	}
+	
+	// Case 3: Different client, same process name -> REJECT
+	if (existing_same_process && (!existing_same_client || existing_same_client != existing_same_process)) {
+		SWLOG_ERROR("[PROCESS_TRACKING] SCENARIO: Different client attempting same process name\n");
+		SWLOG_ERROR("[PROCESS_TRACKING] CONFLICT: Process '%s' already registered by client '%s' (handler=%"G_GUINT64_FORMAT")\n",
+		            existing_same_process->process_name, existing_same_process->sender_id, existing_same_process->handler_id);
+		SWLOG_ERROR("[PROCESS_TRACKING] RESULT: REJECTED - Process name already taken\n");
+		return 0; // Error code
+	}
+	
+	// Case 4: New client, new process name -> ALLOW
+	SWLOG_INFO("[PROCESS_TRACKING] SCENARIO: New client, new process name\n");
+	SWLOG_INFO("[PROCESS_TRACKING] RESULT: Creating new registration\n");
+	
 	ProcessInfo *info = g_malloc0(sizeof(ProcessInfo));
-	info->handler_id=next_process_id++;
+	info->handler_id = next_process_id++;
 	info->process_name = g_strdup(process_name);
 	info->lib_version = g_strdup(lib_version);
 	info->sender_id = g_strdup(sender_id);
-	info->registration_time = g_get_monotonic_time(); //no significance in current design; might be useful in future for debug purposes
-	guint64 key = info->handler_id;
-	SWLOG_INFO("KEY: %"G_GUINT64_FORMAT"\n",info->handler_id);
-	g_hash_table_insert(registered_processes, GINT_TO_POINTER(key), info);
-	SWLOG_INFO("[PROCESS_TRACKING] Added: %s (handler: %"G_GUINT64_FORMAT", sender: %s)\n",process_name, info->handler_id, sender_id);
-	SWLOG_INFO("[PROCESS_TRACKING] Total registered: %d\n", g_hash_table_size(registered_processes));
+	info->registration_time = g_get_monotonic_time();
+	
+	guint64 handler_key = info->handler_id;
+	g_hash_table_insert(registered_processes, GINT_TO_POINTER(handler_key), info);
+	
+	SWLOG_INFO("[PROCESS_TRACKING] SUCCESS: Added process='%s' (handler=%"G_GUINT64_FORMAT", sender='%s')\n",
+	           process_name, info->handler_id, sender_id);
+	SWLOG_INFO("[PROCESS_TRACKING] Total registered processes: %d\n", g_hash_table_size(registered_processes));
+	
 	return info->handler_id;
 }
 
@@ -125,6 +189,40 @@ void cleanup_process_tracking()
 		g_hash_table_destroy(registered_processes);
 		registered_processes = NULL;
 	}
+}
+
+/* Helper function to get specific rejection reason for error messages */
+static const gchar* get_rejection_reason(const gchar *process_name, const gchar *sender_id) 
+{
+	GHashTableIter iter;
+	gpointer key, value;
+	g_hash_table_iter_init(&iter, registered_processes);
+	
+	ProcessInfo *existing_same_client = NULL;
+	ProcessInfo *existing_same_process = NULL;
+	
+	while (g_hash_table_iter_next(&iter, &key, &value)) {
+		ProcessInfo *info = (ProcessInfo*)value;
+		
+		if (g_strcmp0(info->sender_id, sender_id) == 0) {
+			existing_same_client = info;
+		}
+		
+		if (g_strcmp0(info->process_name, process_name) == 0) {
+			existing_same_process = info;
+		}
+	}
+	
+	// Determine specific rejection reason
+	if (existing_same_client && (!existing_same_process || existing_same_client != existing_same_process)) {
+		return "Client already registered with different process name";
+	}
+	
+	if (existing_same_process && (!existing_same_client || existing_same_client != existing_same_process)) {
+		return "Process name already registered by another client";
+	}
+	
+	return "Unknown registration conflict";
 }
 
 /* Initializes the async task tracking system */
@@ -644,19 +742,32 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			return;
 		}
 
-		// Add to process tracking system
-		SWLOG_INFO("[REGISTER] Adding process to tracking system...\n");
+		// registration with validation
+		SWLOG_INFO("[REGISTER] Calling add_process_to_tracking...\n");
 		guint64 handler_id = add_process_to_tracking(process_name, lib_version, rdkv_req_caller_id);
 
-		SWLOG_INFO("[REGISTER] SUCCESS: Process registered successfully!\n");
-		SWLOG_INFO("[REGISTER]   - Assigned Handler ID: %"G_GUINT64_FORMAT"\n", handler_id);
-		SWLOG_INFO("[REGISTER]   - Total registered processes: %d\n", g_hash_table_size(registered_processes));
-
-		// Send immediate response (no async task needed)
-		g_dbus_method_invocation_return_value(resp_ctx,
-				g_variant_new("(t)", handler_id)); // convert the handler_id into integer
-
-		SWLOG_INFO("[REGISTER] Response sent to client with handler ID: %"G_GUINT64_FORMAT"\n", handler_id);
+		if (handler_id > 0) {
+			// SUCCESS: Registration accepted (new or reused handler_id)
+			SWLOG_INFO("[REGISTER] SUCCESS: Process registered with handler_id %"G_GUINT64_FORMAT"\n", handler_id);
+			SWLOG_INFO("[REGISTER]   - Total registered processes: %d\n", g_hash_table_size(registered_processes));
+			
+			// Send immediate response (no async task needed)
+			g_dbus_method_invocation_return_value(resp_ctx,
+					g_variant_new("(t)", handler_id));
+			
+			SWLOG_INFO("[REGISTER] Response sent to client with handler ID: %"G_GUINT64_FORMAT"\n", handler_id);
+		} 
+		else {
+			// ERROR: Registration rejected
+			const gchar *reason = get_rejection_reason(process_name, rdkv_req_caller_id);
+			SWLOG_ERROR("[REGISTER] REGISTRATION REJECTED: %s\n", reason);
+			
+			g_dbus_method_invocation_return_error(resp_ctx, 
+				G_DBUS_ERROR, G_DBUS_ERROR_ACCESS_DENIED, 
+				"Registration rejected: %s", reason);
+			
+			SWLOG_ERROR("[REGISTER] Error response sent: %s\n", reason);
+		}
 		SWLOG_INFO("=== [REGISTER] Registration Complete ===\n\n");
 
 		g_free(process_name);
