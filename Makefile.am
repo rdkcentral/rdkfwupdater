@@ -24,6 +24,7 @@ AM_LDFLAGS += $(cjson_LIBS) $(curl_LIBS)
 AM_LDFLAGS += -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread -lrbus
 
 AM_CFLAGS += $(GLIB_CFLAGS)
+AM_LDFLAGS += $(GLIB_LIBS)
 # Build the RDK upgrade shared library
 lib_LTLIBRARIES = librdksw_upgrade.la librdksw_rfcIntf.la librdksw_iarmIntf.la librdksw_jsonparse.la librdksw_flash.la librdksw_fwutils.la
 
@@ -140,11 +141,9 @@ librdksw_fwutils_includedir = ${includedir}
 
 bin_PROGRAMS= rdkvfwupgrader
 
-# Conditionally build rdkFwupdateMgr only if D-Bus daemon is enabled
-#if ENABLE_DBUS_DAEMON
+# Always build rdkFwupdateMgr and testClient (no conditional compilation)
 bin_PROGRAMS += rdkFwupdateMgr
 bin_PROGRAMS += testClient
-#endif
 
 
 rdkvfwupgrader_SOURCES = \
@@ -169,8 +168,7 @@ rdkvfwupgrader_CPPFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/device
 
 rdkvfwupgrader_includedir = ${includedir}
 
-# D-Bus daemon binary - only build if enabled
-#if ENABLE_DBUS_DAEMON
+# D-Bus daemon binary - always build (removed conditional compilation)
 rdkFwupdateMgr_SOURCES = \
     ${top_srcdir}/src/rdkFwupdateMgr.c\
     ${top_srcdir}/src/chunk.c \
@@ -190,12 +188,12 @@ rdkFwupdateMgr_include_HEADERS = \
     ${top_srcdir}/src/dbus/rdkv_dbus_server.h \
     ${top_srcdir}/src/dbus/rdkFwupdateMgr_handlers.h
 
-rdkFwupdateMgr_CFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/dbus $(GLIB_CFLAGS) $(ENABLE_DBUS)
-rdkFwupdateMgr_CPPFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/dbus $(GLIB_CFLAGS) $(ENABLE_DBUS)
+rdkFwupdateMgr_CFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/dbus $(GLIB_CFLAGS)
+rdkFwupdateMgr_CPPFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/dbus $(GLIB_CFLAGS)
 
 rdkFwupdateMgr_includedir = ${includedir}
 
-# Test client binary for testing daemon registration scenarios
+# Test client binary - always build (removed conditional compilation)
 testClient_SOURCES = \
     ${top_srcdir}/src/test/testClient.c
 
@@ -204,7 +202,6 @@ testClient_LDADD = $(GLIB_LIBS)
 testClient_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
 testClient_CFLAGS = $(GLIB_CFLAGS)
 testClient_CPPFLAGS = $(GLIB_CFLAGS)
-endif
 
 if INSTALL_TEST_FWUPGRADER
 bin_PROGRAMS += testrdkvfwupgrader
@@ -224,25 +221,19 @@ endif
 
 if IS_TELEMETRY2_ENABLED
 rdkvfwupgrader_CFLAGS +=  $(T2_EVENT_FLAG)
-#if ENABLE_DBUS_DAEMON
 rdkFwupdateMgr_CFLAGS +=  $(T2_EVENT_FLAG)
-#endif
 AM_LDFLAGS += -ltelemetry_msgsender -lt2utils
 endif
 
 if IS_LIBRFCAPI_ENABLED
 rdkvfwupgrader_CFLAGS += $(LIBRFCAPI_FLAG)
-#if ENABLE_DBUS_DAEMON
 rdkFwupdateMgr_CFLAGS += $(LIBRFCAPI_FLAG)
-#endif
 AM_LDFLAGS += -lrfcapi
 endif
 
 if IS_IARMEVENT_ENABLED
 rdkvfwupgrader_CFLAGS += $(IARM_EVENT_FLAG)
-#if ENABLE_DBUS_DAEMON
 rdkFwupdateMgr_CFLAGS += $(IARM_EVENT_FLAG)
-#endif
 testrdkvfwupgrader_CFLAGS = $(IARM_EVENT_FLAG)
 AM_LDFLAGS += -lIARMBus
 endif
@@ -250,16 +241,12 @@ endif
 if IS_LIBRDKCERTSEL_ENABLED
 librdksw_upgrade_la_CFLAGS += $(LIBRDKCERTSEL_FLAG)
 rdkvfwupgrader_CFLAGS += $(LIBRDKCERTSEL_FLAG)
-#if ENABLE_DBUS_DAEMON
 rdkFwupdateMgr_CFLAGS += $(LIBRDKCERTSEL_FLAG)
-#endif
 AM_LDFLAGS += -lRdkCertSelector
 endif
 
 if IS_LIBRDKCONFIG_ENABLED
 rdkvfwupgrader_CFLAGS += $(LIBRDKCONFIG_FLAG)
-#if ENABLE_DBUS_DAEMON
 rdkFwupdateMgr_CFLAGS += $(LIBRDKCONFIG_FLAG)
-#endif
 AM_LDFLAGS += -lrdkconfig
 endif
