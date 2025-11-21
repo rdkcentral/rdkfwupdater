@@ -141,10 +141,10 @@ librdksw_fwutils_includedir = ${includedir}
 bin_PROGRAMS= rdkvfwupgrader
 
 # Conditionally build rdkFwupdateMgr only if D-Bus daemon is enabled
-if ENABLE_DBUS_DAEMON
+#if ENABLE_DBUS_DAEMON
 bin_PROGRAMS += rdkFwupdateMgr
 bin_PROGRAMS += testClient
-endif
+#endif
 
 
 rdkvfwupgrader_SOURCES = \
@@ -170,7 +170,7 @@ rdkvfwupgrader_CPPFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/device
 rdkvfwupgrader_includedir = ${includedir}
 
 # D-Bus daemon binary - only build if enabled
-if ENABLE_DBUS_DAEMON
+#if ENABLE_DBUS_DAEMON
 rdkFwupdateMgr_SOURCES = \
     ${top_srcdir}/src/rdkFwupdateMgr.c\
     ${top_srcdir}/src/chunk.c \
@@ -224,25 +224,25 @@ endif
 
 if IS_TELEMETRY2_ENABLED
 rdkvfwupgrader_CFLAGS +=  $(T2_EVENT_FLAG)
-if ENABLE_DBUS_DAEMON
+#if ENABLE_DBUS_DAEMON
 rdkFwupdateMgr_CFLAGS +=  $(T2_EVENT_FLAG)
-endif
+#endif
 AM_LDFLAGS += -ltelemetry_msgsender -lt2utils
 endif
 
 if IS_LIBRFCAPI_ENABLED
 rdkvfwupgrader_CFLAGS += $(LIBRFCAPI_FLAG)
-if ENABLE_DBUS_DAEMON
+#if ENABLE_DBUS_DAEMON
 rdkFwupdateMgr_CFLAGS += $(LIBRFCAPI_FLAG)
-endif
+#endif
 AM_LDFLAGS += -lrfcapi
 endif
 
 if IS_IARMEVENT_ENABLED
 rdkvfwupgrader_CFLAGS += $(IARM_EVENT_FLAG)
-if ENABLE_DBUS_DAEMON
+#if ENABLE_DBUS_DAEMON
 rdkFwupdateMgr_CFLAGS += $(IARM_EVENT_FLAG)
-endif
+#endif
 testrdkvfwupgrader_CFLAGS = $(IARM_EVENT_FLAG)
 AM_LDFLAGS += -lIARMBus
 endif
@@ -250,16 +250,16 @@ endif
 if IS_LIBRDKCERTSEL_ENABLED
 librdksw_upgrade_la_CFLAGS += $(LIBRDKCERTSEL_FLAG)
 rdkvfwupgrader_CFLAGS += $(LIBRDKCERTSEL_FLAG)
-if ENABLE_DBUS_DAEMON
+#if ENABLE_DBUS_DAEMON
 rdkFwupdateMgr_CFLAGS += $(LIBRDKCERTSEL_FLAG)
-endif
+#endif
 AM_LDFLAGS += -lRdkCertSelector
 endif
 
 if IS_LIBRDKCONFIG_ENABLED
 rdkvfwupgrader_CFLAGS += $(LIBRDKCONFIG_FLAG)
-if ENABLE_DBUS_DAEMON
+#if ENABLE_DBUS_DAEMON
 rdkFwupdateMgr_CFLAGS += $(LIBRDKCONFIG_FLAG)
-endif
+#endif
 AM_LDFLAGS += -lrdkconfig
 endif
