@@ -1200,9 +1200,9 @@ int main(int argc, char *argv[]) {
 				SWLOG_INFO("Main loop exited - rdkvfwupgrader shutting down\n");
 				goto cleanup_and_exit;
 //#else
-				SWLOG_INFO("Dbus is not Enabled\n");
-				goto cleanup_and_exit;
-#endif
+//				SWLOG_INFO("Dbus is not Enabled\n");
+//				goto cleanup_and_exit;
+//#endif
 				break;
 		    default:
 				SWLOG_INFO("Unknown state: %d\n",currentState);
