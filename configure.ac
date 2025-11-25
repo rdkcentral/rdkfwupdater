@@ -154,10 +154,8 @@ AC_SUBST(DBUS_DAEMON_FLAG)
 PKG_CHECK_MODULES([cjson], [libcjson])
 PKG_CHECK_MODULES([curl], [libcurl])
 
-# Check for GLIB only if D-Bus daemon is enabled
-if test x$ENABLE_DBUS_DAEMON = xtrue; then
-    PKG_CHECK_MODULES([GLIB], [glib-2.0 gio-2.0])
-fi
+# Check for GLIB (always required since daemon is always built)
+PKG_CHECK_MODULES([GLIB], [glib-2.0 gio-2.0])
 AC_SUBST([GLIB_CFLAGS])
 AC_SUBST([GLIB_LIBS])
 
