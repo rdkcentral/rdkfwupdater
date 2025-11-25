@@ -75,7 +75,6 @@ static gboolean load_xconf_from_cache(XCONFRES *pResponse) {
 
 static gboolean save_xconf_to_cache(const char *xconf_response, int http_code) {
     GError *error = NULL;
-    gboolean result = FALSE;
     
     SWLOG_INFO("[CACHE] Saving XConf response to cache files\n");
     
