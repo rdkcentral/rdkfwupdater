@@ -23,7 +23,7 @@ Requires=tr69hostif.service
 
 [Service]
 Type=simple
-ExecStart=/bin/bash -c '/usr/bin/rdkFwupdateMgr 0 1 > /opt/logs/swupdate.log 2>&1'
+ExecStart=/bin/sh -c '/usr/bin/rdkFwupdateMgr 0 1 > /opt/logs/swupdate.log 2>&1'
 RemainAfterExit=yes
 #ExecStop=/usr/bin/killall rdkvfwupgrader
 #Restart=always
