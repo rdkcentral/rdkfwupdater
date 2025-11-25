@@ -794,19 +794,23 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			return;
 		}
 
+		// Look up process info to get process name for logging
+		ProcessInfo *process_info = g_hash_table_lookup(registered_processes, GINT_TO_POINTER(handler));
+		const gchar *process_name = process_info ? process_info->process_name : "UNKNOWN";
+		
 		// Remove from tracking system
-		SWLOG_INFO("[UNREGISTER] Attempting to remove process from tracking...\n");
+		SWLOG_INFO("[UNREGISTER] Attempting to remove process '%s' from tracking...\n", process_name);
 		if (remove_process_from_tracking(handler)) {
-			SWLOG_INFO("[UNREGISTER] SUCCESS: Process unregistered successfully!\n");
-			SWLOG_INFO("[UNREGISTER]   - Removed Handler ID: %"G_GUINT64_FORMAT"\n", handler);
+			SWLOG_INFO("[UNREGISTER] SUCCESS: Process '%s' unregistered successfully!\n", process_name);
+			SWLOG_INFO("[UNREGISTER]   - Removed Handler ID: %"G_GUINT64_FORMAT" (process: %s)\n", handler, process_name);
 			SWLOG_INFO("[UNREGISTER]   - Remaining registered processes: %d\n", g_hash_table_size(registered_processes));
 			
 			g_dbus_method_invocation_return_value(resp_ctx,
 					g_variant_new("(b)", TRUE));
 			SWLOG_INFO("[UNREGISTER] Response sent: SUCCESS (true)\n");
 		} else {
-			SWLOG_ERROR("[UNREGISTER] FAILED: Process not found or already unregistered\n");
-			SWLOG_ERROR("[UNREGISTER]   - Handler ID: %"G_GUINT64_FORMAT" not found\n", handler);
+			SWLOG_ERROR("[UNREGISTER] FAILED: Process '%s' not found or already unregistered\n", process_name);
+			SWLOG_ERROR("[UNREGISTER]   - Handler ID: %"G_GUINT64_FORMAT" (process: %s) not found\n", handler, process_name);
 			SWLOG_INFO("[UNREGISTER]   - Current registered processes: %d\n", g_hash_table_size(registered_processes));
 			
 			g_dbus_method_invocation_return_value(resp_ctx,

@@ -197,10 +197,10 @@ rdkFwupdateMgr_includedir = ${includedir}
 testClient_SOURCES = \
     ${top_srcdir}/src/test/testClient.c
 
-# Test client only needs GLib/GDBus for D-Bus communication  
-testClient_LDADD = $(GLIB_LIBS)
+# Test client needs explicit GLib/GDBus linking for ARM cross-compilation
+testClient_LDADD = $(GLIB_LIBS) -lgio-2.0 -lgobject-2.0 -lglib-2.0 -lpthread
 testClient_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
-testClient_CFLAGS = $(GLIB_CFLAGS)
+testClient_CFLAGS = $(GLIB_CFLAGS) -Wall
 testClient_CPPFLAGS = $(GLIB_CFLAGS)
 
 if INSTALL_TEST_FWUPGRADER
