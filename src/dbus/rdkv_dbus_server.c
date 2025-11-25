@@ -41,40 +41,40 @@ static const gchar introspection_xml[] =
 "<arg type='s' name='fwdata_status' direction='out'/>" //Status string from FwData structure (optional field)
 "<arg type='i' name='fwdata_status_code' direction='out'/>" //Status code (0=available, 1=not_available, 2=error)
 "</method>"
-"    <method name='DownloadFirmware'>"
-"      <arg type='s' name='handler' direction='in'/>" //this is a struct as per requirement, for now taking it as string.  handler argument will be the process_name in dbus_handlers
-"      <arg type='s' name='ImageToDownload' direction='in'/>"
-"      <arg type='s' name='DownloadedImageVersion' direction='out'/>"  // just send out the success message once the download is triggered; will modify it later to send updates in parallel.Need to add one more output arg here
-"      <arg type='s' name='downloadPath' direction='out'/>"
-"    </method>"
-"    <method name='UpdateFirmware'>"
-"      <arg type='s' name='hanlder' direction='in'/>"
-"      <arg type='s' name='currFWVersion' direction='in'/>"
-"      <arg type='s' name='availableVersion' direction='in'/>"
-"      <arg type='s' name='option1' direction='in'/>" // this will be part of UpdateDetails object in FwData ; for now hardcoding to 0and1 and not taking statusOfFw as input yet
-"      <arg type='s' name='option2' direction='in'/>"
-"      <arg type='b' name='success' direction='out'/>" //send out success to app once the Upgrade fucntion is called. eventually system reboots.
-"      <arg type='s' name='Message' direction='out'/>" // some intimation message
-"    </method>"
-"    <method name='RegisterProcess'>"
-"      <arg type='s' name='handler' direction='in'/>" //the process name it is
-"      <arg type='s' name='libVersion' direction='in'/>"
-"      <arg type='t' name='handler_id' direction='out'/>" //handler type  sent to app and app stores it
-"    </method>"
-"    <method name='UnregisterProcess'>"
-"      <arg type='t' name='handler_id' direction='in'/>"
-"      <arg type='b' name='success' direction='out'/>"
-"    </method>"
-"    <!-- D-Bus Signals for Async Callbacks -->"
-"    <signal name='CheckForUpdateComplete'>"
-"      <arg type='s' name='handler_id'/>"
-"      <arg type='i' name='result_code'/>"
-"      <arg type='s' name='current_version'/>"
-"      <arg type='s' name='available_version'/>"
-"      <arg type='s' name='update_details'/>"
-"      <arg type='s' name='status_message'/>"
-"    </signal>"
-"  </interface>"
+"<method name='DownloadFirmware'>"
+"<arg type='s' name='handler' direction='in'/>" //this is a struct as per requirement, for now taking it as string.  handler argument will be the process_name in dbus_handlers
+"<arg type='s' name='ImageToDownload' direction='in'/>"
+"<arg type='s' name='DownloadedImageVersion' direction='out'/>"  // just send out the success message once the download is triggered; will modify it later to send updates in parallel.Need to add one more output arg here
+"<arg type='s' name='downloadPath' direction='out'/>"
+"</method>"
+"<method name='UpdateFirmware'>"
+"<arg type='s' name='hanlder' direction='in'/>"
+"<arg type='s' name='currFWVersion' direction='in'/>"
+"<arg type='s' name='availableVersion' direction='in'/>"
+"<arg type='s' name='option1' direction='in'/>" // this will be part of UpdateDetails object in FwData ; for now hardcoding to 0and1 and not taking statusOfFw as input yet
+"<arg type='s' name='option2' direction='in'/>"
+"<arg type='b' name='success' direction='out'/>" //send out success to app once the Upgrade fucntion is called. eventually system reboots.
+"<arg type='s' name='Message' direction='out'/>" // some intimation message
+"</method>"
+"<method name='RegisterProcess'>"
+"<arg type='s' name='handler' direction='in'/>" //the process name it is
+"<arg type='s' name='libVersion' direction='in'/>"
+"<arg type='t' name='handler_id' direction='out'/>" //handler type  sent to app and app stores it
+"</method>"
+"<method name='UnregisterProcess'>"
+"<arg type='t' name='handler_id' direction='in'/>"
+"<arg type='b' name='success' direction='out'/>"
+"</method>"
+"<!-- D-Bus Signals for Async Callbacks -->"
+"<signal name='CheckForUpdateComplete'>"
+"<arg type='s' name='handler_id'/>"
+"<arg type='i' name='result_code'/>"
+"<arg type='s' name='current_version'/>"
+"<arg type='s' name='available_version'/>"
+"<arg type='s' name='update_details'/>"
+"<arg type='s' name='status_message'/>"
+"</signal>"
+"</interface>"
 "</node>";    
 
 static void process_app_request(GDBusConnection *rdkv_conn_dbus,

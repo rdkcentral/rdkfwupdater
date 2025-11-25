@@ -24,12 +24,86 @@
 #define JSON_STR_LEN        1000
 #define URL_MAX_LEN         512
 
+// Cache file paths for XConf response persistence
+#define XCONF_CACHE_FILE        "/tmp/xconf_response_thunder.txt"
+#define XCONF_HTTP_CODE_FILE    "/tmp/xconf_httpcode_thunder.txt"
+#define XCONF_PROGRESS_FILE     "/tmp/xconf_curl_progress_thunder"
+#define RED_STATE_FILE          "/lib/rdk/stateRedRecovery.sh"
+
 // External declarations for existing functions and variables
 // In daemon mode, we need to manage these differently than monolithic binary
 extern DeviceProperty_t device_info;
 extern ImageDetails_t cur_img_detail;
 
-static int MakeXconfComms( XCONFRES *pResponse, int server_type, int *pHttp_code )
+// Cache utility functions for XConf response persistence
+static gboolean xconf_cache_exists(void) {
+    return g_file_test(XCONF_CACHE_FILE, G_FILE_TEST_EXISTS);
+}
+
+static gboolean load_xconf_from_cache(XCONFRES *pResponse) {
+    gchar *cache_content = NULL;
+    gsize length;
+    GError *error = NULL;
+    gboolean result = FALSE;
+    
+    SWLOG_INFO("[CACHE] Loading XConf data from cache file: %s\n", XCONF_CACHE_FILE);
+    
+    if (!g_file_get_contents(XCONF_CACHE_FILE, &cache_content, &length, &error)) {
+        SWLOG_ERROR("[CACHE] Failed to read cache file: %s\n", error ? error->message : "Unknown error");
+        if (error) g_error_free(error);
+        return FALSE;
+    }
+    
+    SWLOG_INFO("[CACHE] Cache file loaded successfully (%zu bytes)\n", length);
+    SWLOG_INFO("[CACHE] Cache content: %s\n", cache_content);
+    
+    // Parse the cached JSON response using existing parser
+    int parse_result = getXconfRespData(pResponse, cache_content);
+    if (parse_result == 0) {
+        SWLOG_INFO("[CACHE] Successfully parsed cached XConf data\n");
+        SWLOG_INFO("[CACHE]   - firmwareVersion: '%s'\n", pResponse->cloudFWVersion);
+        SWLOG_INFO("[CACHE]   - firmwareFilename: '%s'\n", pResponse->cloudFWFile);
+        SWLOG_INFO("[CACHE]   - firmwareLocation: '%s'\n", pResponse->cloudFWLocation);
+        result = TRUE;
+    } else {
+        SWLOG_ERROR("[CACHE] Failed to parse cached XConf data (error: %d)\n", parse_result);
+    }
+    
+    g_free(cache_content);
+    return result;
+}
+
+static gboolean save_xconf_to_cache(const char *xconf_response, int http_code) {
+    GError *error = NULL;
+    gboolean result = FALSE;
+    
+    SWLOG_INFO("[CACHE] Saving XConf response to cache files\n");
+    
+    // Save main XConf response
+    if (!g_file_set_contents(XCONF_CACHE_FILE, xconf_response, -1, &error)) {
+        SWLOG_ERROR("[CACHE] Failed to save XConf response: %s\n", error ? error->message : "Unknown error");
+        if (error) g_error_free(error);
+        return FALSE;
+    }
+    
+    // Save HTTP code  
+    gchar *http_code_str = g_strdup_printf("%d", http_code);
+    if (!g_file_set_contents(XCONF_HTTP_CODE_FILE, http_code_str, -1, &error)) {
+        SWLOG_ERROR("[CACHE] Failed to save HTTP code: %s\n", error ? error->message : "Unknown error");
+        if (error) g_error_free(error);
+        g_free(http_code_str);
+        return FALSE;
+    }
+    
+    SWLOG_INFO("[CACHE] XConf data cached successfully\n");
+    SWLOG_INFO("[CACHE]   - Response file: %s\n", XCONF_CACHE_FILE);
+    SWLOG_INFO("[CACHE]   - HTTP code file: %s (code: %d)\n", XCONF_HTTP_CODE_FILE, http_code);
+    
+    g_free(http_code_str);
+    return TRUE;
+}
+
+static int fetch_xconf_firmware_info( XCONFRES *pResponse, int server_type, int *pHttp_code )
 {
     DownloadData DwnLoc;
     char *pJSONStr = NULL;      // contains the device data string to send to XCONF server
@@ -50,7 +124,7 @@ static int MakeXconfComms( XCONFRES *pResponse, int server_type, int *pHttp_code
             if( (pServURL=(char*)malloc( URL_MAX_LEN )) != NULL )
             {
                 len = GetServURL( pServURL, URL_MAX_LEN );
-                SWLOG_INFO( "MakeXconfComms: server URL %s\n", pServURL );
+                SWLOG_INFO( "fetch_xconf_firmware_info: server URL %s\n", pServURL );
                 if( len )
                 {
                     SWLOG_INFO("MakeXconfComms: Server URL length: %d, preparing device JSON data...\n", (int)len);
@@ -94,12 +168,12 @@ static int MakeXconfComms( XCONFRES *pResponse, int server_type, int *pHttp_code
                     
                     if( ret == 0 && *pHttp_code == 200 && DwnLoc.pvOut != NULL )
                     {
-                        SWLOG_INFO("MakeXconfComms: SUCCESS - XConf communication successful\n");
-                        SWLOG_INFO("MakeXconfComms: Raw XConf response (%d bytes):\n%s\n", 
+                        SWLOG_INFO("fetch_xconf_firmware_info: SUCCESS - XConf communication successful\n");
+                        SWLOG_INFO("fetch_xconf_firmware_info: Raw XConf response (%d bytes):\n%s\n", 
                                    (int)DwnLoc.datasize, (char *)DwnLoc.pvOut);
-                        SWLOG_INFO("MakeXconfComms: Calling getXconfRespData to parse response...\n");
+                        SWLOG_INFO("fetch_xconf_firmware_info: Calling getXconfRespData to parse response...\n");
                         ret = getXconfRespData( pResponse, (char *)DwnLoc.pvOut );
-                        SWLOG_INFO("MakeXconfComms: getXconfRespData returned %d\n", ret);
+                        SWLOG_INFO("fetch_xconf_firmware_info: getXconfRespData returned %d\n", ret);
                         
                         // Log parsed XConf response details
                         if (ret == 0) {
@@ -112,6 +186,14 @@ static int MakeXconfComms( XCONFRES *pResponse, int server_type, int *pHttp_code
                             SWLOG_INFO("  - delayDownload: '%s'\n", pResponse->cloudDelayDownload);
                             SWLOG_INFO("  - peripheralFirmwares: '%s'\n", pResponse->peripheralFirmwares);
                             SWLOG_INFO("  - cloudPDRIVersion: '%s'\n", pResponse->cloudPDRIVersion);
+                            
+                            // Cache the successful XConf response for future use
+                            SWLOG_INFO("[CACHE] Saving successful XConf response to cache...\n");
+                            if (save_xconf_to_cache((char *)DwnLoc.pvOut, *pHttp_code)) {
+                                SWLOG_INFO("[CACHE] XConf response cached successfully\n");
+                            } else {
+                                SWLOG_ERROR("[CACHE] Failed to cache XConf response\n");
+                            }
                         } else {
                             SWLOG_ERROR("MakeXconfComms: ERROR - Failed to parse XConf response\n");
                         }
@@ -267,8 +349,33 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
     *response.dlCertBundle = 0;
     *response.cloudPDRIVersion = 0;
 
-    //  XConf communication
-    int ret = MakeXconfComms(&response, server_type, &http_code);
+    //  XConf communication with caching support
+    int ret = -1;
+    
+    SWLOG_INFO("[rdkFwupdateMgr] CheckForUpdate: Checking for cached XConf data...\n");
+    
+    // Try to load from cache first
+    if (xconf_cache_exists()) {
+        SWLOG_INFO("[rdkFwupdateMgr] Cache hit! Loading XConf data from cache\n");
+        if (load_xconf_from_cache(&response)) {
+            ret = 0;
+            http_code = 200;  // Simulate successful HTTP response from cache
+            SWLOG_INFO("[rdkFwupdateMgr] Successfully loaded XConf data from cache\n");
+        } else {
+            SWLOG_ERROR("[rdkFwupdateMgr] Cache read failed, falling back to live XConf call\n");
+            ret = fetch_xconf_firmware_info(&response, server_type, &http_code);
+        }
+    } else {
+        SWLOG_INFO("[rdkFwupdateMgr] Cache miss! Making live XConf call\n");
+        ret = fetch_xconf_firmware_info(&response, server_type, &http_code);
+        
+        // Save successful response to cache for future use
+        if (ret == 0 && http_code == 200) {
+            // We need the raw response to cache, but it's consumed by getXconfRespData
+            // For now, we'll implement a simple cache later when we have raw response access
+            SWLOG_INFO("[rdkFwupdateMgr] XConf call successful - cache save will be implemented in fetch_xconf_firmware_info\n");
+        }
+    }
     
     SWLOG_INFO("[rdkFwupdateMgr] XConf call completed with result: ret=%d\n",ret);
     
