@@ -65,6 +65,15 @@ static const gchar introspection_xml[] =
 "      <arg type='t' name='handler_id' direction='in'/>"
 "      <arg type='b' name='success' direction='out'/>"
 "    </method>"
+"    <!-- D-Bus Signals for Async Callbacks -->"
+"    <signal name='CheckForUpdateComplete'>"
+"      <arg type='s' name='handler_id'/>"
+"      <arg type='i' name='result_code'/>"
+"      <arg type='s' name='current_version'/>"
+"      <arg type='s' name='available_version'/>"
+"      <arg type='s' name='update_details'/>"
+"      <arg type='s' name='status_message'/>"
+"    </signal>"
 "  </interface>"
 "</node>";    
 
@@ -347,6 +356,32 @@ void complete_CheckUpdate_waiting_tasks(TaskContext *ctx)
 					(gint32)context->data.check_update.result_code));    // Status Code (0=UPDATE_AVAILABLE, 1=UPDATE_NOT_AVAILABLE, 2=UPDATE_ERROR)
 
 			SWLOG_INFO("[CHECK_UPDATE] Response sent successfully to client\n");
+			
+			// ALSO emit D-Bus signal for callback mechanism (NEW ADDITION)
+			SWLOG_INFO("[CHECK_UPDATE] Emitting D-Bus signal for callback...\n");
+			GError *signal_error = NULL;
+			gboolean signal_result = g_dbus_connection_emit_signal(connection,
+				NULL,  // Broadcast to all listeners
+				"/org/rdkfwupdater/fwupgrade",
+				"org.rdkfwupdater.Interface",
+				"CheckForUpdateComplete",
+				g_variant_new("(sissss)",
+					context->process_name,                              // handler_id
+					(gint32)context->data.check_update.result_code,     // result_code  
+					version,                                            // current_version
+					available,                                          // available_version
+					details,                                            // update_details
+					status_str                                          // status_message
+				),
+				&signal_error);
+				
+			if (signal_result) {
+				SWLOG_INFO("[CHECK_UPDATE] D-Bus signal emitted successfully for handler '%s'\n", context->process_name);
+			} else {
+				SWLOG_ERROR("[CHECK_UPDATE] Failed to emit D-Bus signal: %s\n", 
+				           signal_error ? signal_error->message : "Unknown error");
+				if (signal_error) g_error_free(signal_error);
+			}
 			// Remove task_id from active_tasks
 			g_hash_table_remove(active_tasks, GUINT_TO_POINTER(task_id));
 			SWLOG_INFO("[CHECK_UPDATE] Task-%d removed from active tasks\n", task_id);

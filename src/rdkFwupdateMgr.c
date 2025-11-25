@@ -54,11 +54,11 @@
 #include <strings.h>
 
 #include <sys/file.h>
-#ifdef ENABLE_DBUS
+//#ifdef ENABLE_DBUS
 #include <glib.h>
 #include <gio/gio.h>
 #include "dbus/rdkv_dbus_server.h"
-#endif
+//#endif
 
 #define JSON_STR_LEN        1000
 
@@ -1045,7 +1045,7 @@ int main(int argc, char *argv[]) {
 		    case STATE_INIT:
 			    // Transition to INIT_VALIDATION after setup
 			    SWLOG_INFO("In STATE_INIT\n");
-#ifdef ENABLE_DBUS
+//#ifdef ENABLE_DBUS
 			    // Initialize task system first (before D-Bus setup)
                             init_task_system();
                             // Initialize D-Bus server as part of process initialization
@@ -1056,7 +1056,7 @@ int main(int argc, char *argv[]) {
                             // Create the main loop
                             SWLOG_INFO("Creating g_main_loop for dbus\n");
                             main_loop = g_main_loop_new(NULL, FALSE);
-#endif
+//#endif
 			    ret = initialize();
 			    if (1 != ret) {
 				    SWLOG_ERROR( "initialize(): Fail:%d\n", ret);
@@ -1178,7 +1178,7 @@ int main(int argc, char *argv[]) {
 				*/
 				break;
 		    case STATE_IDLE:
-#ifdef ENABLE_DBUS
+//#ifdef ENABLE_DBUS
 				// Listen for D-Bus events
 				SWLOG_INFO("\n [STATE_IDLE] rdkvfwupgrader Waiting for D-Bus requests...\n\n");
 				SWLOG_INFO("=======================================================\n");
@@ -1199,7 +1199,7 @@ int main(int argc, char *argv[]) {
 				// This line only reached if main_loop is quit (shutdown signal)
 				SWLOG_INFO("Main loop exited - rdkvfwupgrader shutting down\n");
 				goto cleanup_and_exit;
-#else
+//#else
 				SWLOG_INFO("Dbus is not Enabled\n");
 				goto cleanup_and_exit;
 #endif
@@ -1211,10 +1211,10 @@ int main(int argc, char *argv[]) {
 	    }
     }
 cleanup_and_exit:
-#ifdef ENABLE_DBUS
+//#ifdef ENABLE_DBUS
     // Cleanup the resources if loop exits
     cleanup_dbus();
-#endif
+//#endif
     uninitialize(init_validate_status);
     log_exit();
     exit(ret_curl_code);
