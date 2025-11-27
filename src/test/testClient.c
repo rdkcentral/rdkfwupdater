@@ -57,6 +57,58 @@ static void run_test_scenario(TestClientContext *client, const gchar *test_mode)
 #define PRINT_WARN(fmt, ...)    printf(COLOR_YELLOW "[WARN] " fmt COLOR_RESET "\n", ##__VA_ARGS__)
 
 /**
+ * Signal callback for CheckForUpdateComplete - simulates library callback mechanism
+ */
+static void on_check_for_update_complete_signal(GDBusConnection *connection,
+                                               const gchar *sender_name,
+                                               const gchar *object_path,
+                                               const gchar *interface_name,
+                                               const gchar *signal_name,
+                                               GVariant *parameters,
+                                               gpointer user_data)
+{
+    TestClientContext *client = (TestClientContext*)user_data;
+    gchar *handler_id;
+    gint result_code;
+    gchar *current_version, *available_version, *update_details, *status_message;
+    
+    // Extract signal parameters
+    g_variant_get(parameters, "(sissss)", &handler_id, &result_code,
+                  &current_version, &available_version, &update_details, &status_message);
+    
+    printf("\n" COLOR_YELLOW "🔔 D-Bus Signal Received: CheckForUpdateComplete" COLOR_RESET "\n");
+    PRINT_INFO("Signal Details:");
+    PRINT_INFO("  Handler ID: %s", handler_id);
+    PRINT_INFO("  Result Code: %d (%s)", result_code, 
+               result_code == 0 ? "UPDATE_AVAILABLE" :
+               result_code == 1 ? "UPDATE_NOT_AVAILABLE" :
+               result_code == 2 ? "UPDATE_ERROR" : "UNKNOWN");
+    PRINT_INFO("  Current Version: %s", current_version);
+    PRINT_INFO("  Available Version: %s", available_version);
+    PRINT_INFO("  Update Details: %s", update_details);
+    PRINT_INFO("  Status Message: %s", status_message);
+    
+    // Check if this signal is for our client (like real library would do)
+    gchar *our_handler_str = g_strdup_printf("%"G_GUINT64_FORMAT, client->handler_id);
+    if (g_strcmp0(handler_id, our_handler_str) == 0) {
+        PRINT_SUCCESS("✅ Signal is for our handler - invoking callback!");
+        printf(COLOR_GREEN "📞 [CALLBACK INVOKED] Client application callback called with FwData\n" COLOR_RESET);
+    } else {
+        PRINT_WARN("⚠️  Signal is for different handler (%s vs %s) - ignoring", handler_id, our_handler_str);
+    }
+    g_free(our_handler_str);
+    
+    // Free extracted strings
+    g_free(handler_id);
+    g_free(current_version);
+    g_free(available_version);
+    g_free(update_details);
+    g_free(status_message);
+    
+    printf(COLOR_YELLOW "🔔 Signal processing complete\n" COLOR_RESET "\n");
+}
+
+/**
  * Create new test client context
  */
 static TestClientContext* test_client_new(const gchar *process_name, const gchar *lib_version)
@@ -79,6 +131,22 @@ static TestClientContext* test_client_new(const gchar *process_name, const gchar
     client->lib_version = g_strdup(lib_version);
     client->handler_id = 0;
     client->is_registered = FALSE;
+    
+    // Subscribe to CheckForUpdateComplete signal (like real library would do)
+    PRINT_INFO("Subscribing to CheckForUpdateComplete D-Bus signals...");
+    g_dbus_connection_signal_subscribe(
+        client->connection,
+        DBUS_SERVICE_NAME,                    // sender
+        DBUS_INTERFACE_NAME,                  // interface
+        "CheckForUpdateComplete",             // signal name
+        DBUS_OBJECT_PATH,                     // object path
+        NULL,                                 // arg0 (no filtering)
+        G_DBUS_SIGNAL_FLAGS_NONE,
+        on_check_for_update_complete_signal,  // callback
+        client,                               // user_data
+        NULL                                  // user_data_free_func
+    );
+    PRINT_SUCCESS("Subscribed to D-Bus signals successfully");
     
     PRINT_SUCCESS("Test client context created successfully");
     return client;
@@ -153,6 +221,15 @@ static gboolean test_client_check_update(TestClientContext *client)
     }
     
     PRINT_INFO("Checking for updates using process name '%s'", client->process_name);
+    PRINT_INFO("📞 Making D-Bus method call to daemon...");
+    
+    // Check if cache exists to predict the flow
+    gboolean cache_exists = g_file_test("/tmp/xconf_response_thunder.txt", G_FILE_TEST_EXISTS);
+    if (cache_exists) {
+        PRINT_INFO("🗃️  Cache file exists - expecting fast response from cache");
+    } else {
+        PRINT_INFO("❌ No cache file - expecting immediate error + background fetch + signal");
+    }
     
     // Call CheckForUpdate D-Bus method
     result = g_dbus_connection_call_sync(
@@ -311,12 +388,14 @@ static void print_usage(const char *program_name)
     printf("  reregister    - Test same client re-registration (should return same handler_id)\n");
     printf("  check         - Register and perform CheckForUpdate\n");
     printf("  full          - Full workflow: Register -> Check -> Unregister\n");
+    printf("  signals       - Test D-Bus signals and cache behavior (cache hit/miss scenarios)\n");
     printf("  stress        - Multiple rapid registration attempts\n\n");
     
     printf("Examples:\n");
     printf("  %s MyTestApp 1.0.0\n", program_name);
     printf("  %s MyTestApp 1.0.0 basic\n", program_name);
     printf("  %s MyTestApp 1.0.0 check\n", program_name);
+    printf("  %s MyTestApp 1.0.0 signals\n", program_name);
     printf("  %s MyTestApp 1.0.0 full\n\n", program_name);
     
     printf("Expected Scenarios for Robust Testing:\n");
@@ -373,6 +452,51 @@ static void run_test_scenario(TestClientContext *client, const gchar *test_mode)
         if (test_client_register(client)) {
             sleep(1);
             test_client_check_update(client);
+            sleep(1);
+            test_client_unregister(client);
+        }
+        
+    } else if (g_strcmp0(test_mode, "signals") == 0) {
+        // Test signal listening and cache behavior
+        PRINT_INFO("=== Testing D-Bus Signals and Cache Behavior ===");
+        
+        if (test_client_register(client)) {
+            sleep(1);
+            
+            // Check current cache state
+            gboolean cache_exists = g_file_test("/tmp/xconf_response_thunder.txt", G_FILE_TEST_EXISTS);
+            
+            printf("\n" COLOR_BLUE "🧪 Cache Test Scenario:" COLOR_RESET "\n");
+            if (cache_exists) {
+                PRINT_INFO("Cache exists - will get immediate response");
+            } else {
+                PRINT_INFO("No cache - will get UPDATE_ERROR + signal later");
+                PRINT_INFO("💡 Tip: Delete cache with: rm /tmp/xconf_response_thunder.txt");
+            }
+            
+            printf("\n" COLOR_BLUE "🔄 Starting CheckForUpdate call..." COLOR_RESET "\n");
+            test_client_check_update(client);
+            
+            // Wait for potential signals (especially for cache miss scenario)
+            if (!cache_exists) {
+                PRINT_INFO("⏳ Waiting 10 seconds for background XConf fetch and signal...");
+                printf(COLOR_YELLOW "   (You should see the signal callback above when XConf completes)\n" COLOR_RESET);
+                
+                GMainContext *context = g_main_context_default();
+                for (int i = 0; i < 100; i++) {  // 10 seconds = 100 * 100ms
+                    g_main_context_iteration(context, FALSE);
+                    usleep(100000); // 100ms
+                    
+                    // Print progress dots
+                    if (i % 10 == 0) {
+                        printf(".");
+                        fflush(stdout);
+                    }
+                }
+                printf("\n");
+                PRINT_INFO("Signal waiting period completed");
+            }
+            
             sleep(1);
             test_client_unregister(client);
         }

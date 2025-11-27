@@ -7,8 +7,8 @@
 // Test client for RDK Firmware Updater Daemon
 // Comprehensive test for all registration scenarios
 
-#define DAEMON_SERVICE "org.rdkfwupdater.fwupgrade"
-#define DAEMON_PATH "/org/rdkfwupdater/fwupgrade"
+#define DAEMON_SERVICE "org.rdkfwupdater.service"
+#define DAEMON_PATH "/org/rdkfwupdater/service"
 #define DAEMON_INTERFACE "org.rdkfwupdater.Interface"
 
 // Colors for output

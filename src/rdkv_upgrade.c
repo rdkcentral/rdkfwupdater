@@ -298,7 +298,7 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
         return ret_curl_code;
     }
     if (upgrade_type == XCONF_UPGRADE) {
-        SWLOG_INFO("Trying to communicate with XCONF server");
+        SWLOG_INFO("Trying to communicate with XCONF server\n");
         Upgradet2CountNotify("SYST_INFO_XCONFConnect", 1);
     }
     *pHttp_code = 0;
@@ -837,7 +837,7 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
     (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_INIT) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_INIT);
 #ifdef LIBRDKCERTSELECTOR
     do {
-        SWLOG_INFO("2 Fetching MTLS credential for SSR/XCONF\n");
+        SWLOG_INFO("Fetching MTLS credential for SSR/XCONF\n");
         ret = getMtlscert(&sec, &thisCertSel);
         SWLOG_INFO("%s, getMtlscert function ret value = %d\n", __FUNCTION__, ret);
 

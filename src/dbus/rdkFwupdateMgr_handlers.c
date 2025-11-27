@@ -126,12 +126,12 @@ static int fetch_xconf_firmware_info( XCONFRES *pResponse, int server_type, int 
                 SWLOG_INFO( "fetch_xconf_firmware_info: server URL %s\n", pServURL );
                 if( len )
                 {
-                    SWLOG_INFO("MakeXconfComms: Server URL length: %d, preparing device JSON data...\n", (int)len);
+                    SWLOG_INFO("fetch_xconf_firmware_info: Server URL length: %d, preparing device JSON data...\n", (int)len);
                     len = createJsonString( pJSONStr, JSON_STR_LEN );
-                    SWLOG_INFO("MakeXconfComms: Device JSON data prepared (%d bytes)\n", (int)len);
-                    SWLOG_INFO("MakeXconfComms: JSON POST data:\n%s\n", pJSONStr);
+                    SWLOG_INFO("fetch_xconf_firmware_info: Device JSON data prepared (%d bytes)\n", (int)len);
+                    SWLOG_INFO("fetch_xconf_firmware_info: JSON POST data:\n%s\n", pJSONStr);
 
-                    //context structure for XCONF upgrade request - daemon mode initialization
+                    //context structure for XCONF upgrade request
                     RdkUpgradeContext_t xconf_context = {0};
                     xconf_context.upgrade_type = XCONF_UPGRADE;
                     xconf_context.server_type = server_type;
@@ -139,8 +139,7 @@ static int fetch_xconf_firmware_info( XCONFRES *pResponse, int server_type, int 
                     xconf_context.dwlloc = &DwnLoc;
                     xconf_context.pPostFields = pJSONStr;
                     
-                    // For daemon mode, read REAL system configuration
-                    // Unlike monolithic binary, daemon reads fresh config per request
+                    //Have to revist these vars once - MADHU
                     Rfc_t local_rfc_list = {0};
                     getRFCSettings(&local_rfc_list);  // Read actual RFC settings from system
                     
@@ -158,12 +157,15 @@ static int fetch_xconf_firmware_info( XCONFRES *pResponse, int server_type, int 
                     xconf_context.device_info = &device_info;      // Uses extern global
                     xconf_context.force_exit = &local_force_exit;
                     xconf_context.trigger_type = local_trigger_type;
-                    xconf_context.rfc_list = &local_rfc_list;      // NOW USES REAL RFC DATA
+                    xconf_context.rfc_list = &local_rfc_list;  
 
-                    SWLOG_INFO("MakeXconfComms: Initiating XConf request with server_type=%d\n", server_type);
+                    SWLOG_INFO("fetch_xconf_firmware_info: Initiating XConf request with server_type=%d\n", server_type);
+		    SWLOG_INFO("Simulating a 3600 seconds sleep()\n");
+		    sleep(3600);
+		    SWLOG_INFO("Just now completed 3600 seconds sleep\n");
                     ret = rdkv_upgrade_request(&xconf_context, &curl, pHttp_code);
                     
-                    SWLOG_INFO("MakeXconfComms: XConf request completed - ret=%d, http_code=%d\n", ret, *pHttp_code);
+                    SWLOG_INFO("fetch_xconf_firmware_info: XConf request completed - ret=%d, http_code=%d\n", ret, *pHttp_code);
                     
                     if( ret == 0 && *pHttp_code == 200 && DwnLoc.pvOut != NULL )
                     {
@@ -197,7 +199,7 @@ static int fetch_xconf_firmware_info( XCONFRES *pResponse, int server_type, int 
                             SWLOG_ERROR("MakeXconfComms: ERROR - Failed to parse XConf response\n");
                         }
                         
-                        // Recovery completed event handling - daemon mode
+                        // Recovery completed event handling 
                         #ifndef GTEST_ENABLE
                         if( (filePresentCheck( RED_STATE_REBOOT ) == RDK_API_SUCCESS) ) {
                              SWLOG_INFO("%s : RED Recovery completed\n", __FUNCTION__);
@@ -208,7 +210,7 @@ static int fetch_xconf_firmware_info( XCONFRES *pResponse, int server_type, int 
                     }
                     else
                     {
-                        SWLOG_ERROR("MakeXconfComms: FAILED - XConf communication failed\n");
+                        SWLOG_ERROR("fetch_xconf_firmware_info: FAILED - XConf communication failed\n");
                         SWLOG_ERROR("  - ret=%d (0=success)\n", ret);
                         SWLOG_ERROR("  - http_code=%d (200=success)\n", *pHttp_code);
                         SWLOG_ERROR("  - DwnLoc.pvOut=%p (should not be NULL)\n", DwnLoc.pvOut);
@@ -220,19 +222,19 @@ static int fetch_xconf_firmware_info( XCONFRES *pResponse, int server_type, int 
                 }
                 else
                 {
-                    SWLOG_ERROR( "MakeXconfComms: no valid server URL\n" );
+                    SWLOG_ERROR( "fetch_xconf_firmware_info: no valid server URL\n" );
                 }
                 free( pServURL );
             }
             else
             {
-                SWLOG_ERROR("MakeXconfComms: Failed malloc for server URL of %d bytes\n", URL_MAX_LEN );
+                SWLOG_ERROR("fetch_xconf_firmware_info: Failed malloc for server URL of %d bytes\n", URL_MAX_LEN );
             }
             free( pJSONStr );
         }
         else
         {
-            SWLOG_ERROR("MakeXconfComms: Failed malloc for json string of %d bytes\n", JSON_STR_LEN );
+            SWLOG_ERROR("fetch_xconf_firmware_info: Failed malloc for json string of %d bytes\n", JSON_STR_LEN );
         }
         if( DwnLoc.pvOut != NULL )
         {
