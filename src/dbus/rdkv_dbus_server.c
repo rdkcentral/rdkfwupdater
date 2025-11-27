@@ -113,7 +113,7 @@ static guint64 add_process_to_tracking(const gchar *process_name,
 	while (g_hash_table_iter_next(&iter, &key, &value)) {
 		ProcessInfo *info = (ProcessInfo*)value;
 		
-		// Check for same sender_id (client)
+		// Check for same sender_id (client) // comparing the dbus sender id 
 		if (g_strcmp0(info->sender_id, sender_id) == 0) {
 			existing_same_client = info;
 			SWLOG_INFO("[PROCESS_TRACKING] Found existing client: process='%s', handler=%"G_GUINT64_FORMAT"\n",

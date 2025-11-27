@@ -226,9 +226,9 @@ static gboolean test_client_check_update(TestClientContext *client)
     // Check if cache exists to predict the flow
     gboolean cache_exists = g_file_test("/tmp/xconf_response_thunder.txt", G_FILE_TEST_EXISTS);
     if (cache_exists) {
-        PRINT_INFO("🗃️  Cache file exists - expecting fast response from cache");
+        PRINT_INFO("Cache file exists - expecting fast response from cache");
     } else {
-        PRINT_INFO("❌ No cache file - expecting immediate error + background fetch + signal");
+        PRINT_INFO("No cache file - expecting immediate error + background fetch + signal");
     }
     
     // Call CheckForUpdate D-Bus method
@@ -238,8 +238,8 @@ static gboolean test_client_check_update(TestClientContext *client)
         DBUS_OBJECT_PATH,
         DBUS_INTERFACE_NAME,
         "CheckForUpdate",
-        g_variant_new("(s)", client->process_name),                 // Use process name as handler
-        G_VARIANT_TYPE("(ssssi)"),                                  // Expected return type
+        g_variant_new("(t)", client->handler_id),   // Use handler_id (uint64)
+        G_VARIANT_TYPE("(ssssi)"),
         G_DBUS_CALL_FLAGS_NONE,
         30000,                                                      // 30 second timeout for XConf calls
         NULL,

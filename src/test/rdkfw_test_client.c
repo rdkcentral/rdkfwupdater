@@ -7,7 +7,7 @@
 // Test client for RDK Firmware Updater Daemon
 // Comprehensive test for all registration scenarios
 
-#define DAEMON_SERVICE "org.rdkfwupdater.service"
+#define DAEMON_SERVICE "org.rdkfwupdater.Service"
 #define DAEMON_PATH "/org/rdkfwupdater/service"
 #define DAEMON_INTERFACE "org.rdkfwupdater.Interface"
 
