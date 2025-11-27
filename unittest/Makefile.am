@@ -18,7 +18,7 @@
 AUTOMAKE_OPTIONS = subdir-objects
 
 # Define the program name and the source files
-bin_PROGRAMS = rdkfw_device_status_gtest rdkfw_deviceutils_gtest rdkfw_main_gtest rdkfw_interface_gtest
+bin_PROGRAMS = rdkfw_device_status_gtest rdkfw_deviceutils_gtest rdkfw_main_gtest rdkfw_interface_gtest rdkfwupdatemgr_gtest
 
 # Define the include directories
 # NOTE: We explicitly use -I. to prioritize local test headers over system headers
@@ -66,6 +66,8 @@ rdkfw_interface_gtest_SOURCES = fwdl_interface_gtest.cpp \
     ../src/rbusInterface/rbusInterface.c \
     deviceutils/json_parse.c
 
+rdkfwupdatemgr_gtest_SOURCES = rdkfwupdatemgr_gtest.cpp ../src/dbus/rdkFwupdateMgr_handlers.c
+
 # Apply common properties to each program
 rdkfw_device_status_gtest_CPPFLAGS = $(COMMON_CPPFLAGS)
 rdkfw_device_status_gtest_LDADD = $(COMMON_LDADD) 
@@ -86,3 +88,8 @@ rdkfw_interface_gtest_CPPFLAGS = $(COMMON_CPPFLAGS)
 rdkfw_interface_gtest_LDADD = $(COMMON_LDADD)
 rdkfw_interface_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
 rdkfw_interface_gtest_CFLAGS = $(COMMON_CXXFLAGS)
+
+rdkfwupdatemgr_gtest_CPPFLAGS = $(COMMON_CPPFLAGS)
+rdkfwupdatemgr_gtest_LDADD = $(COMMON_LDADD)
+rdkfwupdatemgr_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
+rdkfwupdatemgr_gtest_CFLAGS = $(COMMON_CXXFLAGS)
