@@ -28,8 +28,8 @@
 #define COLOR_RESET   "\033[0m"
 
 // D-Bus service details
-#define DBUS_SERVICE_NAME "org.rdkfwupdater.service"
-#define DBUS_OBJECT_PATH "/org/rdkfwupdater/service"
+#define DBUS_SERVICE_NAME "org.rdkfwupdater.Service"
+#define DBUS_OBJECT_PATH "/org/rdkfwupdater/Service"
 #define DBUS_INTERFACE_NAME "org.rdkfwupdater.Interface"
 
 // Test client context structure
