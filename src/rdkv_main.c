@@ -806,6 +806,7 @@ static int MakeXconfComms( XCONFRES *pResponse, int server_type, int *pHttp_code
                         if( (filePresentCheck( RED_STATE_REBOOT ) == RDK_API_SUCCESS) ) {
                              SWLOG_INFO("%s : RED Recovery completed\n", __FUNCTION__);
                              eventManager(RED_STATE_EVENT, RED_RECOVERY_COMPLETED);
+							 write_RFCProperty("REDRECV", RFC_RED_RECV, "COMPLETED", RFC_STRING);
                              unlink(RED_STATE_REBOOT);
                         }
                     }
