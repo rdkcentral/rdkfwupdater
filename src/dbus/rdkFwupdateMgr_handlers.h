@@ -28,6 +28,9 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id);
 // Helper function to free CheckUpdateResponse memory
 void checkupdate_response_free(CheckUpdateResponse *response);
 
+// Cache utility function (used by D-Bus server for cache-first logic)
+gboolean xconf_cache_exists(void);
+
 int rdkFwupdateMgr_downloadFirmware(const gchar *handler_id,
                                     const gchar *image_name,
                                     const gchar *available_version,

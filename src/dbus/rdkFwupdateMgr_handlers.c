@@ -36,7 +36,7 @@ extern DeviceProperty_t device_info;
 extern ImageDetails_t cur_img_detail;
 
 // Cache utility functions for XConf response persistence
-static gboolean xconf_cache_exists(void) {
+gboolean xconf_cache_exists(void) {
     return g_file_test(XCONF_CACHE_FILE, G_FILE_TEST_EXISTS);
 }
 
@@ -161,8 +161,8 @@ static int fetch_xconf_firmware_info( XCONFRES *pResponse, int server_type, int 
 
                     SWLOG_INFO("fetch_xconf_firmware_info: Initiating XConf request with server_type=%d\n", server_type);
 		    SWLOG_INFO("Simulating a 3600 seconds sleep()\n");
-		    sleep(3600);
-		    SWLOG_INFO("Just now completed 3600 seconds sleep\n");
+		    sleep(120);
+		    SWLOG_INFO("Just now completed 120 seconds sleep\n");
                     ret = rdkv_upgrade_request(&xconf_context, &curl, pHttp_code);
                     
                     SWLOG_INFO("fetch_xconf_firmware_info: XConf request completed - ret=%d, http_code=%d\n", ret, *pHttp_code);

@@ -3,9 +3,22 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <unistd.h>
+#include <pthread.h>
+#include <time.h>
 #include "rdkv_dbus_server.h"
 #include "rdkFwupdateMgr_handlers.h"
 #include "rdkv_cdl_log_wrapper.h"
+
+// Context for background XConf fetch operation (runs in GTask worker thread)
+typedef struct {
+    gchar *handler_id;              // Handler ID that initiated request
+    GDBusConnection *connection;    // D-Bus connection for signal emission
+} AsyncXconfFetchContext;
+
+// Forward declarations for async fetch functions
+static void async_xconf_fetch_task(GTask *task, gpointer source_object, gpointer task_data, GCancellable *cancellable);
+static void async_xconf_fetch_complete(GObject *source_object, GAsyncResult *res, gpointer user_data);
+
 static gboolean IsCheckUpdateInProgress = FALSE; 
 static gboolean IsDownloadInProgress = FALSE; 
 //static gboolean IsUpgradeInProgress = FALSE; // will be used based once the shared lib is ready.commented out to pass jenkins build
@@ -329,7 +342,7 @@ void complete_CheckUpdate_waiting_tasks(TaskContext *ctx)
 			const gchar *status_str = context->data.check_update.client_fwdata_status ? 
 			                         context->data.check_update.client_fwdata_status : "";
 			
-			SWLOG_INFO("=== [CHECK_UPDATE] Task Completion - Sending Response ===\n");
+			SWLOG_INFO("[CHECK_UPDATE] Task Completion - Sending Response\n");
 			SWLOG_INFO("[CHECK_UPDATE] Task ID: %d\n", task_id);
 			SWLOG_INFO("[CHECK_UPDATE] Response data:\n");
 			SWLOG_INFO("[CHECK_UPDATE]   - Current FW Version: '%s'\n", version);
@@ -385,7 +398,7 @@ void complete_CheckUpdate_waiting_tasks(TaskContext *ctx)
 			// Remove task_id from active_tasks
 			g_hash_table_remove(active_tasks, GUINT_TO_POINTER(task_id));
 			SWLOG_INFO("[CHECK_UPDATE] Task-%d removed from active tasks\n", task_id);
-			SWLOG_INFO("=== [CHECK_UPDATE] Task Completion - SUCCESS ===\n\n");
+			SWLOG_INFO("[CHECK_UPDATE] Task Completion - SUCCESS\n");
 		} else {
 			SWLOG_INFO("Task-%d not found in active_tasks\n", task_id);
 		}
@@ -460,7 +473,7 @@ static gboolean check_update_task(gpointer user_data)
 	CheckUpdate_TaskData *data = (CheckUpdate_TaskData*)user_data;
 	guint task_id = data->update_task_id;
 
-	SWLOG_INFO("=== [CHECK_UPDATE_TASK] Async Task Execution Started ===\n");
+	SWLOG_INFO("[CHECK_UPDATE_TASK] Async Task Execution Started\n");
 	SWLOG_INFO("[CHECK_UPDATE_TASK] Task details:\n");
 	SWLOG_INFO("[CHECK_UPDATE_TASK]   - Task ID: %d\n", task_id);
 	SWLOG_INFO("[CHECK_UPDATE_TASK]   - Handler ID: %s\n", data->CheckupdateTask_ctx->process_name);
@@ -546,7 +559,7 @@ static gboolean check_update_task(gpointer user_data)
 		g_free(handler_id);
 		checkupdate_response_free(&response);  // Clean up response structure
 		
-		SWLOG_INFO("=== [CHECK_UPDATE_TASK] Async Task Execution Complete ===\n\n");
+		SWLOG_INFO("[CHECK_UPDATE_TASK] Async Task Execution Complete\n");
 	}
 	return G_SOURCE_REMOVE;
 }
@@ -612,91 +625,243 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 
 	/* CHECK UPDATE REQUEST*/
 	//extract process handler_id and FwData from the payload -  inputs provided by client app
+	/* CHECK FOR UPDATE REQUEST - CACHE-FIRST, NON-BLOCKING */
 	if (g_strcmp0(rdkv_req_method, "CheckForUpdate") == 0) {
-		/*
-		 * gchar *app_id=NULL;
-		 * gchar *CurrFWVersion=NULL; //app_id the registration id given by dbus server to app.
-		 * g_variant_get(rdkv_req_payload, "(ss)", &app_id, &CurrFWVersion);
-		 * */
-
-		// Extract only the Handler ID
-		gchar *handler_process_name = NULL; 
+		gchar *handler_process_name = NULL;
+		g_variant_get(rdkv_req_payload, "(s)", &handler_process_name);
 		
-		// Extract only 1 parameter from D-Bus payload
-		g_variant_get(rdkv_req_payload, "(s)", &handler_process_name);     // Only the app's handler_id needed
+		SWLOG_INFO("[CHECK_UPDATE] NEW D-BUS REQUEST\n");
+		SWLOG_INFO("[CHECK_UPDATE] Timestamp: %ld\n", (long)time(NULL));
+		SWLOG_INFO("[CHECK_UPDATE] Handler ID: '%s'\n", handler_process_name ? handler_process_name : "NULL");
+		SWLOG_INFO("[CHECK_UPDATE] D-Bus Sender: '%s'\n", rdkv_req_caller_id);
+		SWLOG_INFO("[CHECK_UPDATE] D-Bus Path: /org/rdkfwupdater/fwupgrade\n");
+		SWLOG_INFO("[CHECK_UPDATE] D-Bus Interface: org.rdkfwupdater.Interface\n");
+		SWLOG_INFO("[CHECK_UPDATE] D-Bus Method: CheckForUpdate\n");
+		SWLOG_INFO("[CHECK_UPDATE] Daemon State:\n");
+		SWLOG_INFO("[CHECK_UPDATE]   Registered Processes: %d\n", g_hash_table_size(registered_processes));
+		SWLOG_INFO("[CHECK_UPDATE]   XConf Fetch In Progress: %s\n", IsCheckUpdateInProgress ? "YES" : "NO");
+		SWLOG_INFO("[CHECK_UPDATE]   Active Tasks (hash table): %d\n", g_hash_table_size(active_tasks));
+		SWLOG_INFO("[CHECK_UPDATE]   Waiting Queue (list): %d task(s)\n", g_slist_length(waiting_checkUpdate_ids));
 		
-		SWLOG_INFO("=== [CHECK_UPDATE] Starting Firmware Update Check ===\n");
-		SWLOG_INFO("[CHECK_UPDATE] Request details:\n");
-		SWLOG_INFO("[CHECK_UPDATE]   - Handler ID: '%s'\n", handler_process_name ? handler_process_name : "NULL");
-		SWLOG_INFO("[CHECK_UPDATE]   - D-Bus Sender: '%s'\n", rdkv_req_caller_id);
-		SWLOG_INFO("[CHECK_UPDATE]   - Active tasks before: %d\n", g_hash_table_size(active_tasks));
-
-		// Validate handler ID
+		// 1. VALIDATE HANDLER ID
 		if (!handler_process_name || strlen(handler_process_name) == 0) {
-			SWLOG_ERROR("[CHECK_UPDATE] ERROR: Invalid handler ID provided\n");
+			SWLOG_ERROR("[CHECK_UPDATE] REJECTED: Invalid handler ID\n");
 			g_dbus_method_invocation_return_error(resp_ctx, 
-				G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, 
-				"Invalid handler ID");
+				G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "Invalid handler ID");
 			g_free(handler_process_name);
 			return;
 		}
-
-		CheckUpdate_TaskData *user_data = g_malloc(sizeof(CheckUpdate_TaskData));
 		
-		// Registration Check
+		// 2. VALIDATE REGISTRATION
 		guint64 handler_id_numeric = g_ascii_strtoull(handler_process_name, NULL, 10);
 		gboolean is_registered = g_hash_table_contains(registered_processes, GINT_TO_POINTER(handler_id_numeric));
 		
-		SWLOG_INFO("[CHECK_UPDATE] Registration verification:\n");
-		SWLOG_INFO("[CHECK_UPDATE]   - Handler ID (numeric): %"G_GUINT64_FORMAT"\n", handler_id_numeric);
-		SWLOG_INFO("[CHECK_UPDATE]   - Is registered: %s\n", is_registered ? "YES" : "NO");
-		SWLOG_INFO("[CHECK_UPDATE]   - Total registered processes: %d\n", g_hash_table_size(registered_processes));
-
+		SWLOG_INFO("[CHECK_UPDATE] Registration check: %s\n", is_registered ? "REGISTERED" : "NOT REGISTERED");
+		
 		if (!is_registered) {
-			SWLOG_ERROR("[CHECK_UPDATE] REJECTED: CheckUpdate from unregistered handler ID '%s'\n", handler_process_name);
-			SWLOG_ERROR("[CHECK_UPDATE] Client must register first using RegisterProcess method\n");
+			SWLOG_ERROR("[CHECK_UPDATE] REJECTED: Handler not registered\n");
 			g_dbus_method_invocation_return_error(resp_ctx, 
 				G_DBUS_ERROR, G_DBUS_ERROR_ACCESS_DENIED, 
 				"Handler not registered. Call RegisterProcess first.");
 			g_free(handler_process_name);
-			g_free(user_data);
 			return;
 		}
-
-		SWLOG_INFO("[CHECK_UPDATE] SUCCESS: Handler ID verified and registered\n");
-		SWLOG_INFO("[CHECK_UPDATE] Proceeding with firmware update check...\n");
-
-		// Create CheckUpdate-specific task context
-		SWLOG_INFO("[CHECK_UPDATE] Creating async task context...\n");
-		TaskContext *CheckUpdateTask_ctx = create_task_context(TASK_TYPE_CHECK_UPDATE, 
-		                                                     handler_process_name, 
-		                                                     rdkv_req_caller_id, 
-		                                                     resp_ctx);
 		
-		// Populate CheckUpdate-specific fields in the union (initialize with empty values - server will fill them)
-		CheckUpdateTask_ctx->data.check_update.client_fwdata_version = g_strdup("");  // Will be filled by server
-		CheckUpdateTask_ctx->data.check_update.client_fwdata_availableVersion = g_strdup("");  // Will be filled by server
-		CheckUpdateTask_ctx->data.check_update.client_fwdata_updateDetails = g_strdup("");  // Will be filled by server
-		CheckUpdateTask_ctx->data.check_update.client_fwdata_status = g_strdup("");  // Will be filled by server
-
-		// Assign unique task ID and track it
-		guint CheckUpdateTask_id = next_task_id++; // this will be the key in active_tasks hash table
-		g_hash_table_insert(active_tasks, GUINT_TO_POINTER(CheckUpdateTask_id), CheckUpdateTask_ctx);
-
-		SWLOG_INFO("[CHECK_UPDATE] Task created successfully:\n");
-		SWLOG_INFO("[CHECK_UPDATE]   - Task ID: %d\n", CheckUpdateTask_id);
-		SWLOG_INFO("[CHECK_UPDATE]   - Task Type: CHECK_UPDATE\n");
-		SWLOG_INFO("[CHECK_UPDATE]   - Active tasks after creation: %d\n", g_hash_table_size(active_tasks));
-
-		user_data->update_task_id = CheckUpdateTask_id;
-		user_data->CheckupdateTask_ctx = CheckUpdateTask_ctx;
-
-		SWLOG_INFO("[CHECK_UPDATE] Spawning ASYNC CheckUpdate task (task-%d)...\n", CheckUpdateTask_id);
+		// 3. CHECK CACHE (FAST, NON-BLOCKING)
+		SWLOG_INFO("\n[STEP 3] Cache Check\n");
+		SWLOG_INFO("  Calling: xconf_cache_exists()\n");
+		gboolean cache_exists = xconf_cache_exists();
+		SWLOG_INFO("[CHECK_UPDATE] Result: %s\n", cache_exists ? "CACHE HIT" : "CACHE MISS");
 		
-		// Start async task
-		g_timeout_add(100, check_update_task, user_data);
+		if (cache_exists) {
+			// CACHE HIT PATH
+			SWLOG_INFO("[CHECK_UPDATE] CACHE HIT PATH - Immediate Response\n");
+			SWLOG_INFO("[CHECK_UPDATE] Action: Loading firmware data from cache\n");
+			
+			CheckUpdateResponse response = rdkFwupdateMgr_checkForUpdate(handler_process_name);
+			
+			SWLOG_INFO("[CHECK_UPDATE] Cache data loaded successfully\n");
+			SWLOG_INFO("[CHECK_UPDATE] Cached Firmware Data:\n");
+			SWLOG_INFO("[CHECK_UPDATE]   Status Code: %d ", response.result_code);
+			switch(response.result_code) {
+				case 0: SWLOG_INFO("(UPDATE_AVAILABLE)\n"); break;
+				case 1: SWLOG_INFO("(UPDATE_NOT_AVAILABLE)\n"); break;
+				case 2: SWLOG_INFO("(UPDATE_ERROR)\n"); break;
+				default: SWLOG_INFO("(UNKNOWN)\n"); break;
+			}
+			SWLOG_INFO("[CHECK_UPDATE]   Current Version: '%s'\n", 
+			           response.current_img_version ? response.current_img_version : "N/A");
+			SWLOG_INFO("[CHECK_UPDATE]   Available Version: '%s'\n", 
+			           response.available_version ? response.available_version : "N/A");
+			SWLOG_INFO("[CHECK_UPDATE]   Status Message: '%s'\n", 
+			           response.status_message ? response.status_message : "N/A");
+			
+			SWLOG_INFO("[CHECK_UPDATE] Sending immediate D-Bus method response\n");
+			// Send immediate D-Bus response
+			g_dbus_method_invocation_return_value(resp_ctx,
+				g_variant_new("(ssssi)",
+					response.current_img_version ? response.current_img_version : "",
+					response.available_version ? response.available_version : "",
+					response.update_details ? response.update_details : "",
+					response.status_message ? response.status_message : "",
+					response.result_code));
+			
+			SWLOG_INFO("[CHECK_UPDATE] D-Bus method response sent successfully\n");
+			
+			// Also emit signal for consistency (so clients can use either method or signal)
+			SWLOG_INFO("[CHECK_UPDATE] Emitting CheckForUpdateComplete signal for consistency...\n");
+			GError *signal_error = NULL;
+			gboolean signal_sent = g_dbus_connection_emit_signal(connection,
+				NULL, "/org/rdkfwupdater/fwupgrade",
+				"org.rdkfwupdater.Interface",
+				"CheckForUpdateComplete",
+				g_variant_new("(sissss)",
+					handler_process_name,
+					(gint32)response.result_code,
+					response.current_img_version ? response.current_img_version : "",
+					response.available_version ? response.available_version : "",
+					response.update_details ? response.update_details : "",
+					response.status_message ? response.status_message : ""
+				),
+				&signal_error);
+			
+			if (signal_sent) {
+				SWLOG_INFO("[CHECK_UPDATE] Signal emitted successfully\n");
+			} else {
+				SWLOG_ERROR("[CHECK_UPDATE] Signal emission failed: %s\n",
+				           signal_error ? signal_error->message : "Unknown");
+				if (signal_error) g_error_free(signal_error);
+			}
+			
+			checkupdate_response_free(&response);
+			g_free(handler_process_name);
+			
+			SWLOG_INFO("[CHECK_UPDATE] CACHE HIT PATH COMPLETE\n");
+			SWLOG_INFO("[CHECK_UPDATE] Total processing: Immediate (no async operation)\n");
+			SWLOG_INFO("[CHECK_UPDATE] Client received: Real firmware data\n");
+			return;
+		}
 		
-		SWLOG_INFO("=== [CHECK_UPDATE] Async Task Initiated ===\n\n");
+		// CACHE MISS PATH
+		SWLOG_INFO("CACHE MISS PATH - Async Background Fetch\n");
+		SWLOG_INFO("  XConf cache not available\n");
+		SWLOG_INFO("  Strategy: Async non-blocking fetch required\n");
+		SWLOG_INFO("  Client flow:\n");
+		SWLOG_INFO("    1. Gets UPDATE_ERROR (status=2) immediately\n");
+		SWLOG_INFO("    2. Waits for CheckForUpdateComplete signal\n");
+		SWLOG_INFO("    3. Receives real result when XConf fetch completes\n");
+		
+		// 4. SEND IMMEDIATE UPDATE_ERROR RESPONSE
+		SWLOG_INFO("\n[STEP 4] Immediate Response\n");
+		SWLOG_INFO("  Sending: D-Bus method response\n");
+		SWLOG_INFO("  Response: UPDATE_ERROR (status=2)\n");
+		g_dbus_method_invocation_return_value(resp_ctx,
+			g_variant_new("(ssssi)", "", "", "", "UPDATE_ERROR", 2));
+		
+		SWLOG_INFO("[CHECK_UPDATE] Response sent successfully\n");
+		SWLOG_INFO("  Client now knows: Fetch in progress, wait for signal\n");
+		SWLOG_INFO("  Note: D-Bus invocation consumed (cannot respond twice)\n");
+		
+		// 5. CREATE TASK AND ADD TO TRACKING
+		SWLOG_INFO("\n[STEP 5] Task Creation & Tracking\n");
+		// NOTE: invocation is NULL because we already sent the response above.
+		// Waiting tasks don't need invocation - they get result via signal broadcast.
+		TaskContext *task_ctx = create_task_context(TASK_TYPE_CHECK_UPDATE, 
+		                                            handler_process_name, 
+		                                            rdkv_req_caller_id, 
+		                                            NULL);  // invocation already consumed!
+		guint task_id = next_task_id++;
+		
+		SWLOG_INFO("  Task Created:\n");
+		SWLOG_INFO("    Task ID         : %d (global counter now: %d)\n", task_id, next_task_id);
+		SWLOG_INFO("    Task Type       : TASK_TYPE_CHECK_UPDATE\n");
+		SWLOG_INFO("    Handler         : '%s'\n", handler_process_name);
+		SWLOG_INFO("    D-Bus Sender    : '%s'\n", rdkv_req_caller_id);
+		SWLOG_INFO("    Invocation      : NULL (consumed for immediate UPDATE_ERROR)\n");
+		
+		SWLOG_INFO("\n  Adding to Tracking Systems:\n");
+		SWLOG_INFO("[CHECK_UPDATE] [5a] Adding to 'active_tasks' hash table\n");
+		g_hash_table_insert(active_tasks, GUINT_TO_POINTER(task_id), task_ctx);
+		SWLOG_INFO("[CHECK_UPDATE]   Task-%d stored in active_tasks (size=%d)\n", 
+		           task_id, g_hash_table_size(active_tasks));
+		
+		SWLOG_INFO("[CHECK_UPDATE] [5b] Adding to 'waiting_checkUpdate_ids' queue\n");
+		waiting_checkUpdate_ids = g_slist_append(waiting_checkUpdate_ids, GUINT_TO_POINTER(task_id));
+		SWLOG_INFO("[CHECK_UPDATE]   Task-%d queued in waiting list (size=%d)\n", 
+		           task_id, g_slist_length(waiting_checkUpdate_ids));
+		
+		SWLOG_INFO("[CHECK_UPDATE] Tracking Summary:\n");
+		SWLOG_INFO("[CHECK_UPDATE]   'active_tasks' stores full TaskContext (for cleanup)\n");
+		SWLOG_INFO("[CHECK_UPDATE]   'waiting_checkUpdate_ids' stores task IDs (for batch processing)\n");
+		SWLOG_INFO("[CHECK_UPDATE]   Both cleaned up together when XConf fetch completes\n");
+		
+		// 6. CHECK IF FETCH ALREADY IN PROGRESS
+		SWLOG_INFO("\n[STEP 6] Fetch Status Check\n");
+		SWLOG_INFO("  IsCheckUpdateInProgress = %s\n", 
+		           IsCheckUpdateInProgress ? "TRUE (fetch running)" : "FALSE (idle)");
+		
+		if (IsCheckUpdateInProgress) {
+			SWLOG_INFO("[CHECK_UPDATE] PIGGYBACK SCENARIO - Reuse Running Fetch\n");
+			SWLOG_INFO("[CHECK_UPDATE] Another XConf fetch is already running\n");
+			SWLOG_INFO("[CHECK_UPDATE] Task-%d will PIGGYBACK on the existing fetch\n", task_id);
+			SWLOG_INFO("[CHECK_UPDATE] Current waiting queue: %d task(s)\n", 
+			           g_slist_length(waiting_checkUpdate_ids));
+			SWLOG_INFO("[CHECK_UPDATE] What happens next:\n");
+			SWLOG_INFO("[CHECK_UPDATE]   NO new background fetch started (already running)\n");
+			SWLOG_INFO("[CHECK_UPDATE]   Task-%d waits in queue with others\n", task_id);
+			SWLOG_INFO("[CHECK_UPDATE]   When fetch completes: ALL waiting tasks get signal\n");
+			SWLOG_INFO("[CHECK_UPDATE]   Signal broadcast at: /org/rdkfwupdater/fwupgrade\n");
+			SWLOG_INFO("[CHECK_UPDATE]   Signal name: CheckForUpdateComplete\n");
+			SWLOG_INFO("[CHECK_UPDATE] PIGGYBACK SETUP COMPLETE\n");
+			g_free(handler_process_name);
+			return;
+		}
+		
+		// 7. START NEW BACKGROUND FETCH (GTask worker thread)
+		SWLOG_INFO("[CHECK_UPDATE] NEW BACKGROUND FETCH - Launching GTask Worker Thread\n");
+		SWLOG_INFO("[CHECK_UPDATE] Background Fetch Initialization\n");
+		SWLOG_INFO("[CHECK_UPDATE] Setting IsCheckUpdateInProgress = TRUE\n");
+		IsCheckUpdateInProgress = TRUE;
+		SWLOG_INFO("[CHECK_UPDATE] Prevents duplicate concurrent fetches\n");
+		SWLOG_INFO("[CHECK_UPDATE] Future requests will piggyback on this fetch\n");
+		
+		SWLOG_INFO("[CHECK_UPDATE] Creating AsyncXconfFetchContext:\n");
+		AsyncXconfFetchContext *async_ctx = g_new0(AsyncXconfFetchContext, 1);
+		async_ctx->handler_id = g_strdup(handler_process_name);
+		async_ctx->connection = connection;
+		SWLOG_INFO("[CHECK_UPDATE]   Handler ID: '%s'\n", handler_process_name);
+		SWLOG_INFO("[CHECK_UPDATE]   Connection: %p\n", (void*)connection);
+		
+		SWLOG_INFO("[CHECK_UPDATE] Creating GTask:\n");
+		SWLOG_INFO("[CHECK_UPDATE]   Worker function: async_xconf_fetch_task\n");
+		SWLOG_INFO("[CHECK_UPDATE]   (runs in separate thread - blocking I/O OK)\n");
+		SWLOG_INFO("[CHECK_UPDATE]   Completion CB: async_xconf_fetch_complete\n");
+		SWLOG_INFO("[CHECK_UPDATE]   (runs on main loop - broadcasts signal)\n");
+		GTask *task = g_task_new(NULL, NULL, async_xconf_fetch_complete, async_ctx);
+		
+		SWLOG_INFO("[CHECK_UPDATE] Launching GTask...\n");
+		g_task_run_in_thread(task, async_xconf_fetch_task);
+		g_object_unref(task);
+		SWLOG_INFO("[CHECK_UPDATE] Worker thread spawned\n");
+		
+		SWLOG_INFO("[CHECK_UPDATE] Async Flow Summary:\n");
+		SWLOG_INFO("[CHECK_UPDATE]   [Worker Thread] Fetches from XConf (blocking network I/O)\n");
+		SWLOG_INFO("[CHECK_UPDATE]   [Main Loop] Continues processing D-Bus (non-blocking)\n");
+		SWLOG_INFO("[CHECK_UPDATE]   [Waiting Queue] Task-%d + %d other(s) = %d total\n", 
+		           task_id, g_slist_length(waiting_checkUpdate_ids) - 1,
+		           g_slist_length(waiting_checkUpdate_ids));
+		SWLOG_INFO("[CHECK_UPDATE]   [On Completion] Callback runs on main loop\n");
+		SWLOG_INFO("[CHECK_UPDATE]   [Signal] Broadcast to /org/rdkfwupdater/fwupgrade\n");
+		SWLOG_INFO("[CHECK_UPDATE]   [Cleanup] All %d waiting tasks cleaned up\n",
+		           g_slist_length(waiting_checkUpdate_ids));
+		SWLOG_INFO("[CHECK_UPDATE]   [Reset] IsCheckUpdateInProgress = FALSE\n");
+		
+		SWLOG_INFO("[CHECK_UPDATE] ASYNC FETCH INITIATED\n");
+		SWLOG_INFO("[CHECK_UPDATE] Client Status:\n");
+		SWLOG_INFO("[CHECK_UPDATE]   Already received: UPDATE_ERROR (immediate response)\n");
+		SWLOG_INFO("[CHECK_UPDATE]   Waiting for: CheckForUpdateComplete signal\n");
+		SWLOG_INFO("[CHECK_UPDATE]   Will receive: Real firmware data when fetch completes\n");
+		
 		g_free(handler_process_name);
 	}
 
@@ -759,7 +924,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		gchar *process_name, *lib_version;
 		g_variant_get(rdkv_req_payload, "(ss)", &process_name, &lib_version);
 
-		SWLOG_INFO("=== [REGISTER] Starting Registration Process ===\n");
+		SWLOG_INFO("[REGISTER] Starting Registration Process\n");
 		SWLOG_INFO("[REGISTER] Request details:\n");
 		SWLOG_INFO("[REGISTER]   - Process Name: '%s'\n", process_name ? process_name : "NULL");
 		SWLOG_INFO("[REGISTER]   - Library Version: '%s'\n", lib_version ? lib_version : "NULL");
@@ -803,7 +968,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			
 			SWLOG_ERROR("[REGISTER] Error response sent: %s\n", reason);
 		}
-		SWLOG_INFO("=== [REGISTER] Registration Complete ===\n\n");
+		SWLOG_INFO("[REGISTER] Registration Complete\n");
 
 		g_free(process_name);
 		g_free(lib_version);
@@ -814,7 +979,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		guint64 handler;
 		g_variant_get(rdkv_req_payload, "(t)", &handler);
 
-		SWLOG_INFO("=== [UNREGISTER] [MADHU] Starting Unregistration Process ===\n");
+		SWLOG_INFO("[UNREGISTER] Starting Unregistration Process\n");
 		SWLOG_INFO("[UNREGISTER] Request details:\n");
 		SWLOG_INFO("[UNREGISTER]   - Handler ID: %"G_GUINT64_FORMAT"\n", handler);
 		SWLOG_INFO("[UNREGISTER]   - D-Bus Sender: '%s'\n", rdkv_req_caller_id);
@@ -852,7 +1017,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 					g_variant_new("(b)", FALSE));
 			SWLOG_INFO("[UNREGISTER] Response sent: FAILED (false)\n");
 		}
-		SWLOG_INFO("=== [UNREGISTER] Unregistration Complete ===\n\n");
+		SWLOG_INFO("[UNREGISTER] Unregistration Complete\n");
 	}
 
 	/* UNKNOWN METHOD*/
@@ -862,7 +1027,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 				G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD,
 				"Unknown method: %s", rdkv_req_method);
 	}
-	SWLOG_INFO("==== [D-BUS] Request handling complete - Active tasks: %d ====\n\n",
+	SWLOG_INFO("[D-BUS] Request handling complete - Active tasks: %d\n",
 			g_hash_table_size(active_tasks));
 }
 
@@ -981,5 +1146,250 @@ void cleanup_dbus()
     }
 
     SWLOG_INFO("[CLEANUP] D-Bus cleanup complete\n");
+}
+
+// ASYNC XCONF FETCH - WORKER THREAD
+// This function runs in a GTask worker thread (NOT on main loop)
+// It's safe to call blocking functions here
+static void async_xconf_fetch_task(GTask *task, gpointer source_object, gpointer task_data, GCancellable *cancellable) {
+    AsyncXconfFetchContext *ctx = (AsyncXconfFetchContext *)task_data;
+    
+    SWLOG_INFO("\n[ASYNC_FETCH] ========================================\n");
+    SWLOG_INFO("[ASYNC_FETCH] *** WORKER THREAD STARTED ***\n");
+    SWLOG_INFO("[ASYNC_FETCH] Background XConf fetch executing in separate thread\n");
+    SWLOG_INFO("[ASYNC_FETCH] Thread ID: %lu\n", (unsigned long)pthread_self());
+    SWLOG_INFO("[ASYNC_FETCH] Handler ID: %s\n", ctx->handler_id);
+    SWLOG_INFO("[ASYNC_FETCH] ========================================\n");
+    SWLOG_INFO("[ASYNC_FETCH] IMPORTANT: Main loop is FREE and processing other requests!\n");
+    SWLOG_INFO("[ASYNC_FETCH] IMPORTANT: This blocking XConf call won't freeze the daemon!\n");
+    SWLOG_INFO("[ASYNC_FETCH] ========================================\n");
+    
+    SWLOG_INFO("[ASYNC_FETCH] Calling rdkFwupdateMgr_checkForUpdate (BLOCKING CALL)...\n");
+    SWLOG_INFO("[ASYNC_FETCH] This will:\n");
+    SWLOG_INFO("[ASYNC_FETCH]   1. Connect to XConf server (network I/O)\n");
+    SWLOG_INFO("[ASYNC_FETCH]   2. Send device information\n");
+    SWLOG_INFO("[ASYNC_FETCH]   3. Parse JSON response\n");
+    SWLOG_INFO("[ASYNC_FETCH]   4. Save to cache file\n");
+    SWLOG_INFO("[ASYNC_FETCH]   5. Return result structure\n");
+    
+    // Call the blocking handler function - safe here because we're in worker thread!
+    CheckUpdateResponse response = rdkFwupdateMgr_checkForUpdate(ctx->handler_id);
+    
+    SWLOG_INFO("[ASYNC_FETCH] ========================================\n");
+    SWLOG_INFO("[ASYNC_FETCH] XConf fetch completed in worker thread!\n");
+    SWLOG_INFO("[ASYNC_FETCH] Response data:\n");
+    SWLOG_INFO("[ASYNC_FETCH]   - Result code: %d ", response.result_code);
+    switch(response.result_code) {
+        case 0: SWLOG_INFO("(UPDATE_AVAILABLE)\n"); break;
+        case 1: SWLOG_INFO("(UPDATE_NOT_AVAILABLE)\n"); break;
+        case 2: SWLOG_INFO("(UPDATE_ERROR)\n"); break;
+        default: SWLOG_INFO("(UNKNOWN)\n"); break;
+    }
+    SWLOG_INFO("[ASYNC_FETCH]   - Current version: '%s'\n", 
+               response.current_img_version ? response.current_img_version : "");
+    SWLOG_INFO("[ASYNC_FETCH]   - Available version: '%s'\n", 
+               response.available_version ? response.available_version : "");
+    SWLOG_INFO("[ASYNC_FETCH]   - Update details: '%s'\n", 
+               response.update_details ? response.update_details : "");
+    SWLOG_INFO("[ASYNC_FETCH]   - Status message: '%s'\n", 
+               response.status_message ? response.status_message : "");
+    
+    SWLOG_INFO("[ASYNC_FETCH] ========================================\n");
+    SWLOG_INFO("[ASYNC_FETCH] Packaging result for completion callback...\n");
+    
+    // Package results for completion callback (which runs on main loop)
+    GVariant *result_variant = g_variant_new("(sissss)",
+        ctx->handler_id,
+        (gint32)response.result_code,
+        response.current_img_version ? response.current_img_version : "",
+        response.available_version ? response.available_version : "",
+        response.update_details ? response.update_details : "",
+        response.status_message ? response.status_message : ""
+    );
+    
+    SWLOG_INFO("[ASYNC_FETCH] GVariant created with signal data\n");
+    SWLOG_INFO("[ASYNC_FETCH] Returning result to GTask framework...\n");
+    g_task_return_pointer(task, g_variant_ref(result_variant), (GDestroyNotify)g_variant_unref);
+    
+    // Cleanup
+    checkupdate_response_free(&response);
+    
+    SWLOG_INFO("[ASYNC_FETCH] *** WORKER THREAD COMPLETE ***\n");
+    SWLOG_INFO("[ASYNC_FETCH] What happens next:\n");
+    SWLOG_INFO("[ASYNC_FETCH]   - GTask framework schedules completion callback on main loop\n");
+    SWLOG_INFO("[ASYNC_FETCH]   - async_xconf_fetch_complete() will run on main thread\n");
+    SWLOG_INFO("[ASYNC_FETCH]   - Completion callback will broadcast signal to all waiting clients\n");
+    SWLOG_INFO("[ASYNC_FETCH]   - All waiting tasks will be cleaned up\n");
+    SWLOG_INFO("[ASYNC_FETCH] Worker thread exiting now...\n");
+    SWLOG_INFO("[ASYNC_FETCH] ========================================\n\n");
+}
+
+// ASYNC XCONF FETCH - COMPLETION CALLBACK
+// This function runs on the MAIN LOOP after worker thread completes
+static void async_xconf_fetch_complete(GObject *source_object, GAsyncResult *res, gpointer user_data) {
+    AsyncXconfFetchContext *ctx = (AsyncXconfFetchContext *)user_data;
+    GTask *task = G_TASK(res);
+    GVariant *result = g_task_propagate_pointer(task, NULL);
+    
+    SWLOG_INFO("\n[COMPLETE] ========================================\n");
+    SWLOG_INFO("[COMPLETE] *** COMPLETION CALLBACK TRIGGERED ***\n");
+    SWLOG_INFO("[COMPLETE] Running on MAIN LOOP thread (async operation complete)\n");
+    SWLOG_INFO("[COMPLETE] Thread ID: %lu\n", (unsigned long)pthread_self());
+    SWLOG_INFO("[COMPLETE] ========================================\n");
+    
+    if (!result) {
+        SWLOG_ERROR("[COMPLETE] ERROR: No result from background task\n");
+        SWLOG_ERROR("[COMPLETE] Worker thread may have failed or returned NULL\n");
+        SWLOG_ERROR("[COMPLETE] Aborting completion - cannot broadcast signal\n");
+        
+        // Still need to cleanup and reset state
+        SWLOG_INFO("[COMPLETE] Cleaning up state after error...\n");
+        IsCheckUpdateInProgress = FALSE;
+        if (waiting_checkUpdate_ids) {
+            g_slist_free(waiting_checkUpdate_ids);
+            waiting_checkUpdate_ids = NULL;
+        }
+        
+        g_free(ctx->handler_id);
+        g_free(ctx);
+        SWLOG_ERROR("[COMPLETE] ========================================\n\n");
+        return;
+    }
+    
+    SWLOG_INFO("[COMPLETE] Result received from worker thread successfully\n");
+    SWLOG_INFO("[COMPLETE] Current system state:\n");
+    SWLOG_INFO("[COMPLETE]   - IsCheckUpdateInProgress: TRUE (will be reset)\n");
+    SWLOG_INFO("[COMPLETE]   - Waiting tasks queue size: %d\n", 
+               g_slist_length(waiting_checkUpdate_ids));
+    SWLOG_INFO("[COMPLETE]   - Active tasks count: %d\n", 
+               g_hash_table_size(active_tasks));
+    SWLOG_INFO("[COMPLETE] ========================================\n");
+    SWLOG_INFO("[COMPLETE] Now broadcasting signal and cleaning up ALL waiting tasks\n");
+    SWLOG_INFO("[COMPLETE] ========================================\n");
+    
+    // 1. BROADCAST D-Bus Signal to ALL listeners
+    SWLOG_INFO("[COMPLETE] Step 1: Broadcasting D-Bus signal to ALL waiting clients...\n");
+    SWLOG_INFO("[COMPLETE]   Signal name: 'CheckForUpdateComplete'\n");
+    SWLOG_INFO("[COMPLETE]   Object path: '/org/rdkfwupdater/fwupgrade'\n");
+    SWLOG_INFO("[COMPLETE]   Interface: 'org.rdkfwupdater.Interface'\n");
+    SWLOG_INFO("[COMPLETE]   Destination: NULL (broadcast to all listeners)\n");
+    SWLOG_INFO("[COMPLETE]   Waiting clients count: %d\n", 
+               g_slist_length(waiting_checkUpdate_ids));
+    
+    // Extract data for logging
+    gchar *handler_id_str;
+    gint32 result_code;
+    gchar *current_ver, *available_ver, *update_details, *status_msg;
+    g_variant_get(result, "(sissss)", &handler_id_str, &result_code,
+                 &current_ver, &available_ver, &update_details, &status_msg);
+    
+    SWLOG_INFO("[COMPLETE]   Signal payload:\n");
+    SWLOG_INFO("[COMPLETE]     - Handler ID: '%s'\n", handler_id_str);
+    SWLOG_INFO("[COMPLETE]     - Result code: %d ", result_code);
+    switch(result_code) {
+        case 0: SWLOG_INFO("(UPDATE_AVAILABLE)\n"); break;
+        case 1: SWLOG_INFO("(UPDATE_NOT_AVAILABLE)\n"); break;
+        case 2: SWLOG_INFO("(UPDATE_ERROR)\n"); break;
+        default: SWLOG_INFO("(UNKNOWN)\n"); break;
+    }
+    SWLOG_INFO("[COMPLETE]     - Current version: '%s'\n", current_ver);
+    SWLOG_INFO("[COMPLETE]     - Available version: '%s'\n", available_ver);
+    SWLOG_INFO("[COMPLETE]     - Update details: '%s'\n", update_details);
+    SWLOG_INFO("[COMPLETE]     - Status message: '%s'\n", status_msg);
+    
+    // Free extracted strings (g_variant_get duplicates them)
+    g_free(handler_id_str);
+    g_free(current_ver);
+    g_free(available_ver);
+    g_free(update_details);
+    g_free(status_msg);
+    
+    SWLOG_INFO("[COMPLETE] Emitting signal now...\n");
+    GError *error = NULL;
+    gboolean signal_sent = g_dbus_connection_emit_signal(
+        ctx->connection,
+        NULL,  // NULL = broadcast to all listeners
+        "/org/rdkfwupdater/fwupgrade",
+        "org.rdkfwupdater.Interface",
+        "CheckForUpdateComplete",
+        result,
+        &error
+    );
+    
+    if (signal_sent) {
+        SWLOG_INFO("[COMPLETE]   Signal broadcast SUCCESSFUL\n");
+        SWLOG_INFO("[COMPLETE]   All %d waiting client(s) will receive this signal\n",
+                   g_slist_length(waiting_checkUpdate_ids));
+    } else {
+        SWLOG_ERROR("[COMPLETE]   Signal broadcast FAILED: %s\n", 
+                   error ? error->message : "Unknown error");
+        if (error) g_error_free(error);
+    }
+    
+    // 2. NO NEED TO SEND D-Bus METHOD RESPONSES - They Already Got UPDATE_ERROR!
+    // All waiting tasks received UPDATE_ERROR as immediate response when added to queue.
+    // They will learn the real result via the D-Bus signal we just broadcast above.
+    SWLOG_INFO("[COMPLETE] Step 2: Skipping method responses (already sent UPDATE_ERROR immediately)\n");
+    SWLOG_INFO("[COMPLETE]   Total waiting tasks to cleanup: %d\n", g_slist_length(waiting_checkUpdate_ids));
+    
+    // 3. CLEANUP ALL WAITING TASKS from active_tasks
+    SWLOG_INFO("[COMPLETE] Step 3: Cleaning up ALL waiting tasks from 'active_tasks' hash table...\n");
+    SWLOG_INFO("[COMPLETE]   Tasks to cleanup: %d\n", g_slist_length(waiting_checkUpdate_ids));
+    SWLOG_INFO("[COMPLETE]   Current active_tasks size: %d\n", g_hash_table_size(active_tasks));
+    
+    GSList *current = waiting_checkUpdate_ids;
+    int cleanup_count = 0;
+    int not_found_count = 0;
+    
+    while (current != NULL) {
+        guint task_id = GPOINTER_TO_UINT(current->data);
+        
+        SWLOG_INFO("[COMPLETE]   Processing Task ID: %d\n", task_id);
+        if (g_hash_table_remove(active_tasks, GUINT_TO_POINTER(task_id))) {
+            SWLOG_INFO("[COMPLETE]     Task %d removed from active_tasks (free_task_context called)\n", task_id);
+            cleanup_count++;
+        } else {
+            SWLOG_WARN("[COMPLETE]     Task %d NOT FOUND in active_tasks (possible bug)\n", task_id);
+            not_found_count++;
+        }
+        
+        current = current->next;
+    }
+    
+    SWLOG_INFO("[COMPLETE]   Cleanup summary:\n");
+    SWLOG_INFO("[COMPLETE]     - Tasks successfully cleaned: %d\n", cleanup_count);
+    SWLOG_INFO("[COMPLETE]     - Tasks not found: %d\n", not_found_count);
+    SWLOG_INFO("[COMPLETE]     - Remaining active tasks: %d\n", g_hash_table_size(active_tasks));
+    
+    // 4. CLEAR WAITING QUEUE
+    SWLOG_INFO("[COMPLETE] Step 4: Clearing 'waiting_checkUpdate_ids' queue\n");
+    SWLOG_INFO("[COMPLETE]   Queue size before: %d\n", g_slist_length(waiting_checkUpdate_ids));
+    g_slist_free(waiting_checkUpdate_ids);
+    waiting_checkUpdate_ids = NULL;
+    SWLOG_INFO("[COMPLETE]   Queue cleared (all Task IDs freed)\n");
+    
+    // 5. RESET PROGRESS FLAG
+    SWLOG_INFO("[COMPLETE] Step 5: Resetting progress flag\n");
+    SWLOG_INFO("[COMPLETE]   Before: IsCheckUpdateInProgress = TRUE\n");
+    IsCheckUpdateInProgress = FALSE;
+    SWLOG_INFO("[COMPLETE]   After:  IsCheckUpdateInProgress = FALSE\n");
+    SWLOG_INFO("[COMPLETE]   New CheckForUpdate requests can now start background fetch\n");
+    
+    // 6. CLEANUP CONTEXT
+    SWLOG_INFO("[COMPLETE] Step 6: Freeing AsyncXconfFetchContext\n");
+    SWLOG_INFO("[COMPLETE]   Freeing handler_id: '%s'\n", ctx->handler_id);
+    g_free(ctx->handler_id);
+    g_free(ctx);
+    SWLOG_INFO("[COMPLETE]   Context freed\n");
+    
+    SWLOG_INFO("[COMPLETE] COMPLETION CALLBACK FINISHED\n");
+    SWLOG_INFO("[COMPLETE] Summary:\n");
+    SWLOG_INFO("[COMPLETE]   Signal broadcast to all %d waiting client(s)\n", cleanup_count);
+    SWLOG_INFO("[COMPLETE]   All waiting tasks cleaned from active_tasks\n");
+    SWLOG_INFO("[COMPLETE]   Waiting queue cleared\n");
+    SWLOG_INFO("[COMPLETE]   Progress flag reset\n");
+    SWLOG_INFO("[COMPLETE]   Context freed\n");
+    SWLOG_INFO("[COMPLETE] System ready for next CheckForUpdate request\n");
+    SWLOG_INFO("[COMPLETE] ========================================\n\n");
 }
 

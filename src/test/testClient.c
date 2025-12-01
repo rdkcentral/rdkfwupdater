@@ -220,15 +220,18 @@ static gboolean test_client_check_update(TestClientContext *client)
         return FALSE;
     }
     
-    PRINT_INFO("Checking for updates using process name '%s'", client->process_name);
-    PRINT_INFO("📞 Making D-Bus method call to daemon...");
+    PRINT_INFO("Checking for updates using handler ID: %"G_GUINT64_FORMAT, client->handler_id);
+    PRINT_INFO("Making D-Bus method call to daemon...");
     
     // Check if cache exists to predict the flow
     gboolean cache_exists = g_file_test("/tmp/xconf_response_thunder.txt", G_FILE_TEST_EXISTS);
     if (cache_exists) {
-        PRINT_INFO("Cache file exists - expecting fast response from cache");
+        PRINT_INFO("Cache file exists - expecting CACHE HIT (immediate response with real data)");
     } else {
-        PRINT_INFO("No cache file - expecting immediate error + background fetch + signal");
+        PRINT_INFO("No cache file - expecting CACHE MISS:");
+        PRINT_INFO("  1. Immediate response: UPDATE_ERROR (status_code=2)");
+        PRINT_INFO("  2. Background fetch starts");
+        PRINT_INFO("  3. Signal broadcast when complete");
     }
     
     // Call CheckForUpdate D-Bus method
@@ -238,10 +241,10 @@ static gboolean test_client_check_update(TestClientContext *client)
         DBUS_OBJECT_PATH,
         DBUS_INTERFACE_NAME,
         "CheckForUpdate",
-        g_variant_new("(t)", client->handler_id),   // Use handler_id (uint64)
+        g_variant_new("(s)", client->process_name),   // Use process_name as handler
         G_VARIANT_TYPE("(ssssi)"),
         G_DBUS_CALL_FLAGS_NONE,
-        30000,                                                      // 30 second timeout for XConf calls
+        5000,                                         // 5 second timeout (should be immediate)
         NULL,
         &error
     );
@@ -251,23 +254,31 @@ static gboolean test_client_check_update(TestClientContext *client)
         g_variant_get(result, "(ssssi)", 
                       &current_version, &available_version, &update_details, &status, &status_code);
         
-        PRINT_SUCCESS("CheckForUpdate successful!");
-        PRINT_INFO("  Current Version: '%s'", current_version ? current_version : "NULL");
-        PRINT_INFO("  Available Version: '%s'", available_version ? available_version : "NULL"); 
-        PRINT_INFO("  Update Details: '%s'", update_details ? update_details : "NULL");
-        PRINT_INFO("  Status: '%s'", status ? status : "NULL");
+        PRINT_SUCCESS("CheckForUpdate D-Bus method response received!");
+        PRINT_INFO("RESPONSE DATA:");
+        PRINT_INFO("  Current Version: '%s'", current_version ? current_version : "");
+        PRINT_INFO("  Available Version: '%s'", available_version ? available_version : ""); 
+        PRINT_INFO("  Update Details: '%s'", update_details ? update_details : "");
+        PRINT_INFO("  Status: '%s'", status ? status : "");
         PRINT_INFO("  Status Code: %d", status_code);
         
         // Interpret status code
         switch (status_code) {
             case 0:
-                PRINT_SUCCESS("Update available!");
+                PRINT_SUCCESS("CACHE HIT: Update available!");
+                PRINT_SUCCESS("Flow: Cache -> Immediate response with real data");
                 break;
             case 1:
-                PRINT_INFO("No update available");
+                PRINT_SUCCESS("CACHE HIT: No update available");
+                PRINT_SUCCESS("Flow: Cache -> Immediate response with real data");
+                break;
+            case 2:
+                PRINT_WARN("CACHE MISS: UPDATE_ERROR received");
+                PRINT_INFO("Flow: No cache -> UPDATE_ERROR -> Background fetch started");
+                PRINT_INFO("Wait for CheckForUpdateComplete signal for real result...");
                 break;
             default:
-                PRINT_WARN("Error or unknown status code: %d", status_code);
+                PRINT_ERROR("Unknown status code: %d", status_code);
                 break;
         }
         
@@ -389,6 +400,7 @@ static void print_usage(const char *program_name)
     printf("  check         - Register and perform CheckForUpdate\n");
     printf("  full          - Full workflow: Register -> Check -> Unregister\n");
     printf("  signals       - Test D-Bus signals and cache behavior (cache hit/miss scenarios)\n");
+    printf("  concurrent    - Test concurrent CheckForUpdate requests (piggyback behavior)\n");
     printf("  stress        - Multiple rapid registration attempts\n\n");
     
     printf("Examples:\n");
@@ -396,6 +408,7 @@ static void print_usage(const char *program_name)
     printf("  %s MyTestApp 1.0.0 basic\n", program_name);
     printf("  %s MyTestApp 1.0.0 check\n", program_name);
     printf("  %s MyTestApp 1.0.0 signals\n", program_name);
+    printf("  %s MyTestApp 1.0.0 concurrent\n", program_name);
     printf("  %s MyTestApp 1.0.0 full\n\n", program_name);
     
     printf("Expected Scenarios for Robust Testing:\n");
@@ -495,6 +508,58 @@ static void run_test_scenario(TestClientContext *client, const gchar *test_mode)
                 }
                 printf("\n");
                 PRINT_INFO("Signal waiting period completed");
+            }
+            
+            sleep(1);
+            test_client_unregister(client);
+        }
+        
+    } else if (g_strcmp0(test_mode, "concurrent") == 0) {
+        // Test concurrent CheckForUpdate requests (piggyback behavior)
+        PRINT_INFO("=== Testing Concurrent CheckForUpdate (Piggyback) ===");
+        
+        if (test_client_register(client)) {
+            sleep(1);
+            
+            // Check cache state
+            gboolean cache_exists = g_file_test("/tmp/xconf_response_thunder.txt", G_FILE_TEST_EXISTS);
+            
+            if (cache_exists) {
+                PRINT_WARN("Cache exists - delete it to test piggyback behavior:");
+                PRINT_INFO("  rm /tmp/xconf_response_thunder.txt");
+                PRINT_INFO("Then run this test again");
+            } else {
+                PRINT_SUCCESS("Cache does not exist - perfect for piggyback test");
+                PRINT_INFO("Making 3 rapid CheckForUpdate calls...");
+                PRINT_INFO("Expected behavior:");
+                PRINT_INFO("  - All 3 calls get UPDATE_ERROR immediately");
+                PRINT_INFO("  - Only ONE XConf fetch triggered");
+                PRINT_INFO("  - All waiting clients get same signal");
+                
+                printf("\n");
+                
+                // Make 3 rapid calls
+                for (int i = 1; i <= 3; i++) {
+                    printf(COLOR_YELLOW "Call #%d:" COLOR_RESET "\n", i);
+                    test_client_check_update(client);
+                    usleep(200000); // 200ms between calls
+                    printf("\n");
+                }
+                
+                PRINT_INFO("All calls completed - waiting for signal...");
+                PRINT_INFO("Check daemon logs to verify:");
+                PRINT_INFO("  - 'IsCheckUpdateInProgress = TRUE' appears only ONCE");
+                PRINT_INFO("  - 'Piggyback' messages for calls #2 and #3");
+                PRINT_INFO("  - Single 'async_xconf_fetch_task' execution");
+                
+                // Wait for signal
+                PRINT_INFO("Waiting 10 seconds for CheckForUpdateComplete signal...");
+                for (int i = 0; i < 10; i++) {
+                    sleep(1);
+                    printf(".");
+                    fflush(stdout);
+                }
+                printf("\n");
             }
             
             sleep(1);
