@@ -468,6 +468,8 @@ int XConfCom()
 }
 
 /* Async Check Update Task - calls xconf communication check function */
+/* COMMENTED OUT - Replaced by async_xconf_fetch_task and async_xconf_fetch_complete */
+#if 0
 static gboolean check_update_task(gpointer user_data)
 {
 	CheckUpdate_TaskData *data = (CheckUpdate_TaskData*)user_data;
@@ -563,6 +565,7 @@ static gboolean check_update_task(gpointer user_data)
 	}
 	return G_SOURCE_REMOVE;
 }
+#endif
 
 /* Async Download Task - calls downloadFirmware function */
 static gboolean downloadFW_task(gpointer user_data)
