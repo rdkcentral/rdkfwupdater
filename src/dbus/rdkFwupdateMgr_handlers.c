@@ -158,12 +158,18 @@ static int fetch_xconf_firmware_info( XCONFRES *pResponse, int server_type, int 
                     xconf_context.force_exit = &local_force_exit;
                     xconf_context.trigger_type = local_trigger_type;
                     xconf_context.rfc_list = &local_rfc_list;  
-
+		    
+		     SWLOG_INFO("Simulating a 3600 seconds sleep()\n");
+-                   sleep(120);
+-                   SWLOG_INFO("Just now completed 120 seconds sleep\n");
                     SWLOG_INFO("fetch_xconf_firmware_info: Initiating XConf request with server_type=%d\n", server_type);
-		    SWLOG_INFO("Simulating a 3600 seconds sleep()\n");
-		    sleep(120);
-		    SWLOG_INFO("Just now completed 120 seconds sleep\n");
+                    SWLOG_INFO("fetch_xconf_firmware_info: Context setup - device_info=%p, rfc_list=%p\n", 
+                               xconf_context.device_info, xconf_context.rfc_list);
+                    
+                    // Call rdkv_upgrade_request with error handling
+                    SWLOG_INFO("fetch_xconf_firmware_info: Calling rdkv_upgrade_request...\n");
                     ret = rdkv_upgrade_request(&xconf_context, &curl, pHttp_code);
+                    SWLOG_INFO("fetch_xconf_firmware_info: rdkv_upgrade_request returned (ret=%d)\n", ret);
                     
                     SWLOG_INFO("fetch_xconf_firmware_info: XConf request completed - ret=%d, http_code=%d\n", ret, *pHttp_code);
                     
