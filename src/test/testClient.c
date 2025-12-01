@@ -20,12 +20,7 @@
 #include <unistd.h>
 #include <gio/gio.h>
 
-// ANSI color codes for better output
-#define COLOR_RED     "\033[0;31m"
-#define COLOR_GREEN   "\033[0;32m"
-#define COLOR_YELLOW  "\033[1;33m"
-#define COLOR_BLUE    "\033[0;34m"
-#define COLOR_RESET   "\033[0m"
+// Color codes removed for clean output
 
 // D-Bus service details
 #define DBUS_SERVICE_NAME "org.rdkfwupdater.Service"
@@ -50,11 +45,11 @@ static void test_client_free(TestClientContext *client);
 static void print_usage(const char *program_name);
 static void run_test_scenario(TestClientContext *client, const gchar *test_mode);
 
-// Utility macros for colored output
-#define PRINT_SUCCESS(fmt, ...) printf(COLOR_GREEN "[SUCCESS] " fmt COLOR_RESET "\n", ##__VA_ARGS__)
-#define PRINT_ERROR(fmt, ...)   printf(COLOR_RED "[ERROR] " fmt COLOR_RESET "\n", ##__VA_ARGS__)
-#define PRINT_INFO(fmt, ...)    printf(COLOR_BLUE "[INFO] " fmt COLOR_RESET "\n", ##__VA_ARGS__)
-#define PRINT_WARN(fmt, ...)    printf(COLOR_YELLOW "[WARN] " fmt COLOR_RESET "\n", ##__VA_ARGS__)
+// Utility macros for output
+#define PRINT_SUCCESS(fmt, ...) printf("[SUCCESS] " fmt "\n", ##__VA_ARGS__)
+#define PRINT_ERROR(fmt, ...)   printf("[ERROR] " fmt "\n", ##__VA_ARGS__)
+#define PRINT_INFO(fmt, ...)    printf("[INFO] " fmt "\n", ##__VA_ARGS__)
+#define PRINT_WARN(fmt, ...)    printf("[WARN] " fmt "\n", ##__VA_ARGS__)
 
 /**
  * Signal callback for CheckForUpdateComplete - simulates library callback mechanism
@@ -76,7 +71,7 @@ static void on_check_for_update_complete_signal(GDBusConnection *connection,
     g_variant_get(parameters, "(sissss)", &handler_id, &result_code,
                   &current_version, &available_version, &update_details, &status_message);
     
-    printf("\n" COLOR_YELLOW "🔔 D-Bus Signal Received: CheckForUpdateComplete" COLOR_RESET "\n");
+    printf("\nD-Bus Signal Received: CheckForUpdateComplete\n");
     PRINT_INFO("Signal Details:");
     PRINT_INFO("  Handler ID: %s", handler_id);
     PRINT_INFO("  Result Code: %d (%s)", result_code, 
@@ -91,10 +86,10 @@ static void on_check_for_update_complete_signal(GDBusConnection *connection,
     // Check if this signal is for our client (like real library would do)
     gchar *our_handler_str = g_strdup_printf("%"G_GUINT64_FORMAT, client->handler_id);
     if (g_strcmp0(handler_id, our_handler_str) == 0) {
-        PRINT_SUCCESS("✅ Signal is for our handler - invoking callback!");
-        printf(COLOR_GREEN "📞 [CALLBACK INVOKED] Client application callback called with FwData\n" COLOR_RESET);
+        PRINT_SUCCESS("Signal is for our handler - invoking callback!");
+        printf("[CALLBACK INVOKED] Client application callback called with FwData\n");
     } else {
-        PRINT_WARN("⚠️  Signal is for different handler (%s vs %s) - ignoring", handler_id, our_handler_str);
+        PRINT_WARN("Signal is for different handler (%s vs %s) - ignoring", handler_id, our_handler_str);
     }
     g_free(our_handler_str);
     
@@ -105,7 +100,7 @@ static void on_check_for_update_complete_signal(GDBusConnection *connection,
     g_free(update_details);
     g_free(status_message);
     
-    printf(COLOR_YELLOW "🔔 Signal processing complete\n" COLOR_RESET "\n");
+    printf("Signal processing complete\n\n");
 }
 
 /**
@@ -226,13 +221,14 @@ static gboolean test_client_check_update(TestClientContext *client)
     // Check if cache exists to predict the flow
     gboolean cache_exists = g_file_test("/tmp/xconf_response_thunder.txt", G_FILE_TEST_EXISTS);
     if (cache_exists) {
-        PRINT_INFO("Cache file exists - expecting CACHE HIT (immediate response with real data)");
+        PRINT_INFO("Cache hit - expecting immediate success with firmware data");
     } else {
-        PRINT_INFO("No cache file - expecting CACHE MISS:");
-        PRINT_INFO("  1. Immediate response: UPDATE_ERROR (status_code=2)");
-        PRINT_INFO("  2. Background fetch starts");
-        PRINT_INFO("  3. Signal broadcast when complete");
+        PRINT_INFO("No cache file - expecting immediate error + background fetch + signal");
     }
+    
+    // Convert handler_id to string (daemon expects handler_id as string)
+    gchar *handler_id_str = g_strdup_printf("%"G_GUINT64_FORMAT, client->handler_id);
+    PRINT_INFO("Sending handler_id as string: '%s'", handler_id_str);
     
     // Call CheckForUpdate D-Bus method
     result = g_dbus_connection_call_sync(
@@ -241,13 +237,15 @@ static gboolean test_client_check_update(TestClientContext *client)
         DBUS_OBJECT_PATH,
         DBUS_INTERFACE_NAME,
         "CheckForUpdate",
-        g_variant_new("(s)", client->process_name),   // Use process_name as handler
+        g_variant_new("(s)", handler_id_str),   // Send handler_id as string
         G_VARIANT_TYPE("(ssssi)"),
         G_DBUS_CALL_FLAGS_NONE,
         5000,                                         // 5 second timeout (should be immediate)
         NULL,
         &error
     );
+    
+    g_free(handler_id_str);  // Free the temporary string
     
     if (result) {
         // Success - extract all response fields
@@ -385,7 +383,7 @@ static void test_client_free(TestClientContext *client)
  */
 static void print_usage(const char *program_name) 
 {
-    printf("\n" COLOR_BLUE "RDK Firmware Updater Daemon Test Client" COLOR_RESET "\n");
+    printf("\nRDK Firmware Updater Daemon Test Client\n");
     printf("========================================\n\n");
     printf("Usage: %s <process_name> <lib_version> [test_mode]\n\n", program_name);
     
@@ -479,21 +477,21 @@ static void run_test_scenario(TestClientContext *client, const gchar *test_mode)
             // Check current cache state
             gboolean cache_exists = g_file_test("/tmp/xconf_response_thunder.txt", G_FILE_TEST_EXISTS);
             
-            printf("\n" COLOR_BLUE "🧪 Cache Test Scenario:" COLOR_RESET "\n");
+            printf("\nCache Test Scenario:\n");
             if (cache_exists) {
                 PRINT_INFO("Cache exists - will get immediate response");
             } else {
                 PRINT_INFO("No cache - will get UPDATE_ERROR + signal later");
-                PRINT_INFO("💡 Tip: Delete cache with: rm /tmp/xconf_response_thunder.txt");
+                PRINT_INFO("Tip: Delete cache with: rm /tmp/xconf_response_thunder.txt");
             }
             
-            printf("\n" COLOR_BLUE "🔄 Starting CheckForUpdate call..." COLOR_RESET "\n");
+            printf("\nStarting CheckForUpdate call...\n");
             test_client_check_update(client);
             
             // Wait for potential signals (especially for cache miss scenario)
             if (!cache_exists) {
-                PRINT_INFO("⏳ Waiting 10 seconds for background XConf fetch and signal...");
-                printf(COLOR_YELLOW "   (You should see the signal callback above when XConf completes)\n" COLOR_RESET);
+                PRINT_INFO("Waiting 10 seconds for background XConf fetch and signal...");
+                printf("   (You should see the signal callback above when XConf completes)\n");
                 
                 GMainContext *context = g_main_context_default();
                 for (int i = 0; i < 100; i++) {  // 10 seconds = 100 * 100ms
@@ -540,7 +538,7 @@ static void run_test_scenario(TestClientContext *client, const gchar *test_mode)
                 
                 // Make 3 rapid calls
                 for (int i = 1; i <= 3; i++) {
-                    printf(COLOR_YELLOW "Call #%d:" COLOR_RESET "\n", i);
+                    printf("Call #%d:\n", i);
                     test_client_check_update(client);
                     usleep(200000); // 200ms between calls
                     printf("\n");
@@ -595,7 +593,7 @@ int main(int argc, char *argv[])
     const gchar *lib_version = NULL;
     const gchar *test_mode = "basic";
     
-    printf("\n" COLOR_BLUE "=== RDK Firmware Updater Test Client ===" COLOR_RESET "\n");
+    printf("\n=== RDK Firmware Updater Test Client ===\n");
     printf("Process ID: %d\n", getpid());
     printf("D-Bus Unique Name will be auto-assigned\n\n");
     
@@ -642,6 +640,6 @@ int main(int argc, char *argv[])
     // Cleanup
     test_client_free(client);
     
-    printf("\n" COLOR_BLUE "=== Test Client Finished ===" COLOR_RESET "\n");
+    printf("\n=== Test Client Finished ===\n");
     return 0;
 }
