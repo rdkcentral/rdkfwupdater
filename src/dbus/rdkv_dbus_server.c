@@ -1164,7 +1164,6 @@ static void async_xconf_fetch_task(GTask *task, gpointer source_object, gpointer
     SWLOG_INFO("[ASYNC_FETCH] *** WORKER THREAD STARTED ***\n");
     SWLOG_INFO("[ASYNC_FETCH] Background XConf fetch executing in separate thread\n");
     SWLOG_INFO("[ASYNC_FETCH] Thread ID: %lu\n", (unsigned long)pthread_self());
-    SWLOG_INFO("[ASYNC_FETCH] Handler ID: %s\n", ctx->handler_id);
     SWLOG_INFO("[ASYNC_FETCH] ========================================\n");
     SWLOG_INFO("[ASYNC_FETCH] IMPORTANT: Main loop is FREE and processing other requests!\n");
     SWLOG_INFO("[ASYNC_FETCH] IMPORTANT: This blocking XConf call won't freeze the daemon!\n");
