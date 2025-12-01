@@ -1173,6 +1173,26 @@ static void async_xconf_fetch_task(GTask *task, gpointer source_object, gpointer
     SWLOG_INFO("[ASYNC_FETCH] Background XConf fetch executing in separate thread\n");
     SWLOG_INFO("[ASYNC_FETCH] Thread ID: %lu\n", (unsigned long)pthread_self());
     SWLOG_INFO("[ASYNC_FETCH] ========================================\n");
+    
+    // CRITICAL: Validate context and handler_id before proceeding
+    if (!ctx) {
+        SWLOG_ERROR("[ASYNC_FETCH] CRITICAL: task_data (ctx) is NULL!\n");
+        return;
+    }
+    SWLOG_INFO("[ASYNC_FETCH] Context pointer: %p\n", ctx);
+    
+    if (!ctx->handler_id) {
+        SWLOG_ERROR("[ASYNC_FETCH] CRITICAL: ctx->handler_id is NULL!\n");
+        return;
+    }
+    SWLOG_INFO("[ASYNC_FETCH] Handler ID: '%s' (ptr=%p)\n", ctx->handler_id, ctx->handler_id);
+    
+    if (!ctx->connection) {
+        SWLOG_ERROR("[ASYNC_FETCH] WARNING: ctx->connection is NULL!\n");
+    }
+    SWLOG_INFO("[ASYNC_FETCH] Connection: %p\n", ctx->connection);
+    
+    SWLOG_INFO("[ASYNC_FETCH] ========================================\n");
     SWLOG_INFO("[ASYNC_FETCH] IMPORTANT: Main loop is FREE and processing other requests!\n");
     SWLOG_INFO("[ASYNC_FETCH] IMPORTANT: This blocking XConf call won't freeze the daemon!\n");
     SWLOG_INFO("[ASYNC_FETCH] ========================================\n");
@@ -1185,8 +1205,12 @@ static void async_xconf_fetch_task(GTask *task, gpointer source_object, gpointer
     SWLOG_INFO("[ASYNC_FETCH]   4. Save to cache file\n");
     SWLOG_INFO("[ASYNC_FETCH]   5. Return result structure\n");
     
+    SWLOG_INFO("[ASYNC_FETCH] About to call function with handler_id='%s'\n", ctx->handler_id);
+    
     // Call the blocking handler function - safe here because we're in worker thread!
     CheckUpdateResponse response = rdkFwupdateMgr_checkForUpdate(ctx->handler_id);
+    
+    SWLOG_INFO("[ASYNC_FETCH] Function call returned successfully!\n");
     
     SWLOG_INFO("[ASYNC_FETCH] ========================================\n");
     SWLOG_INFO("[ASYNC_FETCH] XConf fetch completed in worker thread!\n");

@@ -338,23 +338,27 @@ static CheckUpdateResponse create_result_response(CheckForUpdateResult result_co
 
 CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
     
-    SWLOG_INFO("[rdkFwupdateMgr] CheckForUpdate: handler=%s\n",handler_id);
+    // FIRST LOG - Proves function was entered
+    SWLOG_INFO("[rdkFwupdateMgr] ===== FUNCTION ENTRY: rdkFwupdateMgr_checkForUpdate() =====\n");
+    
+    // CRITICAL: Add NULL check first to prevent segfault
+    if (!handler_id) {
+        SWLOG_ERROR("[rdkFwupdateMgr] CRITICAL ERROR: handler_id is NULL!\n");
+        return create_result_response(UPDATE_ERROR, "Internal error - invalid handler ID");
+    }
+    
+    SWLOG_INFO("[rdkFwupdateMgr] CheckForUpdate: handler=%s\n", handler_id);
+    SWLOG_INFO("[rdkFwupdateMgr] About to allocate XCONFRES structure on stack (~2KB)...\n");
     
     // Use existing XConf communication function
     XCONFRES response = {0};
+    
+    SWLOG_INFO("[rdkFwupdateMgr] XCONFRES structure allocated successfully\n");
     int http_code = 0;
     int server_type = HTTP_XCONF_DIRECT;  // XConf query mode (2), not download mode
     
-    *response.cloudFWFile = 0;
-    *response.cloudFWLocation = 0;
-    *response.ipv6cloudFWLocation = 0;
-    *response.cloudFWVersion = 0;
-    *response.cloudDelayDownload = 0;
-    *response.cloudProto = 0;
-    *response.cloudImmediateRebootFlag = 0;
-    *response.peripheralFirmwares = 0;
-    *response.dlCertBundle = 0;
-    *response.cloudPDRIVersion = 0;
+    // NOTE: Arrays are automatically zero-initialized by = {0} above
+    // No need to manually set first element to 0
 
     //  XConf communication with caching support
     int ret = -1;
