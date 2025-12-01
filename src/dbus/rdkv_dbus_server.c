@@ -443,6 +443,8 @@ void complete_CheckUpdate_waiting_tasks(TaskContext *ctx)
 }
 
 /* Function to clear waiting list of tasks - check for update */
+/* COMMENTED OUT - No longer used in async implementation */
+#if 0
 static gboolean CheckUpdate_complete_callback(gpointer user_data) {
 	TaskContext *ctx = (TaskContext *)user_data;
 	SWLOG_INFO("In CheckUpdate_complete_callback\n");
@@ -450,6 +452,7 @@ static gboolean CheckUpdate_complete_callback(gpointer user_data) {
 	SWLOG_INFO(" back from complete_CheckUpdate_waiting_tasks\n");
 	return G_SOURCE_REMOVE;  // Don't repeat this timeout
 }
+#endif
 
 /* Function to clear waiting list of tasks - Download Upgrade */
 static gboolean Download_complete_callback(gpointer user_data) {
