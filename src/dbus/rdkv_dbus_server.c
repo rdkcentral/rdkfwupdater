@@ -835,13 +835,50 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		SWLOG_INFO("[CHECK_UPDATE]   Input handler_process_name: '%s' (ptr=%p)\n",
 		           handler_process_name ? handler_process_name : "NULL", handler_process_name);
 		
+		// Validate handler_process_name before proceeding
+		if (!handler_process_name) {
+			SWLOG_ERROR("[CHECK_UPDATE] CRITICAL: handler_process_name is NULL!\n");
+			SWLOG_ERROR("[CHECK_UPDATE] Cannot create async context - aborting fetch\n");
+			IsCheckUpdateInProgress = FALSE;
+			return;
+		}
+		
 		AsyncXconfFetchContext *async_ctx = g_new0(AsyncXconfFetchContext, 1);
+		
+		// Verify allocation succeeded
+		if (!async_ctx) {
+			SWLOG_ERROR("[CHECK_UPDATE] CRITICAL: Failed to allocate AsyncXconfFetchContext!\n");
+			SWLOG_ERROR("[CHECK_UPDATE] aborting fetch\n");
+			IsCheckUpdateInProgress = FALSE;
+			return;
+		}
 		
 		SWLOG_INFO("[CHECK_UPDATE]   Allocated context at: %p\n", async_ctx);
 		
 		async_ctx->handler_id = g_strdup(handler_process_name);
+		
+		// Verify string duplication succeeded
+		if (!async_ctx->handler_id) {
+			SWLOG_ERROR("[CHECK_UPDATE] CRITICAL: g_strdup(handler_process_name) returned NULL!\n");
+			SWLOG_ERROR("[CHECK_UPDATE] Out of memory - cleaning up and aborting\n");
+			g_free(async_ctx);
+			IsCheckUpdateInProgress = FALSE;
+			return;
+		}
+		
 		SWLOG_INFO("[CHECK_UPDATE]   Duplicated handler_id: '%s' (ptr=%p)\n",
-		           async_ctx->handler_id ? async_ctx->handler_id : "NULL", async_ctx->handler_id);
+		           async_ctx->handler_id, async_ctx->handler_id);
+		
+		// Validate connection
+		if (!connection) {
+			SWLOG_ERROR("[CHECK_UPDATE] CRITICAL: connection parameter is NULL!\n");
+			SWLOG_ERROR("[CHECK_UPDATE] Cannot proceed without D-Bus connection\n");
+			g_free(async_ctx->handler_id);
+			g_free(async_ctx);
+			IsCheckUpdateInProgress = FALSE;
+			return;
+		}
+		
 		async_ctx->connection = connection;
 		SWLOG_INFO("[CHECK_UPDATE]   Handler ID: '%s'\n", handler_process_name);
 		SWLOG_INFO("[CHECK_UPDATE]   Connection: %p\n", (void*)connection);
@@ -852,6 +889,22 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		SWLOG_INFO("[CHECK_UPDATE]   Completion CB: async_xconf_fetch_complete\n");
 		SWLOG_INFO("[CHECK_UPDATE]   (runs on main loop - broadcasts signal)\n");
 		GTask *task = g_task_new(NULL, NULL, async_xconf_fetch_complete, async_ctx);
+		
+		// Verify GTask creation succeeded
+		if (!task) {
+			SWLOG_ERROR("[CHECK_UPDATE] CRITICAL: g_task_new() returned NULL!\n");
+			SWLOG_ERROR("[CHECK_UPDATE] Failed to create GTask - cleaning up\n");
+			g_free(async_ctx->handler_id);
+			g_free(async_ctx);
+			IsCheckUpdateInProgress = FALSE;
+			return;
+		}
+		
+		// Set task data for worker thread to access
+		// The 4th parameter of g_task_new() goes to completion callback, not worker.
+		// NULL destroy function because completion callback manually frees ctx
+		SWLOG_INFO("[CHECK_UPDATE] Setting task_data for worker thread: %p\n", async_ctx);
+		g_task_set_task_data(task, async_ctx, NULL);  // NULL: manual cleanup in completion callback
 		
 		SWLOG_INFO("[CHECK_UPDATE] Launching GTask...\n");
 		g_task_run_in_thread(task, async_xconf_fetch_task);
@@ -1264,15 +1317,65 @@ static void async_xconf_fetch_task(GTask *task, gpointer source_object, gpointer
 // ASYNC XCONF FETCH - COMPLETION CALLBACK
 // This function runs on the MAIN LOOP after worker thread completes
 static void async_xconf_fetch_complete(GObject *source_object, GAsyncResult *res, gpointer user_data) {
-    AsyncXconfFetchContext *ctx = (AsyncXconfFetchContext *)user_data;
-    GTask *task = G_TASK(res);
-    GVariant *result = g_task_propagate_pointer(task, NULL);
-    
     SWLOG_INFO("\n[COMPLETE] ========================================\n");
     SWLOG_INFO("[COMPLETE] *** COMPLETION CALLBACK TRIGGERED ***\n");
     SWLOG_INFO("[COMPLETE] Running on MAIN LOOP thread (async operation complete)\n");
     SWLOG_INFO("[COMPLETE] Thread ID: %lu\n", (unsigned long)pthread_self());
     SWLOG_INFO("[COMPLETE] ========================================\n");
+    
+    // CRITICAL: Validate all parameters
+    if (!res) {
+        SWLOG_ERROR("[COMPLETE] CRITICAL: GAsyncResult (res) is NULL!\n");
+        SWLOG_ERROR("[COMPLETE] Cannot proceed without result object\n");
+        SWLOG_ERROR("[COMPLETE] ========================================\n\n");
+        return;
+    }
+    
+    if (!user_data) {
+        SWLOG_ERROR("[COMPLETE] CRITICAL: user_data (ctx) is NULL!\n");
+        SWLOG_ERROR("[COMPLETE] Cannot cleanup context - potential memory leak\n");
+        SWLOG_ERROR("[COMPLETE] Attempting to reset state anyway...\n");
+        IsCheckUpdateInProgress = FALSE;
+        if (waiting_checkUpdate_ids) {
+            g_slist_free(waiting_checkUpdate_ids);
+            waiting_checkUpdate_ids = NULL;
+        }
+        SWLOG_ERROR("[COMPLETE] ========================================\n\n");
+        return;
+    }
+    
+    AsyncXconfFetchContext *ctx = (AsyncXconfFetchContext *)user_data;
+    SWLOG_INFO("[COMPLETE] Context pointer: %p\n", ctx);
+    
+    // Validate context contents
+    if (!ctx->handler_id) {
+        SWLOG_ERROR("[COMPLETE] WARNING: ctx->handler_id is NULL!\n");
+    } else {
+        SWLOG_INFO("[COMPLETE] Handler ID: '%s'\n", ctx->handler_id);
+    }
+    
+    if (!ctx->connection) {
+        SWLOG_ERROR("[COMPLETE] WARNING: ctx->connection is NULL!\n");
+    } else {
+        SWLOG_INFO("[COMPLETE] Connection: %p\n", ctx->connection);
+    }
+    
+    GTask *task = G_TASK(res);
+    if (!task) {
+        SWLOG_ERROR("[COMPLETE] CRITICAL: Failed to cast res to GTask!\n");
+        SWLOG_ERROR("[COMPLETE] Cleaning up and aborting...\n");
+        IsCheckUpdateInProgress = FALSE;
+        if (waiting_checkUpdate_ids) {
+            g_slist_free(waiting_checkUpdate_ids);
+            waiting_checkUpdate_ids = NULL;
+        }
+        if (ctx->handler_id) g_free(ctx->handler_id);
+        g_free(ctx);
+        SWLOG_ERROR("[COMPLETE] ========================================\n\n");
+        return;
+    }
+    
+    GVariant *result = g_task_propagate_pointer(task, NULL);
     
     if (!result) {
         SWLOG_ERROR("[COMPLETE] ERROR: No result from background task\n");
@@ -1287,7 +1390,7 @@ static void async_xconf_fetch_complete(GObject *source_object, GAsyncResult *res
             waiting_checkUpdate_ids = NULL;
         }
         
-        g_free(ctx->handler_id);
+        if (ctx->handler_id) g_free(ctx->handler_id);
         g_free(ctx);
         SWLOG_ERROR("[COMPLETE] ========================================\n\n");
         return;
@@ -1313,15 +1416,16 @@ static void async_xconf_fetch_complete(GObject *source_object, GAsyncResult *res
     SWLOG_INFO("[COMPLETE]   Waiting clients count: %d\n", 
                g_slist_length(waiting_checkUpdate_ids));
     
-    // Extract data for logging
-    gchar *handler_id_str;
-    gint32 result_code;
-    gchar *current_ver, *available_ver, *update_details, *status_msg;
+    // Extract data for logging with NULL checks
+    gchar *handler_id_str = NULL;
+    gint32 result_code = -1;
+    gchar *current_ver = NULL, *available_ver = NULL, *update_details = NULL, *status_msg = NULL;
+    
     g_variant_get(result, "(sissss)", &handler_id_str, &result_code,
                  &current_ver, &available_ver, &update_details, &status_msg);
     
     SWLOG_INFO("[COMPLETE]   Signal payload:\n");
-    SWLOG_INFO("[COMPLETE]     - Handler ID: '%s'\n", handler_id_str);
+    SWLOG_INFO("[COMPLETE]     - Handler ID: '%s'\n", handler_id_str ? handler_id_str : "NULL");
     SWLOG_INFO("[COMPLETE]     - Result code: %d ", result_code);
     switch(result_code) {
         case 0: SWLOG_INFO("(UPDATE_AVAILABLE)\n"); break;
@@ -1329,24 +1433,43 @@ static void async_xconf_fetch_complete(GObject *source_object, GAsyncResult *res
         case 2: SWLOG_INFO("(UPDATE_ERROR)\n"); break;
         default: SWLOG_INFO("(UNKNOWN)\n"); break;
     }
-    SWLOG_INFO("[COMPLETE]     - Current version: '%s'\n", current_ver);
-    SWLOG_INFO("[COMPLETE]     - Available version: '%s'\n", available_ver);
-    SWLOG_INFO("[COMPLETE]     - Update details: '%s'\n", update_details);
-    SWLOG_INFO("[COMPLETE]     - Status message: '%s'\n", status_msg);
+    SWLOG_INFO("[COMPLETE]     - Current version: '%s'\n", current_ver ? current_ver : "NULL");
+    SWLOG_INFO("[COMPLETE]     - Available version: '%s'\n", available_ver ? available_ver : "NULL");
+    SWLOG_INFO("[COMPLETE]     - Update details: '%s'\n", update_details ? update_details : "NULL");
+    SWLOG_INFO("[COMPLETE]     - Status message: '%s'\n", status_msg ? status_msg : "NULL");
     
     // Free extracted strings (g_variant_get duplicates them)
-    g_free(handler_id_str);
-    g_free(current_ver);
-    g_free(available_ver);
-    g_free(update_details);
-    g_free(status_msg);
+    if (handler_id_str) g_free(handler_id_str);
+    if (current_ver) g_free(current_ver);
+    if (available_ver) g_free(available_ver);
+    if (update_details) g_free(update_details);
+    if (status_msg) g_free(status_msg);
+    
+    // Validate connection before emitting signal
+    if (!ctx->connection) {
+        SWLOG_ERROR("[COMPLETE] CRITICAL: ctx->connection is NULL!\n");
+        SWLOG_ERROR("[COMPLETE] Cannot emit signal - no D-Bus connection\n");
+        SWLOG_ERROR("[COMPLETE] This should never happen - investigating...\n");
+        
+        // Still cleanup state
+        IsCheckUpdateInProgress = FALSE;
+        if (waiting_checkUpdate_ids) {
+            g_slist_free(waiting_checkUpdate_ids);
+            waiting_checkUpdate_ids = NULL;
+        }
+        if (ctx->handler_id) g_free(ctx->handler_id);
+        g_free(ctx);
+        g_variant_unref(result);
+        SWLOG_ERROR("[COMPLETE] ========================================\n\n");
+        return;
+    }
     
     SWLOG_INFO("[COMPLETE] Emitting signal now...\n");
     GError *error = NULL;
     gboolean signal_sent = g_dbus_connection_emit_signal(
         ctx->connection,
         NULL,  // NULL = broadcast to all listeners
-        "/org/rdkfwupdater/Service",
+        OBJECT_PATH,  // Use constant instead of hardcoded path
         "org.rdkfwupdater.Interface",
         "CheckForUpdateComplete",
         result,
@@ -1414,10 +1537,19 @@ static void async_xconf_fetch_complete(GObject *source_object, GAsyncResult *res
     
     // 6. CLEANUP CONTEXT
     SWLOG_INFO("[COMPLETE] Step 6: Freeing AsyncXconfFetchContext\n");
-    SWLOG_INFO("[COMPLETE]   Freeing handler_id: '%s'\n", ctx->handler_id);
-    g_free(ctx->handler_id);
-    g_free(ctx);
-    SWLOG_INFO("[COMPLETE]   Context freed\n");
+    if (ctx) {
+        if (ctx->handler_id) {
+            SWLOG_INFO("[COMPLETE]   Freeing handler_id: '%s'\n", ctx->handler_id);
+            g_free(ctx->handler_id);
+            ctx->handler_id = NULL;
+        } else {
+            SWLOG_WARN("[COMPLETE]   handler_id is NULL (already freed or never set)\n");
+        }
+        g_free(ctx);
+        SWLOG_INFO("[COMPLETE]   Context freed\n");
+    } else {
+        SWLOG_ERROR("[COMPLETE]   Context is NULL (should never happen at this point!)\n");
+    }
     
     SWLOG_INFO("[COMPLETE] COMPLETION CALLBACK FINISHED\n");
     SWLOG_INFO("[COMPLETE] Summary:\n");
