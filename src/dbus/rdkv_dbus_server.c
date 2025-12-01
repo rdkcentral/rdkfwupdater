@@ -751,14 +751,14 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		// CACHE MISS PATH
 		SWLOG_INFO("CACHE MISS PATH - Async Background Fetch\n");
 		SWLOG_INFO("  XConf cache not available\n");
-		SWLOG_INFO("  Strategy: Async non-blocking fetch required\n");
+		SWLOG_INFO("  Async non-blocking fetch required\n");
 		SWLOG_INFO("  Client flow:\n");
 		SWLOG_INFO("    1. Gets UPDATE_ERROR (status=2) immediately\n");
 		SWLOG_INFO("    2. Waits for CheckForUpdateComplete signal\n");
 		SWLOG_INFO("    3. Receives real result when XConf fetch completes\n");
 		
 		// 4. SEND IMMEDIATE UPDATE_ERROR RESPONSE
-		SWLOG_INFO("\n[STEP 4] Immediate Response\n");
+		SWLOG_INFO("\nImmediate Response\n");
 		SWLOG_INFO("  Sending: D-Bus method response\n");
 		SWLOG_INFO("  Response: UPDATE_ERROR (status=2)\n");
 		g_dbus_method_invocation_return_value(resp_ctx,
@@ -769,7 +769,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		SWLOG_INFO("  Note: D-Bus invocation consumed (cannot respond twice)\n");
 		
 		// 5. CREATE TASK AND ADD TO TRACKING
-		SWLOG_INFO("\n[STEP 5] Task Creation & Tracking\n");
+		SWLOG_INFO("\n Task Creation & Tracking\n");
 		// NOTE: invocation is NULL because we already sent the response above.
 		// Waiting tasks don't need invocation - they get result via signal broadcast.
 		TaskContext *task_ctx = create_task_context(TASK_TYPE_CHECK_UPDATE, 
@@ -786,12 +786,12 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		SWLOG_INFO("    Invocation      : NULL (consumed for immediate UPDATE_ERROR)\n");
 		
 		SWLOG_INFO("\n  Adding to Tracking Systems:\n");
-		SWLOG_INFO("[CHECK_UPDATE] [5a] Adding to 'active_tasks' hash table\n");
+		SWLOG_INFO("[CHECK_UPDATE]  Adding to 'active_tasks' hash table\n");
 		g_hash_table_insert(active_tasks, GUINT_TO_POINTER(task_id), task_ctx);
 		SWLOG_INFO("[CHECK_UPDATE]   Task-%d stored in active_tasks (size=%d)\n", 
 		           task_id, g_hash_table_size(active_tasks));
 		
-		SWLOG_INFO("[CHECK_UPDATE] [5b] Adding to 'waiting_checkUpdate_ids' queue\n");
+		SWLOG_INFO("[CHECK_UPDATE]  Adding to 'waiting_checkUpdate_ids' queue\n");
 		waiting_checkUpdate_ids = g_slist_append(waiting_checkUpdate_ids, GUINT_TO_POINTER(task_id));
 		SWLOG_INFO("[CHECK_UPDATE]   Task-%d queued in waiting list (size=%d)\n", 
 		           task_id, g_slist_length(waiting_checkUpdate_ids));
@@ -802,7 +802,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		SWLOG_INFO("[CHECK_UPDATE]   Both cleaned up together when XConf fetch completes\n");
 		
 		// 6. CHECK IF FETCH ALREADY IN PROGRESS
-		SWLOG_INFO("\n[STEP 6] Fetch Status Check\n");
+		SWLOG_INFO("\n Fetch Status Check\n");
 		SWLOG_INFO("  IsCheckUpdateInProgress = %s\n", 
 		           IsCheckUpdateInProgress ? "TRUE (fetch running)" : "FALSE (idle)");
 		
@@ -832,8 +832,16 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		SWLOG_INFO("[CHECK_UPDATE] Future requests will piggyback on this fetch\n");
 		
 		SWLOG_INFO("[CHECK_UPDATE] Creating AsyncXconfFetchContext:\n");
+		SWLOG_INFO("[CHECK_UPDATE]   Input handler_process_name: '%s' (ptr=%p)\n",
+		           handler_process_name ? handler_process_name : "NULL", handler_process_name);
+		
 		AsyncXconfFetchContext *async_ctx = g_new0(AsyncXconfFetchContext, 1);
+		
+		SWLOG_INFO("[CHECK_UPDATE]   Allocated context at: %p\n", async_ctx);
+		
 		async_ctx->handler_id = g_strdup(handler_process_name);
+		SWLOG_INFO("[CHECK_UPDATE]   Duplicated handler_id: '%s' (ptr=%p)\n",
+		           async_ctx->handler_id ? async_ctx->handler_id : "NULL", async_ctx->handler_id);
 		async_ctx->connection = connection;
 		SWLOG_INFO("[CHECK_UPDATE]   Handler ID: '%s'\n", handler_process_name);
 		SWLOG_INFO("[CHECK_UPDATE]   Connection: %p\n", (void*)connection);
