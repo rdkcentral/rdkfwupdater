@@ -375,7 +375,7 @@ void complete_CheckUpdate_waiting_tasks(TaskContext *ctx)
 			GError *signal_error = NULL;
 			gboolean signal_result = g_dbus_connection_emit_signal(connection,
 				NULL,  // Broadcast to all listeners
-				"/org/rdkfwupdater/fwupgrade",
+				"/org/rdkfwupdater/Service",
 				"org.rdkfwupdater.Interface",
 				"CheckForUpdateComplete",
 				g_variant_new("(sissss)",
@@ -640,7 +640,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		SWLOG_INFO("[CHECK_UPDATE] Timestamp: %ld\n", (long)time(NULL));
 		SWLOG_INFO("[CHECK_UPDATE] Handler ID: '%s'\n", handler_process_name ? handler_process_name : "NULL");
 		SWLOG_INFO("[CHECK_UPDATE] D-Bus Sender: '%s'\n", rdkv_req_caller_id);
-		SWLOG_INFO("[CHECK_UPDATE] D-Bus Path: /org/rdkfwupdater/fwupgrade\n");
+		SWLOG_INFO("[CHECK_UPDATE] D-Bus Path: /org/rdkfwupdater/Service\n");
 		SWLOG_INFO("[CHECK_UPDATE] D-Bus Interface: org.rdkfwupdater.Interface\n");
 		SWLOG_INFO("[CHECK_UPDATE] D-Bus Method: CheckForUpdate\n");
 		SWLOG_INFO("[CHECK_UPDATE] Daemon State:\n");
@@ -718,7 +718,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			SWLOG_INFO("[CHECK_UPDATE] Emitting CheckForUpdateComplete signal for consistency...\n");
 			GError *signal_error = NULL;
 			gboolean signal_sent = g_dbus_connection_emit_signal(connection,
-				NULL, "/org/rdkfwupdater/fwupgrade",
+				NULL, "/org/rdkfwupdater/Service",
 				"org.rdkfwupdater.Interface",
 				"CheckForUpdateComplete",
 				g_variant_new("(sissss)",
@@ -816,7 +816,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			SWLOG_INFO("[CHECK_UPDATE]   NO new background fetch started (already running)\n");
 			SWLOG_INFO("[CHECK_UPDATE]   Task-%d waits in queue with others\n", task_id);
 			SWLOG_INFO("[CHECK_UPDATE]   When fetch completes: ALL waiting tasks get signal\n");
-			SWLOG_INFO("[CHECK_UPDATE]   Signal broadcast at: /org/rdkfwupdater/fwupgrade\n");
+			SWLOG_INFO("[CHECK_UPDATE]   Signal broadcast at: /org/rdkfwupdater/Service\n");
 			SWLOG_INFO("[CHECK_UPDATE]   Signal name: CheckForUpdateComplete\n");
 			SWLOG_INFO("[CHECK_UPDATE] PIGGYBACK SETUP COMPLETE\n");
 			g_free(handler_process_name);
@@ -857,7 +857,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		           task_id, g_slist_length(waiting_checkUpdate_ids) - 1,
 		           g_slist_length(waiting_checkUpdate_ids));
 		SWLOG_INFO("[CHECK_UPDATE]   [On Completion] Callback runs on main loop\n");
-		SWLOG_INFO("[CHECK_UPDATE]   [Signal] Broadcast to /org/rdkfwupdater/fwupgrade\n");
+		SWLOG_INFO("[CHECK_UPDATE]   [Signal] Broadcast to /org/rdkfwupdater/Service\n");
 		SWLOG_INFO("[CHECK_UPDATE]   [Cleanup] All %d waiting tasks cleaned up\n",
 		           g_slist_length(waiting_checkUpdate_ids));
 		SWLOG_INFO("[CHECK_UPDATE]   [Reset] IsCheckUpdateInProgress = FALSE\n");
@@ -1276,7 +1276,7 @@ static void async_xconf_fetch_complete(GObject *source_object, GAsyncResult *res
     // 1. BROADCAST D-Bus Signal to ALL listeners
     SWLOG_INFO("[COMPLETE] Step 1: Broadcasting D-Bus signal to ALL waiting clients...\n");
     SWLOG_INFO("[COMPLETE]   Signal name: 'CheckForUpdateComplete'\n");
-    SWLOG_INFO("[COMPLETE]   Object path: '/org/rdkfwupdater/fwupgrade'\n");
+    SWLOG_INFO("[COMPLETE]   Object path: '%s'\n", OBJECT_PATH);
     SWLOG_INFO("[COMPLETE]   Interface: 'org.rdkfwupdater.Interface'\n");
     SWLOG_INFO("[COMPLETE]   Destination: NULL (broadcast to all listeners)\n");
     SWLOG_INFO("[COMPLETE]   Waiting clients count: %d\n", 
@@ -1315,7 +1315,7 @@ static void async_xconf_fetch_complete(GObject *source_object, GAsyncResult *res
     gboolean signal_sent = g_dbus_connection_emit_signal(
         ctx->connection,
         NULL,  // NULL = broadcast to all listeners
-        "/org/rdkfwupdater/fwupgrade",
+        "/org/rdkfwupdater/Service",
         "org.rdkfwupdater.Interface",
         "CheckForUpdateComplete",
         result,

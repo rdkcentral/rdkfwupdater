@@ -18,13 +18,17 @@
 AUTOMAKE_OPTIONS = subdir-objects
 
 # Define the program name and the source files
-bin_PROGRAMS = rdkfw_device_status_gtest rdkfw_deviceutils_gtest rdkfw_main_gtest rdkfw_interface_gtest rdkfwupdatemgr_gtest
+bin_PROGRAMS = rdkfw_device_status_gtest rdkfw_deviceutils_gtest rdkfw_main_gtest rdkfw_interface_gtest rdkfwupdatemgr_gtest rdkFwupdateMgr_handlers_gtest
 
 # Define the include directories
 # NOTE: We explicitly use -I. to prioritize local test headers over system headers
 # This prevents conflicts with external library headers in /usr/local/include/
 # rdk_fwdl_utils.h includes rdkv_cdl_log_wrapper.h inside common_utilities. to over come this ,  
 COMMON_CPPFLAGS = -std=c++11 -I. -I/usr/include/cjson -I../src -I../src/cedmInterface -I../src/deviceutils/ -I../src/include/ -I../src/rbusInterface/ -I./mocks/ -I./deviceutils/ -DGTEST_ENABLE -DGTEST_BASIC -DIARM_ENABLED -DRFC_API_ENABLED -DT2_EVENT_ENABLED
+
+# GLib/GIO flags for D-Bus handler tests
+GLIB_CFLAGS := $(shell pkg-config --cflags glib-2.0 gio-2.0)
+GLIB_LIBS := $(shell pkg-config --libs glib-2.0 gio-2.0)
 
 # Define the libraries to link against
 COMMON_LDADD =  -lgtest -lgtest_main -lgmock_main -lgmock -lcjson -lgcov
@@ -66,7 +70,26 @@ rdkfw_interface_gtest_SOURCES = fwdl_interface_gtest.cpp \
     ../src/rbusInterface/rbusInterface.c \
     deviceutils/json_parse.c
 
-rdkfwupdatemgr_gtest_SOURCES = rdkfwupdatemgr_gtest.cpp ../src/dbus/rdkFwupdateMgr_handlers.c
+rdkfwupdatemgr_gtest_SOURCES = rdkfwupdatemgr_gtest.cpp \
+    ../src/dbus/rdkFwupdateMgr_handlers.c \
+    ../src/json_process.c \
+    ../src/rdkv_main.c \
+    ../src/rdkv_upgrade.c \
+    ../src/deviceutils/device_api.c \
+    ../src/deviceutils/deviceutils.c \
+    ../src/rfcInterface/rfcinterface.c \
+    deviceutils/json_parse.c \
+    miscellaneous_mock.cpp \
+    ./mocks/deviceutils_mock.cpp
+
+# rdkFwupdateMgr_handlers_gtest: Tests D-Bus handler functions for daemon
+# Tests the async, non-blocking, cache-first CheckForUpdate implementation
+# Uses mocks for XConf, device info, and other external dependencies
+rdkFwupdateMgr_handlers_gtest_SOURCES = rdkFwupdateMgr_handlers_gtest.cpp \
+    ./mocks/rdkFwupdateMgr_mock.cpp \
+    ../src/dbus/rdkFwupdateMgr_handlers.c \
+    ../src/json_process.c \
+    deviceutils/json_parse.c
 
 # Apply common properties to each program
 rdkfw_device_status_gtest_CPPFLAGS = $(COMMON_CPPFLAGS)
@@ -89,7 +112,14 @@ rdkfw_interface_gtest_LDADD = $(COMMON_LDADD)
 rdkfw_interface_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
 rdkfw_interface_gtest_CFLAGS = $(COMMON_CXXFLAGS)
 
-rdkfwupdatemgr_gtest_CPPFLAGS = $(COMMON_CPPFLAGS)
+rdkfwupdatemgr_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -I../src/dbus $(GLIB_CFLAGS)
+rdkfwupdatemgr_gtest_LDFLAGS = $(GLIB_LIBS)
 rdkfwupdatemgr_gtest_LDADD = $(COMMON_LDADD)
 rdkfwupdatemgr_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
 rdkfwupdatemgr_gtest_CFLAGS = $(COMMON_CXXFLAGS)
+
+rdkFwupdateMgr_handlers_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -I../src/dbus $(GLIB_CFLAGS)
+rdkFwupdateMgr_handlers_gtest_LDFLAGS = $(GLIB_LIBS)
+rdkFwupdateMgr_handlers_gtest_LDADD = $(COMMON_LDADD)
+rdkFwupdateMgr_handlers_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
+rdkFwupdateMgr_handlers_gtest_CFLAGS = $(COMMON_CXXFLAGS)
