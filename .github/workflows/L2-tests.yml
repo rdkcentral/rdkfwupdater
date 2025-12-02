@@ -24,6 +24,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check out dependent repostiories
+        uses: actions/checkout@v4
+        with:
+          repository: 'rdkcentral/rdm-agent'
+          path: rdm-agent      
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
 
@@ -35,10 +41,14 @@ jobs:
       - name: Start mock-xconf service with mTLS enabled
         run: |
           docker run -d --name mockxconf -p 50050:50050 -p 50051:50051 -p 50052:50052 -e ENABLE_MTLS=true -v ${{ github.workspace }}:/mnt/L2_CONTAINER_SHARED_VOLUME ghcr.io/rdkcentral/docker-device-mgt-service-test/mockxconf:latest
-
+      
       - name: Start l2-container service with mTLS enabled
         run: |
           docker run -d --name native-platform --link mockxconf -e ENABLE_MTLS=true -v ${{ github.workspace }}:/mnt/L2_CONTAINER_SHARED_VOLUME ghcr.io/rdkcentral/docker-device-mgt-service-test/native-platform:latest
+
+      - name: Enter Inside container run rdm-agent cov_build.sh
+        run: |
+          docker exec -i native-platform /bin/bash -c "cd /mnt/L2_CONTAINER_SHARED_VOLUME/rdm-agent && sh cov_build.sh && export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/lib/aarch64-linux-gnu:/usr/local/lib: && cp /usr/local/bin/rdm /usr/bin/rdm"
 
       - name: Enter Inside Platform native container and run L2 Test
         run: |
