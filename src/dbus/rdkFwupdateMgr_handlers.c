@@ -271,12 +271,15 @@ static CheckUpdateResponse create_success_response(const gchar *available_versio
     char current_img_buffer[64] = {0};
     
     // Get the current running image version using currentImg function
-    bool img_status = currentImg(current_img_buffer, sizeof(current_img_buffer));
+    bool img_status = GetFirmwareVersion(current_img_buffer, sizeof(current_img_buffer));
     
     SWLOG_INFO("[rdkFwupdateMgr] create_success_response: Getting current image info\n");
     SWLOG_INFO("[rdkFwupdateMgr]   - currentImg status: %s\n", img_status ? "SUCCESS" : "FAILED");
     SWLOG_INFO("[rdkFwupdateMgr]   - current_img_buffer: '%s'\n", current_img_buffer);
 
+    // Compare versions only if both are non-null
+    gboolean is_update_available = img_status && available_version && (g_strcmp0(current_img_buffer, available_version) != 0);
+    if (is_update_available) {
     response.result_code = UPDATE_AVAILABLE;
     response.current_img_version = g_strdup(img_status ? current_img_buffer : "Unknown");
     response.available_version = g_strdup(available_version ? available_version : "");
@@ -285,7 +288,13 @@ static CheckUpdateResponse create_success_response(const gchar *available_versio
     
     SWLOG_INFO("[rdkFwupdateMgr] create_success_response: Response created with current image: '%s', available: '%s', status: '%s'\n", 
                response.current_img_version, response.available_version, response.status_message);
-    
+    }else {
+	    response.result_code = UPDATE_NOT_AVAILABLE;
+	    response.current_img_version = g_strdup(current_img_buffer);
+	    response.available_version = g_strdup(available_version ? available_version : "");
+	    response.update_details = g_strdup("");
+	    response.status_message = g_strdup("Already on latest firmware");	
+    }
     return response;
 }
 
@@ -296,7 +305,7 @@ static CheckUpdateResponse create_result_response(CheckForUpdateResult result_co
     char current_img_buffer[256] = {0};
     
     // Get the current running image version using currentImg function
-    bool img_status = currentImg(current_img_buffer, sizeof(current_img_buffer));
+    bool img_status = GetFirmwareVersion(current_img_buffer, sizeof(current_img_buffer));
     
     SWLOG_INFO("[rdkFwupdateMgr] create_result_response: Getting current image info\n");
     SWLOG_INFO("[rdkFwupdateMgr]   - currentImg status: %s\n", img_status ? "SUCCESS" : "FAILED");
@@ -356,9 +365,6 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
     SWLOG_INFO("[rdkFwupdateMgr] XCONFRES structure allocated successfully\n");
     int http_code = 0;
     int server_type = HTTP_XCONF_DIRECT;  // XConf query mode (2), not download mode
-    
-    // NOTE: Arrays are automatically zero-initialized by = {0} above
-    // No need to manually set first element to 0
 
     //  XConf communication with caching support
     int ret = -1;
@@ -382,8 +388,6 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
         
         // Save successful response to cache for future use
         if (ret == 0 && http_code == 200) {
-            // We need the raw response to cache, but it's consumed by getXconfRespData
-            // For now, we'll implement a simple cache later when we have raw response access
             SWLOG_INFO("[rdkFwupdateMgr] XConf call successful - cache save will be implemented in fetch_xconf_firmware_info\n");
         }
     }

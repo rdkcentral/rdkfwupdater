@@ -43,7 +43,7 @@ static gboolean test_client_check_update(TestClientContext *client);
 static gboolean test_client_unregister(TestClientContext *client);
 static void test_client_free(TestClientContext *client);
 static void print_usage(const char *program_name);
-static void run_test_scenario(TestClientContext *client, const gchar *test_mode);
+static void run_test_scenario(TestClientContext *client, const gchar *test_mode, const char *program_name);
 
 // Utility macros for output
 #define PRINT_SUCCESS(fmt, ...) printf("[SUCCESS] " fmt "\n", ##__VA_ARGS__)
@@ -383,43 +383,126 @@ static void test_client_free(TestClientContext *client)
  */
 static void print_usage(const char *program_name) 
 {
-    printf("\nRDK Firmware Updater Daemon Test Client\n");
-    printf("========================================\n\n");
-    printf("Usage: %s <process_name> <lib_version> [test_mode]\n\n", program_name);
+    printf("\n");
+    printf("================================================================================\n");
+    printf("            RDK Firmware Updater Daemon - Test Client v2.0\n");
+    printf("================================================================================\n\n");
     
-    printf("Parameters:\n");
-    printf("  process_name  - Name of the process to register (e.g., 'MyApp')\n");
-    printf("  lib_version   - Library version string (e.g., '1.0.0')\n");
-    printf("  test_mode     - Test scenario to run (optional, default: 'basic')\n\n");
+    printf("USAGE:\n");
+    printf("  %s <process_name> <lib_version> [test_mode]\n\n", program_name);
     
-    printf("Test Modes:\n");
-    printf("  basic         - Basic registration test\n");
-    printf("  reregister    - Test same client re-registration (should return same handler_id)\n");
-    printf("  check         - Register and perform CheckForUpdate\n");
-    printf("  full          - Full workflow: Register -> Check -> Unregister\n");
-    printf("  signals       - Test D-Bus signals and cache behavior (cache hit/miss scenarios)\n");
-    printf("  concurrent    - Test concurrent CheckForUpdate requests (piggyback behavior)\n");
-    printf("  stress        - Multiple rapid registration attempts\n\n");
+    printf("PARAMETERS:\n");
+    printf("  process_name   Name of the process (e.g., 'VideoApp', 'Netflix')\n");
+    printf("  lib_version    Library version (e.g., '1.0.0', '2.5.1')\n");
+    printf("  test_mode      Test scenario to execute (see below)\n\n");
     
-    printf("Examples:\n");
-    printf("  %s MyTestApp 1.0.0\n", program_name);
-    printf("  %s MyTestApp 1.0.0 basic\n", program_name);
-    printf("  %s MyTestApp 1.0.0 check\n", program_name);
-    printf("  %s MyTestApp 1.0.0 signals\n", program_name);
-    printf("  %s MyTestApp 1.0.0 concurrent\n", program_name);
-    printf("  %s MyTestApp 1.0.0 full\n\n", program_name);
+    printf("================================================================================\n");
+    printf("TEST SCENARIOS - CheckForUpdate Flow Robustness\n");
+    printf("================================================================================\n\n");
     
-    printf("Expected Scenarios for Robust Testing:\n");
-    printf("  1. Run same command twice -> Second should return same handler_id\n");
-    printf("  2. Run with different process name from same client -> Should be rejected\n");
-    printf("  3. Run from different terminal with same process name -> Should be rejected\n");
-    printf("  4. Run CheckForUpdate without registration -> Should be rejected\n\n");
+    printf("BASIC TESTS:\n");
+    printf("  basic          Basic registration and verification\n");
+    printf("                 Tests: RegisterProcess -> verify handler_id\n\n");
+    
+    printf("  check          Simple check for update flow\n");
+    printf("                 Tests: Register -> CheckForUpdate -> Unregister\n\n");
+    
+    printf("  full           Complete workflow test\n");
+    printf("                 Tests: Full lifecycle with all operations\n\n");
+    
+    printf("CACHE BEHAVIOR TESTS:\n");
+    printf("  cache-hit      Test cache hit scenario\n");
+    printf("                 Expects: Immediate response with firmware data\n");
+    printf("                 Setup: Ensure /tmp/xconf_response_thunder.txt exists\n\n");
+    
+    printf("  cache-miss     Test cache miss scenario\n");
+    printf("                 Expects: UPDATE_ERROR + background fetch + signal\n");
+    printf("                 Setup: rm /tmp/xconf_response_thunder.txt\n\n");
+    
+    printf("  signals        Cache behavior with signal monitoring\n");
+    printf("                 Tests: Both cache hit and miss flows with timing\n\n");
+    
+    printf("CONCURRENCY TESTS:\n");
+    printf("  concurrent     Multiple rapid CheckForUpdate calls\n");
+    printf("                 Tests: Piggyback behavior (single XConf fetch)\n");
+    printf("                 Expected: All requests share same background fetch\n\n");
+    
+    printf("  rapid-check    Rapid successive CheckForUpdate calls\n");
+    printf("                 Tests: 5 rapid calls with 100ms intervals\n");
+    printf("                 Verifies: IsCheckUpdateInProgress flag behavior\n\n");
+    
+    printf("REGISTRATION TESTS:\n");
+    printf("  reregister     Re-registration from same client\n");
+    printf("                 Expected: Returns same handler_id\n\n");
+    
+    printf("  duplicate      Duplicate process name from different terminal\n");
+    printf("                 Expected: Rejected (process already registered)\n");
+    printf("                 Note: Run from 2 terminals with same process name\n\n");
+    
+    printf("ERROR HANDLING TESTS:\n");
+    printf("  no-register    CheckForUpdate without registration\n");
+    printf("                 Expected: ACCESS_DENIED error\n\n");
+    
+    printf("  invalid-handler CheckForUpdate with invalid handler_id\n");
+    printf("                 Expected: NOT_REGISTERED error\n\n");
+    
+    printf("STRESS TESTS:\n");
+    printf("  stress-reg     Multiple rapid registrations (10 iterations)\n");
+    printf("                 Tests: Registration robustness under load\n\n");
+    
+    printf("  stress-check   Multiple rapid check operations (20 calls)\n");
+    printf("                 Tests: CheckForUpdate handling under stress\n\n");
+    
+    printf("TIMEOUT TESTS:\n");
+    printf("  long-wait      CheckForUpdate with extended signal wait\n");
+    printf("                 Tests: Signal delivery over time (60s wait)\n\n");
+    
+    printf("================================================================================\n");
+    printf("EXAMPLES:\n");
+    printf("================================================================================\n\n");
+    
+    printf("  # Basic registration\n");
+    printf("  %s VideoApp 1.0.0 basic\n\n", program_name);
+    
+    printf("  # Test cache hit (ensure cache exists first)\n");
+    printf("  %s VideoApp 1.0.0 cache-hit\n\n", program_name);
+    
+    printf("  # Test cache miss (delete cache first)\n");
+    printf("  rm /tmp/xconf_response_thunder.txt\n");
+    printf("  %s VideoApp 1.0.0 cache-miss\n\n", program_name);
+    
+    printf("  # Test concurrent requests (piggyback)\n");
+    printf("  rm /tmp/xconf_response_thunder.txt\n");
+    printf("  %s VideoApp 1.0.0 concurrent\n\n", program_name);
+    
+    printf("  # Test error handling (no registration)\n");
+    printf("  %s VideoApp 1.0.0 no-register\n\n", program_name);
+    
+    printf("  # Duplicate registration test (run in 2 terminals)\n");
+    printf("  Terminal 1: %s VideoApp 1.0.0 basic\n", program_name);
+    printf("  Terminal 2: %s VideoApp 1.0.0 duplicate\n\n", program_name);
+    
+    printf("================================================================================\n");
+    printf("MONITORING:\n");
+    printf("================================================================================\n\n");
+    
+    printf("  # Watch daemon logs\n");
+    printf("  tail -f /opt/logs/swupdate.log\n\n");
+    
+    printf("  # Monitor D-Bus signals\n");
+    printf("  sudo dbus-monitor --system \"type='signal',sender='org.rdkfwupdater.Service'\"\n\n");
+    
+    printf("  # Check cache status\n");
+    printf("  ls -lh /tmp/xconf_response_thunder.txt\n");
+    printf("  cat /tmp/xconf_response_thunder.txt\n\n");
+    
+    printf("================================================================================\n\n");
 }
 
 /**
  * Run specific test scenario
  */
-static void run_test_scenario(TestClientContext *client, const gchar *test_mode)
+static void run_test_scenario(TestClientContext *client, const gchar *test_mode, const char *program_name)
 {
     PRINT_INFO("Running test scenario: %s", test_mode);
     
@@ -564,9 +647,302 @@ static void run_test_scenario(TestClientContext *client, const gchar *test_mode)
             test_client_unregister(client);
         }
         
-    } else if (g_strcmp0(test_mode, "stress") == 0) {
+    } else if (g_strcmp0(test_mode, "cache-hit") == 0) {
+        // Test cache hit scenario
+        PRINT_INFO("=== Testing Cache Hit Scenario ===");
+        
+        gboolean cache_exists = g_file_test("/tmp/xconf_response_thunder.txt", G_FILE_TEST_EXISTS);
+        
+        if (!cache_exists) {
+            PRINT_WARN("Cache file does not exist at /tmp/xconf_response_thunder.txt");
+            PRINT_INFO("Run daemon first or manually create cache file, then retry");
+            PRINT_INFO("Expected behavior: Immediate response with firmware data from cache");
+        } else {
+            PRINT_SUCCESS("Cache file exists - testing cache hit flow");
+            
+            if (test_client_register(client)) {
+                sleep(1);
+                
+                PRINT_INFO("Making CheckForUpdate call - expecting immediate cache response");
+                test_client_check_update(client);
+                
+                PRINT_INFO("Cache hit test complete - verify immediate response above");
+                sleep(1);
+                test_client_unregister(client);
+            }
+        }
+        
+    } else if (g_strcmp0(test_mode, "cache-miss") == 0) {
+        // Test cache miss scenario
+        PRINT_INFO("=== Testing Cache Miss Scenario ===");
+        
+        gboolean cache_exists = g_file_test("/tmp/xconf_response_thunder.txt", G_FILE_TEST_EXISTS);
+        
+        if (cache_exists) {
+            PRINT_WARN("Cache file exists at /tmp/xconf_response_thunder.txt");
+            PRINT_INFO("Delete it with: rm /tmp/xconf_response_thunder.txt");
+            PRINT_INFO("Then run this test again for true cache miss scenario");
+        } else {
+            PRINT_SUCCESS("Cache file does not exist - perfect for cache miss test");
+            PRINT_INFO("Expected flow:");
+            PRINT_INFO("  1. CheckForUpdate returns UPDATE_ERROR immediately");
+            PRINT_INFO("  2. Background XConf fetch starts");
+            PRINT_INFO("  3. CheckForUpdateComplete signal arrives with real data");
+            
+            if (test_client_register(client)) {
+                sleep(1);
+                
+                printf("\nMaking CheckForUpdate call...\n");
+                test_client_check_update(client);
+                
+                PRINT_INFO("Waiting 15 seconds for background XConf fetch and signal...");
+                printf("   (Watch for CheckForUpdateComplete signal above)\n");
+                
+                GMainContext *context = g_main_context_default();
+                for (int i = 0; i < 150; i++) {  // 15 seconds
+                    g_main_context_iteration(context, FALSE);
+                    usleep(100000); // 100ms
+                    
+                    if (i % 10 == 0) {
+                        printf(".");
+                        fflush(stdout);
+                    }
+                }
+                printf("\n");
+                
+                PRINT_INFO("Cache miss test complete");
+                sleep(1);
+                test_client_unregister(client);
+            }
+        }
+        
+    } else if (g_strcmp0(test_mode, "rapid-check") == 0) {
+        // Test rapid successive CheckForUpdate calls
+        PRINT_INFO("=== Testing Rapid CheckForUpdate Calls ===");
+        
+        if (test_client_register(client)) {
+            sleep(1);
+            
+            gboolean cache_exists = g_file_test("/tmp/xconf_response_thunder.txt", G_FILE_TEST_EXISTS);
+            
+            if (cache_exists) {
+                PRINT_INFO("Cache exists - all calls will succeed immediately");
+            } else {
+                PRINT_INFO("No cache - testing IsCheckUpdateInProgress flag behavior");
+                PRINT_INFO("Expected: First call triggers fetch, subsequent calls piggyback");
+            }
+            
+            PRINT_INFO("Making 5 rapid CheckForUpdate calls with 100ms intervals...");
+            printf("\n");
+            
+            for (int i = 1; i <= 5; i++) {
+                printf("=== Rapid Call #%d ===\n", i);
+                test_client_check_update(client);
+                usleep(100000); // 100ms
+                printf("\n");
+            }
+            
+            if (!cache_exists) {
+                PRINT_INFO("Waiting 10 seconds for background fetch signal...");
+                GMainContext *context = g_main_context_default();
+                for (int i = 0; i < 100; i++) {
+                    g_main_context_iteration(context, FALSE);
+                    usleep(100000);
+                    if (i % 10 == 0) {
+                        printf(".");
+                        fflush(stdout);
+                    }
+                }
+                printf("\n");
+            }
+            
+            PRINT_INFO("Rapid check test complete");
+            sleep(1);
+            test_client_unregister(client);
+        }
+        
+    } else if (g_strcmp0(test_mode, "no-register") == 0) {
+        // Test CheckForUpdate without registration
+        PRINT_INFO("=== Testing CheckForUpdate Without Registration ===");
+        PRINT_INFO("Expected: ACCESS_DENIED or error indicating not registered");
+        
+        // Don't register - directly try to check for update
+        client->handler_id = 12345; // Fake handler ID
+        client->is_registered = TRUE; // Fake registration flag
+        
+        printf("\nAttempting CheckForUpdate with fake handler ID 12345...\n");
+        test_client_check_update(client);
+        
+        PRINT_INFO("No-register test complete");
+        
+    } else if (g_strcmp0(test_mode, "invalid-handler") == 0) {
+        // Test CheckForUpdate with invalid handler_id
+        PRINT_INFO("=== Testing CheckForUpdate With Invalid Handler ID ===");
+        PRINT_INFO("Expected: NOT_REGISTERED error or similar");
+        
+        if (test_client_register(client)) {
+            sleep(1);
+            
+            // Save real handler_id and use fake one
+            guint64 real_handler = client->handler_id;
+            client->handler_id = 99999999;
+            
+            PRINT_INFO("Using invalid handler ID: 99999999");
+            printf("\nAttempting CheckForUpdate with invalid handler...\n");
+            test_client_check_update(client);
+            
+            // Restore real handler for cleanup
+            client->handler_id = real_handler;
+            
+            sleep(1);
+            test_client_unregister(client);
+        }
+        
+    } else if (g_strcmp0(test_mode, "duplicate") == 0) {
+        // Test duplicate process name registration
+        PRINT_INFO("=== Testing Duplicate Process Name Registration ===");
+        PRINT_INFO("This test requires running from 2 terminals with same process name");
+        PRINT_INFO("Expected: Second registration should be rejected");
+        
+        if (test_client_register(client)) {
+            PRINT_SUCCESS("Registration succeeded in this terminal");
+            PRINT_INFO("Now run from another terminal:");
+            PRINT_INFO("  %s %s %s duplicate", program_name, client->process_name, client->lib_version);
+            PRINT_INFO("The second terminal should get ACCESS_DENIED error");
+            PRINT_INFO("Keeping this registration alive for 30 seconds...");
+            
+            sleep(30);
+            
+            test_client_unregister(client);
+        } else {
+            PRINT_WARN("Registration failed - likely another instance already registered");
+            PRINT_INFO("This is the expected behavior for duplicate registration");
+        }
+        
+    } else if (g_strcmp0(test_mode, "stress-reg") == 0) {
         // Stress test - multiple rapid registrations
-        PRINT_INFO("=== Running Stress Test ===");
+        PRINT_INFO("=== Running Registration Stress Test ===");
+        PRINT_INFO("Testing daemon's ability to handle rapid registration changes");
+        
+        for (int i = 1; i <= 10; i++) {
+            printf("\n=== Stress Registration Iteration %d/10 ===\n", i);
+            
+            client->is_registered = FALSE;
+            client->handler_id = 0;
+            
+            if (test_client_register(client)) {
+                PRINT_SUCCESS("Registration %d succeeded", i);
+                
+                // Unregister immediately
+                if (test_client_unregister(client)) {
+                    PRINT_SUCCESS("Unregistration %d succeeded", i);
+                }
+            }
+            
+            usleep(200000); // 200ms delay between iterations
+        }
+        
+        PRINT_INFO("Registration stress test complete");
+        
+    } else if (g_strcmp0(test_mode, "stress-check") == 0) {
+        // Stress test - multiple rapid CheckForUpdate operations
+        PRINT_INFO("=== Running CheckForUpdate Stress Test ===");
+        PRINT_INFO("Testing daemon's ability to handle many rapid check requests");
+        
+        if (test_client_register(client)) {
+            sleep(1);
+            
+            gboolean cache_exists = g_file_test("/tmp/xconf_response_thunder.txt", G_FILE_TEST_EXISTS);
+            
+            if (!cache_exists) {
+                PRINT_WARN("No cache exists - this stress test works best with cache");
+                PRINT_INFO("Tip: Run daemon first to populate cache, then retry");
+            }
+            
+            PRINT_INFO("Making 20 rapid CheckForUpdate calls...");
+            printf("\n");
+            
+            int success_count = 0;
+            int error_count = 0;
+            
+            for (int i = 1; i <= 20; i++) {
+                printf("Stress Check #%d: ", i);
+                fflush(stdout);
+                
+                if (test_client_check_update(client)) {
+                    printf("OK\n");
+                    success_count++;
+                } else {
+                    printf("FAIL\n");
+                    error_count++;
+                }
+                
+                usleep(50000); // 50ms between calls
+            }
+            
+            printf("\n");
+            PRINT_INFO("Stress Test Results:");
+            PRINT_INFO("  Successful calls: %d/20", success_count);
+            PRINT_INFO("  Failed calls: %d/20", error_count);
+            
+            if (!cache_exists) {
+                PRINT_INFO("Waiting 10 seconds for any pending signals...");
+                GMainContext *context = g_main_context_default();
+                for (int i = 0; i < 100; i++) {
+                    g_main_context_iteration(context, FALSE);
+                    usleep(100000);
+                    if (i % 10 == 0) {
+                        printf(".");
+                        fflush(stdout);
+                    }
+                }
+                printf("\n");
+            }
+            
+            sleep(1);
+            test_client_unregister(client);
+        }
+        
+    } else if (g_strcmp0(test_mode, "long-wait") == 0) {
+        // Test long signal wait
+        PRINT_INFO("=== Testing Extended Signal Wait (60 seconds) ===");
+        PRINT_INFO("This tests signal delivery reliability over time");
+        
+        if (test_client_register(client)) {
+            sleep(1);
+            
+            gboolean cache_exists = g_file_test("/tmp/xconf_response_thunder.txt", G_FILE_TEST_EXISTS);
+            
+            if (cache_exists) {
+                PRINT_INFO("Deleting cache to trigger background fetch...");
+                remove("/tmp/xconf_response_thunder.txt");
+            }
+            
+            printf("\nMaking CheckForUpdate call...\n");
+            test_client_check_update(client);
+            
+            PRINT_INFO("Waiting 60 seconds for signal delivery...");
+            PRINT_INFO("   (Signal should arrive within ~5-10 seconds)");
+            PRINT_INFO("   (Remaining time tests signal handling stability)");
+            
+            GMainContext *context = g_main_context_default();
+            for (int i = 0; i < 600; i++) {  // 60 seconds
+                g_main_context_iteration(context, FALSE);
+                usleep(100000); // 100ms
+                
+                if (i % 50 == 0) {  // Every 5 seconds
+                    printf("  %d seconds elapsed...\n", i / 10);
+                }
+            }
+            
+            PRINT_INFO("Long wait test complete");
+            sleep(1);
+            test_client_unregister(client);
+        }
+        
+    } else if (g_strcmp0(test_mode, "stress") == 0) {
+        // Legacy stress test - multiple rapid registrations
+        PRINT_INFO("=== Running Legacy Stress Test ===");
         
         for (int i = 0; i < 5; i++) {
             PRINT_INFO("Stress test iteration %d/5", i + 1);
@@ -635,7 +1011,7 @@ int main(int argc, char *argv[])
     }
     
     // Run test scenario
-    run_test_scenario(client, test_mode);
+    run_test_scenario(client, test_mode, argv[0]);
     
     // Cleanup
     test_client_free(client);
