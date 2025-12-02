@@ -29,7 +29,6 @@ autoreconf -i
 ./configure --prefix=${INSTALL_DIR} --enable-rdkcertselector=yes --enable-mountutils=yes --enable-rfcapi=yes CFLAGS="-DRDK_LOGGER"
 make && make install
 
-
 #./cov_build.sh
 
 # Compile Test binary for mfrutils
@@ -41,3 +40,9 @@ rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Identity.DbgServices.Enable 
 cp test/functional-tests/tests/rc-proxy-params.json /tmp/rc-proxy-params.json
 
 pytest --json-report  --json-report-file $RESULT_DIR/rdkfwupdater_report.json test/functional-tests/tests/
+
+cat /opt/logs/swupdate.txt.0
+
+cat /opt/logs/rdm_status.log.0
+
+cat /opt/logs/rdm_status.log.1
