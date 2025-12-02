@@ -388,7 +388,24 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
         
         // Save successful response to cache for future use
         if (ret == 0 && http_code == 200) {
-            SWLOG_INFO("[rdkFwupdateMgr] XConf call successful - cache save will be implemented in fetch_xconf_firmware_info\n");
+            SWLOG_INFO("[rdkFwupdateMgr] ===== VALIDATE XCONF RESPONSE =====\n");
+	    // Call processJsonResponse to validate firmware is for correct device model
+	    int validation_result = processJsonResponse(&response,
+			    cur_img_detail.cur_img_name,   // Current version
+			    device_info.model,              // Device model 
+			    device_info.maint_status);      // Maintenance status
+
+	    SWLOG_INFO("[rdkFwupdateMgr] processJsonResponse returned: %d (0=success, 1=failed)\n", validation_result);
+	    if (validation_result != 0) {
+		    //Validation FAILED - firmware is not for this device model
+		    SWLOG_ERROR("[rdkFwupdateMgr] VALIDATION FAILED - Firmware not valid for this device\n");
+		    SWLOG_ERROR("[rdkFwupdateMgr]   - Device model: '%s'\n", device_info.model);
+		    SWLOG_ERROR("[rdkFwupdateMgr]   - cloudFWFile: '%s'\n", response.cloudFWFile);
+		    SWLOG_ERROR("[rdkFwupdateMgr]   - Reason: Model name not found in firmware filename\n");
+		    return create_result_response(UPDATE_NOT_AVAILABLE, "Firmware validation failed - not for this device model");
+	    }
+	    SWLOG_INFO("[rdkFwupdateMgr] VALIDATION PASSED - Firmware is valid for this device\n");
+            SWLOG_INFO("[rdkFwupdateMgr] ===== VALIDATION & COMPARISON COMPLETE =====\n");
         }
     }
     
