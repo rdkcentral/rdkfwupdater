@@ -319,8 +319,9 @@ static CheckUpdateResponse create_success_response(const gchar *available_versio
     gboolean is_update_available = img_status && available_version && (g_strcmp0(current_img_buffer, available_version) != 0);
     if (is_update_available) {
     response.result_code = UPDATE_AVAILABLE;
-    response.current_img_version = g_strdup(img_status ? current_img_buffer : "Unknown");
-    response.available_version = g_strdup(available_version ? available_version : "");
+    // img_status and available_version are guaranteed non-NULL here due to is_update_available check
+    response.current_img_version = g_strdup(current_img_buffer);
+    response.available_version = g_strdup(available_version);
     response.update_details = g_strdup(update_details ? update_details : "");
     response.status_message = g_strdup(status_message ? status_message : "Firmware update available");
     

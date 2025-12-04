@@ -508,7 +508,9 @@ static void run_test_scenario(TestClientContext *client, const gchar *test_mode,
     
     if (g_strcmp0(test_mode, "basic") == 0) {
         // Basic registration test
-        test_client_register(client);
+        if (!test_client_register(client)) {
+            PRINT_ERROR("Basic registration test failed");
+        }
         
     } else if (g_strcmp0(test_mode, "reregister") == 0) {
         // Test re-registration (should return same handler_id)
@@ -523,12 +525,12 @@ static void run_test_scenario(TestClientContext *client, const gchar *test_mode,
             client->is_registered = FALSE; // Reset flag to allow re-registration call
             client->handler_id = 0;
             
-            if (test_client_register(client)) {
-                if (client->handler_id == first_handler) {
-                    PRINT_SUCCESS("Re-registration test PASSED - same handler_id returned");
-                } else {
-                    PRINT_ERROR("Re-registration test FAILED - different handler_id returned");
-                }
+            if (!test_client_register(client)) {
+                PRINT_ERROR("Re-registration call failed");
+            } else if (client->handler_id == first_handler) {
+                PRINT_SUCCESS("Re-registration test PASSED - same handler_id returned");
+            } else {
+                PRINT_ERROR("Re-registration test FAILED - different handler_id returned");
             }
         }
         
@@ -830,7 +832,9 @@ static void run_test_scenario(TestClientContext *client, const gchar *test_mode,
             client->is_registered = FALSE;
             client->handler_id = 0;
             
-            if (test_client_register(client)) {
+            if (!test_client_register(client)) {
+                PRINT_ERROR("Registration %d failed", i);
+            } else {
                 PRINT_SUCCESS("Registration %d succeeded", i);
                 
                 // Unregister immediately
@@ -915,7 +919,9 @@ static void run_test_scenario(TestClientContext *client, const gchar *test_mode,
             
             if (cache_exists) {
                 PRINT_INFO("Deleting cache to trigger background fetch...");
-                remove("/tmp/xconf_response_thunder.txt");
+                if (remove("/tmp/xconf_response_thunder.txt") != 0) {
+                    PRINT_ERROR("Failed to delete cache file: %s", strerror(errno));
+                }
             }
             
             printf("\nMaking CheckForUpdate call...\n");
@@ -949,7 +955,9 @@ static void run_test_scenario(TestClientContext *client, const gchar *test_mode,
             client->is_registered = FALSE;
             client->handler_id = 0;
             
-            test_client_register(client);
+            if (!test_client_register(client)) {
+                PRINT_ERROR("Stress test registration failed at iteration %d", i + 1);
+            }
             usleep(100000); // 100ms delay
         }
         
