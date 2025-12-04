@@ -16,6 +16,27 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/**
+ * @file rdkFwupdateMgr.c
+ * @brief Main entry point for RDK Firmware Updater daemon.
+ *
+ * This file contains the daemon's main() function and initialization logic.
+ * The daemon operates as a systemd service that:
+ * - Initializes device information (model, firmware version, etc.)
+ * - Sets up D-Bus service for client communication
+ * - Runs GLib main loop to handle async D-Bus requests
+ * - Manages firmware update operations via XConf server integration
+ *
+ * Execution flow:
+ * 1. STATE_INIT: Initialize logging, device info, IARM, RFC
+ * 2. STATE_INIT_VALIDATION: Validate device state and configuration
+ * 3. STATE_IDLE: Run D-Bus main loop waiting for client requests
+ * 4. Cleanup on shutdown signal or error
+ *
+ * The daemon exposes D-Bus methods (RegisterProcess, CheckForUpdate, etc.)
+ * and handles them asynchronously to avoid blocking the main event loop.
+ */
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -69,33 +90,50 @@
 #define URL_MAX_LEN1 URL_MAX_LEN + 128
 #define DWNL_PATH_FILE_LEN1 DWNL_PATH_FILE_LEN + 32
 
-// Below are the global variable
-// TODO  Global variables should be avoided to best possible extend and used only as a very last resort !!
-// Device properties is a candidate for getter only utils
-DeviceProperty_t device_info; // Contains all device info
-ImageDetails_t cur_img_detail; // Running Image details
+/**
+ * Global state variables.
+ * 
+ * These are initialized at daemon startup and used throughout the update lifecycle.
+ * device_info: Device model, partner ID, serial number, etc.
+ * cur_img_detail: Current running firmware version and image name
+ * rfc_list: RFC (Remote Feature Control) configuration values
+ */
+DeviceProperty_t device_info;
+ImageDetails_t cur_img_detail;
 Rfc_t rfc_list;
 
-bool isCriticalUpdate = false; //This is true if rebootimead flag is true
+bool isCriticalUpdate = false;
 
-char disableStatsUpdate[4] = { 0 }; // Use for Flag to disable STATUS_FILE updates in case of PDRI upgrade
-int long_term_cert = 0; // If this value is 1 we will select the key file insted of password. 
+char disableStatsUpdate[4] = { 0 };
+int long_term_cert = 0; 
 
-char lastrun[64] = { 0 };  // Store last run time
-char immed_reboot_flag[12] = { 0 }; // Store immediate reboot flag
-int delay_dwnl = 0; // Store delay in integer format
+char lastrun[64] = { 0 };
+char immed_reboot_flag[12] = { 0 };
+int delay_dwnl = 0;
 
-static int proto = 1;       //0 = tftp and 1  = http
+static int proto = 1;
 static int trigger_type = 0;
-static int DwnlState = RDKV_FWDNLD_UNINITIALIZED; //Use For set download state
+static int DwnlState = RDKV_FWDNLD_UNINITIALIZED;
 void *curl = NULL;
 static pthread_mutex_t mutuex_dwnl_state = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t app_mode_status = PTHREAD_MUTEX_INITIALIZER;
-static int app_mode = 1; // 1: fore ground and 0: background
-int force_exit = 0; //This use when rdkvfwupgrader rcv appmode background and thottle speed is set to zero.
+static int app_mode = 1;
+int force_exit = 0;
 
-/*Description: this enum is used to represent the state of the deamon at any given point of time */
-
+/**
+ * @brief Daemon state machine enumeration.
+ *
+ * Represents the lifecycle of the daemon:
+ * - STATE_INIT: Initial setup (logging, device info, IARM, RFC)
+ * - STATE_INIT_VALIDATION: Validate device configuration
+ * - STATE_IDLE: D-Bus event loop (waiting for client requests)
+ * - STATE_CHECK_UPDATE: (Future) Explicit check for update
+ * - STATE_DOWNLOAD_UPDATE: (Future) Firmware download
+ * - STATE_UPGRADE: (Future) Firmware flash and reboot
+ *
+ * Current implementation uses STATE_IDLE as main operational state where
+ * D-Bus methods handle update checks asynchronously.
+ */
 typedef enum {
     STATE_INIT_VALIDATION,
     STATE_INIT,
@@ -1002,15 +1040,28 @@ int initialValidation(void)
 
 #ifndef GTEST_ENABLE
 
+/**
+ * @brief Main entry point for rdkvfwupgrader daemon.
+ *
+ * Initializes the daemon and runs state machine:
+ * 1. STATE_INIT: Set up logging, signal handlers, D-Bus server, device info
+ * 2. STATE_INIT_VALIDATION: Validate configuration and device state
+ * 3. STATE_IDLE: Run GLib main loop to handle D-Bus requests
+ *
+ * The daemon remains in STATE_IDLE, responding to D-Bus method calls from
+ * client applications for firmware update operations. Exits on shutdown signal
+ * or fatal error.
+ *
+ * @param argc Argument count (unused)
+ * @param argv Argument vector (unused)
+ * @return Exit code (0=success, non-zero=error)
+ */
 int main(int argc, char *argv[]) {
     static XCONFRES response;
     int ret = -1;
     int ret_sig = -1;
     int i;
     int ret_curl_code = 1;
-    //int server_type = HTTP_XCONF_DIRECT;
-    //int json_res = -1;
-    //int http_code;
     struct sigaction rdkv_newaction;
     memset(&rdkv_newaction, '\0', sizeof(struct sigaction));
     int init_validate_status = INITIAL_VALIDATION_FAIL;
@@ -1038,25 +1089,23 @@ int main(int argc, char *argv[]) {
     t2CountNotify("SYST_INFO_C_CDL", 1);
     
     snprintf(disableStatsUpdate, sizeof(disableStatsUpdate), "%s","no");
-    // Init the Current state into STATE_INIT
     currentState = STATE_INIT;
+    
+    // Main state machine loop
     while (1) {
 	    switch (currentState) {
 		    case STATE_INIT:
-			    // Transition to INIT_VALIDATION after setup
 			    SWLOG_INFO("In STATE_INIT\n");
-//#ifdef ENABLE_DBUS
-			    // Initialize task system first (before D-Bus setup)
+			    
+			    // Initialize D-Bus service and task tracking
                             init_task_system();
-                            // Initialize D-Bus server as part of process initialization
                             if (!setup_dbus_server()) {
                                     SWLOG_INFO("Failed to setup D-Bus server\n");
                                     cleanup_dbus();
                             }
-                            // Create the main loop
                             SWLOG_INFO("Creating g_main_loop for dbus\n");
                             main_loop = g_main_loop_new(NULL, FALSE);
-//#endif
+                            
 			    ret = initialize();
 			    if (1 != ret) {
 				    SWLOG_ERROR( "initialize(): Fail:%d\n", ret);
@@ -1107,6 +1156,7 @@ int main(int argc, char *argv[]) {
 			    currentState = STATE_INIT_VALIDATION;
 			    break;
 		    case STATE_INIT_VALIDATION:
+			    // Validate device configuration before entering operational state
 			    init_validate_status = initialValidation();
 			    SWLOG_INFO("init_validate_status = %d\n", init_validate_status);
 			    if( init_validate_status == INITIAL_VALIDATION_SUCCESS)
@@ -1178,8 +1228,24 @@ int main(int argc, char *argv[]) {
 				*/
 				break;
 		    case STATE_IDLE:
-//#ifdef ENABLE_DBUS
-				// Listen for D-Bus events
+				/**
+				 * Main operational state - D-Bus event loop.
+				 * 
+				 * The daemon remains here indefinitely, waiting for client requests:
+				 * - RegisterProcess: Client registration
+				 * - CheckForUpdate: Firmware update check
+				 * - DownloadFirmware: Firmware download (future)
+				 * - UpdateFirmware: Firmware flash (future)
+				 * - UnregisterProcess: Client cleanup
+				 * 
+				 * g_main_loop_run() blocks here until:
+				 * - Shutdown signal received (SIGTERM, SIGUSR1)
+				 * - Fatal error occurs
+				 * 
+				 * All D-Bus requests are handled asynchronously by GTask workers,
+				 * so the main loop remains responsive even during long operations
+				 * like XConf queries or firmware downloads.
+				 */
 				SWLOG_INFO("\n [STATE_IDLE] rdkvfwupgrader Waiting for D-Bus requests...\n\n");
 				SWLOG_INFO("=======================================================\n");
 				SWLOG_INFO("D-Bus Service: %s\n", BUS_NAME);
@@ -1192,17 +1258,10 @@ int main(int argc, char *argv[]) {
 				}
 				SWLOG_INFO("=======================================================\n");
 
-				// Running the main loop - this blocks and waits for D-Bus requests
-				// When requests come in, they're handled asynchronously by tasks
 				g_main_loop_run(main_loop);
 
-				// This line only reached if main_loop is quit (shutdown signal)
 				SWLOG_INFO("Main loop exited - rdkvfwupgrader shutting down\n");
 				goto cleanup_and_exit;
-//#else
-//				SWLOG_INFO("Dbus is not Enabled\n");
-//				goto cleanup_and_exit;
-//#endif
 				break;
 		    default:
 				SWLOG_INFO("Unknown state: %d\n",currentState);
@@ -1210,11 +1269,10 @@ int main(int argc, char *argv[]) {
 				goto cleanup_and_exit;
 	    }
     }
+    
 cleanup_and_exit:
-//#ifdef ENABLE_DBUS
-    // Cleanup the resources if loop exits
+    // Orderly shutdown: cleanup D-Bus resources, uninitialize subsystems
     cleanup_dbus();
-//#endif
     uninitialize(init_validate_status);
     log_exit();
     exit(ret_curl_code);

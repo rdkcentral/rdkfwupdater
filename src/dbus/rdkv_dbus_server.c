@@ -1,3 +1,29 @@
+/**
+ * @file rdkv_dbus_server.c
+ * @brief D-Bus server implementation for RDK Firmware Updater daemon.
+ *
+ * This file implements the D-Bus service that exposes firmware update operations
+ * to client applications. It handles:
+ * - D-Bus service registration and method dispatch
+ * - Client process registration/tracking (RegisterProcess/UnregisterProcess)
+ * - Asynchronous task management (CheckForUpdate, DownloadFirmware, UpdateFirmware)
+ * - Signal emission for async operation completion
+ * - Concurrency control (one CheckUpdate/Download at a time, queuing for multiple clients)
+ *
+ * Architecture:
+ * - GDBus-based service on system bus: org.rdkfwupdater.Interface
+ * - Task tracking system using GHashTable for active async operations
+ * - Process tracking to enforce one registration per client/process name
+ * - GTask worker threads for long-running XConf/download operations
+ * - D-Bus signals for async completion callbacks to clients
+ *
+ * Key design decisions:
+ * - Only one CheckForUpdate or Download operation can run at a time system-wide
+ * - Additional requests are queued and processed after current operation completes
+ * - Each client can register only once, and process names must be unique
+ * - Async operations use GTask to avoid blocking the main D-Bus event loop
+ */
+
 #include <glib.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,37 +35,39 @@
 #include "rdkFwupdateMgr_handlers.h"
 #include "rdkv_cdl_log_wrapper.h"
 
-// Context for background XConf fetch operation (runs in GTask worker thread)
+/**
+ * Context structure for background XConf fetch operation.
+ * Passed to GTask worker thread for async CheckForUpdate processing.
+ */
 typedef struct {
-    gchar *handler_id;              // Handler ID that initiated request
-    GDBusConnection *connection;    // D-Bus connection for signal emission
+    gchar *handler_id;
+    GDBusConnection *connection;
 } AsyncXconfFetchContext;
 
-// Forward declarations for async fetch functions
 static void async_xconf_fetch_task(GTask *task, gpointer source_object, gpointer task_data, GCancellable *cancellable);
 static void async_xconf_fetch_complete(GObject *source_object, GAsyncResult *res, gpointer user_data);
 
-static gboolean IsCheckUpdateInProgress = FALSE; 
-static gboolean IsDownloadInProgress = FALSE; 
-//static gboolean IsUpgradeInProgress = FALSE; // will be used based once the shared lib is ready.commented out to pass jenkins build
-static GSList *waiting_checkUpdate_ids = NULL;  //  List of task IDs waiting for CheckUpdate
-static GSList *waiting_download_ids = NULL; // List of task IDs waiting for download
-//static GSList *waiting_upgrade_ids = NULL; //  List of task IDs waiting for Upgrade
+/* Concurrency control flags - enforce single operation at a time */
+static gboolean IsCheckUpdateInProgress = FALSE;
+static gboolean IsDownloadInProgress = FALSE;
 
+/* Queue management - hold waiting clients when operation in progress */
+static GSList *waiting_checkUpdate_ids = NULL;
+static GSList *waiting_download_ids = NULL;
+
+/* D-Bus service state */
 static guint owner_id = 0;
-static guint64 next_process_id = 1;
-
-/*Vars for Dbus*/
 static GDBusConnection *connection = NULL;
 GMainLoop *main_loop = NULL;
 static guint registration_id = 0;
 
-/* Vars for Task tracking system*/
-GHashTable *active_tasks = NULL;      // hash table to track running async tasks (task_id -> TaskContext)
-static guint next_task_id = 1;              // Unique task IDs
+/* Task tracking - active async operations */
+GHashTable *active_tasks = NULL;
+static guint next_task_id = 1;
 
-/*process tracking*/
-static GHashTable *registered_processes = NULL;  // handler_id -> ProcessInfo;
+/* Process tracking - registered clients */
+static GHashTable *registered_processes = NULL;
+static guint64 next_process_id = 1;
 
 /* D-Bus introspection data or dbus interface : Exposes the methods for apps */
 static const gchar introspection_xml[] =
@@ -99,20 +127,36 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
                              GDBusMethodInvocation *rdkv_resp_ctx,
 			     gpointer rdkv_user_ctx);
 
-/*Initialize process tracking*/
+/**
+ * @brief Initialize the process tracking system.
+ *
+ * Creates hash table mapping handler_id -> ProcessInfo to track registered clients.
+ * Called once at daemon startup.
+ */
 static void init_process_tracking()
 {
-    /* Maps handler IDs to process information , so that processes that are registered for updates can be tracked.*/
-    registered_processes = g_hash_table_new_full(g_direct_hash, g_direct_equal,NULL, (GDestroyNotify)g_free);
+    registered_processes = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, (GDestroyNotify)g_free);
     SWLOG_INFO("[TRACKING] process tracking initialized\n");
 }
 
-/*add process to tracking with duplicate prevention */
+/**
+ * @brief Register a new process with duplicate detection and conflict prevention.
+ *
+ * Enforces the following registration rules:
+ * 1. Same client (sender_id), same process_name -> Return existing handler_id (idempotent)
+ * 2. Same client, different process_name -> REJECT (one registration per client)
+ * 3. Different client, same process_name -> REJECT (process names must be unique)
+ * 4. New client, new process_name -> ALLOW (create new registration)
+ *
+ * @param process_name Human-readable process identifier
+ * @param lib_version Client library version string
+ * @param sender_id D-Bus unique sender name (e.g., ":1.23")
+ * @return handler_id (>0) on success, 0 on conflict/error
+ */
 static guint64 add_process_to_tracking(const gchar *process_name,
                                       const gchar *lib_version,
                                       const gchar *sender_id)
 {
-	// Check for existing registrations
 	GHashTableIter iter;
 	gpointer key, value;
 	g_hash_table_iter_init(&iter, registered_processes);
@@ -126,14 +170,12 @@ static guint64 add_process_to_tracking(const gchar *process_name,
 	while (g_hash_table_iter_next(&iter, &key, &value)) {
 		ProcessInfo *info = (ProcessInfo*)value;
 		
-		// Check for same sender_id (client) // comparing the dbus sender id 
 		if (g_strcmp0(info->sender_id, sender_id) == 0) {
 			existing_same_client = info;
 			SWLOG_INFO("[PROCESS_TRACKING] Found existing client: process='%s', handler=%"G_GUINT64_FORMAT"\n",
 			           info->process_name, info->handler_id);
 		}
 		
-		// Check for same process_name
 		if (g_strcmp0(info->process_name, process_name) == 0) {
 			existing_same_process = info;
 			SWLOG_INFO("[PROCESS_TRACKING] Found existing process name: sender='%s', handler=%"G_GUINT64_FORMAT"\n",
@@ -141,8 +183,7 @@ static guint64 add_process_to_tracking(const gchar *process_name,
 		}
 	}
 	
-	
-	// Case 1: Same client, same process name -> Return existing handler_id
+	// Case 1: Idempotent re-registration (same client, same process)
 	if (existing_same_client && existing_same_process && 
 	    existing_same_client == existing_same_process) {
 		SWLOG_INFO("[PROCESS_TRACKING] SCENARIO: Same client re-registering same process\n");
@@ -151,25 +192,25 @@ static guint64 add_process_to_tracking(const gchar *process_name,
 		return existing_same_client->handler_id;
 	}
 	
-	// Case 2: Same client, different process name -> REJECT
+	// Case 2: Conflict - Same client with different process name
 	if (existing_same_client && (!existing_same_process || existing_same_client != existing_same_process)) {
 		SWLOG_ERROR("[PROCESS_TRACKING] SCENARIO: Same client attempting different process name\n");
 		SWLOG_ERROR("[PROCESS_TRACKING] CONFLICT: Client already registered as '%s' (handler=%"G_GUINT64_FORMAT")\n",
 		            existing_same_client->process_name, existing_same_client->handler_id);
 		SWLOG_ERROR("[PROCESS_TRACKING] RESULT: REJECTED - One registration per client\n");
-		return 0; // Error code
+		return 0;
 	}
 	
-	// Case 3: Different client, same process name -> REJECT
+	// Case 3: Conflict - Process name already taken by different client
 	if (existing_same_process && (!existing_same_client || existing_same_client != existing_same_process)) {
 		SWLOG_ERROR("[PROCESS_TRACKING] SCENARIO: Different client attempting same process name\n");
 		SWLOG_ERROR("[PROCESS_TRACKING] CONFLICT: Process '%s' already registered by client '%s' (handler=%"G_GUINT64_FORMAT")\n",
 		            existing_same_process->process_name, existing_same_process->sender_id, existing_same_process->handler_id);
 		SWLOG_ERROR("[PROCESS_TRACKING] RESULT: REJECTED - Process name already taken\n");
-		return 0; // Error code
+		return 0;
 	}
 	
-	// Case 4: New client, new process name -> ALLOW
+	// Case 4: Success - New client with new process name
 	SWLOG_INFO("[PROCESS_TRACKING] SCENARIO: New client, new process name\n");
 	SWLOG_INFO("[PROCESS_TRACKING] RESULT: Creating new registration\n");
 	
@@ -190,7 +231,14 @@ static guint64 add_process_to_tracking(const gchar *process_name,
 	return info->handler_id;
 }
 
-/* Remove process from tracking list */
+/**
+ * @brief Remove a process from the tracking system.
+ *
+ * Called when client invokes UnregisterProcess. Frees associated ProcessInfo.
+ *
+ * @param handler_id Handler ID to remove
+ * @return TRUE if found and removed, FALSE if not found
+ */
 static gboolean remove_process_from_tracking(guint64 handler_id)
 {
 	ProcessInfo *info = g_hash_table_lookup(registered_processes, GINT_TO_POINTER(handler_id));
@@ -198,22 +246,33 @@ static gboolean remove_process_from_tracking(guint64 handler_id)
 		SWLOG_INFO("[PROCESS_TRACKING] Handler %"G_GUINT64_FORMAT" not found\n", handler_id);
 		return FALSE;
 	}
-	SWLOG_INFO("[PROCESS_TRACKING] Removing: %s (handler: %"G_GUINT64_FORMAT")\n",info->process_name, handler_id);
+	SWLOG_INFO("[PROCESS_TRACKING] Removing: %s (handler: %"G_GUINT64_FORMAT")\n", info->process_name, handler_id);
 	g_hash_table_remove(registered_processes, GINT_TO_POINTER(handler_id));
 	SWLOG_INFO("[PROCESS_TRACKING] Total registered: %d\n", g_hash_table_size(registered_processes));
 	return TRUE;
-}                                                                                                                                                                                                                  
-/* Free process tracking resources */
+}
+
+/**
+ * @brief Clean up process tracking resources at daemon shutdown.
+ */
 void cleanup_process_tracking()
 {
 	if (registered_processes) {
-		SWLOG_INFO("[TRACKING] Cleaning up %d registered processes\n",g_hash_table_size(registered_processes));
+		SWLOG_INFO("[TRACKING] Cleaning up %d registered processes\n", g_hash_table_size(registered_processes));
 		g_hash_table_destroy(registered_processes);
 		registered_processes = NULL;
 	}
 }
 
-/* Helper function to get specific rejection reason for error messages */
+/**
+ * @brief Generate human-readable error message for registration rejection.
+ *
+ * Used by RegisterProcess D-Bus method to provide specific failure reasons.
+ *
+ * @param process_name Attempted process name
+ * @param sender_id D-Bus sender ID
+ * @return Static error string describing conflict
+ */
 static const gchar* get_rejection_reason(const gchar *process_name, const gchar *sender_id) 
 {
 	GHashTableIter iter;
@@ -235,7 +294,6 @@ static const gchar* get_rejection_reason(const gchar *process_name, const gchar 
 		}
 	}
 	
-	// Determine specific rejection reason
 	if (existing_same_client && (!existing_same_process || existing_same_client != existing_same_process)) {
 		return "Client already registered with different process name";
 	}
@@ -247,16 +305,30 @@ static const gchar* get_rejection_reason(const gchar *process_name, const gchar 
 	return "Unknown registration conflict";
 }
 
-/* Initializes the async task tracking system */
+/**
+ * @brief Initialize the task tracking and process tracking systems.
+ *
+ * Called once at daemon startup. Creates hash table for active async tasks.
+ */
 void init_task_system()
 {
-	active_tasks = g_hash_table_new_full(g_direct_hash, g_direct_equal,NULL, (GDestroyNotify)g_free);
+	active_tasks = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, (GDestroyNotify)g_free);
 	SWLOG_INFO("[TASK-SYSTEM] Initialized task tracking system\n");
-	// initialize process tracking
 	init_process_tracking();
 }
 
-// Create base task context with common fields
+/**
+ * @brief Allocate and initialize a TaskContext structure.
+ *
+ * Creates context for async operations (CheckForUpdate, Download, Update).
+ * Union-based data field is automatically zeroed by g_malloc0().
+ *
+ * @param type Task type (TASK_TYPE_CHECK_UPDATE, TASK_TYPE_DOWNLOAD, etc.)
+ * @param handler_process_name Process name of requesting client
+ * @param sender_id D-Bus sender ID
+ * @param invocation D-Bus method invocation context for reply
+ * @return Allocated TaskContext (must be freed with free_task_context)
+ */
 static TaskContext* create_task_context(TaskType type,
                                         const gchar* handler_process_name,
                                         const gchar* sender_id,
@@ -268,17 +340,22 @@ static TaskContext* create_task_context(TaskType type,
 	ctx->sender_id = g_strdup(sender_id);
 	ctx->invocation = invocation;
 	
-	// Union fields are automatically zeroed by g_malloc0
 	SWLOG_INFO("Created task context for type: %d\n", type);
 	return ctx;
 }
 
-/* Free task context when done - handles union-based design */
+/**
+ * @brief Free a TaskContext and all its dynamically allocated fields.
+ *
+ * Handles union-based data structure by freeing fields specific to task type.
+ * Safe to call with NULL pointer.
+ *
+ * @param ctx TaskContext to free
+ */
 static void free_task_context(TaskContext *ctx)
 {
 	if (!ctx) return;
 	
-	// Free common fields
 	g_free(ctx->process_name);
 	g_free(ctx->sender_id);
 	
@@ -312,11 +389,18 @@ static void free_task_context(TaskContext *ctx)
 	g_free(ctx);
 }
 
-/* Description: send the xconf server response to apps and clear the task from task tracking system */
+/**
+ * @brief Complete all waiting CheckForUpdate tasks and send responses.
+ *
+ * Called after XConf query completes. Iterates through waiting_checkUpdate_ids list,
+ * sends D-Bus method responses with cached result data, emits CheckForUpdateComplete
+ * signals, and cleans up task contexts. Resets IsCheckUpdateInProgress flag.
+ *
+ * @param ctx Task context (currently unused, kept for API consistency)
+ */
 void complete_CheckUpdate_waiting_tasks(TaskContext *ctx) 
 {
-	// Send responses to all waiting CheckUpdate tasks using their stored result data
-	SWLOG_INFO("Completing %d waiting CheckUpdate tasks\n",g_slist_length(waiting_checkUpdate_ids));
+	SWLOG_INFO("Completing %d waiting CheckUpdate tasks\n", g_slist_length(waiting_checkUpdate_ids));
 	// Iterate through each task_id in waiting_checkUpdate_ids
 	GSList *current = waiting_checkUpdate_ids;
 	while (current != NULL) {
@@ -407,12 +491,22 @@ void complete_CheckUpdate_waiting_tasks(TaskContext *ctx)
 	// Clear waiting_CheckUpdatr_ids list
 	g_slist_free(waiting_checkUpdate_ids);
 	waiting_checkUpdate_ids = NULL;
-	// Set IsCheckUpdateInProgress = FALSE
 	IsCheckUpdateInProgress = FALSE;
 	SWLOG_INFO("All CheckUpdate waiting tasks completed !!\n");
 }
-/* Description: send the Download progress response to apps and clear the task from task tracking system */                          void complete_Download_waiting_tasks(const gchar *ImageDownloaded, const gchar *DLpath, TaskContext *ctx) {
-	SWLOG_INFO("Completing %d waiting DownloadFW tasks\n",g_slist_length(waiting_download_ids));
+
+/**
+ * @brief Complete all waiting DownloadFirmware tasks and send responses.
+ *
+ * Similar to complete_CheckUpdate_waiting_tasks but for download operations.
+ * Sends download status and path to all waiting clients.
+ *
+ * @param ImageDownloaded Downloaded firmware version/name
+ * @param DLpath Download path or status indicator
+ * @param ctx Task context
+ */
+void complete_Download_waiting_tasks(const gchar *ImageDownloaded, const gchar *DLpath, TaskContext *ctx) {
+	SWLOG_INFO("Completing %d waiting DownloadFW tasks\n", g_slist_length(waiting_download_ids));
 	// Iterate through each task_id in waiting_downlaod_ids
 	GSList *current = waiting_download_ids;
 	while (current != NULL) {
@@ -438,12 +532,15 @@ void complete_CheckUpdate_waiting_tasks(TaskContext *ctx)
 	// Clear waiting_download_ids list
 	g_slist_free(waiting_download_ids);
 	waiting_download_ids = NULL;
-	IsCheckUpdateInProgress = FALSE;
-	SWLOG_INFO("All Downaod waiting tasks completed !!\n");
+	IsDownloadInProgress = FALSE;
+	SWLOG_INFO("All Download waiting tasks completed !!\n");
 }
 
-/* Function to clear waiting list of tasks - check for update */
-/* COMMENTED OUT - No longer used in async implementation */
+/**
+ * OBSOLETE FUNCTION - Kept for reference only.
+ * Previously used as GLib timeout callback for completing CheckUpdate tasks.
+ * Replaced by async_xconf_fetch_complete() in GTask-based async architecture.
+ */
 #if 0
 static gboolean CheckUpdate_complete_callback(gpointer user_data) {
 	TaskContext *ctx = (TaskContext *)user_data;
@@ -454,20 +551,20 @@ static gboolean CheckUpdate_complete_callback(gpointer user_data) {
 }
 #endif
 
-/* Function to clear waiting list of tasks - Download Upgrade */
+/**
+ * @brief GLib timeout callback for completing download tasks.
+ *
+ * PLACEHOLDER - Will be replaced with proper async download implementation.
+ *
+ * @param user_data TaskContext pointer
+ * @return G_SOURCE_REMOVE (one-shot callback)
+ */
 static gboolean Download_complete_callback(gpointer user_data) {
 	TaskContext *ctx = (TaskContext *)user_data;
 	SWLOG_INFO("In Download_complete_callback\n");
-	complete_Download_waiting_tasks("SKY_DownloadedVersion.bin", "YES",ctx);
+	complete_Download_waiting_tasks("SKY_DownloadedVersion.bin", "YES", ctx);
 	SWLOG_INFO(" back from complete_CheckUpdate_waiting_tasks\n");
-	return G_SOURCE_REMOVE;  // Don't repeat this timeout
-}
-
-//Dummy fucntion to represent xconf communication
-int XConfCom()
-{
-	for (int i=1;i < 1000; i++);
-	return 1;
+	return G_SOURCE_REMOVE;
 }
 
 /* Async Check Update Task - calls xconf communication check function */
@@ -617,7 +714,26 @@ static gboolean upgrade_task(gpointer user_data)
 	return G_SOURCE_REMOVE;
 }
 
-/* D-BUS METHOD HANDLER - entry point for all the requests from apps*/
+/**
+ * @brief Main D-Bus method call handler - dispatches all client requests.
+ *
+ * GDBus callback invoked when clients call methods on org.rdkfwupdater.Interface.
+ * Dispatches to appropriate handler based on method name:
+ * - RegisterProcess: Client registration
+ * - UnregisterProcess: Client cleanup
+ * - CheckForUpdate: Firmware update check (cache-first, async fallback)
+ * - DownloadFirmware: Firmware download (placeholder)
+ * - UpdateFirmware: Firmware flash and reboot (placeholder)
+ *
+ * @param rdkv_conn_dbus D-Bus connection
+ * @param rdkv_req_caller_id Unique D-Bus sender name (e.g., ":1.23")
+ * @param rdkv_req_obj_path Object path ("/org/rdkfwupdater/Service")
+ * @param rdkv_req_iface_name Interface name ("org.rdkfwupdater.Interface")
+ * @param rdkv_req_method Method name ("CheckForUpdate", "RegisterProcess", etc.)
+ * @param rdkv_req_payload Method parameters as GVariant
+ * @param resp_ctx Method invocation context for sending reply
+ * @param rdkv_user_ctx User data (unused)
+ */
 static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 				const gchar *rdkv_req_caller_id,
 				const gchar *rdkv_req_obj_path,
@@ -1099,14 +1215,26 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 }
 
 
-/*D-Bus interface vtable*/
+/**
+ * @brief D-Bus interface vtable - maps method calls to handler function.
+ */
 static const GDBusInterfaceVTable interface_vtable = {
     process_app_request,
-    NULL, // get_property
-    NULL  // set_property
+    NULL,
+    NULL
 };
 
-/* Initialize D-Bus server */
+/**
+ * @brief Initialize and register the D-Bus service.
+ *
+ * Sets up the D-Bus service on the system bus:
+ * 1. Parses introspection XML to define interface
+ * 2. Connects to system bus
+ * 3. Registers object at /org/rdkfwupdater/Service
+ * 4. Claims bus name org.rdkfwupdater.Interface
+ *
+ * @return 1 on success, 0 on failure
+ */
 int setup_dbus_server()
 {
 	GError *error = NULL;
@@ -1164,11 +1292,20 @@ int setup_dbus_server()
 	return 1;
 }
 
-// Cleanup D-Bus resources
+/**
+ * @brief Clean up D-Bus resources at daemon shutdown.
+ *
+ * Performs orderly shutdown:
+ * 1. Frees all active task contexts
+ * 2. Cleans up process tracking system
+ * 3. Unregisters D-Bus object
+ * 4. Releases D-Bus connection
+ * 5. Releases bus name
+ * 6. Frees main loop
+ */
 void cleanup_dbus()
 {
 	SWLOG_INFO("[CLEANUP] Starting D-Bus cleanup...\n");
-	// Clean up all active tasks
 	if (active_tasks) {
 		SWLOG_INFO("[CLEANUP] Cleaning up %d active tasks...\n", g_hash_table_size(active_tasks));
 		GHashTableIter iter;
@@ -1218,6 +1355,26 @@ void cleanup_dbus()
 // ASYNC XCONF FETCH - WORKER THREAD
 // This function runs in a GTask worker thread (NOT on main loop)
 // It's safe to call blocking functions here
+/**
+ * @brief GTask worker thread function - performs blocking XConf query.
+ *
+ * This function runs in a separate GLib worker thread, allowing the main D-Bus
+ * event loop to remain responsive while the blocking network I/O to XConf server
+ * executes. Once complete, results are packaged and passed back to main thread
+ * via g_task_return_pointer() for signal broadcast.
+ *
+ * Execution flow:
+ * 1. Runs in background worker thread (not main loop)
+ * 2. Calls rdkFwupdateMgr_checkForUpdate() which does blocking XConf network call
+ * 3. Packages CheckUpdateResponse into GVariant for D-Bus signal
+ * 4. Returns result to GTask framework
+ * 5. GTask framework schedules async_xconf_fetch_complete() on main loop
+ *
+ * @param task GTask handle for async operation
+ * @param source_object Source object (unused)
+ * @param task_data AsyncXconfFetchContext with handler_id and connection
+ * @param cancellable Cancellable object (unused)
+ */
 static void async_xconf_fetch_task(GTask *task, gpointer source_object, gpointer task_data, GCancellable *cancellable) {
     AsyncXconfFetchContext *ctx = (AsyncXconfFetchContext *)task_data;
     
@@ -1314,8 +1471,25 @@ static void async_xconf_fetch_task(GTask *task, gpointer source_object, gpointer
     SWLOG_INFO("[ASYNC_FETCH] ========================================\n\n");
 }
 
-// ASYNC XCONF FETCH - COMPLETION CALLBACK
-// This function runs on the MAIN LOOP after worker thread completes
+/**
+ * @brief GTask completion callback - broadcasts results to all waiting clients.
+ *
+ * This function runs on the MAIN LOOP thread after async_xconf_fetch_task() completes
+ * in the worker thread. It retrieves the XConf query results, broadcasts a
+ * CheckForUpdateComplete signal to all waiting clients, cleans up task tracking state,
+ * and resets the IsCheckUpdateInProgress flag.
+ *
+ * Execution flow:
+ * 1. Retrieve result from worker thread via g_task_propagate_pointer()
+ * 2. Broadcast CheckForUpdateComplete D-Bus signal to all listeners
+ * 3. Iterate through waiting_checkUpdate_ids and clean up all task contexts
+ * 4. Reset IsCheckUpdateInProgress flag to allow new CheckForUpdate requests
+ * 5. Free async context and associated resources
+ *
+ * @param source_object Source object (unused)
+ * @param res GAsyncResult from GTask framework
+ * @param user_data AsyncXconfFetchContext with connection and handler_id
+ */
 static void async_xconf_fetch_complete(GObject *source_object, GAsyncResult *res, gpointer user_data) {
     SWLOG_INFO("\n[COMPLETE] ========================================\n");
     SWLOG_INFO("[COMPLETE] *** COMPLETION CALLBACK TRIGGERED ***\n");

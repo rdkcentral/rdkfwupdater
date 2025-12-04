@@ -1,52 +1,76 @@
+/**
+ * @file rdkFwupdateMgr_handlers.c
+ * @brief Business logic handlers for firmware update operations
+ * 
+ * Implements the core firmware update functionality:
+ * - CheckForUpdate: Queries XConf server for available firmware
+ * - Response caching to reduce server load
+ * - Firmware validation against device model
+ * - Version comparison logic
+ * 
+ * These handlers are called by D-Bus interface but contain no D-Bus code.
+ */
+
 #include "rdkFwupdateMgr_handlers.h"
 #include "rdkv_cdl_log_wrapper.h"
-#include "rdkv_cdl.h"           // For device_info, cur_img_detail
-#include "json_process.h"       // For processJsonResponse
-#include "device_status_helper.h" // For currentImg function
+#include "rdkv_cdl.h"
+#include "json_process.h"
+#include "device_status_helper.h"
 #ifndef GTEST_ENABLE
-#include "downloadUtil.h"       // For DownloadData and related functions
-#include "urlHelper.h"         // For DownloadData, FileDwnl_t, MtlsAuth_t types
-#include "common_device_api.h" // For DeviceProperty_t, ImageDetails_t
-#include "rdk_fwdl_utils.h"    // For system utility functions
-#include "system_utils.h"      // For system utility functions
+#include "downloadUtil.h"
+#include "urlHelper.h"
+#include "common_device_api.h"
+#include "rdk_fwdl_utils.h"
+#include "system_utils.h"
 #else
-#include "miscellaneous.h"     // For test context
+#include "miscellaneous.h"
 #endif
-#include "deviceutils.h"       // For DEFAULT_DL_ALLOC and other constants
-#include "rdkv_cdl.h"          // For HTTP server type constants
-#include "rdkv_upgrade.h"      // For RdkUpgradeContext_t and rdkv_upgrade_request
-#include "device_api.h"        // For device information functions
-#include "iarmInterface.h"     // For RED_RECOVERY_COMPLETED and eventManager
-#include "rfcinterface.h"      // For getRFCSettings and Rfc_t
+#include "deviceutils.h"
+#include "rdkv_upgrade.h"
+#include "device_api.h"
+#include "iarmInterface.h"
+#include "rfcinterface.h"
 #include <string.h>
 
-// Constants needed for daemon context
+// Buffer sizes for JSON and URL construction
 #define JSON_STR_LEN        1000
 #define URL_MAX_LEN         512
 
-// Cache file paths for XConf response persistence
+// XConf response cache files (reduces server queries)
 #define XCONF_CACHE_FILE        "/tmp/xconf_response_thunder.txt"
 #define XCONF_HTTP_CODE_FILE    "/tmp/xconf_httpcode_thunder.txt"
 #define XCONF_PROGRESS_FILE     "/tmp/xconf_curl_progress_thunder"
 #define RED_STATE_FILE          "/lib/rdk/stateRedRecovery.sh"
 
-// External declarations for existing functions and variables
-// In daemon mode, we need to manage these differently than monolithic binary
+// Shared device and image information (populated at daemon startup)
 extern DeviceProperty_t device_info;
 extern ImageDetails_t cur_img_detail;
 
-// Cache utility functions for XConf response persistence
+/**
+ * @brief Check if XConf response cache exists
+ * @return TRUE if cache file exists, FALSE otherwise
+ * 
+ * Used to avoid unnecessary XConf queries when cached data is available.
+ */
 gboolean xconf_cache_exists(void) {
     return g_file_test(XCONF_CACHE_FILE, G_FILE_TEST_EXISTS);
 }
 
+/**
+ * @brief Load XConf response from cache file
+ * @param[out] pResponse Structure to populate with cached data
+ * @return TRUE on success, FALSE if cache read/parse fails
+ * 
+ * Reads cached XConf JSON response and parses it into XCONFRES structure.
+ * Cache miss or parse failure returns FALSE - caller should fetch from XConf server.
+ */
 static gboolean load_xconf_from_cache(XCONFRES *pResponse) {
     gchar *cache_content = NULL;
     gsize length;
     GError *error = NULL;
     gboolean result = FALSE;
     
-    SWLOG_INFO("[CACHE] Loading XConf data from cache file: %s\n", XCONF_CACHE_FILE);
+    SWLOG_INFO("[CACHE] Loading XConf data from cache: %s\n", XCONF_CACHE_FILE);
     
     if (!g_file_get_contents(XCONF_CACHE_FILE, &cache_content, &length, &error)) {
         SWLOG_ERROR("[CACHE] Failed to read cache file: %s\n", error ? error->message : "Unknown error");
@@ -54,19 +78,16 @@ static gboolean load_xconf_from_cache(XCONFRES *pResponse) {
         return FALSE;
     }
     
-    SWLOG_INFO("[CACHE] Cache file loaded successfully (%zu bytes)\n", length);
-    SWLOG_INFO("[CACHE] Cache content: %s\n", cache_content);
+    SWLOG_INFO("[CACHE] Loaded %zu bytes from cache\n", length);
     
-    // Parse the cached JSON response using existing parser
+    // Parse cached JSON using existing parser
     int parse_result = getXconfRespData(pResponse, cache_content);
     if (parse_result == 0) {
-        SWLOG_INFO("[CACHE] Successfully parsed cached XConf data\n");
-        SWLOG_INFO("[CACHE]   - firmwareVersion: '%s'\n", pResponse->cloudFWVersion);
-        SWLOG_INFO("[CACHE]   - firmwareFilename: '%s'\n", pResponse->cloudFWFile);
-        SWLOG_INFO("[CACHE]   - firmwareLocation: '%s'\n", pResponse->cloudFWLocation);
+        SWLOG_INFO("[CACHE] Successfully parsed: version='%s', file='%s'\n", 
+                   pResponse->cloudFWVersion, pResponse->cloudFWFile);
         result = TRUE;
     } else {
-        SWLOG_ERROR("[CACHE] Failed to parse cached XConf data (error: %d)\n", parse_result);
+        SWLOG_ERROR("[CACHE] Failed to parse cached data (error: %d)\n", parse_result);
     }
     
     g_free(cache_content);
@@ -250,34 +271,51 @@ static int fetch_xconf_firmware_info( XCONFRES *pResponse, int server_type, int 
     return ret;
 }
 
-// Helper function to free CheckUpdateResponse memory
+/**
+ * @brief Free all dynamically allocated memory in a CheckUpdateResponse structure.
+ * 
+ * Safely releases all g_strdup'd strings within the response structure and nullifies
+ * the pointers to prevent double-free errors. Safe to call on already-freed or 
+ * partially-initialized responses.
+ * 
+ * @param response Pointer to CheckUpdateResponse structure to free (can be NULL)
+ */
 void checkupdate_response_free(CheckUpdateResponse *response) {
     if (response) {
         g_free(response->available_version);
         g_free(response->update_details);
         g_free(response->status_message);
-        // Clear pointers to prevent double-free
         response->available_version = NULL;
         response->update_details = NULL;
         response->status_message = NULL;
     }
 }
 
-// Helper function to create success response
+/**
+ * @brief Create a CheckUpdateResponse structure for a successful update check.
+ * 
+ * Compares the current firmware version with the available version from XConf.
+ * If versions differ, returns UPDATE_AVAILABLE. If identical, returns UPDATE_NOT_AVAILABLE.
+ * Retrieves the current firmware version via GetFirmwareVersion() and populates all
+ * response fields with allocated strings.
+ * 
+ * @param available_version Firmware version from XConf (e.g., "VERSION_1.2.3")
+ * @param update_details Pipe-delimited string with firmware metadata (URL, protocol, etc.)
+ * @param status_message Human-readable status string
+ * @return CheckUpdateResponse structure with allocated strings (must be freed by caller)
+ */
 static CheckUpdateResponse create_success_response(const gchar *available_version,
                                                    const gchar *update_details,
                                                    const gchar *status_message) {
     CheckUpdateResponse response = {0};
     char current_img_buffer[64] = {0};
     
-    // Get the current running image version using currentImg function
     bool img_status = GetFirmwareVersion(current_img_buffer, sizeof(current_img_buffer));
     
     SWLOG_INFO("[rdkFwupdateMgr] create_success_response: Getting current image info\n");
     SWLOG_INFO("[rdkFwupdateMgr]   - currentImg status: %s\n", img_status ? "SUCCESS" : "FAILED");
     SWLOG_INFO("[rdkFwupdateMgr]   - current_img_buffer: '%s'\n", current_img_buffer);
 
-    // Compare versions only if both are non-null
     gboolean is_update_available = img_status && available_version && (g_strcmp0(current_img_buffer, available_version) != 0);
     if (is_update_available) {
     response.result_code = UPDATE_AVAILABLE;
@@ -298,13 +336,22 @@ static CheckUpdateResponse create_success_response(const gchar *available_versio
     return response;
 }
 
-// Helper function to create error/no-update response
+/**
+ * @brief Create a CheckUpdateResponse for error cases or no-update scenarios.
+ * 
+ * Populates response structure with the given result code and status message.
+ * Sets available_version and update_details to empty strings. Retrieves current
+ * firmware version and provides default status messages if none supplied.
+ * 
+ * @param result_code Result code (UPDATE_NOT_AVAILABLE, UPDATE_ERROR, etc.)
+ * @param status_message Optional custom status message (can be NULL for default)
+ * @return CheckUpdateResponse structure with allocated strings (must be freed by caller)
+ */
 static CheckUpdateResponse create_result_response(CheckForUpdateResult result_code,
                                                   const gchar *status_message) {
     CheckUpdateResponse response = {0};
     char current_img_buffer[256] = {0};
     
-    // Get the current running image version using currentImg function
     bool img_status = GetFirmwareVersion(current_img_buffer, sizeof(current_img_buffer));
     
     SWLOG_INFO("[rdkFwupdateMgr] create_result_response: Getting current image info\n");
@@ -316,7 +363,6 @@ static CheckUpdateResponse create_result_response(CheckForUpdateResult result_co
     response.available_version = g_strdup("");
     response.update_details = g_strdup("");
     
-    // Set appropriate status string based on result code
     const gchar *default_status = "";
     if (status_message) {
         default_status = status_message;
@@ -345,12 +391,29 @@ static CheckUpdateResponse create_result_response(CheckForUpdateResult result_co
     return response;
 }
 
+/**
+ * @brief Check for available firmware updates via XConf server query.
+ * 
+ * This is the core implementation of the CheckForUpdate D-Bus method. It performs:
+ * 1. XConf server query (with cache support for offline scenarios)
+ * 2. Firmware validation (model matching, version comparison)
+ * 3. Response structure population with update details
+ * 
+ * Flow:
+ * - First checks local cache for recent XConf response (to handle offline/recovery)
+ * - If cache miss, queries XConf server directly via fetch_xconf_firmware_info()
+ * - Validates firmware is for correct device model via processJsonResponse()
+ * - Compares available version with current firmware version
+ * - Returns structured response with all metadata for client decision-making
+ * 
+ * @param handler_id Client identifier for logging/tracking (must not be NULL)
+ * @return CheckUpdateResponse structure with result_code, versions, and details
+ *         Caller must free response using checkupdate_response_free()
+ */
 CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
     
-    // FIRST LOG - Proves function was entered
     SWLOG_INFO("[rdkFwupdateMgr] ===== FUNCTION ENTRY: rdkFwupdateMgr_checkForUpdate() =====\n");
     
-    // CRITICAL: Add NULL check first to prevent segfault
     if (!handler_id) {
         SWLOG_ERROR("[rdkFwupdateMgr] CRITICAL ERROR: handler_id is NULL!\n");
         return create_result_response(UPDATE_ERROR, "Internal error - invalid handler ID");
@@ -359,24 +422,21 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
     SWLOG_INFO("[rdkFwupdateMgr] CheckForUpdate: handler=%s\n", handler_id);
     SWLOG_INFO("[rdkFwupdateMgr] About to allocate XCONFRES structure on stack (~2KB)...\n");
     
-    // Use existing XConf communication function
     XCONFRES response = {0};
     
     SWLOG_INFO("[rdkFwupdateMgr] XCONFRES structure allocated successfully\n");
     int http_code = 0;
-    int server_type = HTTP_XCONF_DIRECT;  // XConf query mode (2), not download mode
-
-    //  XConf communication with caching support
+    int server_type = HTTP_XCONF_DIRECT;
     int ret = -1;
     
     SWLOG_INFO("[rdkFwupdateMgr] CheckForUpdate: Checking for cached XConf data...\n");
     
-    // Try to load from cache first
+    // Try cache first to support offline recovery scenarios
     if (xconf_cache_exists()) {
         SWLOG_INFO("[rdkFwupdateMgr] Cache hit! Loading XConf data from cache\n");
         if (load_xconf_from_cache(&response)) {
             ret = 0;
-            http_code = 200;  // Simulate successful HTTP response from cache
+            http_code = 200;
             SWLOG_INFO("[rdkFwupdateMgr] Successfully loaded XConf data from cache\n");
         } else {
             SWLOG_ERROR("[rdkFwupdateMgr] Cache read failed, falling back to live XConf call\n");
@@ -386,33 +446,31 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
         SWLOG_INFO("[rdkFwupdateMgr] Cache miss! Making live XConf call\n");
         ret = fetch_xconf_firmware_info(&response, server_type, &http_code);
         
-        // Save successful response to cache for future use
         if (ret == 0 && http_code == 200) {
+            // Validate firmware is intended for this device model
             SWLOG_INFO("[rdkFwupdateMgr] ===== VALIDATE XCONF RESPONSE =====\n");
-	    // Call processJsonResponse to validate firmware is for correct device model
-	    int validation_result = processJsonResponse(&response,
-			    cur_img_detail.cur_img_name,   // Current version
-			    device_info.model,              // Device model 
-			    device_info.maint_status);      // Maintenance status
+            int validation_result = processJsonResponse(&response,
+                                                        cur_img_detail.cur_img_name,
+                                                        device_info.model,
+                                                        device_info.maint_status);
 
-	    SWLOG_INFO("[rdkFwupdateMgr] processJsonResponse returned: %d (0=success, 1=failed)\n", validation_result);
-	    if (validation_result != 0) {
-		    //Validation FAILED - firmware is not for this device model
-		    SWLOG_ERROR("[rdkFwupdateMgr] VALIDATION FAILED - Firmware not valid for this device\n");
-		    SWLOG_ERROR("[rdkFwupdateMgr]   - Device model: '%s'\n", device_info.model);
-		    SWLOG_ERROR("[rdkFwupdateMgr]   - cloudFWFile: '%s'\n", response.cloudFWFile);
-		    SWLOG_ERROR("[rdkFwupdateMgr]   - Reason: Model name not found in firmware filename\n");
-		    return create_result_response(UPDATE_NOT_AVAILABLE, "Firmware validation failed - not for this device model");
-	    }
-	    SWLOG_INFO("[rdkFwupdateMgr] VALIDATION PASSED - Firmware is valid for this device\n");
+            SWLOG_INFO("[rdkFwupdateMgr] processJsonResponse returned: %d (0=success, 1=failed)\n", validation_result);
+            if (validation_result != 0) {
+                SWLOG_ERROR("[rdkFwupdateMgr] VALIDATION FAILED - Firmware not valid for this device\n");
+                SWLOG_ERROR("[rdkFwupdateMgr]   - Device model: '%s'\n", device_info.model);
+                SWLOG_ERROR("[rdkFwupdateMgr]   - cloudFWFile: '%s'\n", response.cloudFWFile);
+                SWLOG_ERROR("[rdkFwupdateMgr]   - Reason: Model name not found in firmware filename\n");
+                return create_result_response(UPDATE_NOT_AVAILABLE, "Firmware validation failed - not for this device model");
+            }
+            SWLOG_INFO("[rdkFwupdateMgr] VALIDATION PASSED - Firmware is valid for this device\n");
             SWLOG_INFO("[rdkFwupdateMgr] ===== VALIDATION & COMPARISON COMPLETE =====\n");
         }
     }
     
     SWLOG_INFO("[rdkFwupdateMgr] XConf call completed with result: ret=%d\n",ret);
     
+    // Process successful XConf response
     if (ret == 0 && http_code == 200) {
-        // Comprehensive logging of all XConf response variables
         SWLOG_INFO("=== [rdkFwupdateMgr] XConf Response - Complete Data ===\n");
         SWLOG_INFO("[rdkFwupdateMgr] Core Firmware Data:\n");
         SWLOG_INFO("[rdkFwupdateMgr]   - cloudFWVersion: '%s'\n", 
@@ -441,9 +499,8 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
                    response.cloudPDRIVersion[0] ? response.cloudPDRIVersion : "(empty)");
         SWLOG_INFO("=== [rdkFwupdateMgr] XConf Response - End ===\n"); 
        
-
-       // Create detailed update information from XConf response
-       gchar *update_details = g_strdup_printf(
+        // Serialize XConf metadata into pipe-delimited string for D-Bus transport
+        gchar *update_details = g_strdup_printf(
                 "File:%s|Location:%s|IPv6Location:%s|Version:%s|Protocol:%s|Reboot:%s|Delay:%s|PDRI:%s|Peripherals:%s|CertBundle:%s", 
                 response.cloudFWFile[0] ? response.cloudFWFile : "N/A",
                 response.cloudFWLocation[0] ? response.cloudFWLocation : "N/A", 
@@ -457,11 +514,10 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
                 response.dlCertBundle[0] ? response.dlCertBundle : "N/A"
             );
         
-        // Check if we actually received a firmware version from XConf
+        // Determine result based on presence of firmware version
         if (response.cloudFWVersion[0] && strlen(response.cloudFWVersion) > 0) {
             SWLOG_INFO("[rdkFwupdateMgr] XConf returned firmware version: '%s'\n", response.cloudFWVersion);
             
-            // Create success response with firmware update available
             CheckUpdateResponse result = create_success_response(
                 response.cloudFWVersion,
                 update_details,
@@ -472,13 +528,11 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
             return result;
         } else {
             SWLOG_INFO("[rdkFwupdateMgr] XConf returned no firmware version - no update available\n");
-            
-            // No update available - XConf communication succeeded but no new firmware
             g_free(update_details);
             return create_result_response(UPDATE_NOT_AVAILABLE, "No firmware update available");
         }
     } else {
-        // XConf communication failed
+        // XConf query failed - network or server error
         SWLOG_ERROR("[rdkFwupdateMgr] XConf communication failed: ret=%d, http=%d\n", ret, http_code);
         
         if (http_code != 200) {
@@ -489,17 +543,26 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
     }
 }
 
-// TODO: Other wrapper functions will be implemented in subsequent subtasks
+/**
+ * @brief Download firmware image from XConf-provided URL.
+ * 
+ * PLACEHOLDER - Will be implemented in subsequent development phase.
+ * This function will handle firmware download, progress tracking, and validation.
+ * 
+ * @param handler_id Client identifier for tracking
+ * @param image_name Target firmware image name
+ * @param available_version Version string of firmware to download
+ * @param download_status[out] Status string ("RDKFW_SUCCESS", "RDKFW_FAILED", etc.)
+ * @param download_path[out] Local path to downloaded firmware file
+ * @return 0 on success, -1 on failure
+ */
 int rdkFwupdateMgr_downloadFirmware(const gchar *handler_id,
                                     const gchar *image_name,
                                     const gchar *available_version,
                                     gchar **download_status,
                                     gchar **download_path) {
-    // Placeholder for Subtask 2
     *download_status = g_strdup("RDKFW_FAILED");
     *download_path = g_strdup("");
     SWLOG_INFO("[rdkFwupdateMgr] downloadFirmware: Not implemented yet");
     return -1;
 }
-
-// ... other functions as placeholders for now
