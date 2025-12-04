@@ -55,4 +55,30 @@ rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLSpLimit.TopSpeed
 rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Identity.DbgServices.Enable boolean true
 cp test/functional-tests/tests/rc-proxy-params.json /tmp/rc-proxy-params.json
 
-pytest --json-report  --json-report-file $RESULT_DIR/rdkfwupdater_report.json test/functional-tests/tests/
+echo ""
+echo "=========================================="
+echo "Running L2 Integration Tests"
+echo "=========================================="
+echo ""
+
+# Run all existing tests
+echo "[1/2] Running existing image download tests..."
+pytest --json-report --json-report-file $RESULT_DIR/rdkfwupdater_image_tests.json \
+       test/functional-tests/tests/test_imagedwnl.py \
+       test/functional-tests/tests/test_imagedwnl_error.py \
+       test/functional-tests/tests/test_certbundle_dwnl.py \
+       test/functional-tests/tests/test_peripheral_imagedwnl.py
+
+# Run new D-Bus handler and cache tests
+echo ""
+echo "[2/2] Running D-Bus handler and cache tests..."
+pytest -v -s --json-report --json-report-file $RESULT_DIR/rdkfwupdater_dbus_tests.json \
+       test/functional-tests/tests/test_dbus_handlers.py
+
+echo ""
+echo "=========================================="
+echo "L2 Test Results"
+echo "=========================================="
+echo "Image tests report: $RESULT_DIR/rdkfwupdater_image_tests.json"
+echo "D-Bus tests report: $RESULT_DIR/rdkfwupdater_dbus_tests.json"
+echo "=========================================="
