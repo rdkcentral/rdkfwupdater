@@ -39,10 +39,10 @@ public:
     virtual ~RdkFwupdateMgrInterface() {}
     
     // XConf communication mocks
-    virtual int getXconfRespData(XCONFRES *pResponse, const char *jsonData) = 0;
+    virtual int getXconfRespData(XCONFRES *pResponse, char *jsonData) = 0;
     virtual size_t GetServURL(char *pServURL, size_t szBufSize) = 0;
     virtual size_t createJsonString(char *pJSONStr, size_t szBufSize) = 0;
-    virtual int allocDowndLoadDataMem(DownloadData *pDwnLoc, size_t size) = 0;
+    virtual int allocDowndLoadDataMem(DownloadData *pDwnLoc, int size) = 0;
     virtual void freeDownLoadMem(DownloadData *pDwnLoc) = 0;
     
     // RFC settings mock
@@ -69,10 +69,10 @@ class RdkFwupdateMgrMock : public RdkFwupdateMgrInterface {
 public:
     virtual ~RdkFwupdateMgrMock() {}
     
-    MOCK_METHOD(int, getXconfRespData, (XCONFRES *pResponse, const char *jsonData), ());
+    MOCK_METHOD(int, getXconfRespData, (XCONFRES *pResponse, char *jsonData), ());
     MOCK_METHOD(size_t, GetServURL, (char *pServURL, size_t szBufSize), ());
     MOCK_METHOD(size_t, createJsonString, (char *pJSONStr, size_t szBufSize), ());
-    MOCK_METHOD(int, allocDowndLoadDataMem, (DownloadData *pDwnLoc, size_t size), ());
+    MOCK_METHOD(int, allocDowndLoadDataMem, (DownloadData *pDwnLoc, int size), ());
     MOCK_METHOD(void, freeDownLoadMem, (DownloadData *pDwnLoc), ());
     MOCK_METHOD(void, getRFCSettings, (Rfc_t *rfc_list), ());
     MOCK_METHOD(size_t, currentImg, (char *pCurImg, size_t szBufSize), ());

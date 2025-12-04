@@ -20,7 +20,6 @@
 #include "miscellaneous.h"
 #include "rdkv_upgrade.h"  // For RdkUpgradeContext_t
 
-
 class MockDownloadFile {
 public:
     virtual ~MockDownloadFile() {}  // Add a virtual destructor
@@ -563,6 +562,52 @@ extern "C" {
             return 0;
         }
         return global_mockexternal_ptr->makeHttpHttps(url);
+    }
+
+#ifndef GTEST_BASIC
+    // Mock for rdkv_upgrade_request - used by rdkFwupdateMgr.c main flow tests
+    // Only compile when NOT building GTEST_BASIC (rdkfw_main_gtest uses real rdkv_upgrade.c)
+    int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* pHttp_code) {
+        // Return success by default for tests that don't focus on download/upgrade flow
+        if (pHttp_code) {
+            *pHttp_code = 200; // HTTP OK
+        }
+        return 0; // Success
+    }
+#endif
+
+    // ===========================================================================
+    // EXTERNAL LIBRARY STUBS (IARM, RFC, etc.)
+    // These are stubs for external library functions that are not mocked
+    // ===========================================================================
+
+    // IARM Bus stubs
+    int IARM_Bus_Init(const char *name) { return 0; }
+    int IARM_Bus_Connect(void) { return 0; }
+    int IARM_Bus_Disconnect(void) { return 0; }
+    int IARM_Bus_Term(void) { return 0; }
+    int IARM_Bus_IsConnected(const char *memberName, int *isRegistered) {
+        if (isRegistered) *isRegistered = 1;
+        return 0;
+    }
+    int IARM_Bus_RegisterEventHandler(const char *ownerName, int eventId, void *handler) { return 0; }
+    int IARM_Bus_UnRegisterEventHandler(const char *ownerName, int eventId) { return 0; }
+    int IARM_Bus_BroadcastEvent(const char *ownerName, int eventId, void *data, size_t len) { return 0; }
+
+    // RFC API stubs
+    int getRFCParameter(char* pcCallerID, const char* pcParameterName, char* pValue) {
+        if (pValue) {
+            strcpy(pValue, "false"); // Default RFC value
+        }
+        return 0;
+    }
+
+    int setRFCParameter(char* pcCallerID, const char* pcParameterName, const char* pcParameterType, const char* pcParameterValue) {
+        return 0;
+    }
+
+    const char* getRFCErrorString(int code) {
+        return "RFC_SUCCESS";
     }
 }
 

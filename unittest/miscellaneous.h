@@ -20,7 +20,7 @@
 #define _MISCELLANEOUS_H_
 //#include "urlHelper.h"
 //#include "common_device_api.h"
-//#include "rdkv_cdl_log_wrapper.h"
+#include "rdkv_cdl_log_wrapper.h"
 
 #define TLS_LOG_FILE "/opt/logs/tlsError.log"
 #define DEBUG_INI_NAME  "/etc/debug.ini"

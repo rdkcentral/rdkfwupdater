@@ -22,7 +22,10 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-//#include "urlHelper.h"
+
+// Use system headers for struct definitions to avoid redefinition conflicts
+#include "urlHelper.h"
+
 #define SWLOG_INFO(format, ...)        printf(format, ##__VA_ARGS__)
 #define SWLOG_ERROR(format, ...)        printf(format, ##__VA_ARGS__)
 
@@ -43,38 +46,8 @@
 #define UTILS_SUCCESS 0
 #define UTILS_FAIL -1
 
-typedef struct credential {
-        char cert_name[64];
-        char cert_type[16];
-        char key_pas[32];
-}MtlsAuth_t;
-
-/* Below structure use for download file data */
-
-typedef struct CommonDownloadData {
-    void* pvOut;
-    size_t datasize;        // data size
-    size_t memsize;         // allocated memory size (if applicable)
-} DownloadData;
-
-/* Structure Use for Hash Value and Time*/
-
-typedef struct hashParam {
-    char *hashvalue;
-    char *hashtime;
-}hashParam_t;
-
-typedef struct filedwnl {
-        char *pPostFields;
-        char *pHeaderData;
-        DownloadData *pDlData;
-        DownloadData *pDlHeaderData;
-        int chunk_dwnl_retry_time;
-        char url[BIG_BUF_LEN];
-        char pathname[DWNL_PATH_FILE_LEN];
-        bool sslverify;
-        hashParam_t *hashData;
-}FileDwnl_t;
+// Note: credential, MtlsAuth_t, DownloadData, hashParam_t, FileDwnl_t 
+// are now defined in urlHelper.h (included above) to avoid redefinition conflicts
 
 
 typedef enum {

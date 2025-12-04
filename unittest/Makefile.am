@@ -18,13 +18,13 @@
 AUTOMAKE_OPTIONS = subdir-objects
 
 # Define the program name and the source files
-bin_PROGRAMS = rdkfw_device_status_gtest rdkfw_deviceutils_gtest rdkfw_main_gtest rdkfw_interface_gtest rdkfwupdatemgr_gtest rdkFwupdateMgr_handlers_gtest
+bin_PROGRAMS = rdkfw_device_status_gtest rdkfw_deviceutils_gtest rdkfw_main_gtest rdkfw_interface_gtest rdkfwupdatemgr_main_flow_gtest rdkFwupdateMgr_handlers_gtest
 
 # Define the include directories
 # NOTE: We explicitly use -I. to prioritize local test headers over system headers
 # This prevents conflicts with external library headers in /usr/local/include/
 # rdk_fwdl_utils.h includes rdkv_cdl_log_wrapper.h inside common_utilities. to over come this ,  
-COMMON_CPPFLAGS = -std=c++11 -I. -I/usr/include/cjson -I../src -I../src/cedmInterface -I../src/deviceutils/ -I../src/include/ -I../src/rbusInterface/ -I./mocks/ -I./deviceutils/ -DGTEST_ENABLE -DGTEST_BASIC -DIARM_ENABLED -DRFC_API_ENABLED -DT2_EVENT_ENABLED
+COMMON_CPPFLAGS = -std=c++11 -I. -I/usr/include/cjson -I../src -I../src/cedmInterface -I../src/deviceutils/ -I../src/include/ -I../src/rbusInterface/ -I./mocks/ -I./deviceutils/ -DGTEST_ENABLE -DIARM_ENABLED -DRFC_API_ENABLED -DT2_EVENT_ENABLED
 
 # GLib/GIO flags for D-Bus handler tests
 GLIB_CFLAGS := $(shell pkg-config --cflags glib-2.0 gio-2.0)
@@ -88,8 +88,8 @@ rdkfwupdatemgr_gtest_SOURCES = rdkfwupdatemgr_gtest.cpp \
 rdkFwupdateMgr_handlers_gtest_SOURCES = rdkFwupdateMgr_handlers_gtest.cpp \
     ./mocks/rdkFwupdateMgr_mock.cpp \
     ../src/dbus/rdkFwupdateMgr_handlers.c \
-    ../src/json_process.c \
     deviceutils/json_parse.c
+# Note: json_process.c is mocked in rdkFwupdateMgr_mock.cpp to control XConf parsing behavior
 
 # Apply common properties to each program
 rdkfw_device_status_gtest_CPPFLAGS = $(COMMON_CPPFLAGS)
@@ -102,7 +102,7 @@ rdkfw_deviceutils_gtest_LDADD = $(COMMON_LDADD)
 rdkfw_deviceutils_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
 rdkfw_deviceutils_gtest_CFLAGS = $(COMMON_CXXFLAGS)
 
-rdkfw_main_gtest_CPPFLAGS = $(COMMON_CPPFLAGS)
+rdkfw_main_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -DGTEST_BASIC
 rdkfw_main_gtest_LDADD = $(COMMON_LDADD) 
 rdkfw_main_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
 rdkfw_main_gtest_CFLAGS = $(COMMON_CXXFLAGS)
@@ -123,3 +123,28 @@ rdkFwupdateMgr_handlers_gtest_LDFLAGS = $(GLIB_LIBS)
 rdkFwupdateMgr_handlers_gtest_LDADD = $(COMMON_LDADD)
 rdkFwupdateMgr_handlers_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
 rdkFwupdateMgr_handlers_gtest_CFLAGS = $(COMMON_CXXFLAGS)
+
+# rdkfwupdatemgr_main_flow_gtest: Tests rdkFwupdateMgr.c main flow functions
+# Covers: getTriggerType, handle_signal, prevCurUpdateInfo, initialValidation gaps, main() logic
+# Uses mocks ONLY - no real rfcinterface.c or iarmInterface.c to avoid multiple definition errors
+# Key decisions:
+#   1. REMOVED rfcinterface.c - mocked in miscellaneous_mock.cpp (getRFCSettings, isIncremetalCDLEnable, etc.)
+#   2. REMOVED iarmInterface.c - mocked in miscellaneous_mock.cpp (init_event_handler, eventManager, etc.)
+#   3. REMOVED rbusInterface.c and rbus_mock.c - not needed for main flow tests
+#   4. KEPT rdkFwupdateMgr.c - core file under test
+#   5. KEPT deviceutils/* - device utility functions with deviceutils_mock.cpp
+#   6. KEPT json_process.c - core JSON parsing
+rdkfwupdatemgr_main_flow_gtest_SOURCES = rdkfwupdatemgr_main_flow_gtest.cpp \
+    ../src/rdkFwupdateMgr.c \
+    ../src/deviceutils/device_api.c \
+    ../src/deviceutils/deviceutils.c \
+    ../src/json_process.c \
+    deviceutils/json_parse.c \
+    miscellaneous_mock.cpp \
+    ./mocks/deviceutils_mock.cpp
+
+rdkfwupdatemgr_main_flow_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -I../src/dbus $(GLIB_CFLAGS)
+rdkfwupdatemgr_main_flow_gtest_LDFLAGS = $(GLIB_LIBS)
+rdkfwupdatemgr_main_flow_gtest_LDADD = $(COMMON_LDADD)
+rdkfwupdatemgr_main_flow_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
+rdkfwupdatemgr_main_flow_gtest_CFLAGS = $(COMMON_CXXFLAGS)
