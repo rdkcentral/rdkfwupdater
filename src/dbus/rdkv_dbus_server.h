@@ -47,6 +47,18 @@ typedef enum {
 } TaskType;
 
 /*
+ * Firmware Download Status Enumeration
+ * 
+ * Matches the client library FwDwnlStatus enum for consistency
+ */
+typedef enum {
+    FW_DWNL_NOTSTARTED = 0,    // Download accepted but not yet started
+    FW_DWNL_INPROGRESS = 1,    // Download in progress (0-99%)
+    FW_DWNL_COMPLETED = 2,     // Download completed successfully (100%)
+    FW_DWNL_ERROR = 3          // Download failed
+} FwDwnlStatus;
+
+/*
  * Async Task Context
  * 
  * Maintains state for async operations (CheckForUpdate, Download, etc.).
@@ -124,18 +136,6 @@ typedef struct {
     gchar* downloadUrl;                 // Custom URL or empty string
     gchar* typeOfFirmware;              // Firmware type: "PCI", "PDRI", etc.
 } DownloadFW_TaskData;
-
-/*
- * Firmware Download Status Enumeration
- * 
- * Matches the client library FwDwnlStatus enum for consistency
- */
-typedef enum {
-    FW_DWNL_NOTSTARTED = 0,    // Download accepted but not yet started
-    FW_DWNL_INPROGRESS = 1,    // Download in progress (0-99%)
-    FW_DWNL_COMPLETED = 2,     // Download completed successfully (100%)
-    FW_DWNL_ERROR = 3          // Download failed
-} FwDwnlStatus;
 
 /*
  * Download State Tracker

@@ -45,6 +45,10 @@
 // Shared device and image information (populated at daemon startup)
 extern DeviceProperty_t device_info;
 extern ImageDetails_t cur_img_detail;
+extern Rfc_t rfc_list;
+
+// Trigger type constant for manual/D-Bus initiated downloads
+#define TRIGGER_MANUAL 1
 
 /**
  * @brief Check if XConf response cache exists

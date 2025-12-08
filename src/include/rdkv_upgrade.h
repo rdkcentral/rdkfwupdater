@@ -5,6 +5,7 @@
 extern "C" {
 #endif
 
+#include <glib.h>
 #include "rdkv_cdl.h"
 #include "rfcinterface.h"
 #include "deviceutils.h"

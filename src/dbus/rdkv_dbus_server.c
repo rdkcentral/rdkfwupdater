@@ -384,8 +384,11 @@ static void free_task_context(TaskContext *ctx)
 			break;
 		
 		case TASK_TYPE_DOWNLOAD:
-			g_free(ctx->data.download.image_to_download);
-			g_free(ctx->data.download.download_url);
+			g_free(ctx->data.download.firmwareName);
+			g_free(ctx->data.download.downloadUrl);
+			g_free(ctx->data.download.typeOfFirmware);
+			g_free(ctx->data.download.errorMessage);
+			g_free(ctx->data.download.localFilePath);
 			break;
 		
 		case TASK_TYPE_UPDATE:
@@ -694,7 +697,7 @@ static gboolean downloadFW_task(gpointer user_data)
 	}
 	else{
 		SWLOG_INFO("Starting new DownloadFW operation for task %d\n\n", task_id);
-		SWLOG_INFO("[Download task-%d] Starting to download Image : %s for process-id: %s...\n", task_id, data->ImageToDownload,data->DownloadFWTask_ctx->process_name);
+		SWLOG_INFO("[Download task-%d] Starting to download Image : %s for process-id: %s...\n", task_id, data->firmwareName,data->DownloadFWTask_ctx->process_name);
 
 		IsDownloadInProgress = TRUE;
 		waiting_download_ids = g_slist_append(waiting_download_ids,GUINT_TO_POINTER(task_id));
