@@ -66,8 +66,11 @@ GHashTable *active_tasks = NULL;
 static guint next_task_id = 1;
 
 /* Process tracking - registered clients */
-static GHashTable *registered_processes = NULL;
+GHashTable *registered_processes = NULL;  // Made non-static for access from handlers
 static guint64 next_process_id = 1;
+
+/* Download tracking - active firmware downloads */
+GHashTable *active_download_tasks = NULL;  // Map: firmwareName (gchar*) → DownloadState*
 
 /* D-Bus introspection data or dbus interface : Exposes the methods for apps */
 static const gchar introspection_xml[] =
@@ -262,6 +265,13 @@ void cleanup_process_tracking()
 		g_hash_table_destroy(registered_processes);
 		registered_processes = NULL;
 	}
+	
+	if (active_download_tasks) {
+		SWLOG_INFO("[TRACKING] Cleaning up %d active downloads\n", g_hash_table_size(active_download_tasks));
+		// TODO: Cancel any in-progress downloads and free DownloadState structures
+		g_hash_table_destroy(active_download_tasks);
+		active_download_tasks = NULL;
+	}
 }
 
 /**
@@ -314,6 +324,11 @@ void init_task_system()
 {
 	active_tasks = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, (GDestroyNotify)g_free);
 	SWLOG_INFO("[TASK-SYSTEM] Initialized task tracking system\n");
+	
+	// Initialize download tracking hash table
+	active_download_tasks = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+	SWLOG_INFO("[TASK-SYSTEM] Initialized download tracking system\n");
+	
 	init_process_tracking();
 }
 

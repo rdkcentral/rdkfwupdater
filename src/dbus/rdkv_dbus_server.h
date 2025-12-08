@@ -80,12 +80,15 @@ typedef struct {
             CheckForUpdateResult result_code;      // Result of update check
         } check_update;
         
-        /* Download task data (future implementation) */
+        /* Download task data */
         struct {
-            gchar *image_to_download;    // Firmware image filename
-            gchar *download_url;         // Full URL if different from filename
-            guint64 file_size;           // Expected download size in bytes
-            guint32 progress_percent;    // Current download progress (0-100)
+            gchar *firmwareName;         // Firmware image filename
+            gchar *downloadUrl;          // Custom URL or empty string (use XConf URL)
+            gchar *typeOfFirmware;       // Firmware type: "PCI", "PDRI", "PERIPHERAL"
+            guint32 progress;            // Current download progress (0-100, -1 for error)
+            FwDwnlStatus status;         // Current download status
+            gchar *errorMessage;         // Error description if status == FW_DWNL_ERROR
+            gchar *localFilePath;        // Path where file is/will be saved
         } download;
         
         /* Firmware flash/install task data (future implementation) */
@@ -110,16 +113,47 @@ typedef struct {
 } CheckUpdate_TaskData;
 
 /*
- * Download Task Wrapper (Future Implementation)
+ * Download Task Wrapper
  * 
  * Associates a GLib GTask ID with firmware download operation context.
- * NOTE: ImageToDownload should be moved into TaskContext.data.download
  */
 typedef struct {
     guint download_task_id;             // GLib GTask source ID
     TaskContext *DownloadFWTask_ctx;    // Task context with type=TASK_TYPE_DOWNLOAD
-    gchar* ImageToDownload;             // Firmware image name (TODO: refactor)
+    gchar* firmwareName;                // Firmware filename
+    gchar* downloadUrl;                 // Custom URL or empty string
+    gchar* typeOfFirmware;              // Firmware type: "PCI", "PDRI", etc.
 } DownloadFW_TaskData;
+
+/*
+ * Firmware Download Status Enumeration
+ * 
+ * Matches the client library FwDwnlStatus enum for consistency
+ */
+typedef enum {
+    FW_DWNL_NOTSTARTED = 0,    // Download accepted but not yet started
+    FW_DWNL_INPROGRESS = 1,    // Download in progress (0-99%)
+    FW_DWNL_COMPLETED = 2,     // Download completed successfully (100%)
+    FW_DWNL_ERROR = 3          // Download failed
+} FwDwnlStatus;
+
+/*
+ * Download State Tracker
+ * 
+ * Tracks a single active download operation that may have multiple
+ * clients waiting for completion. Stored in active_download_tasks
+ * hash table, keyed by firmwareName.
+ */
+typedef struct {
+    gchar* firmwareName;               // Firmware being downloaded
+    gchar* downloadUrl;                // URL being used (XConf or custom)
+    gchar* localFilePath;              // Destination file path
+    guint progress;                    // Current progress (0-100)
+    FwDwnlStatus status;               // Current status
+    GThread* worker_thread;            // Background worker thread
+    GSList* waiting_handlers;          // List of guint64 handler_ids waiting for this download
+    gchar* errorMessage;               // Error description if status == FW_DWNL_ERROR
+} DownloadState;
 
 /*
  * D-Bus Service Configuration
@@ -137,8 +171,10 @@ typedef struct {
  * These are initialized in rdkv_dbus_server.c and used throughout
  * the D-Bus server implementation.
  */
-extern GMainLoop *main_loop;      // GLib event loop for async operations
-extern GHashTable *active_tasks;  // Active async tasks (keyed by task_id)
+extern GMainLoop *main_loop;                    // GLib event loop for async operations
+extern GHashTable *active_tasks;                // Active async tasks (keyed by task_id)
+extern GHashTable *active_download_tasks;       // Active downloads (keyed by firmwareName)
+extern GHashTable *registered_processes;        // Registered clients (keyed by handler_id)
 
 /*
  * Initialize Process Tracking System

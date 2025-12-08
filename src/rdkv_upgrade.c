@@ -537,7 +537,13 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
                 SWLOG_INFO("PDRI image upgrade successful.\n");
                 Upgradet2CountNotify("SYST_INFO_PDRIUpgSuccess", 1);
             }
-            if (upgrade_type == PCI_UPGRADE || upgrade_type == PDRI_UPGRADE) {
+            
+            // Check download_only flag - if TRUE, skip flashing (for D-Bus DownloadFirmware API)
+            if (context->download_only == TRUE) {
+                SWLOG_INFO("download_only flag is TRUE - skipping flash operation\n");
+                SWLOG_INFO("Download completed successfully without flashing\n");
+            }
+            else if (upgrade_type == PCI_UPGRADE || upgrade_type == PDRI_UPGRADE) {
                 setDwnlState(RDKV_FWDNLD_FLASH_INPROGRESS);
                 snprintf(dwnl_status, sizeof(dwnl_status), "Flashing In Progress");
                 snprintf(fwdls.status, sizeof(fwdls.status), "Status|%s\n", dwnl_status);

@@ -84,16 +84,51 @@ void checkupdate_response_free(CheckUpdateResponse *response);
 gboolean xconf_cache_exists(void);
 
 /*
- * Download Firmware (Future Implementation)
+ * Download Firmware Result Codes
  * 
- * Initiates firmware download from XConf-provided URL.
- * Currently not implemented - placeholder for future functionality.
+ * These codes indicate the outcome of a firmware download request.
  */
-int rdkFwupdateMgr_downloadFirmware(const gchar *handler_id,
-                                    const gchar *image_name,
-                                    const gchar *available_version,
-                                    gchar **download_status,
-                                    gchar **download_path);
+typedef enum {
+    DOWNLOAD_SUCCESS = 0,          // Download completed successfully
+    DOWNLOAD_ALREADY_EXISTS = 1,   // File already downloaded
+    DOWNLOAD_NETWORK_ERROR = 2,    // Network error during download
+    DOWNLOAD_NOT_FOUND = 3,        // Firmware not found on server (HTTP 404)
+    DOWNLOAD_ERROR = 4             // Generic error
+} DownloadFirmwareResultCode;
+
+/*
+ * Download Firmware Result Structure
+ * 
+ * Contains the result of a firmware download operation.
+ * All string fields are dynamically allocated and must be freed.
+ */
+typedef struct {
+    DownloadFirmwareResultCode result_code;  // Result of the download
+    gchar *error_message;                    // Error description if failed
+} DownloadFirmwareResult;
+
+/*
+ * Download Firmware
+ * 
+ * Initiates firmware download from XConf-provided URL or custom URL.
+ * This function performs the actual download in the calling thread.
+ * Progress updates are sent via the progress_callback if download_state is provided.
+ * 
+ * Parameters:
+ *   firmwareName - Firmware filename to download
+ *   downloadUrl - Custom URL or empty string (use XConf URL)
+ *   typeOfFirmware - Firmware type: "PCI", "PDRI", "PERIPHERAL"
+ *   localFilePath - Destination file path
+ *   download_state - DownloadState pointer for progress updates (can be NULL)
+ * 
+ * Returns:
+ *   DownloadFirmwareResult with result_code and error details
+ */
+DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName,
+                                                       const gchar *downloadUrl,
+                                                       const gchar *typeOfFirmware,
+                                                       const gchar *localFilePath,
+                                                       void *download_state);
 
 /*
  * Update Firmware (Future Implementation)

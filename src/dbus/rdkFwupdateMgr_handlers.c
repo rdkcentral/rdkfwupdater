@@ -545,25 +545,155 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
 }
 
 /**
- * @brief Download firmware image from XConf-provided URL.
+ * @brief Download firmware image from XConf URL or custom URL.
  * 
- * PLACEHOLDER - Will be implemented in subsequent development phase.
- * This function will handle firmware download, progress tracking, and validation.
+ * Downloads firmware file. Blocks until complete.
  * 
- * @param handler_id Client identifier for tracking
- * @param image_name Target firmware image name
- * @param available_version Version string of firmware to download
- * @param download_status[out] Status string ("RDKFW_SUCCESS", "RDKFW_FAILED", etc.)
- * @param download_path[out] Local path to downloaded firmware file
- * @return 0 on success, -1 on failure
+ * @param firmwareName Firmware filename to download
+ * @param downloadUrl Custom URL or empty string (use XConf URL)
+ * @param typeOfFirmware Firmware type: "PCI", "PDRI", "PERIPHERAL"
+ * @param localFilePath Destination file path
+ * @param download_state DownloadState pointer for progress updates (can be NULL)
+ * @return DownloadFirmwareResult with result_code and error details
  */
-int rdkFwupdateMgr_downloadFirmware(const gchar *handler_id,
-                                    const gchar *image_name,
-                                    const gchar *available_version,
-                                    gchar **download_status,
-                                    gchar **download_path) {
-    *download_status = g_strdup("RDKFW_FAILED");
-    *download_path = g_strdup("");
-    SWLOG_INFO("[rdkFwupdateMgr] downloadFirmware: Not implemented yet");
-    return -1;
+DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName,
+                                                       const gchar *downloadUrl,
+                                                       const gchar *typeOfFirmware,
+                                                       const gchar *localFilePath,
+                                                       void *download_state) {
+    SWLOG_INFO("[DOWNLOAD_HANDLER] Starting firmware download\n");
+    SWLOG_INFO("[DOWNLOAD_HANDLER]   Firmware: %s\n", firmwareName ? firmwareName : "NULL");
+    SWLOG_INFO("[DOWNLOAD_HANDLER]   Custom URL: '%s'\n", downloadUrl ? downloadUrl : "");
+    SWLOG_INFO("[DOWNLOAD_HANDLER]   Type: %s\n", typeOfFirmware ? typeOfFirmware : "NULL");
+    SWLOG_INFO("[DOWNLOAD_HANDLER]   Destination: %s\n", localFilePath ? localFilePath : "NULL");
+    
+    // Initialize result
+    DownloadFirmwareResult result;
+    result.result_code = DOWNLOAD_ERROR;
+    result.error_message = NULL;
+    
+    // Determine effective URL
+    gchar *effective_url = NULL;
+    
+    if (downloadUrl && strlen(downloadUrl) > 0) {
+        SWLOG_INFO("[DOWNLOAD_HANDLER] Using custom URL: %s\n", downloadUrl);
+        effective_url = g_strdup(downloadUrl);
+    } else {
+        SWLOG_INFO("[DOWNLOAD_HANDLER] No custom URL, loading from XConf cache\n");
+        
+        if (!xconf_cache_exists()) {
+            SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: No XConf cache found\n");
+            result.error_message = g_strdup("No firmware metadata. Call CheckForUpdate first.");
+            return result;
+        }
+        
+        XCONFRES xconf_response;
+        memset(&xconf_response, 0, sizeof(XCONFRES));
+        
+        if (!load_xconf_from_cache(&xconf_response)) {
+            SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: Failed to load XConf cache\n");
+            result.error_message = g_strdup("Failed to load firmware metadata from cache");
+            return result;
+        }
+        
+        SWLOG_INFO("[DOWNLOAD_HANDLER] Loaded XConf metadata:\n");
+        SWLOG_INFO("[DOWNLOAD_HANDLER]   Version: %s\n", xconf_response.cloudFWVersion);
+        SWLOG_INFO("[DOWNLOAD_HANDLER]   URL: %s\n", xconf_response.cloudFWFile);
+        
+        effective_url = g_strdup(xconf_response.cloudFWFile);
+    }
+    
+    if (!effective_url || strlen(effective_url) == 0) {
+        SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: No download URL available\n");
+        result.error_message = g_strdup("No download URL available");
+        g_free(effective_url);
+        return result;
+    }
+    
+    SWLOG_INFO("[DOWNLOAD_HANDLER] Effective download URL: %s\n", effective_url);
+    
+    // Prepare download context
+    RdkUpgradeContext_t upgrade_context;
+    memset(&upgrade_context, 0, sizeof(RdkUpgradeContext_t));
+    
+    // Determine upgrade type
+    if (typeOfFirmware && strcmp(typeOfFirmware, "PCI") == 0) {
+        upgrade_context.upgrade_type = PCI_UPGRADE;
+    } else if (typeOfFirmware && strcmp(typeOfFirmware, "PDRI") == 0) {
+        upgrade_context.upgrade_type = PDRI_UPGRADE;
+    } else if (typeOfFirmware && strcmp(typeOfFirmware, "PERIPHERAL") == 0) {
+        upgrade_context.upgrade_type = PERIPHERAL_UPGRADE;
+    } else {
+        upgrade_context.upgrade_type = PCI_UPGRADE;
+    }
+    
+    SWLOG_INFO("[DOWNLOAD_HANDLER] Upgrade type: %d\n", upgrade_context.upgrade_type);
+    
+    // CRITICAL: Set download_only flag
+    upgrade_context.download_only = TRUE;
+    SWLOG_INFO("[DOWNLOAD_HANDLER] download_only=TRUE (will NOT auto-flash)\n");
+    
+    upgrade_context.server_type = HTTP_SSR_DIRECT;
+    upgrade_context.artifactLocationUrl = effective_url;
+    upgrade_context.dwlloc = (const void*)localFilePath;
+    upgrade_context.pPostFields = NULL;
+    upgrade_context.immed_reboot_flag = "NO";
+    upgrade_context.delay_dwnl = 0;
+    
+    char timestamp[64];
+    snprintf(timestamp, sizeof(timestamp), "%ld", (long)time(NULL));
+    upgrade_context.lastrun = timestamp;
+    upgrade_context.disableStatsUpdate = (char*)"false";
+    upgrade_context.device_info = &device_info;
+    
+    int force_exit = 0;
+    upgrade_context.force_exit = &force_exit;
+    upgrade_context.trigger_type = TRIGGER_MANUAL;
+    upgrade_context.rfc_list = &rfc_list;
+    upgrade_context.progress_callback = NULL;
+    upgrade_context.progress_callback_data = download_state;
+    
+    SWLOG_INFO("[DOWNLOAD_HANDLER] Calling rdkv_upgrade_request()...\n");
+    
+    void *curl_handle = NULL;
+    int http_code = 0;
+    int curl_ret_code = rdkv_upgrade_request(&upgrade_context, &curl_handle, &http_code);
+    
+    SWLOG_INFO("[DOWNLOAD_HANDLER] returned: curl=%d, http=%d\n", curl_ret_code, http_code);
+    
+    // Analyze result
+    if (curl_ret_code == 0 && (http_code == 200 || http_code == 206)) {
+        SWLOG_INFO("[DOWNLOAD_HANDLER] Download completed successfully!\n");
+        
+        if (!g_file_test(localFilePath, G_FILE_TEST_EXISTS)) {
+            SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: File not found after download\n");
+            result.result_code = DOWNLOAD_ERROR;
+            result.error_message = g_strdup("File not found after download");
+            g_free(effective_url);
+            return result;
+        }
+        
+        // Download successful
+        SWLOG_INFO("[DOWNLOAD_HANDLER] Download completed, file exists on disk\n");
+        result.result_code = DOWNLOAD_SUCCESS;
+    } else if (curl_ret_code == 0 && http_code == 404) {
+        result.result_code = DOWNLOAD_NOT_FOUND;
+        result.error_message = g_strdup("Firmware not found (HTTP 404)");
+    } else if (curl_ret_code == 6) {
+        result.result_code = DOWNLOAD_NETWORK_ERROR;
+        result.error_message = g_strdup("DNS resolution failed");
+    } else if (curl_ret_code == 7) {
+        result.result_code = DOWNLOAD_NETWORK_ERROR;
+        result.error_message = g_strdup("Connection failed");
+    } else if (curl_ret_code == 28) {
+        result.result_code = DOWNLOAD_NETWORK_ERROR;
+        result.error_message = g_strdup("Timeout");
+    } else {
+        char error_msg[256];
+        snprintf(error_msg, sizeof(error_msg), "Download failed (curl=%d, http=%d)", curl_ret_code, http_code);
+        result.error_message = g_strdup(error_msg);
+    }
+    
+    g_free(effective_url);
+    return result;
 }

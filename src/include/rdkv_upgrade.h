@@ -31,6 +31,9 @@ typedef struct {
     int* force_exit;                         //    Force exit flag pointer
     int trigger_type;                        //    Trigger type
     const Rfc_t* rfc_list;                  //     RFC list
+    gboolean download_only;                 //     If TRUE, skip flashing (download-only mode for D-Bus API)
+    void (*progress_callback)(guint64 current_bytes, guint64 total_bytes, void* user_data); // Progress callback
+    void* progress_callback_data;           //     User data for progress callback
 } RdkUpgradeContext_t;
 
 /**
