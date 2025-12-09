@@ -59,6 +59,104 @@ typedef enum {
 } FwDwnlStatus;
 
 /*
+ * ===================================================================
+ * DownloadFirmware Async Implementation Structures
+ * ===================================================================
+ * These structures support the GTask-based async download architecture
+ * with progress callback integration and multi-client piggybacking.
+ * 
+ * Design Pattern:
+ * 1. AsyncDownloadContext: Passed to worker thread via GTask
+ * 2. ProgressUpdate: Passed to main loop via g_idle_add for signal emission
+ * 3. DownloadState: Global tracking for current download with waiting clients
+ * 
+ * Thread Safety:
+ * - AsyncDownloadContext: Immutable once passed to worker (safe)
+ * - ProgressUpdate: Created per signal, freed after emission (safe)
+ * - DownloadState: Protected by main loop execution (no mutex needed)
+ */
+
+/*
+ * AsyncDownloadContext
+ * 
+ * Context data passed to worker thread for async firmware download.
+ * Contains all information needed to perform download without accessing
+ * shared state (thread-safe by immutability).
+ * 
+ * Lifecycle:
+ * 1. Created in D-Bus handler (main loop thread)
+ * 2. Passed to GTask via g_task_set_task_data()
+ * 3. Used by worker thread in async_download_task()
+ * 4. Freed in async_download_complete() callback (main loop thread)
+ * 
+ * Memory: ~256 bytes (4 strings + connection pointer)
+ */
+typedef struct {
+    gchar *handler_id;              // Handler ID of requesting client (for logging)
+    gchar *firmware_name;           // Firmware filename (e.g., "image_v2.bin")
+    gchar *download_url;            // Full download URL (from XConf or custom)
+    gchar *type_of_firmware;        // Firmware type: "PCI", "PDRI", "PERIPHERAL"
+    GDBusConnection *connection;    // D-Bus connection for signal emission (borrowed, not owned)
+} AsyncDownloadContext;
+
+/*
+ * ProgressUpdate
+ * 
+ * Progress data passed from worker thread to main loop via g_idle_add().
+ * Contains all data needed to emit a single DownloadProgress D-Bus signal.
+ * 
+ * Usage Pattern:
+ * Worker thread:
+ *   ProgressUpdate *update = g_new0(ProgressUpdate, 1);
+ *   update->progress = 50;
+ *   update->status = FW_DWNL_INPROGRESS;
+ *   update->handler_id = g_strdup(ctx->handler_id);
+ *   update->firmware_name = g_strdup(ctx->firmware_name);
+ *   update->connection = ctx->connection;
+ *   g_idle_add(emit_download_progress_signal, update);
+ * 
+ * Main loop:
+ *   emit_download_progress_signal() emits signal, then frees all fields
+ * 
+ * Memory: ~128 bytes (2 strings + int + enum + pointer)
+ */
+typedef struct {
+    int progress;                   // Progress percentage (0-100, -1 for error)
+    FwDwnlStatus status;            // Download status (INPROGRESS, COMPLETED, ERROR)
+    gchar *handler_id;              // Handler ID for logging (optional, can be NULL)
+    gchar *firmware_name;           // Firmware name for signal payload
+    GDBusConnection *connection;    // D-Bus connection for signal emission (borrowed)
+} ProgressUpdate;
+
+/*
+ * CurrentDownloadState
+ * 
+ * Global state tracker for the currently active download operation.
+ * Enables multi-client piggybacking - subsequent clients for the same
+ * firmware join the existing download instead of starting a new one.
+ * 
+ * Access Pattern:
+ * - Only accessed from main loop thread (D-Bus handlers and idle callbacks)
+ * - No mutex needed due to GLib main loop serialization guarantees
+ * 
+ * Lifecycle:
+ * 1. Created when first client initiates download
+ * 2. Updated by progress callbacks (via g_idle_add)
+ * 3. Queried by subsequent clients (piggyback check)
+ * 4. Destroyed in async_download_complete() callback
+ * 
+ * Memory: ~256 bytes (2 strings + int + enum + GSList)
+ */
+typedef struct {
+    gchar *firmware_name;           // Name of firmware being downloaded
+    int current_progress;           // Latest progress percentage (0-100)
+    FwDwnlStatus status;            // Current download status
+    GSList *waiting_handler_ids;    // List of gchar* handler IDs waiting for this download
+} CurrentDownloadState;
+
+/* End of DownloadFirmware async structures */
+
+/*
  * Async Task Context
  * 
  * Maintains state for async operations (CheckForUpdate, Download, etc.).
