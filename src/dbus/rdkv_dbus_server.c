@@ -47,43 +47,10 @@ typedef struct {
 static void async_xconf_fetch_task(GTask *task, gpointer source_object, gpointer task_data, GCancellable *cancellable);
 static void async_xconf_fetch_complete(GObject *source_object, GAsyncResult *res, gpointer user_data);
 
-/**
- * @brief Validation result structure for DownloadFirmware parameters.
- */
-typedef struct {
-	gboolean is_valid;              // Overall validation result
-	guint64 handler_id;             // Converted handler ID (only valid if is_valid == TRUE)
-	const gchar *error_status;      // Error status code for D-Bus response
-	const gchar *error_message;     // Human-readable error message
-} DownloadValidationResult;
-
-/**
- * @brief Validate all input parameters for DownloadFirmware request.
- *
- * This function performs comprehensive validation of all DownloadFirmware input parameters:
- * - NULL and empty string checks for all inputs
- * - Handler ID string-to-uint64 conversion and validation
- * - Handler registration verification
- * - Firmware type enumeration validation
- * - Critical pointer validation (hash tables, caller ID)
- *
- * @param handler_id_str Handler ID as string (from D-Bus)
- * @param firmwareName Firmware image name
- * @param downloadUrl Download URL (optional, can be empty for XConf)
- * @param typeOfFirmware Firmware type: "PCI", "PDRI", or "PERIPHERAL"
- * @param rdkv_req_caller_id D-Bus sender unique name
- * @return DownloadValidationResult structure with validation outcome
- *
- * @note Caller is responsible for logging and error response based on result
- * @note Does NOT free input strings - caller retains ownership
- */
-static DownloadValidationResult validate_download_firmware_params(
-	const gchar *handler_id_str,
-	const gchar *firmwareName,
-	const gchar *downloadUrl,
-	const gchar *typeOfFirmware,
-	const gchar *rdkv_req_caller_id
-);
+/* Forward declarations for DownloadFirmware async functions */
+static void async_download_task(GTask *task, gpointer source_object, gpointer task_data, GCancellable *cancellable);
+static void async_download_complete(GObject *source_object, GAsyncResult *res, gpointer user_data);
+static gboolean emit_download_progress_signal(gpointer user_data);
 
 /* Concurrency control flags - enforce single operation at a time */
 static gboolean IsCheckUpdateInProgress = FALSE;
@@ -765,29 +732,6 @@ static gboolean check_update_task(gpointer user_data)
 }
 #endif
 
-/* Async Download Task - calls downloadFirmware function */
-static gboolean downloadFW_task(gpointer user_data)
-{
-	DownloadFW_TaskData  *data = (DownloadFW_TaskData*)user_data;
-	guint task_id = data->download_task_id;
-
-	if (IsDownloadInProgress == TRUE) {
-		SWLOG_INFO("Download FirmWware is in progress. Adding task to waiting queue. Will send response once done\n");
-		waiting_download_ids = g_slist_append(waiting_download_ids,GUINT_TO_POINTER(task_id));
-	}
-	else{
-		SWLOG_INFO("Starting new DownloadFW operation for task %d\n\n", task_id);
-		SWLOG_INFO("[Download task-%d] Starting to download Image : %s for process-id: %s...\n", task_id, data->firmwareName,data->DownloadFWTask_ctx->process_name);
-
-		IsDownloadInProgress = TRUE;
-		waiting_download_ids = g_slist_append(waiting_download_ids,GUINT_TO_POINTER(task_id));
-		// will write downloadFirmware logic
-		// Example: ret = downloadFirmwarwfunction(ctx->process_name, progress);//it is the function to makesure that download is completed.
-		g_timeout_add_seconds(10, Download_complete_callback,data->DownloadFWTask_ctx);
-	}
-	return G_SOURCE_REMOVE;
-}
-
 /*Async Upgrade Task - calls upgradeFW function*/
 static gboolean upgrade_task(gpointer user_data)
 {
@@ -810,130 +754,6 @@ static gboolean upgrade_task(gpointer user_data)
 	g_hash_table_remove(active_tasks, GUINT_TO_POINTER(task_id));
 	free_task_context(ctx);
 	return G_SOURCE_REMOVE;
-}
-
-/**
- * @brief Validate all input parameters for DownloadFirmware request.
- *
- * This function performs comprehensive validation of all DownloadFirmware input parameters
- * to ensure data integrity and security before processing the download request.
- *
- * Validation Steps:
- * 1. NULL and empty string checks for all inputs
- * 2. Handler ID string-to-uint64 conversion and range validation
- * 3. Handler registration verification in registered_processes hash table
- * 4. Firmware type enumeration validation (PCI/PDRI/PERIPHERAL)
- * 5. Critical system pointer validation (hash tables, caller ID)
- *
- * @param handler_id_str Handler ID as string (from D-Bus parameter)
- * @param firmwareName Firmware image name (required, non-empty)
- * @param downloadUrl Download URL (optional, can be empty string for XConf-based downloads)
- * @param typeOfFirmware Firmware type: must be "PCI", "PDRI", or "PERIPHERAL"
- * @param rdkv_req_caller_id D-Bus sender unique name (e.g., ":1.42")
- *
- * @return DownloadValidationResult structure containing:
- *         - is_valid: TRUE if all validations passed, FALSE otherwise
- *         - handler_id: Converted uint64 handler ID (only valid if is_valid == TRUE)
- *         - error_status: D-Bus status code for error response (e.g., "DWNLERROR")
- *         - error_message: Human-readable error description
- *
- * @note This function does NOT log errors - caller is responsible for logging
- * @note This function does NOT free input strings - caller retains ownership
- * @note Returns early on first validation failure (fail-fast approach)
- *
- * Example usage:
- * @code
- *   DownloadValidationResult validation = validate_download_firmware_params(
- *       handler_id_str, firmwareName, downloadUrl, typeOfFirmware, sender_id);
- *   
- *   if (!validation.is_valid) {
- *       SWLOG_ERROR("[DOWNLOAD] Validation failed: %s\n", validation.error_message);
- *       g_dbus_method_invocation_return_value(invocation,
- *           g_variant_new("(sss)", "RDKFW_DWNL_FAILED", 
- *                         validation.error_status, validation.error_message));
- *       // cleanup and return
- *   }
- *   
- *   // Use validation.handler_id for further processing
- * @endcode
- */
-static DownloadValidationResult validate_download_firmware_params(
-	const gchar *handler_id_str,
-	const gchar *firmwareName,
-	const gchar *downloadUrl,
-	const gchar *typeOfFirmware,
-	const gchar *rdkv_req_caller_id
-)
-{
-	DownloadValidationResult result = {
-		.is_valid = FALSE,
-		.handler_id = 0,
-		.error_status = "DWNLERROR",
-		.error_message = "Unknown validation error"
-	};
-	
-	// VALIDATION 0: Critical system pointers
-	if (!registered_processes) {
-		result.error_message = "Internal error: process tracking not initialized";
-		return result;
-	}
-	
-	if (!rdkv_req_caller_id) {
-		result.error_message = "Internal error: caller ID missing";
-		return result;
-	}
-	
-	if (!active_tasks) {
-		result.error_message = "Internal error: task system not initialized";
-		return result;
-	}
-	
-	// VALIDATION 1: Handler ID string validation and conversion
-	if (!handler_id_str || strlen(handler_id_str) == 0) {
-		result.error_message = "Invalid parameter: handler_id is empty";
-		return result;
-	}
-	
-	// Convert handler_id string to uint64
-	guint64 handler_id = g_ascii_strtoull(handler_id_str, NULL, 10);
-	
-	if (handler_id == 0) {
-		result.error_message = "Invalid parameter: handler_id is not a valid number";
-		return result;
-	}
-	
-	// VALIDATION 2: Handler registration check
-	gboolean is_registered = g_hash_table_contains(registered_processes, 
-	                                                GINT_TO_POINTER(handler_id));
-	
-	if (!is_registered) {
-		result.error_message = "Handler ID not registered. Call RegisterProcess first.";
-		return result;
-	}
-	
-	// VALIDATION 3: Firmware name validation
-	if (!firmwareName || strlen(firmwareName) == 0) {
-		result.error_message = "Invalid parameter: firmwareName is empty";
-		return result;
-	}
-	
-	// VALIDATION 4: Firmware type validation
-	// Note: downloadUrl is optional (can be empty string for XConf-based downloads)
-	if (!typeOfFirmware || 
-	    (strcmp(typeOfFirmware, "PCI") != 0 && 
-	     strcmp(typeOfFirmware, "PDRI") != 0 && 
-	     strcmp(typeOfFirmware, "PERIPHERAL") != 0)) {
-		result.error_message = "Invalid typeOfFirmware. Must be 'PCI', 'PDRI', or 'PERIPHERAL'";
-		return result;
-	}
-	
-	// All validations passed
-	result.is_valid = TRUE;
-	result.handler_id = handler_id;
-	result.error_status = NULL;  // Not used when validation succeeds
-	result.error_message = NULL;  // Not used when validation succeeds
-	
-	return result;
 }
 
 /**
@@ -1282,14 +1102,20 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 	 * 6. Robust error handling and cleanup
 	 * ==================================================================*/
 	else if (g_strcmp0(rdkv_req_method, "DownloadFirmware") == 0) {
-		SWLOG_INFO("\n");
-		SWLOG_INFO("╔════════════════════════════════════════════════════════════════╗\n");
-		SWLOG_INFO("║          NEW DOWNLOADFIRMWARE REQUEST                          ║\n");
-		SWLOG_INFO("╚════════════════════════════════════════════════════════════════╝\n");
+		SWLOG_INFO("[DOWNLOADFIRMWARE] ========== NEW DOWNLOAD REQUEST ==========\n");
 		SWLOG_INFO("[DOWNLOADFIRMWARE] Timestamp: %ld\n", (long)time(NULL));
 		SWLOG_INFO("[DOWNLOADFIRMWARE] D-Bus Sender: %s\n", rdkv_req_caller_id ? rdkv_req_caller_id : "NULL");
+		SWLOG_INFO("[DOWNLOADFIRMWARE] Daemon State: IsDownloadInProgress=%s, Registered=%d\n", 
+		           IsDownloadInProgress ? "YES" : "NO", g_hash_table_size(registered_processes));
+		if (IsDownloadInProgress && current_download) {
+			SWLOG_INFO("[DOWNLOADFIRMWARE] Current Download: %s (progress=%d%%, status=%d, waiting_clients=%d)\n", 
+			           current_download->firmware_name ? current_download->firmware_name : "NULL",
+			           current_download->current_progress, current_download->status,
+			           g_slist_length(current_download->waiting_handler_ids));
+		}
 		
-		// ========== NULL CHECKS: Critical pointers ==========
+		// NULL CHECKS: Critical pointers
+		SWLOG_INFO("[DOWNLOADFIRMWARE] Validating critical pointers...\n");
 		
 		if (!resp_ctx) {
 			SWLOG_ERROR("[DOWNLOADFIRMWARE] CRITICAL: resp_ctx is NULL, cannot send response!\n");
