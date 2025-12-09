@@ -39,17 +39,26 @@
  * Context structure for background XConf fetch operation.
  * Passed to GTask worker thread for async CheckForUpdate processing.
  */
+/*
+ * Context structure for async CheckForUpdate operation.
+ * Contains handler ID and D-Bus connection for async xconf fetch.
+ */
 typedef struct {
-    gchar *handler_id;
-    GDBusConnection *connection;
+    gchar *handler_id;          /* Client handler identifier */
+    GDBusConnection *connection; /* D-Bus connection for signal emission */
 } AsyncXconfFetchContext;
 
-static void async_xconf_fetch_task(GTask *task, gpointer source_object, gpointer task_data, GCancellable *cancellable);
-static void async_xconf_fetch_complete(GObject *source_object, GAsyncResult *res, gpointer user_data);
+/* Forward declarations - CheckForUpdate async operation handlers */
+static void async_xconf_fetch_task(GTask *task, gpointer source_object, 
+                                   gpointer task_data, GCancellable *cancellable);
+static void async_xconf_fetch_complete(GObject *source_object, 
+                                       GAsyncResult *res, gpointer user_data);
 
-/* Forward declarations for DownloadFirmware async functions */
-static void async_download_task(GTask *task, gpointer source_object, gpointer task_data, GCancellable *cancellable);
-static void async_download_complete(GObject *source_object, GAsyncResult *res, gpointer user_data);
+/* Forward declarations - DownloadFirmware async operation handlers */
+static void async_download_task(GTask *task, gpointer source_object, 
+                                gpointer task_data, GCancellable *cancellable);
+static void async_download_complete(GObject *source_object, 
+                                    GAsyncResult *res, gpointer user_data);
 static gboolean emit_download_progress_signal(gpointer user_data);
 
 /* Concurrency control flags - enforce single operation at a time */
@@ -624,6 +633,7 @@ static gboolean CheckUpdate_complete_callback(gpointer user_data) {
  * @param user_data TaskContext pointer
  * @return G_SOURCE_REMOVE (one-shot callback)
  */
+#if 0
 static gboolean Download_complete_callback(gpointer user_data) {
 	TaskContext *ctx = (TaskContext *)user_data;
 	SWLOG_INFO("In Download_complete_callback\n");
@@ -631,7 +641,7 @@ static gboolean Download_complete_callback(gpointer user_data) {
 	SWLOG_INFO(" back from complete_CheckUpdate_waiting_tasks\n");
 	return G_SOURCE_REMOVE;
 }
-
+#endif
 /* Async Check Update Task - calls xconf communication check function */
 /* COMMENTED OUT - Replaced by async_xconf_fetch_task and async_xconf_fetch_complete */
 #if 0
@@ -1298,9 +1308,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			g_free(type_of_firmware);
 			
 			SWLOG_INFO("[DOWNLOADFIRMWARE] ✓ CACHED FILE scenario complete\n");
-			SWLOG_INFO("╔════════════════════════════════════════════════════════════════╗\n");
-			SWLOG_INFO("║          DOWNLOADFIRMWARE REQUEST COMPLETE (CACHED)            ║\n");
-			SWLOG_INFO("╚════════════════════════════════════════════════════════════════╝\n\n");
+			SWLOG_INFO("[DOWNLOADFIRMWARE] ========== REQUEST COMPLETE (CACHED) ==========\n\n");
 			return;
 		}
 		
@@ -1354,9 +1362,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			g_free(type_of_firmware);
 			
 			SWLOG_INFO("[DOWNLOADFIRMWARE] ✓ PIGGYBACK scenario complete\n");
-			SWLOG_INFO("╔════════════════════════════════════════════════════════════════╗\n");
-			SWLOG_INFO("║       DOWNLOADFIRMWARE REQUEST COMPLETE (PIGGYBACK)            ║\n");
-			SWLOG_INFO("╚════════════════════════════════════════════════════════════════╝\n\n");
+			SWLOG_INFO("[DOWNLOADFIRMWARE] ========== REQUEST COMPLETE (PIGGYBACK) ==========\n\n");
 			return;
 		}
 		
@@ -1522,9 +1528,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		g_free(download_url);
 		g_free(type_of_firmware);
 		
-		SWLOG_INFO("╔════════════════════════════════════════════════════════════════╗\n");
-		SWLOG_INFO("║      DOWNLOADFIRMWARE REQUEST ACCEPTED (NEW DOWNLOAD)          ║\n");
-		SWLOG_INFO("╚════════════════════════════════════════════════════════════════╝\n\n");
+		SWLOG_INFO("[DOWNLOADFIRMWARE] ========== REQUEST ACCEPTED (NEW DOWNLOAD) ==========\n\n");
 	}
 
 	/* UPGRADE REQUEST - */
@@ -1907,9 +1911,7 @@ static void async_xconf_fetch_task(GTask *task, gpointer source_object, gpointer
     checkupdate_response_free(&response);
     
     SWLOG_INFO("[ASYNC_FETCH] *** WORKER THREAD COMPLETE ***\n");
-    SWLOG_INFO("╔════════════════════════════════════════════════════════════════╗\n");
-    SWLOG_INFO("║          DOWNLOAD WORKER THREAD FINISHED                       ║\n");
-    SWLOG_INFO("╚════════════════════════════════════════════════════════════════╝\n\n");
+    SWLOG_INFO("[ASYNC_FETCH] ========== WORKER THREAD FINISHED ==========\n\n");
 }
 
 /**
