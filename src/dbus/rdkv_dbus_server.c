@@ -49,17 +49,17 @@ typedef struct {
 } AsyncXconfFetchContext;
 
 /* Forward declarations - CheckForUpdate async operation handlers */
-static void async_xconf_fetch_task(GTask *task, gpointer source_object, 
-                                   gpointer task_data, GCancellable *cancellable);
-static void async_xconf_fetch_complete(GObject *source_object, 
-                                       GAsyncResult *res, gpointer user_data);
+static void rdkfw_xconf_fetch_worker(GTask *task, gpointer source_object, 
+                                     gpointer task_data, GCancellable *cancellable);
+static void rdkfw_xconf_fetch_done(GObject *source_object, 
+                                   GAsyncResult *res, gpointer user_data);
 
 /* Forward declarations - DownloadFirmware async operation handlers */
-static void async_download_task(GTask *task, gpointer source_object, 
-                                gpointer task_data, GCancellable *cancellable);
-static void async_download_complete(GObject *source_object, 
-                                    GAsyncResult *res, gpointer user_data);
-static gboolean emit_download_progress_signal(gpointer user_data);
+static void rdkfw_download_worker(GTask *task, gpointer source_object, 
+                                  gpointer task_data, GCancellable *cancellable);
+static void rdkfw_download_done(GObject *source_object, 
+                                GAsyncResult *res, gpointer user_data);
+static gboolean rdkfw_emit_download_progress(gpointer user_data);
 
 /* Concurrency control flags - enforce single operation at a time */
 static gboolean IsCheckUpdateInProgress = FALSE;
@@ -1052,11 +1052,11 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		SWLOG_INFO("[CHECK_UPDATE]   Connection: %p\n", (void*)connection);
 		
 		SWLOG_INFO("[CHECK_UPDATE] Creating GTask:\n");
-		SWLOG_INFO("[CHECK_UPDATE]   Worker function: async_xconf_fetch_task\n");
+		SWLOG_INFO("[CHECK_UPDATE]   Worker function: rdkfw_xconf_fetch_worker\n");
 		SWLOG_INFO("[CHECK_UPDATE]   (runs in separate thread - blocking I/O OK)\n");
-		SWLOG_INFO("[CHECK_UPDATE]   Completion CB: async_xconf_fetch_complete\n");
+		SWLOG_INFO("[CHECK_UPDATE]   Completion CB: rdkfw_xconf_fetch_done\n");
 		SWLOG_INFO("[CHECK_UPDATE]   (runs on main loop - broadcasts signal)\n");
-		GTask *task = g_task_new(NULL, NULL, async_xconf_fetch_complete, async_ctx);
+		GTask *task = g_task_new(NULL, NULL, rdkfw_xconf_fetch_done, async_ctx);
 		
 		// Verify GTask creation succeeded
 		if (!task) {
@@ -1075,7 +1075,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		g_task_set_task_data(task, async_ctx, NULL);  // NULL: manual cleanup in completion callback
 		
 		SWLOG_INFO("[CHECK_UPDATE] Launching GTask...\n");
-		g_task_run_in_thread(task, async_xconf_fetch_task);
+		g_task_run_in_thread(task, rdkfw_xconf_fetch_worker);
 		g_object_unref(task);
 		SWLOG_INFO("[CHECK_UPDATE] Worker thread spawned\n");
 		
@@ -1298,7 +1298,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 				update->handler_id = g_strdup(handler_id_str);
 				update->firmware_name = g_strdup(firmware_name);
 				update->connection = rdkv_conn_dbus;
-				g_idle_add(emit_download_progress_signal, update);
+				g_idle_add(rdkfw_emit_download_progress, update);
 			}
 			
 			// Cleanup
@@ -1352,7 +1352,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 				update->handler_id = g_strdup(handler_id_str);
 				update->firmware_name = g_strdup(firmware_name);
 				update->connection = rdkv_conn_dbus;
-				g_idle_add(emit_download_progress_signal, update);
+				g_idle_add(rdkfw_emit_download_progress, update);
 			}
 			
 			// Cleanup
@@ -1471,7 +1471,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		
 		// Create GTask for async execution
 		SWLOG_INFO("[DOWNLOADFIRMWARE] Creating GTask for worker thread...\n");
-		GTask *task = g_task_new(NULL, NULL, async_download_complete, async_ctx);
+		GTask *task = g_task_new(NULL, NULL, rdkfw_download_done, async_ctx);
 		if (!task) {
 			SWLOG_ERROR("[DOWNLOADFIRMWARE] CRITICAL: Failed to create GTask!\n");
 			
@@ -1507,7 +1507,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		SWLOG_INFO("[DOWNLOADFIRMWARE] Spawning worker thread...\n");
 		
 		// Spawn worker thread
-		g_task_run_in_thread(task, async_download_task);
+		g_task_run_in_thread(task, rdkfw_download_worker);
 		g_object_unref(task);
 		
 		SWLOG_INFO("[DOWNLOADFIRMWARE] ✓ Worker thread spawned\n");
@@ -1824,7 +1824,7 @@ void cleanup_dbus()
  * @param task_data AsyncXconfFetchContext with handler_id and connection
  * @param cancellable Cancellable object (unused)
  */
-static void async_xconf_fetch_task(GTask *task, gpointer source_object, gpointer task_data, GCancellable *cancellable) {
+static void rdkfw_xconf_fetch_worker(GTask *task, gpointer source_object, gpointer task_data, GCancellable *cancellable) {
     AsyncXconfFetchContext *ctx = (AsyncXconfFetchContext *)task_data;
     
     SWLOG_INFO("\n[ASYNC_FETCH] ========================================\n");
@@ -1933,7 +1933,7 @@ static void async_xconf_fetch_task(GTask *task, gpointer source_object, gpointer
  * @param res GAsyncResult from GTask framework
  * @param user_data AsyncXconfFetchContext with connection and handler_id
  */
-static void async_xconf_fetch_complete(GObject *source_object, GAsyncResult *res, gpointer user_data) {
+static void rdkfw_xconf_fetch_done(GObject *source_object, GAsyncResult *res, gpointer user_data) {
     SWLOG_INFO("\n[COMPLETE] ========================================\n");
     SWLOG_INFO("[COMPLETE] *** COMPLETION CALLBACK TRIGGERED ***\n");
     SWLOG_INFO("[COMPLETE] Running on MAIN LOOP thread (async operation complete)\n");
@@ -2202,7 +2202,7 @@ static void async_xconf_fetch_complete(GObject *source_object, GAsyncResult *res
  * - Frees handler_id, firmware_name, and ProgressUpdate struct
  * - Does NOT free connection (borrowed pointer)
  */
-static gboolean emit_download_progress_signal(gpointer user_data) {
+static gboolean rdkfw_emit_download_progress(gpointer user_data) {
     ProgressUpdate *update = (ProgressUpdate *)user_data;
     
     // NULL CHECK: Critical - validate input data
@@ -2365,8 +2365,8 @@ cleanup:
  * - Success: g_task_return_boolean(task, TRUE)
  * - Failure: g_task_return_boolean(task, FALSE)
  */
-static void async_download_task(GTask *task, gpointer source_object, 
-                                gpointer task_data, GCancellable *cancellable) {
+static void rdkfw_download_worker(GTask *task, gpointer source_object, 
+                                  gpointer task_data, GCancellable *cancellable) {
     AsyncDownloadContext *ctx = (AsyncDownloadContext *)task_data;
     
     SWLOG_INFO("\n");
@@ -2397,7 +2397,7 @@ static void async_download_task(GTask *task, gpointer source_object,
         error_update->handler_id = ctx->handler_id ? g_strdup(ctx->handler_id) : NULL;
         error_update->firmware_name = g_strdup("(invalid)");
         error_update->connection = ctx->connection;
-        g_idle_add(emit_download_progress_signal, error_update);
+        g_idle_add(rdkfw_emit_download_progress, error_update);
         
         g_task_return_boolean(task, FALSE);
         return;
@@ -2413,7 +2413,7 @@ static void async_download_task(GTask *task, gpointer source_object,
         error_update->handler_id = ctx->handler_id ? g_strdup(ctx->handler_id) : NULL;
         error_update->firmware_name = ctx->firmware_name ? g_strdup(ctx->firmware_name) : NULL;
         error_update->connection = ctx->connection;
-        g_idle_add(emit_download_progress_signal, error_update);
+        g_idle_add(rdkfw_emit_download_progress, error_update);
         
         g_task_return_boolean(task, FALSE);
         return;
@@ -2447,7 +2447,7 @@ static void async_download_task(GTask *task, gpointer source_object,
         
         // Schedule signal emission on main loop (thread-safe!)
         SWLOG_INFO("[DOWNLOAD_WORKER] Scheduling signal emission via g_idle_add...\n");
-        g_idle_add(emit_download_progress_signal, update);
+        g_idle_add(rdkfw_emit_download_progress, update);
         
         // Update global state for piggyback clients to query
         // NOTE: We can't directly modify current_download here (different thread!)
@@ -2498,7 +2498,7 @@ static void async_download_task(GTask *task, gpointer source_object,
         error_update->handler_id = ctx->handler_id ? g_strdup(ctx->handler_id) : NULL;
         error_update->firmware_name = ctx->firmware_name ? g_strdup(ctx->firmware_name) : NULL;
         error_update->connection = ctx->connection;
-        g_idle_add(emit_download_progress_signal, error_update);
+        g_idle_add(rdkfw_emit_download_progress, error_update);
         
         g_task_return_boolean(task, FALSE);
         return;
@@ -2539,8 +2539,8 @@ static void async_download_task(GTask *task, gpointer source_object,
  * - Resets IsDownloadInProgress flag
  * - Frees AsyncDownloadContext and all its strings
  */
-static void async_download_complete(GObject *source_object, GAsyncResult *res, 
-                                    gpointer user_data) {
+static void rdkfw_download_done(GObject *source_object, GAsyncResult *res, 
+                                gpointer user_data) {
     AsyncDownloadContext *ctx = (AsyncDownloadContext *)user_data;
     
     SWLOG_INFO("\n");
