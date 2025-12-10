@@ -124,6 +124,7 @@ static const gchar introspection_xml[] =
 "<arg type='b' name='success' direction='out'/>"
 "</method>"
 "<!-- CheckForUpdate: Check for firmware updates -->"
+"<method name='CheckForUpdate'>"
 "<arg type='s' name='handler_process_name' direction='in'/>" //Handler/Client ID - only input needed
 //FwData structure - All output parameters filled by server
 "<arg type='s' name='fwdata_version' direction='out'/>" //Current firmware version (detected by server)
@@ -2167,9 +2168,7 @@ static void rdkfw_xconf_fetch_done(GObject *source_object, GAsyncResult *res, gp
         SWLOG_ERROR("[COMPLETE]   Context is NULL (should never happen at this point!)\n");
     }
     
-    SWLOG_INFO("╔════════════════════════════════════════════════════════════════╗\n");
-    SWLOG_INFO("║        DOWNLOAD COMPLETION CALLBACK FINISHED                   ║\n");
-    SWLOG_INFO("╚════════════════════════════════════════════════════════════════╝\n\n");
+    SWLOG_INFO("==============DOWNLOAD COMPLETION CALLBACK FINISHED============\n");
 }
 
 /* ============================================================================
