@@ -2215,13 +2215,16 @@ static void rdkfw_xconf_fetch_done(GObject *source_object, GAsyncResult *res, gp
  *         → rdkfw_emit_download_progress() [main loop thread]
  *           → g_dbus_connection_emit_signal()
  * 
+ * Signature matches RdkUpgradeContext_t.progress_callback:
+ *   void (*)(unsigned long long current_bytes, unsigned long long total_bytes, void* user_data)
+ * 
+ * @param current_bytes Bytes downloaded so far
+ * @param total_bytes Total file size in bytes
  * @param user_data AsyncDownloadContext* pointer
- * @param percent Progress percentage (0.0 to 100.0)
- * @param downloaded Bytes downloaded so far
- * @param total Total file size in bytes
  */
-static void download_progress_callback(void* user_data, double percent, 
-                                       curl_off_t downloaded, curl_off_t total) {
+static void download_progress_callback(unsigned long long current_bytes, 
+                                       unsigned long long total_bytes, 
+                                       void* user_data) {
     AsyncDownloadContext *ctx = (AsyncDownloadContext *)user_data;
     
     SWLOG_DEBUG("[PROGRESS_CB] Invoked from worker thread (Thread ID: %lu)\n", (unsigned long)pthread_self());
@@ -2238,16 +2241,20 @@ static void download_progress_callback(void* user_data, double percent,
         return;
     }
     
-    // Normalize percentage
-    int progress_int = (int)percent;
-    if (progress_int > 100) progress_int = 100;
-    if (progress_int < 0) progress_int = 0;
+    // Calculate percentage from bytes
+    int progress_int = 0;
+    if (total_bytes > 0) {
+        double percent = ((double)current_bytes / (double)total_bytes) * 100.0;
+        progress_int = (int)percent;
+        if (progress_int > 100) progress_int = 100;
+        if (progress_int < 0) progress_int = 0;
+    }
     
     // Throttle logging (only log on change)
     static int last_logged = -1;
     if (progress_int != last_logged) {
         SWLOG_INFO("[PROGRESS_CB] Download progress: %d%% (%llu/%llu bytes)\n", 
-                   progress_int, (unsigned long long)downloaded, (unsigned long long)total);
+                   progress_int, current_bytes, total_bytes);
         SWLOG_INFO("[PROGRESS_CB]   Firmware: %s\n", ctx->firmware_name ? ctx->firmware_name : "NULL");
         last_logged = progress_int;
     }
