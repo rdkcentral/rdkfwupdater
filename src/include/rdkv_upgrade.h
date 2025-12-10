@@ -5,7 +5,6 @@
 extern "C" {
 #endif
 
-#include <glib.h>
 #include "rdkv_cdl.h"
 #include "rfcinterface.h"
 #include "deviceutils.h"
@@ -32,9 +31,9 @@ typedef struct {
     int* force_exit;                         //    Force exit flag pointer
     int trigger_type;                        //    Trigger type
     const Rfc_t* rfc_list;                  //     RFC list
-    gboolean download_only;                 //     If TRUE, skip flashing (download-only mode for D-Bus API)
-    void (*progress_callback)(guint64 current_bytes, guint64 total_bytes, void* user_data); // Progress callback
-    void* progress_callback_data;           //     User data for progress callback
+    int download_only;                       //     If non-zero, skip flashing (download-only mode for D-Bus API)
+    void (*progress_callback)(unsigned long long current_bytes, unsigned long long total_bytes, void* user_data); // Progress callback
+    void* progress_callback_data;            //     User data for progress callback
 } RdkUpgradeContext_t;
 
 /**
