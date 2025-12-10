@@ -31,10 +31,13 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <time.h>
+#include <curl/curl.h>
 #include "rdkv_dbus_server.h"
 #include "rdkFwupdateMgr_handlers.h"
 #include "rdkv_cdl_log_wrapper.h"
+#include "rdkv_upgrade.h"  // For RdkUpgradeContext_t and rdkv_upgrade_request()
 
+#define DWNL_PATH_FILE_LENGTH DWNL_PATH_FILE_LEN + 32
 /**
  * Context structure for background XConf fetch operation.
  * Passed to GTask worker thread for async CheckForUpdate processing.
@@ -186,6 +189,30 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
                              GVariant *rdkv_req_payload,
                              GDBusMethodInvocation *rdkv_resp_ctx,
 			     gpointer rdkv_user_ctx);
+
+static gchar* get_difw_path(void)
+{
+    GKeyFile *keyfile = g_key_file_new();
+    gchar *path = NULL;
+
+    if (g_key_file_load_from_file(keyfile,
+                                  "/etc/device.properties",
+                                  G_KEY_FILE_NONE,
+                                  NULL)) {
+        path = g_key_file_get_string(keyfile, "Device", "DIFW_PATH", NULL);
+    }
+
+    g_key_file_unref(keyfile);
+
+    if (!path || !*path) {
+        // fallback if not set
+        g_free(path);
+        return g_strdup("/opt/CDL");
+    }
+
+    return path;   // caller must free
+}
+
 
 /**
  * @brief Initialize the process tracking system.
@@ -1259,27 +1286,19 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 				g_free(type_of_firmware);
 				return;
 			}
-			SWLOG_INFO("[DOWNLOADFIRMWARE] ✓ Using custom URL: %s\n", download_url);
-		} else {
-			// No custom URL - will use XConf URL (must be fetched in worker)
-			SWLOG_INFO("[DOWNLOADFIRMWARE] ✓ Will use XConf URL (to be fetched)\n");
-			// For now, use placeholder URL - real implementation will fetch from XConf
-			g_free(download_url);
-			download_url = g_strdup("https://example.com/firmware/placeholder.bin");
-			SWLOG_INFO("[DOWNLOADFIRMWARE] TODO: Fetch real URL from XConf\n");
 		}
 		
-		SWLOG_INFO("[DOWNLOADFIRMWARE] ✓ All validations passed\n");
+		SWLOG_INFO("[DOWNLOADFIRMWARE] All validations passed\n");
 		SWLOG_INFO("[DOWNLOADFIRMWARE]   Handler ID (validated): %"G_GUINT64_FORMAT"\n", handler_id_numeric);
 		
 		// ========== CHECK FOR CACHED FILE (Scenario 8) ==========
 		
 		SWLOG_INFO("[DOWNLOADFIRMWARE] Checking for cached file...\n");
-		gchar *cache_path = g_strdup_printf("/tmp/%s", firmware_name);
+		gchar *cache_path = g_strdup_printf("/opt/CDL/%s", firmware_name);  // MADHU - check if this is the path always to download image
 		SWLOG_INFO("[DOWNLOADFIRMWARE]   Cache path: %s\n", cache_path);
 		
 		if (g_file_test(cache_path, G_FILE_TEST_EXISTS)) {
-			SWLOG_INFO("[DOWNLOADFIRMWARE] ✓ File already cached!\n");
+			SWLOG_INFO("[DOWNLOADFIRMWARE] File already cached!\n");
 			SWLOG_INFO("[DOWNLOADFIRMWARE] Returning SUCCESS with COMPLETED status immediately\n");
 			
 			g_free(cache_path);
@@ -1308,7 +1327,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			g_free(download_url);
 			g_free(type_of_firmware);
 			
-			SWLOG_INFO("[DOWNLOADFIRMWARE] ✓ CACHED FILE scenario complete\n");
+			SWLOG_INFO("[DOWNLOADFIRMWARE] CACHED FILE scenario complete\n");
 			SWLOG_INFO("[DOWNLOADFIRMWARE] ========== REQUEST COMPLETE (CACHED) ==========\n\n");
 			return;
 		}
@@ -1398,7 +1417,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		current_download->status = FW_DWNL_INPROGRESS;
 		current_download->waiting_handler_ids = g_slist_append(NULL, g_strdup(handler_id_str));
 		
-		SWLOG_INFO("[DOWNLOADFIRMWARE] ✓ Download state initialized\n");
+		SWLOG_INFO("[DOWNLOADFIRMWARE] Download state initialized\n");
 		SWLOG_INFO("[DOWNLOADFIRMWARE]   Firmware: %s\n", current_download->firmware_name);
 		SWLOG_INFO("[DOWNLOADFIRMWARE]   Initial progress: 0%%\n");
 		SWLOG_INFO("[DOWNLOADFIRMWARE]   Waiting clients: 1\n");
@@ -1464,7 +1483,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			return;
 		}
 		
-		SWLOG_INFO("[DOWNLOADFIRMWARE] ✓ Async context created\n");
+		SWLOG_INFO("[DOWNLOADFIRMWARE] Async context created\n");
 		SWLOG_INFO("[DOWNLOADFIRMWARE]   handler_id: %s\n", async_ctx->handler_id);
 		SWLOG_INFO("[DOWNLOADFIRMWARE]   firmware_name: %s\n", async_ctx->firmware_name);
 		SWLOG_INFO("[DOWNLOADFIRMWARE]   download_url: %s\n", async_ctx->download_url);
@@ -1504,14 +1523,14 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		
 		g_task_set_task_data(task, async_ctx, NULL);
 		
-		SWLOG_INFO("[DOWNLOADFIRMWARE] ✓ GTask created successfully\n");
+		SWLOG_INFO("[DOWNLOADFIRMWARE] GTask created successfully\n");
 		SWLOG_INFO("[DOWNLOADFIRMWARE] Spawning worker thread...\n");
 		
 		// Spawn worker thread
 		g_task_run_in_thread(task, rdkfw_download_worker);
 		g_object_unref(task);
 		
-		SWLOG_INFO("[DOWNLOADFIRMWARE] ✓ Worker thread spawned\n");
+		SWLOG_INFO("[DOWNLOADFIRMWARE] Worker thread spawned\n");
 		
 		// Return success immediately (download will continue in background)
 		g_dbus_method_invocation_return_value(resp_ctx,
@@ -1520,7 +1539,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 				"INPROGRESS",
 				"Download started successfully"));
 		
-		SWLOG_INFO("[DOWNLOADFIRMWARE] ✓ SUCCESS response sent to client\n");
+		SWLOG_INFO("[DOWNLOADFIRMWARE] SUCCESS response sent to client\n");
 		SWLOG_INFO("[DOWNLOADFIRMWARE] Worker thread is now running in background\n");
 		
 		// Cleanup original strings (copies made for async_ctx)
@@ -2179,8 +2198,82 @@ static void rdkfw_xconf_fetch_done(GObject *source_object, GAsyncResult *res, gp
  * - g_idle_add() for thread-safe D-Bus signal emission from main loop
  * - Multi-client piggybacking (multiple clients can wait for same download)
  * - Robust error handling and cleanup
+ * - Real-time progress updates via curl's CURLOPT_XFERINFOFUNCTION callback
  * ============================================================================
  */
+
+/**
+ * @brief Progress callback invoked by curl during firmware download
+ * 
+ * Thread Context: WORKER THREAD (called by libcurl via xferinfo)
+ * Thread Safety: Uses g_idle_add() to marshal signals to main loop
+ * 
+ * Call Chain:
+ *   libcurl (worker thread) → xferinfo() [urlHelper.c]
+ *     → download_progress_callback() [HERE]
+ *       → g_idle_add(rdkfw_emit_download_progress, ...)
+ *         → rdkfw_emit_download_progress() [main loop thread]
+ *           → g_dbus_connection_emit_signal()
+ * 
+ * @param user_data AsyncDownloadContext* pointer
+ * @param percent Progress percentage (0.0 to 100.0)
+ * @param downloaded Bytes downloaded so far
+ * @param total Total file size in bytes
+ */
+static void download_progress_callback(void* user_data, double percent, 
+                                       curl_off_t downloaded, curl_off_t total) {
+    AsyncDownloadContext *ctx = (AsyncDownloadContext *)user_data;
+    
+    SWLOG_DEBUG("[PROGRESS_CB] Invoked from worker thread (Thread ID: %lu)\n", (unsigned long)pthread_self());
+    
+    // NULL CHECK: Validate context
+    if (!ctx) {
+        SWLOG_ERROR("[PROGRESS_CB] ERROR: NULL context received!\n");
+        return;
+    }
+    
+    // NULL CHECK: Validate D-Bus connection
+    if (!ctx->connection) {
+        SWLOG_ERROR("[PROGRESS_CB] ERROR: NULL D-Bus connection in context!\n");
+        return;
+    }
+    
+    // Normalize percentage
+    int progress_int = (int)percent;
+    if (progress_int > 100) progress_int = 100;
+    if (progress_int < 0) progress_int = 0;
+    
+    // Throttle logging (only log on change)
+    static int last_logged = -1;
+    if (progress_int != last_logged) {
+        SWLOG_INFO("[PROGRESS_CB] Download progress: %d%% (%llu/%llu bytes)\n", 
+                   progress_int, (unsigned long long)downloaded, (unsigned long long)total);
+        SWLOG_INFO("[PROGRESS_CB]   Firmware: %s\n", ctx->firmware_name ? ctx->firmware_name : "NULL");
+        last_logged = progress_int;
+    }
+    
+    // Update global state
+    if (current_download) {
+        current_download->current_progress = progress_int;
+    }
+    
+    // Create progress update for D-Bus signal
+    ProgressUpdate *update = g_new0(ProgressUpdate, 1);
+    if (!update) {
+        SWLOG_ERROR("[PROGRESS_CB] ERROR: Failed to allocate ProgressUpdate!\n");
+        return;
+    }
+    
+    update->progress = progress_int;
+    update->status = FW_DWNL_INPROGRESS;
+    update->handler_id = ctx->handler_id ? g_strdup(ctx->handler_id) : NULL;
+    update->firmware_name = ctx->firmware_name ? g_strdup(ctx->firmware_name) : NULL;
+    update->connection = ctx->connection;
+    
+    // Schedule signal emission on main loop (thread-safe!)
+    SWLOG_DEBUG("[PROGRESS_CB] Scheduling D-Bus signal emission via g_idle_add\n");
+    g_idle_add(rdkfw_emit_download_progress, update);
+}
 
 /**
  * @brief Emit DownloadProgress signal on main loop (called via g_idle_add)
@@ -2369,15 +2462,12 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     AsyncDownloadContext *ctx = (AsyncDownloadContext *)task_data;
     
     SWLOG_INFO("\n");
-    SWLOG_INFO("╔════════════════════════════════════════════════════════════════╗\n");
-    SWLOG_INFO("║          DOWNLOAD WORKER THREAD STARTED                        ║\n");
-    SWLOG_INFO("╠════════════════════════════════════════════════════════════════╣\n");
-    SWLOG_INFO("║ Thread ID: %lu\n", (unsigned long)pthread_self());
-    SWLOG_INFO("║ Handler ID: %s\n", ctx->handler_id ? ctx->handler_id : "NULL");
-    SWLOG_INFO("║ Firmware: %s\n", ctx->firmware_name ? ctx->firmware_name : "NULL");
-    SWLOG_INFO("║ URL: %s\n", ctx->download_url ? ctx->download_url : "NULL");
-    SWLOG_INFO("║ Type: %s\n", ctx->type_of_firmware ? ctx->type_of_firmware : "NULL");
-    SWLOG_INFO("╚════════════════════════════════════════════════════════════════╝\n");
+    SWLOG_INFO("=========================DOWNLOAD WORKER THREAD STARTED=====================\n");
+    SWLOG_INFO(" Thread ID: %lu\n", (unsigned long)pthread_self());
+    SWLOG_INFO("Handler ID: %s\n", ctx->handler_id ? ctx->handler_id : "NULL");
+    SWLOG_INFO("Firmware: %s\n", ctx->firmware_name ? ctx->firmware_name : "NULL");
+    SWLOG_INFO("URL: %s\n", ctx->download_url ? ctx->download_url : "NULL");
+    SWLOG_INFO("Type: %s\n", ctx->type_of_firmware ? ctx->type_of_firmware : "NULL");
     
     // NULL CHECKS: Validate critical context fields
     if (!ctx) {
@@ -2418,102 +2508,189 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
         return;
     }
     
-    // ========================================================================
-    // TODO: Replace this placeholder with real rdkv_upgrade_request() call
-    // ========================================================================
-    
-    SWLOG_INFO("[DOWNLOAD_WORKER] *** PLACEHOLDER IMPLEMENTATION ***\n");
-    SWLOG_INFO("[DOWNLOAD_WORKER] Simulating download with progress updates\n");
-    SWLOG_INFO("[DOWNLOAD_WORKER] TODO: Integrate rdkv_upgrade_request() with CURLOPT_PROGRESSFUNCTION\n");
-    SWLOG_INFO("[DOWNLOAD_WORKER] ----------------------------------------\n");
-    
-    // Simulate download with progress updates (10% increments, 3 second intervals)
-    for (int progress = 0; progress <= 100; progress += 10) {
-        SWLOG_INFO("[DOWNLOAD_WORKER] Simulated progress: %d%%\n", progress);
-        
-        // Create progress update for this iteration
-        ProgressUpdate *update = g_new0(ProgressUpdate, 1);
-        if (!update) {
-            SWLOG_ERROR("[DOWNLOAD_WORKER] ERROR: Failed to allocate progress update\n");
-            continue;  // Try to continue with next progress update
-        }
-        
-        update->progress = progress;
-        update->status = (progress == 100) ? FW_DWNL_COMPLETED : FW_DWNL_INPROGRESS;
-        update->handler_id = ctx->handler_id ? g_strdup(ctx->handler_id) : NULL;
-        update->firmware_name = ctx->firmware_name ? g_strdup(ctx->firmware_name) : NULL;
-        update->connection = ctx->connection;
-        
-        // Schedule signal emission on main loop (thread-safe!)
-        SWLOG_INFO("[DOWNLOAD_WORKER] Scheduling signal emission via g_idle_add...\n");
-        g_idle_add(rdkfw_emit_download_progress, update);
-        
-        // Update global state for piggyback clients to query
-        // NOTE: We can't directly modify current_download here (different thread!)
-        // The main loop will update it when handling the progress signal
-        
-        // Sleep to simulate download time
-        if (progress < 100) {
-            SWLOG_INFO("[DOWNLOAD_WORKER] Sleeping 3 seconds before next update...\n");
-            sleep(3);  // TODO: Remove when real download implemented
-        }
+    // ========== STEP 2: BUILD DOWNLOAD PATH ==========
+    SWLOG_INFO("[DOWNLOAD_WORKER] Building download path...\n");
+    char download_path[DWNL_PATH_FILE_LENGTH];
+    gchar *difw_path = get_difw_path();
+    int path_len = snprintf(download_path, sizeof(download_path), "%s/%s", difw_path,ctx->firmware_name);
+//int path_len = snprintf(download_path, sizeof(download_path), "/tmp/%s", ctx->firmware_name);
+    SWLOG_INFO("DWNL path with img name=%s\n", download_path); 
+    if (path_len < 0 || path_len >= sizeof(download_path)) {
+        SWLOG_ERROR("[DOWNLOAD_WORKER] ERROR: Download path too long or snprintf failed!\n");
+        g_task_return_boolean(task, FALSE);
+        return;
     }
     
-    SWLOG_INFO("[DOWNLOAD_WORKER] Simulated download complete (100%%)!\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER] Download path: %s\n", download_path);
+    SWLOG_INFO("[DOWNLOAD_WORKER]   Path length: %d characters\n", path_len);
     
-    // ========================================================================
-    // TODO: Real implementation (when CURLOPT_PROGRESSFUNCTION is integrated):
-    // ========================================================================
-    #if 0
-    SWLOG_INFO("[DOWNLOAD_WORKER] Calling rdkv_upgrade_request()...\n");
+    // ========== STEP 3: CREATE RdkUpgradeContext_t ==========
+    SWLOG_INFO("[DOWNLOAD_WORKER] Creating RdkUpgradeContext_t structure...\n");
     
-    // Setup RdkUpgradeContext_t with progress callback
-    RdkUpgradeContext_t upgrade_ctx = {
-        .download_only = TRUE,
-        .artifactLocationUrl = ctx->download_url,
-        .progress_callback = download_progress_callback,  // Calls g_idle_add internally
-        .progress_callback_data = ctx,
-        // ... other fields ...
-    };
+    RdkUpgradeContext_t upgrade_ctx = {0};  // Zero-initialize all fields
+    SWLOG_INFO("[DOWNLOAD_WORKER] Structure zero-initialized\n");
     
-    void *curl_handle = NULL;
+    // Map firmware type string to enum
+    SWLOG_INFO("[DOWNLOAD_WORKER] Mapping firmware type '%s' to enum...\n", ctx->type_of_firmware);
+    
+    if (g_strcmp0(ctx->type_of_firmware, "PCI") == 0) {
+        upgrade_ctx.upgrade_type = PCI_UPGRADE;
+        SWLOG_INFO("[DOWNLOAD_WORKER] Mapped to PCI_UPGRADE\n");
+    } else if (g_strcmp0(ctx->type_of_firmware, "PDRI") == 0) {
+        upgrade_ctx.upgrade_type = PDRI_UPGRADE;
+        SWLOG_INFO("[DOWNLOAD_WORKER] Mapped to PDRI_UPGRADE\n");
+    } else if (g_strcmp0(ctx->type_of_firmware, "PERIPHERAL") == 0) {
+        upgrade_ctx.upgrade_type = PERIPHERAL_UPGRADE;
+        SWLOG_INFO("[DOWNLOAD_WORKER] Mapped to PERIPHERAL_UPGRADE\n");
+    } else {
+        SWLOG_WARN("[DOWNLOAD_WORKER] WARNING: Unknown type '%s', defaulting to PCI_UPGRADE\n", 
+                   ctx->type_of_firmware);
+        upgrade_ctx.upgrade_type = PCI_UPGRADE;
+    }
+    
+    // Populate context fields
+    SWLOG_INFO("[DOWNLOAD_WORKER] Populating RdkUpgradeContext_t fields...\n");
+    
+    upgrade_ctx.server_type = HTTP_SSR_DIRECT;
+    SWLOG_INFO("[DOWNLOAD_WORKER]   server_type = HTTP_SSR_DIRECT\n");
+    
+    upgrade_ctx.artifactLocationUrl = ctx->download_url;
+    SWLOG_INFO("[DOWNLOAD_WORKER]   artifactLocationUrl = %s\n", upgrade_ctx.artifactLocationUrl);
+    
+    upgrade_ctx.dwlloc = download_path;
+    SWLOG_INFO("[DOWNLOAD_WORKER]   dwlloc = %s\n", (const char*)upgrade_ctx.dwlloc);
+    
+    upgrade_ctx.pPostFields = NULL;
+    SWLOG_INFO("[DOWNLOAD_WORKER]   pPostFields = NULL (HTTP GET)\n");
+    
+    upgrade_ctx.immed_reboot_flag = "false";
+    SWLOG_INFO("[DOWNLOAD_WORKER]   immed_reboot_flag = \"false\"\n");
+    
+    upgrade_ctx.delay_dwnl = 0;
+    SWLOG_INFO("[DOWNLOAD_WORKER]   delay_dwnl = 0 (no delay)\n");
+    
+    upgrade_ctx.lastrun = "";
+    SWLOG_INFO("[DOWNLOAD_WORKER]   lastrun = \"\" (not needed)\n");
+    
+    upgrade_ctx.disableStatsUpdate = "yes";
+    SWLOG_INFO("[DOWNLOAD_WORKER]   disableStatsUpdate = \"yes\" (D-Bus handles telemetry)\n");
+    
+    upgrade_ctx.device_info = NULL;
+    SWLOG_INFO("[DOWNLOAD_WORKER]   device_info = NULL (not needed for download-only)\n");
+    
+    upgrade_ctx.force_exit = NULL;
+    SWLOG_INFO("[DOWNLOAD_WORKER]   force_exit = NULL\n");
+    
+    upgrade_ctx.trigger_type = 0;
+    SWLOG_INFO("[DOWNLOAD_WORKER]   trigger_type = 0\n");
+    
+    upgrade_ctx.rfc_list = NULL;
+    SWLOG_INFO("[DOWNLOAD_WORKER]   rfc_list = NULL\n");
+    
+    // *** CRITICAL FIELDS FOR D-BUS ***
+    upgrade_ctx.download_only = 1;
+    SWLOG_INFO("[DOWNLOAD_WORKER]   download_only = 1 *** CRITICAL: SKIP FLASHING in rdkv_upgrade_request()! ***\n");
+    
+    upgrade_ctx.progress_callback = download_progress_callback;
+    SWLOG_INFO("[DOWNLOAD_WORKER]   progress_callback = %p (download_progress_callback)\n", 
+               (void*)upgrade_ctx.progress_callback);
+    
+    upgrade_ctx.progress_callback_data = (void*)ctx;
+    SWLOG_INFO("[DOWNLOAD_WORKER]   progress_callback_data = %p (AsyncDownloadContext)\n", 
+               upgrade_ctx.progress_callback_data);
+    
+    SWLOG_INFO("[DOWNLOAD_WORKER] RdkUpgradeContext_t fully populated\n");
+    
+    // ========== STEP 4: CALL rdkv_upgrade_request() ==========
+    SWLOG_INFO("[DOWNLOAD_WORKER] \n");
+    SWLOG_INFO("[DOWNLOAD_WORKER] ========== CALLING rdkv_upgrade_request() ==========\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER] This is a BLOCKING call - will not return until download completes\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER] Progress updates will be emitted via download_progress_callback()\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER] Starting download NOW...\n");
+    
+    void* curl_handle = NULL;
     int http_code = 0;
     
-    // Blocking call (safe in worker thread!)
-    int result = rdkv_upgrade_request(&upgrade_ctx, &curl_handle, &http_code);
+    int curl_ret_code = rdkv_upgrade_request(&upgrade_ctx, &curl_handle, &http_code);
     
-    SWLOG_INFO("[DOWNLOAD_WORKER] rdkv_upgrade_request() returned: %d\n", result);
-    SWLOG_INFO("[DOWNLOAD_WORKER]   HTTP code: %d\n", http_code);
+    SWLOG_INFO("[DOWNLOAD_WORKER] \n");
+    SWLOG_INFO("[DOWNLOAD_WORKER] ========== rdkv_upgrade_request() RETURNED ==========\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER] Return value: %d\n", curl_ret_code);
+    SWLOG_INFO("[DOWNLOAD_WORKER] HTTP code: %d\n", http_code);
     
-    if (result != 0) {
+    // ========== STEP 5: HANDLE RESULT ==========
+    if (curl_ret_code != 0) {
         // Download failed
-        SWLOG_ERROR("[DOWNLOAD_WORKER] Download FAILED!\n");
-        SWLOG_ERROR("[DOWNLOAD_WORKER]   curl_code=%d, http_code=%d\n", result, http_code);
+        SWLOG_ERROR("[DOWNLOAD_WORKER] *** DOWNLOAD FAILED! ***\n");
+        SWLOG_ERROR("[DOWNLOAD_WORKER]   curl_code = %d\n", curl_ret_code);
+        SWLOG_ERROR("[DOWNLOAD_WORKER]   http_code = %d\n", http_code);
+        
+        // Map curl error to friendly message
+        const char *error_desc = "Unknown error";
+        if (curl_ret_code == 6) error_desc = "Could not resolve host";
+        else if (curl_ret_code == 7) error_desc = "Failed to connect to host";
+        else if (curl_ret_code == 28) error_desc = "Operation timeout";
+        else if (curl_ret_code == 35) error_desc = "SSL connect error";
+        else if (curl_ret_code == 52) error_desc = "Server returned nothing";
+        else if (curl_ret_code == 56) error_desc = "Failure in receiving network data";
+        
+        SWLOG_ERROR("[DOWNLOAD_WORKER]   Error description: %s\n", error_desc);
         
         // Emit error signal
         ProgressUpdate *error_update = g_new0(ProgressUpdate, 1);
-        error_update->progress = -1;  // Error indicator
-        error_update->status = FW_DWNL_ERROR;
-        error_update->handler_id = ctx->handler_id ? g_strdup(ctx->handler_id) : NULL;
-        error_update->firmware_name = ctx->firmware_name ? g_strdup(ctx->firmware_name) : NULL;
-        error_update->connection = ctx->connection;
-        g_idle_add(rdkfw_emit_download_progress, error_update);
+        if (error_update) {
+            error_update->progress = -1;  // Error indicator
+            error_update->status = FW_DWNL_ERROR;
+            error_update->handler_id = ctx->handler_id ? g_strdup(ctx->handler_id) : NULL;
+            error_update->firmware_name = ctx->firmware_name ? g_strdup(ctx->firmware_name) : NULL;
+            error_update->connection = ctx->connection;
+            g_idle_add(rdkfw_emit_download_progress, error_update);
+        }
         
         g_task_return_boolean(task, FALSE);
         return;
     }
     
-    SWLOG_INFO("[DOWNLOAD_WORKER] Download SUCCESSFUL!\n");
-    g_task_return_boolean(task, TRUE);
-    return;
-    #endif
+    // Check HTTP code (even if curl succeeded)
+    if (http_code != 200 && http_code != 206) {
+        SWLOG_ERROR("[DOWNLOAD_WORKER] *** HTTP ERROR! ***\n");
+        SWLOG_ERROR("[DOWNLOAD_WORKER]   HTTP code = %d\n", http_code);
+        
+        // Emit error signal
+        ProgressUpdate *error_update = g_new0(ProgressUpdate, 1);
+        if (error_update) {
+            error_update->progress = -1;
+            error_update->status = FW_DWNL_ERROR;
+            error_update->handler_id = ctx->handler_id ? g_strdup(ctx->handler_id) : NULL;
+            error_update->firmware_name = ctx->firmware_name ? g_strdup(ctx->firmware_name) : NULL;
+            error_update->connection = ctx->connection;
+            g_idle_add(rdkfw_emit_download_progress, error_update);
+        }
+        
+        g_task_return_boolean(task, FALSE);
+        return;
+    }
     
-    // For placeholder, return success
+    // Success!
+    SWLOG_INFO("[DOWNLOAD_WORKER] *** DOWNLOAD SUCCESSFUL! ***\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER]   Downloaded to: %s\n", download_path);
+    SWLOG_INFO("[DOWNLOAD_WORKER]   curl_code = 0 (CURLE_OK)\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER]   http_code = %d\n", http_code);
+    
+    // Emit final 100% completion signal (in case progress callback didn't reach exactly 100%)
+    ProgressUpdate *complete_update = g_new0(ProgressUpdate, 1);
+    if (complete_update) {
+        complete_update->progress = 100;
+        complete_update->status = FW_DWNL_COMPLETED;
+        complete_update->handler_id = ctx->handler_id ? g_strdup(ctx->handler_id) : NULL;
+        complete_update->firmware_name = ctx->firmware_name ? g_strdup(ctx->firmware_name) : NULL;
+        complete_update->connection = ctx->connection;
+        g_idle_add(rdkfw_emit_download_progress, complete_update);
+    }
+    
     SWLOG_INFO("[DOWNLOAD_WORKER] ----------------------------------------\n");
     SWLOG_INFO("[DOWNLOAD_WORKER] *** WORKER THREAD COMPLETE ***\n");
-    SWLOG_INFO("╔════════════════════════════════════════════════════════════════╗\n");
-    SWLOG_INFO("║          DOWNLOAD WORKER THREAD FINISHED                       ║\n");
-    SWLOG_INFO("╚════════════════════════════════════════════════════════════════╝\n\n");
+    SWLOG_INFO("====================DOWNLOAD WORKER THREAD FINISHED====================\n");
     
     g_task_return_boolean(task, TRUE);
 }
@@ -2543,12 +2720,9 @@ static void rdkfw_download_done(GObject *source_object, GAsyncResult *res,
     AsyncDownloadContext *ctx = (AsyncDownloadContext *)user_data;
     
     SWLOG_INFO("\n");
-    SWLOG_INFO("╔════════════════════════════════════════════════════════════════╗\n");
-    SWLOG_INFO("║        DOWNLOAD COMPLETION CALLBACK TRIGGERED                  ║\n");
-    SWLOG_INFO("╠════════════════════════════════════════════════════════════════╣\n");
-    SWLOG_INFO("║ Running on: MAIN LOOP thread\n");
-    SWLOG_INFO("║ Firmware: %s\n", ctx ? (ctx->firmware_name ? ctx->firmware_name : "NULL") : "NULL");
-    SWLOG_INFO("╚════════════════════════════════════════════════════════════════╝\n");
+    SWLOG_INFO("=============DOWNLOAD COMPLETION CALLBACK TRIGGERED=======================================\n");
+    SWLOG_INFO("=================Running on: MAIN LOOP thread\n");
+    SWLOG_INFO("===============Firmware: %s\n", ctx ? (ctx->firmware_name ? ctx->firmware_name : "NULL") : "NULL");
     
     // NULL CHECK: Validate task result
     if (!res) {
@@ -2564,9 +2738,9 @@ static void rdkfw_download_done(GObject *source_object, GAsyncResult *res,
         SWLOG_ERROR("[DOWNLOAD_COMPLETE] Task completed with error: %s\n", error->message);
         g_error_free(error);
     } else if (success) {
-        SWLOG_INFO("[DOWNLOAD_COMPLETE] ✓ Download result: SUCCESS\n");
+        SWLOG_INFO("[DOWNLOAD_COMPLETE] Download result: SUCCESS\n");
     } else {
-        SWLOG_INFO("[DOWNLOAD_COMPLETE] ✗ Download result: FAILED\n");
+        SWLOG_INFO("[DOWNLOAD_COMPLETE] Download result: FAILED\n");
     }
     
     // Cleanup global download state
@@ -2597,7 +2771,7 @@ static void rdkfw_download_done(GObject *source_object, GAsyncResult *res,
         g_free(current_download);
         current_download = NULL;
         
-        SWLOG_INFO("[DOWNLOAD_COMPLETE] ✓ Download state cleaned up\n");
+        SWLOG_INFO("[DOWNLOAD_COMPLETE] Download state cleaned up\n");
     } else {
         SWLOG_INFO("[DOWNLOAD_COMPLETE] No download state to clean up (already NULL)\n");
     }
@@ -2627,12 +2801,10 @@ cleanup_ctx:
         
         g_free(ctx);
         
-        SWLOG_INFO("[DOWNLOAD_COMPLETE] ✓ Context freed\n");
+        SWLOG_INFO("[DOWNLOAD_COMPLETE] - Context freed\n");
     }
     
-    SWLOG_INFO("╔════════════════════════════════════════════════════════════════╗\n");
-    SWLOG_INFO("║        DOWNLOAD COMPLETION CALLBACK FINISHED                   ║\n");
-    SWLOG_INFO("╚════════════════════════════════════════════════════════════════╝\n\n");
+    SWLOG_INFO(" ==============================DOWNLOAD COMPLETION CALLBACK FINISHED ===============================\n");
 }
 
 /* End of DownloadFirmware async implementation */
