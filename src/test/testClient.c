@@ -12,6 +12,7 @@
  *   reregister - Test same client re-registration  
  *   check      - Register and perform CheckForUpdate
  *   full       - Full workflow test
+ *   download    - Test firmware download
  */
 
 #include <stdio.h>
@@ -40,6 +41,7 @@ typedef struct {
 static TestClientContext* test_client_new(const gchar *process_name, const gchar *lib_version);
 static gboolean test_client_register(TestClientContext *client);
 static gboolean test_client_check_update(TestClientContext *client);
+static gboolean test_client_download_firmware(TestClientContext *client, const char *firmware_name, const char *download_url, const char *type_of_firmware);
 static gboolean test_client_unregister(TestClientContext *client);
 static void test_client_free(TestClientContext *client);
 static void print_usage(const char *program_name);
@@ -104,6 +106,47 @@ static void on_check_for_update_complete_signal(GDBusConnection *connection,
 }
 
 /**
+ * Signal callback for DownloadProgress - simulates firmware download progress
+ */
+static void on_download_progress_signal(GDBusConnection *connection,
+                                        const gchar *sender_name,
+                                        const gchar *object_path,
+                                        const gchar *interface_name,
+                                        const gchar *signal_name,
+                                        GVariant *parameters,
+                                        gpointer user_data)
+{
+    TestClientContext *client = (TestClientContext*)user_data;
+    gchar *handler_id;
+    gint progress;
+    gchar *status_message;
+    
+    // Extract signal parameters
+    g_variant_get(parameters, "(sig)", &handler_id, &progress, &status_message);
+    
+    printf("\nD-Bus Signal Received: DownloadProgress\n");
+    PRINT_INFO("Signal Details:");
+    PRINT_INFO("  Handler ID: %s", handler_id);
+    PRINT_INFO("  Progress: %d%%", progress);
+    PRINT_INFO("  Status Message: %s", status_message);
+    
+    // Check if this signal is for our client (like real library would do)
+    gchar *our_handler_str = g_strdup_printf("%"G_GUINT64_FORMAT, client->handler_id);
+    if (g_strcmp0(handler_id, our_handler_str) == 0) {
+        PRINT_SUCCESS("Signal is for our handler - download progress update");
+    } else {
+        PRINT_WARN("Signal is for different handler (%s vs %s) - ignoring", handler_id, our_handler_str);
+    }
+    g_free(our_handler_str);
+    
+    // Free extracted strings
+    g_free(handler_id);
+    g_free(status_message);
+    
+    printf("Signal processing complete\n\n");
+}
+
+/**
  * Create new test client context
  */
 static TestClientContext* test_client_new(const gchar *process_name, const gchar *lib_version)
@@ -138,6 +181,22 @@ static TestClientContext* test_client_new(const gchar *process_name, const gchar
         NULL,                                 // arg0 (no filtering)
         G_DBUS_SIGNAL_FLAGS_NONE,
         on_check_for_update_complete_signal,  // callback
+        client,                               // user_data
+        NULL                                  // user_data_free_func
+    );
+    PRINT_SUCCESS("Subscribed to D-Bus signals successfully");
+    
+    // Subscribe to DownloadProgress signal
+    PRINT_INFO("Subscribing to DownloadProgress D-Bus signals...");
+    g_dbus_connection_signal_subscribe(
+        client->connection,
+        DBUS_SERVICE_NAME,                    // sender
+        DBUS_INTERFACE_NAME,                  // interface
+        "DownloadProgress",                   // signal name
+        DBUS_OBJECT_PATH,                     // object path
+        NULL,                                 // arg0 (no filtering)
+        G_DBUS_SIGNAL_FLAGS_NONE,
+        on_download_progress_signal,          // callback
         client,                               // user_data
         NULL                                  // user_data_free_func
     );
@@ -302,6 +361,62 @@ static gboolean test_client_check_update(TestClientContext *client)
 }
 
 /**
+ * Download firmware using DownloadFirmware call
+ */
+static gboolean test_client_download_firmware(TestClientContext *client, const char *firmware_name, const char *download_url, const char *type_of_firmware)
+{
+    GError *error = NULL;
+    GVariant *result = NULL;
+    gchar *handler_id_str = NULL;
+
+    if (!client->is_registered) {
+        PRINT_ERROR("Cannot download firmware - client not registered");
+        return FALSE;
+    }
+
+    handler_id_str = g_strdup_printf("%"G_GUINT64_FORMAT, client->handler_id);
+    PRINT_INFO("Calling DownloadFirmware with handler='%s', firmware='%s', url='%s', type='%s'",
+               handler_id_str, firmware_name ? firmware_name : "(null)", download_url ? download_url : "(null)", type_of_firmware ? type_of_firmware : "(null)");
+
+    result = g_dbus_connection_call_sync(
+        client->connection,
+        DBUS_SERVICE_NAME,
+        DBUS_OBJECT_PATH,
+        DBUS_INTERFACE_NAME,
+        "DownloadFirmware",
+        g_variant_new("(ssss)", handler_id_str, firmware_name ? firmware_name : "", download_url ? download_url : "", type_of_firmware ? type_of_firmware : ""),
+        G_VARIANT_TYPE("(sss)"),
+        G_DBUS_CALL_FLAGS_NONE,
+        -1,
+        NULL,
+        &error
+    );
+
+    g_free(handler_id_str);
+
+    if (result) {
+        gchar *res1=NULL, *res2=NULL, *res3=NULL;
+        g_variant_get(result, "(sss)", &res1, &res2, &res3);
+        PRINT_SUCCESS("DownloadFirmware immediate response: %s / %s / %s", res1, res2, res3);
+        g_free(res1); g_free(res2); g_free(res3);
+        g_variant_unref(result);
+
+        // Wait a short period to receive DownloadProgress signals
+        PRINT_INFO("Waiting up to 10 seconds for DownloadProgress signals...");
+        GMainContext *context = g_main_context_default();
+        for (int i = 0; i < 100; i++) {
+            g_main_context_iteration(context, FALSE);
+            usleep(100000); // 100ms
+        }
+        return TRUE;
+    } else {
+        PRINT_ERROR("DownloadFirmware call failed: %s", error->message);
+        g_error_free(error);
+        return FALSE;
+    }
+}
+
+/**
  * Unregister process from daemon
  */
 static gboolean test_client_unregister(TestClientContext *client)
@@ -409,6 +524,10 @@ static void print_usage(const char *program_name)
     
     printf("  full           Complete workflow test\n");
     printf("                 Tests: Full lifecycle with all operations\n\n");
+    
+    printf("DOWNLOAD TESTS:\n");
+    printf("  download       Test firmware download\n");
+    printf("                 Tests: Register -> DownloadFirmware -> Unregister\n\n");
     
     printf("CACHE BEHAVIOR TESTS:\n");
     printf("  cache-hit      Test cache hit scenario\n");
@@ -961,6 +1080,21 @@ static void run_test_scenario(TestClientContext *client, const gchar *test_mode,
             usleep(100000); // 100ms delay
         }
         
+    } else if (g_strcmp0(test_mode, "download") == 0) {
+        // Test DownloadFirmware flow
+        PRINT_INFO("=== Testing DownloadFirmware Scenario ===");
+        if (test_client_register(client)) {
+            sleep(1);
+            // Use sample firmware name and URL (modify as appropriate for environment)
+            const char *fw_name = "test_fw.bin";
+            const char *url = "http://example.com/test_fw.bin"; // If empty, daemon will use XConf
+            const char *type = "PCI";
+
+            test_client_download_firmware(client, fw_name, url, type);
+            sleep(1);
+            test_client_unregister(client);
+        }
+
     } else {
         PRINT_ERROR("Unknown test mode: %s", test_mode);
         print_usage("testClient");

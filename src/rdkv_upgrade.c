@@ -1002,17 +1002,17 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
         (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_COMPLETE) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_COMPLETE);
         if(server_type == HTTP_SSR_DIRECT)
         {
-            SWLOG_INFO("%s : Direct Image upgrade Success: curl ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *pHttp_code);
+            SWLOG_INFO("%s : Direct Image upgrade Success: curl ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code,*httpCode);
             Upgradet2CountNotify("SYS_INFO_DirectSuccess", 1);
         }
         else
         {
-            SWLOG_INFO("%s : Direct Image upgrade connection success: curl ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *pHttp_code);
+            SWLOG_INFO("%s : Direct Image upgrade connection success: curl ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *httpCode);
         }
     }else {
-        SWLOG_ERROR("%s : Direct Image upgrade Fail: curl ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *pHttp_code);
+        SWLOG_ERROR("%s : Direct Image upgrade Fail: curl ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *httpCode);
         (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_FAILED) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_FAILED);
-        dwnlError(curl_ret_code, *pHttp_code, server_type,device_info,lastrun,disableStatsUpdate);
+        dwnlError(curl_ret_code, *httpCode, server_type,device_info,lastrun,disableStatsUpdate);
         if( *(file_dwnl.pathname) != 0 )
         {
             unlink(file_dwnl.pathname);
