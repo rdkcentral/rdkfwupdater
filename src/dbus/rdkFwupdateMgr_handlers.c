@@ -31,6 +31,7 @@
 #include "iarmInterface.h"
 #include "rfcinterface.h"
 #include <string.h>
+#include <gio/gio.h>
 
 // Buffer sizes for JSON and URL construction
 #define JSON_STR_LEN        1000
@@ -41,6 +42,84 @@
 #define XCONF_HTTP_CODE_FILE    "/tmp/xconf_httpcode_thunder.txt"
 #define XCONF_PROGRESS_FILE     "/tmp/xconf_curl_progress_thunder"
 #define RED_STATE_FILE          "/lib/rdk/stateRedRecovery.sh"
+
+// *** NEW: Progress monitoring constants ***
+#define CURL_PROGRESS_FILE      "/opt/curl_progress"
+#define PROGRESS_POLL_INTERVAL_MS    100   // Poll every 100ms for responsive updates
+#define PROGRESS_THROTTLE_PERCENT    1.0   // Emit signal only if progress changed by ≥1%
+#define PROGRESS_MONITOR_TIMEOUT_SEC 600   // 10 minutes max without progress
+
+// *** NEW: Forward declarations ***
+typedef struct _ProgressData ProgressData;
+static gboolean emit_download_progress_idle(gpointer user_data);
+
+// *** NEW: Progress data for g_idle_add callback ***
+/**
+ * @brief Data structure for progress signal emission via g_idle_add()
+ * 
+ * Contains all data needed to emit a DownloadProgress D-Bus signal from
+ * the main thread. Used to marshal progress updates from monitor thread
+ * to main loop.
+ * 
+ * Memory Management:
+ * - connection: Borrowed pointer (do NOT free)
+ * - handler_id: Owned string (must be freed)
+ * - firmware_name: Owned string (must be freed)
+ * - Structure: Allocated with g_new0, freed in emit_download_progress_idle()
+ */
+struct _ProgressData {
+    GDBusConnection* connection;        // D-Bus connection (borrowed, do not free)
+    gchar* handler_id;                  // Handler ID string (owned, must free)
+    gchar* firmware_name;               // Firmware name (owned, must free)
+    guint32 progress_percent;           // Progress percentage 0-100
+    guint64 bytes_downloaded;           // Current downloaded bytes
+    guint64 total_bytes;                // Total bytes to download
+};
+
+// *** NEW: Progress monitor context structure ***
+/**
+ * @brief Context data for progress monitoring thread
+ * 
+ * This structure contains all data needed by the progress monitor thread to:
+ * - Poll /opt/curl_progress file
+ * - Emit D-Bus signals via g_idle_add()
+ * - Gracefully shutdown when signaled
+ * 
+ * Memory Management:
+ * - connection: Borrowed pointer (do NOT free, owned by D-Bus server)
+ * - handler_id: Owned string (must call g_free)
+ * - firmware_name: Owned string (must call g_free)
+ * - mutex: Must be initialized with g_mutex_init() and cleared with g_mutex_clear()
+ * - stop_flag: Pointer to stack variable in download handler (no cleanup needed)
+ * - Structure itself: Allocated with g_new0, freed with g_free by thread before exit
+ */
+typedef struct {
+    GDBusConnection* connection;        // D-Bus connection (borrowed, do NOT free)
+    gchar* handler_id;                  // Handler ID string (owned, must free)
+    gchar* firmware_name;               // Firmware name (owned, must free)
+    gboolean* stop_flag;                // Atomic flag to signal thread shutdown
+    GMutex* mutex;                      // Protects last_dlnow from race conditions
+    guint64 last_dlnow;                 // Last reported bytes (for throttling)
+    time_t last_activity_time;          // Last time progress changed (for timeout detection)
+} ProgressMonitorContext;
+
+// *** NEW: Download state context structure ***
+/**
+ * @brief Context passed from D-Bus server for progress monitoring
+ * 
+ * This structure is passed as the download_state parameter to provide
+ * necessary information for emitting D-Bus progress signals.
+ * 
+ * Memory Management:
+ * - connection: Borrowed pointer (owned by D-Bus server, do NOT free)
+ * - handler_id: Borrowed string (owned by caller, do NOT free here)
+ * - firmware_name: Borrowed string (owned by caller, do NOT free here)
+ */
+typedef struct {
+    GDBusConnection* connection;        // D-Bus connection (borrowed)
+    const gchar* handler_id;           // Handler ID (borrowed)
+    const gchar* firmware_name;         // Firmware name (borrowed)
+} DownloadStateContext;
 
 // Shared device and image information (populated at daemon startup)
 extern DeviceProperty_t device_info;
@@ -323,7 +402,6 @@ static CheckUpdateResponse create_success_response(const gchar *available_versio
     gboolean is_update_available = img_status && available_version && (g_strcmp0(current_img_buffer, available_version) != 0);
     if (is_update_available) {
     response.result_code = UPDATE_AVAILABLE;
-    // img_status and available_version are guaranteed non-NULL here due to is_update_available check
     response.current_img_version = g_strdup(current_img_buffer);
     response.available_version = g_strdup(available_version);
     response.update_details = g_strdup(update_details ? update_details : "");
@@ -332,11 +410,11 @@ static CheckUpdateResponse create_success_response(const gchar *available_versio
     SWLOG_INFO("[rdkFwupdateMgr] create_success_response: Response created with current image: '%s', available: '%s', status: '%s'\n", 
                response.current_img_version, response.available_version, response.status_message);
     }else {
-	    response.result_code = UPDATE_NOT_AVAILABLE;
-	    response.current_img_version = g_strdup(current_img_buffer);
-	    response.available_version = g_strdup(available_version ? available_version : "");
-	    response.update_details = g_strdup("");
-	    response.status_message = g_strdup("Already on latest firmware");	
+        response.result_code = UPDATE_NOT_AVAILABLE;
+        response.current_img_version = g_strdup(current_img_buffer);
+        response.available_version = g_strdup(available_version ? available_version : "");
+        response.update_details = g_strdup("");
+        response.status_message = g_strdup("Already on latest firmware");	
     }
     return response;
 }
@@ -394,6 +472,398 @@ static CheckUpdateResponse create_result_response(CheckForUpdateResult result_co
                response.current_img_version, response.status_message);
     
     return response;
+}
+
+// *** NEW: Progress signal emission (main thread callback) ***
+
+/**
+ * @brief Emit DownloadProgress D-Bus signal (runs in main loop via g_idle_add)
+ * 
+ * This function is called by g_idle_add() to emit a DownloadProgress signal
+ * from the main thread. It's the bridge between the progress monitor thread
+ * and the D-Bus signal emission.
+ * 
+ * Signal Signature (must match D-Bus XML):
+ * - handlerId (uint64): Client handler ID
+ * - firmwareName (string): Firmware filename
+ * - progress (uint32): Progress percentage 0-100
+ * - status (string): "INPROGRESS", "COMPLETED", "DWNLERROR"
+ * - message (string): Human-readable status message
+ * 
+ * Memory Management:
+ * - Takes ownership of ProgressData and all its fields
+ * - Frees handler_id, firmware_name, and ProgressData struct
+ * - Does NOT free connection (borrowed pointer)
+ * - Always returns FALSE to run only once
+ * 
+ * Thread Safety:
+ * - Runs in main loop thread (GLib serialization guarantees)
+ * - No mutex needed for D-Bus operations
+ * 
+ * @param user_data ProgressData* (must not be NULL, will be freed)
+ * @return FALSE always (remove from idle queue after one run)
+ */
+static gboolean emit_download_progress_idle(gpointer user_data) {
+    ProgressData* data = (ProgressData*)user_data;
+    
+    // NULL CHECK: Validate input
+    if (data == NULL) {
+        SWLOG_ERROR("[PROGRESS_IDLE] CRITICAL: NULL data in idle callback\n");
+        return FALSE;  // Remove from idle queue
+    }
+    
+    // NULL CHECK: Validate D-Bus connection
+    if (data->connection == NULL) {
+        SWLOG_ERROR("[PROGRESS_IDLE] CRITICAL: NULL D-Bus connection\n");
+        // Still need to free allocated data
+        if (data->handler_id) g_free(data->handler_id);
+        if (data->firmware_name) g_free(data->firmware_name);
+        g_free(data);
+        return FALSE;
+    }
+    
+    // NULL CHECK: Validate firmware name
+    if (data->firmware_name == NULL) {
+        SWLOG_ERROR("[PROGRESS_IDLE] ERROR: NULL firmware name, using placeholder\n");
+        data->firmware_name = g_strdup("(unknown)");
+    }
+    
+    // Convert handler_id string to uint64 for D-Bus signal
+    guint64 handler_id_numeric = 0;
+    if (data->handler_id != NULL) {
+        handler_id_numeric = g_ascii_strtoull(data->handler_id, NULL, 10);
+    }
+    
+    // Determine status string based on progress
+    const gchar *status_str = "INPROGRESS";
+    const gchar *message_str = "Download in progress";
+    
+    if (data->progress_percent >= 100) {
+        status_str = "COMPLETED";
+        message_str = "Download completed successfully";
+    } else if (data->progress_percent == 0 && data->total_bytes == 0) {
+        status_str = "NOTSTARTED";
+        message_str = "Download starting";
+    }
+    
+    // Build signal variant: (t handlerId, s firmwareName, u progress, s status, s message)
+    GVariant *signal_data = g_variant_new("(tsuss)",
+        handler_id_numeric,                      // handlerId (uint64)
+        data->firmware_name,                     // firmwareName (string)
+        (guint32)data->progress_percent,         // progress (uint32)
+        status_str,                              // status (string)
+        message_str                              // message (string)
+    );
+    
+    // NULL CHECK: Validate variant creation
+    if (signal_data == NULL) {
+        SWLOG_ERROR("[PROGRESS_IDLE] ERROR: Failed to create signal variant\n");
+        goto cleanup;
+    }
+    
+    SWLOG_DEBUG("[PROGRESS_IDLE] Emitting DownloadProgress: %d%% (%llu/%llu bytes)\n",
+               data->progress_percent,
+               (unsigned long long)data->bytes_downloaded,
+               (unsigned long long)data->total_bytes);
+    
+    // Emit D-Bus signal
+    GError *error = NULL;
+    gboolean signal_sent = g_dbus_connection_emit_signal(
+        data->connection,
+        NULL,  // NULL destination = broadcast to all listeners
+        "/org/rdkfwupdater/Object",  // Object path
+        "org.rdkfwupdater.Interface",  // Interface name
+        "DownloadProgress",  // Signal name
+        signal_data,
+        &error
+    );
+    
+    // Check emission result
+    if (signal_sent) {
+        SWLOG_DEBUG("[PROGRESS_IDLE] ✓ Signal emitted successfully\n");
+    } else {
+        SWLOG_ERROR("[PROGRESS_IDLE] ✗ Signal emission FAILED: %s\n", 
+                   error ? error->message : "Unknown error");
+        if (error) {
+            g_error_free(error);
+            error = NULL;
+        }
+    }
+    
+cleanup:
+    // Cleanup: Free all allocated data
+    if (data->handler_id) {
+        g_free(data->handler_id);
+        data->handler_id = NULL;
+    }
+    if (data->firmware_name) {
+        g_free(data->firmware_name);
+        data->firmware_name = NULL;
+    }
+    g_free(data);
+    data = NULL;
+    
+    return FALSE;  // Remove from idle queue (run only once)
+}
+
+// *** NEW: Progress monitoring thread implementation ***
+
+/**
+ * @brief Progress monitor thread that polls /opt/curl_progress file
+ * 
+ * This thread runs in parallel with rdkv_upgrade_request() and performs the following:
+ * 1. Polls /opt/curl_progress every 100ms
+ * 2. Parses "UP: X of Y  DOWN: dlnow of dltotal" format
+ * 3. Emits D-Bus DownloadProgress signal when progress changes by ≥1%
+ * 4. Detects stalled downloads (no progress for 10 minutes)
+ * 5. Cleans up all resources before exiting
+ * 
+ * Thread Safety:
+ * - Uses g_atomic_int_get() for stop_flag (lock-free atomic read)
+ * - Uses mutex to protect last_dlnow for race-free updates
+ * - Emits D-Bus signals via g_idle_add() for thread-safe main thread dispatch
+ * 
+ * Memory Management:
+ * - Frees handler_id and firmware_name (g_strdup'd copies)
+ * - Clears and frees mutex
+ * - Frees ProgressMonitorContext at thread exit
+ * - Does NOT free connection (borrowed pointer)
+ * 
+ * @param user_data ProgressMonitorContext* (must not be NULL)
+ * @return NULL always
+ */
+static gpointer rdkfw_progress_monitor_thread(gpointer user_data) {
+    ProgressMonitorContext* ctx = (ProgressMonitorContext*)user_data;
+    FILE* progress_file = NULL;
+    guint64 dlnow = 0;
+    guint64 dltotal = 0;
+    char line[512];
+    gint consecutive_failures = 0;
+    gboolean has_started = FALSE;
+    
+    // NULL CHECK: Validate input context
+    if (ctx == NULL) {
+        SWLOG_ERROR("[PROGRESS_MONITOR] CRITICAL: NULL context passed to thread\n");
+        return NULL;
+    }
+    
+    // NULL CHECK: Validate critical fields
+    if (ctx->stop_flag == NULL) {
+        SWLOG_ERROR("[PROGRESS_MONITOR] CRITICAL: NULL stop_flag in context\n");
+        goto cleanup;
+    }
+    
+    if (ctx->mutex == NULL) {
+        SWLOG_ERROR("[PROGRESS_MONITOR] CRITICAL: NULL mutex in context\n");
+        goto cleanup;
+    }
+    
+    if (ctx->connection == NULL) {
+        SWLOG_ERROR("[PROGRESS_MONITOR] CRITICAL: NULL D-Bus connection in context\n");
+        goto cleanup;
+    }
+    
+    SWLOG_INFO("[PROGRESS_MONITOR] Thread started successfully\n");
+    SWLOG_INFO("[PROGRESS_MONITOR]   Handler ID: %s\n", ctx->handler_id ? ctx->handler_id : "(null)");
+    SWLOG_INFO("[PROGRESS_MONITOR]   Firmware: %s\n", ctx->firmware_name ? ctx->firmware_name : "(null)");
+    SWLOG_INFO("[PROGRESS_MONITOR]   Poll interval: %d ms\n", PROGRESS_POLL_INTERVAL_MS);
+    SWLOG_INFO("[PROGRESS_MONITOR]   Progress file: %s\n", CURL_PROGRESS_FILE);
+    
+    // Initialize activity timestamp
+    ctx->last_activity_time = time(NULL);
+    
+    // Main monitoring loop - runs until stop_flag is set
+    while (!g_atomic_int_get(ctx->stop_flag)) {
+        // Clear previous data
+        line[0] = '\0';
+        dlnow = 0;
+        dltotal = 0;
+        
+        // Attempt to open progress file (written by curl's xferinfo callback)
+        progress_file = fopen(CURL_PROGRESS_FILE, "r");
+        if (progress_file == NULL) {
+            // File doesn't exist yet (download not started, completed, or file deleted)
+            consecutive_failures++;
+            
+            // Log periodically while waiting (every 5 seconds = 50 polls * 100ms)
+            if (consecutive_failures == 50 && !has_started) {
+                SWLOG_DEBUG("[PROGRESS_MONITOR] Waiting for download to start (file not found)...\n");
+                consecutive_failures = 0;  // Reset counter for next log message
+            }
+            
+            // Check for timeout if download has started
+            if (has_started) {
+                time_t now = time(NULL);
+                time_t elapsed = now - ctx->last_activity_time;
+                if (elapsed > PROGRESS_MONITOR_TIMEOUT_SEC) {
+                    SWLOG_ERROR("[PROGRESS_MONITOR] TIMEOUT: No progress for %d seconds\n", 
+                               PROGRESS_MONITOR_TIMEOUT_SEC);
+                    // Worker thread will detect download failure via rdkv_upgrade_request() return code
+                    // We just stop monitoring
+                    break;
+                }
+            }
+            
+            // Sleep before next poll attempt
+            g_usleep(PROGRESS_POLL_INTERVAL_MS * 1000);  // Convert ms to microseconds
+            continue;
+        }
+        
+        // File opened successfully
+        consecutive_failures = 0;
+        has_started = TRUE;
+        
+        // Read progress line
+        // Expected format: "UP: ulnow of ultotal  DOWN: dlnow of dltotal"
+        // Example: "UP: 0 of 0  DOWN: 52428800 of 104857600"
+        if (fgets(line, sizeof(line), progress_file) == NULL) {
+            // File is empty or read error occurred
+            fclose(progress_file);
+            progress_file = NULL;
+            g_usleep(PROGRESS_POLL_INTERVAL_MS * 1000);
+            continue;
+        }
+        
+        // Close file immediately after reading to avoid holding it open
+        fclose(progress_file);
+        progress_file = NULL;
+        
+        // Parse download progress (we ignore upload progress for firmware downloads)
+        // sscanf returns number of successfully parsed items
+        int parsed = sscanf(line, "UP: %*lu of %*lu  DOWN: %llu of %llu", 
+                           (unsigned long long*)&dlnow, 
+                           (unsigned long long*)&dltotal);
+        
+        if (parsed != 2) {
+            // Parsing failed - malformed line or unexpected format
+            SWLOG_DEBUG("[PROGRESS_MONITOR] Failed to parse line: '%s'\n", line);
+            g_usleep(PROGRESS_POLL_INTERVAL_MS * 1000);
+            continue;
+        }
+        
+        // Successfully parsed progress data
+        // Now determine if we should emit a progress signal
+        
+        // Lock mutex for thread-safe access to last_dlnow
+        g_mutex_lock(ctx->mutex);
+        
+        gboolean should_emit = FALSE;
+        guint64 prev_dlnow = ctx->last_dlnow;
+        
+        // Decision logic for emitting progress signal
+        if (dltotal > 0 && dlnow != prev_dlnow) {
+            // Progress has changed
+            
+            // Calculate percentage change since last emission
+            gdouble percent_change = 0.0;
+            if (prev_dlnow > 0) {
+                percent_change = ((gdouble)(dlnow - prev_dlnow) / (gdouble)dltotal) * 100.0;
+            }
+            
+            // Emit if: first update (prev==0), changed by ≥1%, or completed (100%)
+            if (prev_dlnow == 0 || 
+                percent_change >= PROGRESS_THROTTLE_PERCENT || 
+                dlnow >= dltotal) {
+                should_emit = TRUE;
+                ctx->last_dlnow = dlnow;
+                ctx->last_activity_time = time(NULL);  // Update activity timestamp
+            }
+        } else if (dltotal == 0 && dlnow == 0 && prev_dlnow != 0) {
+            // Download restarted or reset
+            should_emit = TRUE;
+            ctx->last_dlnow = 0;
+            ctx->last_activity_time = time(NULL);
+        }
+        
+        g_mutex_unlock(ctx->mutex);
+        
+        // Emit D-Bus signal outside mutex to avoid potential deadlocks
+        if (should_emit) {
+            // NULL CHECK: Validate connection before allocating
+            if (ctx->connection == NULL) {
+                SWLOG_ERROR("[PROGRESS_MONITOR] ERROR: D-Bus connection is NULL, skipping emission\n");
+                g_usleep(PROGRESS_POLL_INTERVAL_MS * 1000);
+                continue;
+            }
+            
+            // Allocate progress data for g_idle_add callback
+            ProgressData* progress_data = g_new0(ProgressData, 1);
+            if (progress_data == NULL) {
+                SWLOG_ERROR("[PROGRESS_MONITOR] ERROR: Memory allocation failed for progress data\n");
+                g_usleep(PROGRESS_POLL_INTERVAL_MS * 1000);
+                continue;
+            }
+            
+            // Populate progress data (make copies of strings)
+            progress_data->connection = ctx->connection;  // Borrowed pointer (do not free)
+            progress_data->handler_id = ctx->handler_id ? g_strdup(ctx->handler_id) : NULL;
+            progress_data->firmware_name = ctx->firmware_name ? g_strdup(ctx->firmware_name) : NULL;
+            progress_data->bytes_downloaded = dlnow;
+            progress_data->total_bytes = dltotal;
+            
+            // Calculate percentage
+            if (dltotal > 0) {
+                progress_data->progress_percent = (guint32)(((gdouble)dlnow / (gdouble)dltotal) * 100.0);
+                if (progress_data->progress_percent > 100) {
+                    progress_data->progress_percent = 100;
+                }
+            } else {
+                progress_data->progress_percent = 0;
+            }
+            
+            // Schedule signal emission on main thread (thread-safe)
+            g_idle_add(emit_download_progress_idle, progress_data);
+            
+            SWLOG_DEBUG("[PROGRESS_MONITOR] Progress update: %d%% (%llu/%llu bytes)\n",
+                       progress_data->progress_percent,
+                       (unsigned long long)dlnow, 
+                       (unsigned long long)dltotal);
+        }
+        
+        // Wait before next poll
+        g_usleep(PROGRESS_POLL_INTERVAL_MS * 1000);
+    }
+    
+    SWLOG_INFO("[PROGRESS_MONITOR] Thread stopping (stop_flag=%d)\n", 
+               g_atomic_int_get(ctx->stop_flag));
+
+cleanup:
+    // Cleanup: Ensure file is closed if still open
+    if (progress_file != NULL) {
+        fclose(progress_file);
+        progress_file = NULL;
+    }
+    
+    // Cleanup: Free all allocated resources
+    if (ctx != NULL) {
+        // Clear and free mutex
+        if (ctx->mutex != NULL) {
+            g_mutex_clear(ctx->mutex);
+            g_free(ctx->mutex);
+            ctx->mutex = NULL;
+        }
+        
+        // Free handler_id (g_strdup'd copy)
+        if (ctx->handler_id != NULL) {
+            g_free(ctx->handler_id);
+            ctx->handler_id = NULL;
+        }
+        
+        // Free firmware_name (g_strdup'd copy)
+        if (ctx->firmware_name != NULL) {
+            g_free(ctx->firmware_name);
+            ctx->firmware_name = NULL;
+        }
+        
+        // Do NOT free connection (borrowed pointer, owned by D-Bus server)
+        
+        // Free context structure itself
+        g_free(ctx);
+        ctx = NULL;
+    }
+    
+    SWLOG_INFO("[PROGRESS_MONITOR] Thread exited cleanly with all resources freed\n");
+    return NULL;
 }
 
 /**
@@ -549,44 +1019,75 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
 }
 
 /**
- * @brief Download firmware image from XConf URL or custom URL.
+ * @brief Download firmware with progress monitoring
  * 
- * Downloads firmware file. Blocks until complete.
+ * Main entry point for firmware download operation. Features:
+ * - URL source: Custom URL or XConf cache
+ * - Progress monitoring: Spawns thread if download_state provided
+ * - Error handling: Comprehensive curl/HTTP error mapping
+ * - Memory safety: All allocations checked and cleaned up
  * 
- * @param firmwareName Firmware filename to download
- * @param downloadUrl Custom URL or empty string (use XConf URL)
- * @param typeOfFirmware Firmware type: "PCI", "PDRI", "PERIPHERAL"
- * @param localFilePath Destination file path
- * @param download_state DownloadState pointer for progress updates (can be NULL)
- * @return DownloadFirmwareResult with result_code and error details
+ * Thread Safety:
+ * - Spawns progress monitor thread if needed
+ * - Properly joins thread before returning
+ * - All shared state protected by mutex
+ * 
+ * Memory Management:
+ * - All g_strdup'd strings must be freed by caller
+ * - Thread context freed by thread itself
+ * - Mutex and context freed by thread on exit
+ * 
+ * @param firmwareName Firmware filename (for logging, can be NULL)
+ * @param downloadUrl Custom URL or empty string to use XConf URL
+ * @param typeOfFirmware Type: "PCI", "PDRI", "PERIPHERAL" (can be NULL)
+ * @param localFilePath Destination path (required, must not be NULL)
+ * @param download_state D-Bus skeleton for progress signals (NULL = no progress)
+ * @return DownloadFirmwareResult with result_code and error_message
  */
 DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName,
                                                        const gchar *downloadUrl,
                                                        const gchar *typeOfFirmware,
                                                        const gchar *localFilePath,
                                                        void *download_state) {
-    SWLOG_INFO("[DOWNLOAD_HANDLER] Starting firmware download\n");
-    SWLOG_INFO("[DOWNLOAD_HANDLER]   Firmware: %s\n", firmwareName ? firmwareName : "NULL");
-    SWLOG_INFO("[DOWNLOAD_HANDLER]   Custom URL: '%s'\n", downloadUrl ? downloadUrl : "");
-    SWLOG_INFO("[DOWNLOAD_HANDLER]   Type: %s\n", typeOfFirmware ? typeOfFirmware : "NULL");
-    SWLOG_INFO("[DOWNLOAD_HANDLER]   Destination: %s\n", localFilePath ? localFilePath : "NULL");
+    SWLOG_INFO("[DOWNLOAD_HANDLER] === Starting Firmware Download ===\n");
+    SWLOG_INFO("[DOWNLOAD_HANDLER]   Firmware: %s\n", firmwareName ? firmwareName : "(null)");
+    SWLOG_INFO("[DOWNLOAD_HANDLER]   Custom URL: '%s'\n", downloadUrl ? downloadUrl : "(empty)");
+    SWLOG_INFO("[DOWNLOAD_HANDLER]   Type: %s\n", typeOfFirmware ? typeOfFirmware : "(null)");
+    SWLOG_INFO("[DOWNLOAD_HANDLER]   Destination: %s\n", localFilePath ? localFilePath : "(null)");
+    SWLOG_INFO("[DOWNLOAD_HANDLER]   Progress monitoring: %s\n", download_state ? "ENABLED" : "DISABLED");
     
-    // Initialize result
+    // Initialize result structure
     DownloadFirmwareResult result;
     result.result_code = DOWNLOAD_ERROR;
     result.error_message = NULL;
     
-    // Determine effective URL
+    // Validate required parameters
+    if (localFilePath == NULL || strlen(localFilePath) == 0) {
+        SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: localFilePath is NULL or empty\n");
+        result.error_message = g_strdup("Invalid parameters: localFilePath required");
+        return result;
+    }
+    
+    // Determine effective download URL
     gchar *effective_url = NULL;
     
-    if (downloadUrl && strlen(downloadUrl) > 0) {
+    if (downloadUrl != NULL && strlen(downloadUrl) > 0) {
+        // Use custom URL provided by caller
         SWLOG_INFO("[DOWNLOAD_HANDLER] Using custom URL: %s\n", downloadUrl);
         effective_url = g_strdup(downloadUrl);
+        
+        if (effective_url == NULL) {
+            SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: Failed to duplicate URL string\n");
+            result.error_message = g_strdup("Memory allocation failed");
+            return result;
+        }
     } else {
+        // Load URL from XConf cache
         SWLOG_INFO("[DOWNLOAD_HANDLER] No custom URL, loading from XConf cache\n");
         
         if (!xconf_cache_exists()) {
             SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: No XConf cache found\n");
+            SWLOG_ERROR("[DOWNLOAD_HANDLER] Client must call CheckForUpdate first\n");
             result.error_message = g_strdup("No firmware metadata. Call CheckForUpdate first.");
             return result;
         }
@@ -605,9 +1106,16 @@ DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName
         SWLOG_INFO("[DOWNLOAD_HANDLER]   URL: %s\n", xconf_response.cloudFWFile);
         
         effective_url = g_strdup(xconf_response.cloudFWFile);
+        
+        if (effective_url == NULL) {
+            SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: Failed to duplicate XConf URL\n");
+            result.error_message = g_strdup("Memory allocation failed");
+            return result;
+        }
     }
     
-    if (!effective_url || strlen(effective_url) == 0) {
+    // Validate effective URL
+    if (strlen(effective_url) == 0) {
         SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: No download URL available\n");
         result.error_message = g_strdup("No download URL available");
         g_free(effective_url);
@@ -616,27 +1124,33 @@ DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName
     
     SWLOG_INFO("[DOWNLOAD_HANDLER] Effective download URL: %s\n", effective_url);
     
-    // Prepare download context
+    // Prepare upgrade context
     RdkUpgradeContext_t upgrade_context;
     memset(&upgrade_context, 0, sizeof(RdkUpgradeContext_t));
     
-    // Determine upgrade type
-    if (typeOfFirmware && strcmp(typeOfFirmware, "PCI") == 0) {
-        upgrade_context.upgrade_type = PCI_UPGRADE;
-    } else if (typeOfFirmware && strcmp(typeOfFirmware, "PDRI") == 0) {
-        upgrade_context.upgrade_type = PDRI_UPGRADE;
-    } else if (typeOfFirmware && strcmp(typeOfFirmware, "PERIPHERAL") == 0) {
-        upgrade_context.upgrade_type = PERIPHERAL_UPGRADE;
+    // Determine upgrade type from firmware type parameter
+    if (typeOfFirmware != NULL) {
+        if (strcmp(typeOfFirmware, "PCI") == 0) {
+            upgrade_context.upgrade_type = PCI_UPGRADE;
+        } else if (strcmp(typeOfFirmware, "PDRI") == 0) {
+            upgrade_context.upgrade_type = PDRI_UPGRADE;
+        } else if (strcmp(typeOfFirmware, "PERIPHERAL") == 0) {
+            upgrade_context.upgrade_type = PERIPHERAL_UPGRADE;
+        } else {
+            SWLOG_ERROR("[DOWNLOAD_HANDLER] Unknown firmware type '%s', using PCI\n", typeOfFirmware);
+            upgrade_context.upgrade_type = PCI_UPGRADE;
+        }
     } else {
         upgrade_context.upgrade_type = PCI_UPGRADE;
     }
     
     SWLOG_INFO("[DOWNLOAD_HANDLER] Upgrade type: %d\n", upgrade_context.upgrade_type);
     
-    // CRITICAL: Set download_only flag
+    // CRITICAL: Set download_only flag (do NOT flash automatically)
     upgrade_context.download_only = TRUE;
     SWLOG_INFO("[DOWNLOAD_HANDLER] download_only=TRUE (will NOT auto-flash)\n");
     
+    // Set context fields
     upgrade_context.server_type = HTTP_SSR_DIRECT;
     upgrade_context.artifactLocationUrl = effective_url;
     upgrade_context.dwlloc = (const void*)localFilePath;
@@ -644,6 +1158,7 @@ DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName
     upgrade_context.immed_reboot_flag = "NO";
     upgrade_context.delay_dwnl = 0;
     
+    // Generate timestamp for lastrun
     char timestamp[64];
     snprintf(timestamp, sizeof(timestamp), "%ld", (long)time(NULL));
     upgrade_context.lastrun = timestamp;
@@ -654,50 +1169,219 @@ DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName
     upgrade_context.force_exit = &force_exit;
     upgrade_context.trigger_type = TRIGGER_MANUAL;
     upgrade_context.rfc_list = &rfc_list;
-    upgrade_context.progress_callback = NULL;
-    upgrade_context.progress_callback_data = download_state;
     
+    // Progress callback is not used (librdksw_upgrade.so doesn't support it)
+    upgrade_context.progress_callback = NULL;
+    upgrade_context.progress_callback_data = NULL;
+    
+    // *** NEW: Spawn progress monitor thread if download_state provided ***
+    GThread* monitor_thread = NULL;
+    gboolean stop_monitor = FALSE;
+    GMutex* monitor_mutex = NULL;
+    ProgressMonitorContext* monitor_ctx = NULL;
+    
+    if (download_state != NULL) {
+        SWLOG_INFO("[DOWNLOAD_HANDLER] Setting up progress monitoring...\n");
+        
+        // Cast download_state to the proper type
+        DownloadStateContext* dl_ctx = (DownloadStateContext*)download_state;
+        
+        // NULL CHECK: Validate download state context fields
+        if (dl_ctx->connection == NULL) {
+            SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: NULL D-Bus connection in download_state\n");
+            result.result_code = DOWNLOAD_ERROR;
+            result.error_message = g_strdup("Invalid download state (NULL connection)");
+            g_free(effective_url);
+            return result;
+        }
+        
+        // Allocate and initialize mutex for thread-safe access
+        monitor_mutex = g_new0(GMutex, 1);
+        if (monitor_mutex == NULL) {
+            SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: Failed to allocate monitor mutex\n");
+            result.result_code = DOWNLOAD_ERROR;
+            result.error_message = g_strdup("Memory allocation failed");
+            g_free(effective_url);
+            return result;
+        }
+        g_mutex_init(monitor_mutex);
+        SWLOG_DEBUG("[DOWNLOAD_HANDLER] Monitor mutex allocated and initialized\n");
+        
+        // Allocate progress monitor context
+        monitor_ctx = g_new0(ProgressMonitorContext, 1);
+        if (monitor_ctx == NULL) {
+            SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: Failed to allocate monitor context\n");
+            g_mutex_clear(monitor_mutex);
+            g_free(monitor_mutex);
+            result.result_code = DOWNLOAD_ERROR;
+            result.error_message = g_strdup("Memory allocation failed");
+            g_free(effective_url);
+            return result;
+        }
+        SWLOG_DEBUG("[DOWNLOAD_HANDLER] Monitor context allocated\n");
+        
+        // Initialize context fields
+        monitor_ctx->connection = dl_ctx->connection;  // Borrowed pointer (do NOT free)
+        monitor_ctx->handler_id = dl_ctx->handler_id ? g_strdup(dl_ctx->handler_id) : NULL;
+        monitor_ctx->firmware_name = dl_ctx->firmware_name ? g_strdup(dl_ctx->firmware_name) : NULL;
+        monitor_ctx->stop_flag = &stop_monitor;
+        monitor_ctx->mutex = monitor_mutex;
+        monitor_ctx->last_dlnow = 0;
+        monitor_ctx->last_activity_time = time(NULL);
+        
+        SWLOG_DEBUG("[DOWNLOAD_HANDLER] Monitor context initialized:\n");
+        SWLOG_DEBUG("[DOWNLOAD_HANDLER]   - Handler ID: %s\n", monitor_ctx->handler_id ? monitor_ctx->handler_id : "(null)");
+        SWLOG_DEBUG("[DOWNLOAD_HANDLER]   - Firmware: %s\n", monitor_ctx->firmware_name ? monitor_ctx->firmware_name : "(null)");
+        
+        // Spawn monitor thread
+        GError* thread_error = NULL;
+        monitor_thread = g_thread_try_new("rdkfw_progress_monitor", 
+                                          rdkfw_progress_monitor_thread, 
+                                          monitor_ctx, 
+                                          &thread_error);
+        
+        if (monitor_thread == NULL) {
+            SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: Failed to spawn monitor thread: %s\n",
+                       thread_error ? thread_error->message : "Unknown error");
+            
+            // Cleanup on thread creation failure
+            if (thread_error != NULL) {
+                g_error_free(thread_error);
+                thread_error = NULL;
+            }
+            
+            // Free string fields (g_strdup'd copies)
+            if (monitor_ctx->handler_id) {
+                g_free(monitor_ctx->handler_id);
+                monitor_ctx->handler_id = NULL;
+            }
+            if (monitor_ctx->firmware_name) {
+                g_free(monitor_ctx->firmware_name);
+                monitor_ctx->firmware_name = NULL;
+            }
+            
+            // Clear and free mutex
+            g_mutex_clear(monitor_mutex);
+            g_free(monitor_mutex);
+            monitor_mutex = NULL;
+            
+            // Free context
+            g_free(monitor_ctx);
+            monitor_ctx = NULL;
+            
+            // Continue without progress monitoring (non-fatal)
+            SWLOG_INFO("[DOWNLOAD_HANDLER] Continuing without progress monitoring\n");
+        } else {
+            SWLOG_INFO("[DOWNLOAD_HANDLER] ✓ Progress monitor thread started successfully\n");
+        }
+    } else {
+        SWLOG_INFO("[DOWNLOAD_HANDLER] No progress monitoring requested (download_state=NULL)\n");
+    }
+    
+    // Call rdkv_upgrade_request() (blocks until download completes or fails)
     SWLOG_INFO("[DOWNLOAD_HANDLER] Calling rdkv_upgrade_request()...\n");
     
     void *curl_handle = NULL;
     int http_code = 0;
     int curl_ret_code = rdkv_upgrade_request(&upgrade_context, &curl_handle, &http_code);
     
-    SWLOG_INFO("[DOWNLOAD_HANDLER] returned: curl=%d, http=%d\n", curl_ret_code, http_code);
+    SWLOG_INFO("[DOWNLOAD_HANDLER] rdkv_upgrade_request() returned: curl=%d, http=%d\n", 
+               curl_ret_code, http_code);
     
-    // Analyze result
+    // *** NEW: Stop progress monitor thread ***
+    if (monitor_thread != NULL) {
+        SWLOG_INFO("[DOWNLOAD_HANDLER] Stopping progress monitor thread...\n");
+        
+        // Signal thread to stop atomically
+        g_atomic_int_set(&stop_monitor, TRUE);
+        
+        // Wait for thread to exit (thread will cleanup its own resources)
+        g_thread_join(monitor_thread);
+        monitor_thread = NULL;
+        
+        SWLOG_INFO("[DOWNLOAD_HANDLER] Progress monitor thread stopped cleanly\n");
+        
+        // Note: monitor_mutex and monitor_ctx are cleaned up by the thread itself
+        // Do NOT free them here to avoid double-free
+    }
+    
+    // Analyze download result
     if (curl_ret_code == 0 && (http_code == 200 || http_code == 206)) {
+        // Success: curl completed and HTTP OK/Partial Content
         SWLOG_INFO("[DOWNLOAD_HANDLER] Download completed successfully!\n");
         
+        // Verify file exists on disk
         if (!g_file_test(localFilePath, G_FILE_TEST_EXISTS)) {
-            SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: File not found after download\n");
+            SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: File not found after download: %s\n", localFilePath);
             result.result_code = DOWNLOAD_ERROR;
             result.error_message = g_strdup("File not found after download");
             g_free(effective_url);
             return result;
         }
         
-        // Download successful
-        SWLOG_INFO("[DOWNLOAD_HANDLER] Download completed, file exists on disk\n");
+        // Get file size for logging
+        struct stat st;
+        if (stat(localFilePath, &st) == 0) {
+            SWLOG_INFO("[DOWNLOAD_HANDLER] Downloaded file size: %ld bytes\n", (long)st.st_size);
+        }
+        
         result.result_code = DOWNLOAD_SUCCESS;
+        result.error_message = NULL;
+        
     } else if (curl_ret_code == 0 && http_code == 404) {
+        // HTTP 404: Not Found
+        SWLOG_ERROR("[DOWNLOAD_HANDLER] Firmware not found (HTTP 404)\n");
         result.result_code = DOWNLOAD_NOT_FOUND;
-        result.error_message = g_strdup("Firmware not found (HTTP 404)");
+        result.error_message = g_strdup("Firmware not found on server (HTTP 404)");
+        
     } else if (curl_ret_code == 6) {
+        // CURLE_COULDNT_RESOLVE_HOST
+        SWLOG_ERROR("[DOWNLOAD_HANDLER] DNS resolution failed (curl error 6)\n");
         result.result_code = DOWNLOAD_NETWORK_ERROR;
         result.error_message = g_strdup("DNS resolution failed");
+        
     } else if (curl_ret_code == 7) {
+        // CURLE_COULDNT_CONNECT
+        SWLOG_ERROR("[DOWNLOAD_HANDLER] Connection failed (curl error 7)\n");
         result.result_code = DOWNLOAD_NETWORK_ERROR;
         result.error_message = g_strdup("Connection failed");
+        
     } else if (curl_ret_code == 28) {
+        // CURLE_OPERATION_TIMEDOUT
+        SWLOG_ERROR("[DOWNLOAD_HANDLER] Timeout (curl error 28)\n");
         result.result_code = DOWNLOAD_NETWORK_ERROR;
-        result.error_message = g_strdup("Timeout");
+        result.error_message = g_strdup("Operation timed out");
+        
+    } else if (curl_ret_code == 18) {
+        // CURLE_PARTIAL_FILE
+        SWLOG_ERROR("[DOWNLOAD_HANDLER] Partial file transfer (curl error 18)\n");
+        result.result_code = DOWNLOAD_ERROR;
+        result.error_message = g_strdup("Partial file transfer (incomplete download)");
+        
+    } else if (curl_ret_code == 23) {
+        // CURLE_WRITE_ERROR
+        SWLOG_ERROR("[DOWNLOAD_HANDLER] Write error (curl error 23) - disk full?\n");
+        result.result_code = DOWNLOAD_ERROR;
+        result.error_message = g_strdup("Write error (disk full or permission denied)");
+        
     } else {
+        // Generic error
+        SWLOG_ERROR("[DOWNLOAD_HANDLER] Download failed (curl=%d, HTTP=%d)\n", 
+                   curl_ret_code, http_code);
+        
         char error_msg[256];
-        snprintf(error_msg, sizeof(error_msg), "Download failed (curl=%d, http=%d)", curl_ret_code, http_code);
+        snprintf(error_msg, sizeof(error_msg), 
+                "Download failed (curl error %d, HTTP status %d)", 
+                curl_ret_code, http_code);
         result.error_message = g_strdup(error_msg);
     }
     
+    // Cleanup
     g_free(effective_url);
+    effective_url = NULL;
+    
+    SWLOG_INFO("[DOWNLOAD_HANDLER] === Download Handler Complete (result=%d) ===\n", 
+               result.result_code);
+    
     return result;
 }
