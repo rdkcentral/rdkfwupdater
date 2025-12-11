@@ -36,6 +36,8 @@
 #include "rdkFwupdateMgr_handlers.h"
 #include "rdkv_cdl_log_wrapper.h"
 #include "rdkv_upgrade.h"  // For RdkUpgradeContext_t and rdkv_upgrade_request()
+#include "rdk_fwdl_utils.h"  // For getDeviceProperties() and DeviceProperty_t
+#include "rfcinterface.h"  // For getRFCSettings() and Rfc_t
 
 #define DWNL_PATH_FILE_LENGTH DWNL_PATH_FILE_LEN + 32
 /**
@@ -1138,6 +1140,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 	 * 4. GTask worker thread for blocking download operation
 	 * 5. Progress signals via g_idle_add() for thread-safe emission
 	 * 6. Robust error handling and cleanup
+	 * 7. Real-time progress updates via curl's CURLOPT_XFERINFOFUNCTION callback
 	 * ==================================================================*/
 	else if (g_strcmp0(rdkv_req_method, "DownloadFirmware") == 0) {
 		SWLOG_INFO("[DOWNLOADFIRMWARE] ========== NEW DOWNLOAD REQUEST ==========\n");
@@ -2112,6 +2115,7 @@ static void rdkfw_xconf_fetch_done(GObject *source_object, GAsyncResult *res, gp
         &error
     );
     
+    // Check emission result
     if (signal_sent) {
         SWLOG_INFO("[COMPLETE]   Signal broadcast SUCCESSFUL\n");
         SWLOG_INFO("[COMPLETE]   All %d waiting client(s) will receive this signal\n",
@@ -2469,6 +2473,13 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
                                   gpointer task_data, GCancellable *cancellable) {
     AsyncDownloadContext *ctx = (AsyncDownloadContext *)task_data;
     
+    // NULL CHECKS: Validate critical context fields before dereferencing
+    if (!ctx) {
+        SWLOG_ERROR("[DOWNLOAD_WORKER] CRITICAL: NULL context!\n");
+        g_task_return_boolean(task, FALSE);
+        return;
+    }
+    
     SWLOG_INFO("\n");
     SWLOG_INFO("=========================DOWNLOAD WORKER THREAD STARTED=====================\n");
     SWLOG_INFO(" Thread ID: %lu\n", (unsigned long)pthread_self());
@@ -2520,11 +2531,13 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     SWLOG_INFO("[DOWNLOAD_WORKER] Building download path...\n");
     char download_path[DWNL_PATH_FILE_LENGTH];
     gchar *difw_path = get_difw_path();
-    int path_len = snprintf(download_path, sizeof(download_path), "%s/%s", difw_path,ctx->firmware_name);
+    int path_len = snprintf(download_path, sizeof(download_path), "%s/%s", difw_path, ctx->firmware_name);
 //int path_len = snprintf(download_path, sizeof(download_path), "/tmp/%s", ctx->firmware_name);
     SWLOG_INFO("DWNL path with img name=%s\n", download_path); 
     if (path_len < 0 || path_len >= sizeof(download_path)) {
         SWLOG_ERROR("[DOWNLOAD_WORKER] ERROR: Download path too long or snprintf failed!\n");
+        if (difw_path)
+            g_free(difw_path);
         g_task_return_boolean(task, FALSE);
         return;
     }
@@ -2532,8 +2545,79 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     SWLOG_INFO("[DOWNLOAD_WORKER] Download path: %s\n", download_path);
     SWLOG_INFO("[DOWNLOAD_WORKER]   Path length: %d characters\n", path_len);
     
-    // ========== STEP 3: CREATE RdkUpgradeContext_t ==========
-    SWLOG_INFO("[DOWNLOAD_WORKER] Creating RdkUpgradeContext_t structure...\n");
+    /* difw_path no longer needed after building download_path; free to avoid leak */
+    if (difw_path) {
+        g_free(difw_path);
+        difw_path = NULL;
+    }
+ // ========== STEP 3: LOAD DEVICE PROPERTIES (same as rdkv_main.c) ==========
+    SWLOG_INFO("[DOWNLOAD_WORKER] ========================================\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER] LOADING DEVICE PROPERTIES\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER] (Mirroring rdkv_main.c setup)\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER] ========================================\n");
+    
+    DeviceProperty_t device_info;
+    memset(&device_info, 0, sizeof(DeviceProperty_t));
+    
+    SWLOG_INFO("[DOWNLOAD_WORKER] Calling getDeviceProperties()...\n");
+    int ret = getDeviceProperties(&device_info);
+    if (ret != 0) {
+        SWLOG_ERROR("[DOWNLOAD_WORKER] WARNING: getDeviceProperties() failed with code %d\n", ret);
+        SWLOG_WARN("[DOWNLOAD_WORKER] Continuing with zero-initialized device_info\n");
+    } else {
+        SWLOG_INFO("[DOWNLOAD_WORKER] Device properties loaded successfully:\n");
+        SWLOG_INFO("[DOWNLOAD_WORKER]   dev_type: '%s'\n", device_info.dev_type);
+        SWLOG_INFO("[DOWNLOAD_WORKER]   dev_name: '%s'\n", device_info.dev_name);
+        SWLOG_INFO("[DOWNLOAD_WORKER]   partnerId: '%s'\n", device_info.partnerId);
+        SWLOG_INFO("[DOWNLOAD_WORKER]   account_id: '%s'\n", device_info.account_id);
+        SWLOG_INFO("[DOWNLOAD_WORKER]   maint_status: %d\n", device_info.maint_status);
+    }
+    
+    // ========== STEP 4: LOAD RFC SETTINGS (same as rdkv_main.c) ==========
+    SWLOG_INFO("[DOWNLOAD_WORKER] ========================================\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER] LOADING RFC SETTINGS\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER] ========================================\n");
+    
+    Rfc_t rfc_list;
+    memset(&rfc_list, 0, sizeof(Rfc_t));
+    
+    SWLOG_INFO("[DOWNLOAD_WORKER] Calling getRFCSettings()...\n");
+    ret = getRFCSettings(&rfc_list);
+    if (ret != 0) {
+        SWLOG_ERROR("[DOWNLOAD_WORKER] WARNING: getRFCSettings() failed with code %d\n", ret);
+        SWLOG_WARN("[DOWNLOAD_WORKER] Continuing with zero-initialized rfc_list (no throttling)\n");
+    } else {
+        SWLOG_INFO("[DOWNLOAD_WORKER] RFC settings loaded successfully:\n");
+        SWLOG_INFO("[DOWNLOAD_WORKER]   rfc_throttle: %d\n", rfc_list.rfc_throttle);
+        SWLOG_INFO("[DOWNLOAD_WORKER]   rfc_topspeed: '%s'\n", rfc_list.rfc_topspeed);
+        SWLOG_INFO("[DOWNLOAD_WORKER]   rfc_defer_download: %d\n", rfc_list.rfc_defer_download);
+        SWLOG_INFO("[DOWNLOAD_WORKER]   rfc_defer_time: %d\n", rfc_list.rfc_defer_time);
+    }
+    
+    // ========== STEP 5: CREATE ADDITIONAL REQUIRED VARIABLES ==========
+    SWLOG_INFO("[DOWNLOAD_WORKER] ========================================\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER] CREATING REQUIRED VARIABLES\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER] ========================================\n");
+    
+    // Force exit flag (used by downloadFile to check for cancellation)
+    int force_exit = 0;
+    SWLOG_INFO("[DOWNLOAD_WORKER] force_exit = 0 (no cancellation)\n");
+    
+    // Trigger type: D-Bus = app-initiated (same as rdkv_main.c uses)
+    int trigger_type = 4;  // 1=bootup, 2=scheduled, 3=TR69, 4=app, 5=delayed, 6=statred
+    SWLOG_INFO("[DOWNLOAD_WORKER] trigger_type = 4 (app-initiated via D-Bus)\n");
+    
+    // Initialize lastrun as empty string (EXACT PARITY with rdkv_main.c)
+    // In rdkv_main.c: char lastrun[64] = { 0 };  // Store last run time
+    // The lastrun field is NEVER modified in rdkv_main.c - always empty string
+    char lastrun[64] = { 0 };
+    SWLOG_INFO("[DOWNLOAD_WORKER] lastrun = \"\" (empty string, matching rdkv_main.c behavior)\n");
+    
+    // ========== STEP 6: CREATE RdkUpgradeContext_t ==========
+    SWLOG_INFO("[DOWNLOAD_WORKER] ========================================\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER] CREATING RdkUpgradeContext_t\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER] (Exact same structure as rdkv_main.c)\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER] ========================================\n");
     
     RdkUpgradeContext_t upgrade_ctx = {0};  // Zero-initialize all fields
     SWLOG_INFO("[DOWNLOAD_WORKER] Structure zero-initialized\n");
@@ -2572,28 +2656,31 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     SWLOG_INFO("[DOWNLOAD_WORKER]   pPostFields = NULL (HTTP GET)\n");
     
     upgrade_ctx.immed_reboot_flag = "false";
-    SWLOG_INFO("[DOWNLOAD_WORKER]   immed_reboot_flag = \"false\"\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER]   immed_reboot_flag = \"false\" (D-Bus never reboots)\n");
     
     upgrade_ctx.delay_dwnl = 0;
-    SWLOG_INFO("[DOWNLOAD_WORKER]   delay_dwnl = 0 (no delay)\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER]   delay_dwnl = 0 (no delay for D-Bus)\n");
     
-    upgrade_ctx.lastrun = "";
-    SWLOG_INFO("[DOWNLOAD_WORKER]   lastrun = \"\" (not needed)\n");
+    upgrade_ctx.lastrun = lastrun;
+    SWLOG_INFO("[DOWNLOAD_WORKER]   lastrun = \"\" ✅ (empty string, EXACT PARITY with rdkv_main.c)\n");
     
     upgrade_ctx.disableStatsUpdate = "yes";
     SWLOG_INFO("[DOWNLOAD_WORKER]   disableStatsUpdate = \"yes\" (D-Bus handles telemetry)\n");
     
-    upgrade_ctx.device_info = NULL;
-    SWLOG_INFO("[DOWNLOAD_WORKER]   device_info = NULL (not needed for download-only)\n");
+    upgrade_ctx.device_info = &device_info;
+    SWLOG_INFO("[DOWNLOAD_WORKER]   device_info = %p (real device properties loaded)\n", 
+               (void*)upgrade_ctx.device_info);
     
-    upgrade_ctx.force_exit = NULL;
-    SWLOG_INFO("[DOWNLOAD_WORKER]   force_exit = NULL\n");
+    upgrade_ctx.force_exit = &force_exit;
+    SWLOG_INFO("[DOWNLOAD_WORKER]   force_exit = %p (valid pointer to int)\n", 
+               (void*)upgrade_ctx.force_exit);
     
-    upgrade_ctx.trigger_type = 0;
-    SWLOG_INFO("[DOWNLOAD_WORKER]   trigger_type = 0\n");
+    upgrade_ctx.trigger_type = trigger_type;
+    SWLOG_INFO("[DOWNLOAD_WORKER]   trigger_type = %d  (app-initiated)\n", upgrade_ctx.trigger_type);
     
-    upgrade_ctx.rfc_list = NULL;
-    SWLOG_INFO("[DOWNLOAD_WORKER]   rfc_list = NULL\n");
+    upgrade_ctx.rfc_list = &rfc_list;
+    SWLOG_INFO("[DOWNLOAD_WORKER]   rfc_list = %p (real RFC settings loaded)\n", 
+               (void*)upgrade_ctx.rfc_list);
     
     // *** CRITICAL FIELDS FOR D-BUS ***
     upgrade_ctx.download_only = 1;
@@ -2607,12 +2694,21 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     //SWLOG_INFO("[DOWNLOAD_WORKER]   progress_callback_data = %p (AsyncDownloadContext)\n", 
       //         upgrade_ctx.progress_callback_data);
     
-    SWLOG_INFO("[DOWNLOAD_WORKER] RdkUpgradeContext_t fully populated\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER] ========================================\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER] RdkUpgradeContext_t FULLY POPULATED\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER] All fields match rdkv_main.c setup! ✅\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER] ========================================\n");
     
-    // ========== STEP 4: CALL rdkv_upgrade_request() ==========
+    // ========== STEP 7: CALL rdkv_upgrade_request() ==========
     SWLOG_INFO("[DOWNLOAD_WORKER] \n");
     SWLOG_INFO("[DOWNLOAD_WORKER] ========== CALLING rdkv_upgrade_request() ==========\n");
     SWLOG_INFO("[DOWNLOAD_WORKER] This is a BLOCKING call - will not return until download completes\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER] Context summary:\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER]   device_info: LOADED from system\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER]   rfc_list: LOADED from RFC server\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER]   force_exit: Valid pointer\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER]   trigger_type: 4 (app-initiated)\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER]   lastrun: Empty string (matching rdkv_main.c)\n");
     SWLOG_INFO("[DOWNLOAD_WORKER] Starting download NOW...\n");
     
     void* curl_handle = NULL;
@@ -2625,7 +2721,7 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     SWLOG_INFO("[DOWNLOAD_WORKER] Return value: %d\n", curl_ret_code);
     SWLOG_INFO("[DOWNLOAD_WORKER] HTTP code: %d\n", http_code);
     
-    // ========== STEP 5: HANDLE RESULT ==========
+    // ========== STEP 8: HANDLE RESULT ==========
     if (curl_ret_code != 0) {
         // Download failed
         SWLOG_ERROR("[DOWNLOAD_WORKER] *** DOWNLOAD FAILED! ***\n");

@@ -854,7 +854,11 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
 
     if ((1 == (isThrottleEnabled(device_info->dev_name, immed_reboot_flag, app_mode)))) {
         SWLOG_INFO("%s :At line 804\n", __FUNCTION__);
-        if (0 == (strncmp(rfc_list->rfc_throttle, "true", 4))) {
+        /* Ensure rfc_list and rfc_throttle are valid before dereferencing to avoid
+         * passing a NULL pointer to strncmp (Coverity: FORWARD_NULL).
+         */
+        if (rfc_list != NULL && rfc_list->rfc_throttle != NULL && rfc_list->rfc_throttle[0] != '\0' &&
+            0 == (strncmp(rfc_list->rfc_throttle, "true", 4))) {
             max_dwnl_speed = atoi(rfc_list->rfc_topspeed);
             SWLOG_INFO("%s : Throttle feature is Enable\n", __FUNCTION__);
             Upgradet2CountNotify("SYST_INFO_Thrtl_Enable", 1);
@@ -1007,12 +1011,12 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
         }
         else
         {
-            SWLOG_INFO("%s : Direct Image upgrade connection success: curl ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *httpCode);
+            SWLOG_INFO("%s : Direct Image upgrade connection success: curl ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *pHttp_code);
         }
     }else {
         SWLOG_ERROR("%s : Direct Image upgrade Fail: curl ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *httpCode);
         (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_FAILED) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_FAILED);
-        dwnlError(curl_ret_code, *httpCode, server_type,device_info,lastrun,disableStatsUpdate);
+        dwnlError(curl_ret_code, *pHttpCode, server_type,device_info,lastrun,disableStatsUpdate);
         if( *(file_dwnl.pathname) != 0 )
         {
             unlink(file_dwnl.pathname);
