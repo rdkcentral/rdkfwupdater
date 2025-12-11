@@ -2598,13 +2598,13 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     upgrade_ctx.download_only = 1;
     SWLOG_INFO("[DOWNLOAD_WORKER]   download_only = 1 *** CRITICAL: SKIP FLASHING in rdkv_upgrade_request()! ***\n");
     
-    upgrade_ctx.progress_callback = download_progress_callback;
-    SWLOG_INFO("[DOWNLOAD_WORKER]   progress_callback = %p (download_progress_callback)\n", 
-               (void*)upgrade_ctx.progress_callback);
+    //upgrade_ctx.progress_callback = download_progress_callback;
+    //SWLOG_INFO("[DOWNLOAD_WORKER]   progress_callback = %p (download_progress_callback)\n", 
+      //         (void*)upgrade_ctx.progress_callback);
     
-    upgrade_ctx.progress_callback_data = (void*)ctx;
-    SWLOG_INFO("[DOWNLOAD_WORKER]   progress_callback_data = %p (AsyncDownloadContext)\n", 
-               upgrade_ctx.progress_callback_data);
+    //upgrade_ctx.progress_callback_data = (void*)ctx;
+    //SWLOG_INFO("[DOWNLOAD_WORKER]   progress_callback_data = %p (AsyncDownloadContext)\n", 
+      //         upgrade_ctx.progress_callback_data);
     
     SWLOG_INFO("[DOWNLOAD_WORKER] RdkUpgradeContext_t fully populated\n");
     

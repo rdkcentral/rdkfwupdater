@@ -1171,8 +1171,8 @@ DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName
     upgrade_context.rfc_list = &rfc_list;
     
     // Progress callback is not used (librdksw_upgrade.so doesn't support it)
-    upgrade_context.progress_callback = NULL;
-    upgrade_context.progress_callback_data = NULL;
+    //upgrade_context.progress_callback = NULL;
+    //upgrade_context.progress_callback_data = NULL;
     
     // *** NEW: Spawn progress monitor thread if download_state provided ***
     GThread* monitor_thread = NULL;

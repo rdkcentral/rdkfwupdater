@@ -112,7 +112,6 @@ typedef struct {
  * 
  * Initiates firmware download from XConf-provided URL or custom URL.
  * This function performs the actual download in the calling thread.
- * Progress updates are sent via the progress_callback if download_state is provided.
  * 
  * Parameters:
  *   firmwareName - Firmware filename to download
