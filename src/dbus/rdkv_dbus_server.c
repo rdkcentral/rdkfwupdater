@@ -2734,8 +2734,6 @@ static void rdkfw_download_done(GObject *source_object, GAsyncResult *res,
     // NULL CHECK: Validate task result
     if (!res) {
         SWLOG_ERROR("[DOWNLOAD_COMPLETE] ERROR: GAsyncResult is NULL!\n");
-    if (!res) {
-        SWLOG_ERROR("[DOWNLOAD_COMPLETE] ERROR: GAsyncResult is NULL!\n");
         goto cleanup_ctx;
     }
     
