@@ -2222,6 +2222,7 @@ static void rdkfw_xconf_fetch_done(GObject *source_object, GAsyncResult *res, gp
  * @param total_bytes Total file size in bytes
  * @param user_data AsyncDownloadContext* pointer
  */
+#if 0
 static void download_progress_callback(unsigned long long current_bytes, 
                                        unsigned long long total_bytes, 
                                        void* user_data) {
@@ -2281,7 +2282,7 @@ static void download_progress_callback(unsigned long long current_bytes,
     SWLOG_DEBUG("[PROGRESS_CB] Scheduling D-Bus signal emission via g_idle_add\n");
     g_idle_add(rdkfw_emit_download_progress, update);
 }
-
+#endif
 /**
  * @brief Emit DownloadProgress signal on main loop (called via g_idle_add)
  * 
@@ -2612,7 +2613,6 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     SWLOG_INFO("[DOWNLOAD_WORKER] \n");
     SWLOG_INFO("[DOWNLOAD_WORKER] ========== CALLING rdkv_upgrade_request() ==========\n");
     SWLOG_INFO("[DOWNLOAD_WORKER] This is a BLOCKING call - will not return until download completes\n");
-    SWLOG_INFO("[DOWNLOAD_WORKER] Progress updates will be emitted via download_progress_callback()\n");
     SWLOG_INFO("[DOWNLOAD_WORKER] Starting download NOW...\n");
     
     void* curl_handle = NULL;
