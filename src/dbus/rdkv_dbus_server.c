@@ -2734,6 +2734,8 @@ static void rdkfw_download_done(GObject *source_object, GAsyncResult *res,
     // NULL CHECK: Validate task result
     if (!res) {
         SWLOG_ERROR("[DOWNLOAD_COMPLETE] ERROR: GAsyncResult is NULL!\n");
+    if (!res) {
+        SWLOG_ERROR("[DOWNLOAD_COMPLETE] ERROR: GAsyncResult is NULL!\n");
         goto cleanup_ctx;
     }
     
@@ -2762,8 +2764,7 @@ static void rdkfw_download_done(GObject *source_object, GAsyncResult *res,
         
         // Free waiting handler IDs list
         if (current_download->waiting_handler_ids) {
-            SWLOG_INFO("[DOWNLOAD_COMPLETE] Freeing %d waiting handler IDs\n",
-                       g_slist_length(current_download->waiting_handler_ids));
+		SWLOG_INFO("[DOWNLOAD_COMPLETE] Freeing %d waiting handler IDs\n", g_slist_length(current_download->waiting_handler_ids));
             g_slist_free_full(current_download->waiting_handler_ids, g_free);
             current_download->waiting_handler_ids = NULL;
         }

@@ -274,8 +274,11 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
     FILE *fp = NULL;
     int flash_status = -1;
 
+    // Comprehensive logging: entry and pointers
+    SWLOG_INFO("[UPGRADE_REQ] Enter %s: context=%p, curl=%p, pHttp_code=%p\n", __FUNCTION__, (void*)context, (void*)curl, (void*)pHttp_code);
+
     if (context == NULL || pHttp_code == NULL) {
-        SWLOG_ERROR("%s: Parameter is NULL\n", __FUNCTION__);
+        SWLOG_ERROR("[UPGRADE_REQ] CRITICAL: context=%p or pHttp_code=%p is NULL\n", (void*)context, (void*)pHttp_code);
         return ret_curl_code;
     }
 
@@ -292,6 +295,26 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
     int* force_exit = context->force_exit;
     int trigger_type = context->trigger_type;
     const Rfc_t* rfc_list = context->rfc_list;
+
+    // Log context contents safely
+    SWLOG_INFO("[UPGRADE_REQ] context values: upgrade_type=%d, server_type=%d, artifactLocationUrl='%s', dwlloc=%p\n",
+               upgrade_type, server_type, artifactLocationUrl ? artifactLocationUrl : "(null)", dwlloc);
+    SWLOG_INFO("[UPGRADE_REQ] context (continued): pPostFields=%p, immed_reboot_flag='%s', delay_dwnl=%d, lastrun='%s'\n",
+               (void*)pPostFields, immed_reboot_flag ? immed_reboot_flag : "(null)", delay_dwnl, lastrun ? lastrun : "(null)");
+    SWLOG_INFO("[UPGRADE_REQ] context (continued): disableStatsUpdate=%p, device_info=%p, force_exit=%p, trigger_type=%d, rfc_list=%p\n",
+               (void*)disableStatsUpdate, (void*)device_info, (void*)force_exit, trigger_type, (void*)rfc_list);
+
+    if (device_info != NULL) {
+        SWLOG_INFO("[UPGRADE_REQ] device_info: dev_name='%s', model='%s', maint_status='%s'\n",
+                   device_info->dev_name ? device_info->dev_name : "(null)",
+                   device_info->model ? device_info->model : "(null)",
+                   device_info->maint_status ? device_info->maint_status : "(null)");
+    }
+    if (rfc_list != NULL) {
+        SWLOG_INFO("[UPGRADE_REQ] rfc_list: rfc_throttle='%s', rfc_topspeed='%s'\n",
+                   rfc_list->rfc_throttle ? rfc_list->rfc_throttle : "(null)",
+                   rfc_list->rfc_topspeed ? rfc_list->rfc_topspeed : "(null)");
+    }
 
     if (artifactLocationUrl == NULL || dwlloc == NULL) {
         SWLOG_ERROR("%s: Parameter is NULL\n", __FUNCTION__);
@@ -726,12 +749,12 @@ int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const
 int downloadFile( int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode, void **curl, int *force_exit, const char *immed_reboot_flag, const DeviceProperty_t *device_info,const char *lastrun,const Rfc_t *rfc_list,char *disableStatsUpdate){
 
     int app_mode = 0;
-//The following compilation LIBRDKCERTSELECTOR is enabled only Comcast proprietary code until the rdk-cert-config(Cert selector) component becomes open-source.	
+//The following compilation LIBRDKCERTSELECTOR is enabled only Comcast proprietary code until the rdk-cert-config(Cert selector) component becomes open-source.    
 #ifdef LIBRDKCERTSELECTOR
     MtlsAuthStatus ret = MTLS_CERT_FETCH_SUCCESS;
 #else
     int ret = -1 ;
-#endif	
+#endif    
     MtlsAuth_t sec;
     int state_red = -1;
     unsigned int max_dwnl_speed = 0;
@@ -741,14 +764,32 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
     int mtls_enable = 1; //Setting mtls by default enable
     char headerInfoFile[136] = {0};
 
+    // Entry logging
+    SWLOG_INFO("[DOWNLOAD_FILE] Enter %s: server_type=%d, artifactLocationUrl='%s', localDownloadLocation=%p, pPostFields=%p, httpCode=%p, curl=%p, force_exit=%p, immed_reboot_flag='%s'\n",
+               __FUNCTION__, server_type, artifactLocationUrl ? artifactLocationUrl : "(null)", localDownloadLocation, (void*)pPostFields, (void*)httpCode, (void*)curl, (void*)force_exit, immed_reboot_flag ? immed_reboot_flag : "(null)");
+
+    if (device_info != NULL) {
+        SWLOG_INFO("[DOWNLOAD_FILE] device_info: dev_name='%s', dev_type='%s', maint_status='%s'\n",
+                   device_info->dev_name ? device_info->dev_name : "(null)",
+                   device_info->dev_type ? device_info->dev_type : "(null)",
+                   device_info->maint_status ? device_info->maint_status : "(null)");
+    }
+    if (rfc_list != NULL) {
+        SWLOG_INFO("[DOWNLOAD_FILE] rfc_list: rfc_throttle='%s', rfc_topspeed='%s'\n",
+                   rfc_list->rfc_throttle ? rfc_list->rfc_throttle : "(null)",
+                   rfc_list->rfc_topspeed ? rfc_list->rfc_topspeed : "(null)");
+    }
+    SWLOG_INFO("[DOWNLOAD_FILE] lastrun='%s', disableStatsUpdate=%p\n", lastrun ? lastrun : "(null)", (void*)disableStatsUpdate);
+
     if (artifactLocationUrl == NULL || localDownloadLocation == NULL || httpCode == NULL || curl == NULL) {
-        SWLOG_ERROR("%s: Parameter is NULL\n", __FUNCTION__);
+        SWLOG_ERROR("[DOWNLOAD_FILE] CRITICAL: One or more parameters are NULL: artifactLocationUrl=%p, localDownloadLocation=%p, httpCode=%p, curl=%p\n",
+                   (void*)artifactLocationUrl, (void*)localDownloadLocation, (void*)httpCode, (void*)curl);
         return curl_ret_code;
     }
     app_mode = getAppMode();
     memset(&sec, '\0', sizeof(MtlsAuth_t));
     memset(&file_dwnl, '\0', sizeof(FileDwnl_t));
-	
+    
     state_red = isInStateRed();
 #ifdef LIBRDKCERTSELECTOR
     static rdkcertselector_h thisCertSel = NULL;
@@ -776,13 +817,24 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
 	file_dwnl.pathname[sizeof(file_dwnl.pathname)-1] = '\0';
         file_dwnl.pDlData = NULL;
         snprintf(headerInfoFile, sizeof(headerInfoFile), "%s.header", file_dwnl.pathname);
+
+        // Detailed logging of file_dwnl when writing to disk
+        SWLOG_INFO("[DOWNLOAD_FILE] FileDwnl set for SSR_DIRECT: url='%s', pathname='%s', headerInfoFile='%s'\n",
+                   file_dwnl.url ? file_dwnl.url : "(null)", file_dwnl.pathname ? file_dwnl.pathname : "(null)", headerInfoFile);
     }
     else        // server_type must be HTTP_XCONF_DIRECT, store to memory not a file
     {
         file_dwnl.pDlData = (DownloadData *)localDownloadLocation;
         *(file_dwnl.pathname) = 0;
+
+        // Detailed logging of file_dwnl when writing to memory
+        SWLOG_INFO("[DOWNLOAD_FILE] FileDwnl set for XCONF_DIRECT: url='%s', pDlData=%p\n", file_dwnl.url ? file_dwnl.url : "(null)", (void*)file_dwnl.pDlData);
     }
     file_dwnl.pPostFields = pPostFields;
+    SWLOG_INFO("[DOWNLOAD_FILE] file_dwnl.pPostFields=%p content='%s'\n", (void*)file_dwnl.pPostFields, file_dwnl.pPostFields ? file_dwnl.pPostFields : "(null)");
+
+    // Continue with existing logic - ensure we log before calling curl/doHttpFileDownload
+    SWLOG_INFO("[DOWNLOAD_FILE] About to start network download: server_type=%d, url='%s'\n", server_type, artifactLocationUrl ? artifactLocationUrl : "(null)");
 
     if (isDwnlBlock(server_type)) { // only care about DIRECT or CODEBIG, SSR or XCONF doesn't matter
         SWLOG_ERROR("%s: Direct Download is blocked\n", __FUNCTION__);
@@ -798,7 +850,10 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
         SWLOG_INFO("%s :Trying to communicate with SSR via TLS server\n", __FUNCTION__);
         Upgradet2CountNotify("SYST_INFO_TLS_xconf", 1);
     }
+        SWLOG_INFO("%s :At line 801\n", __FUNCTION__);
+
     if ((1 == (isThrottleEnabled(device_info->dev_name, immed_reboot_flag, app_mode)))) {
+        SWLOG_INFO("%s :At line 804\n", __FUNCTION__);
         if (0 == (strncmp(rfc_list->rfc_throttle, "true", 4))) {
             max_dwnl_speed = atoi(rfc_list->rfc_topspeed);
             SWLOG_INFO("%s : Throttle feature is Enable\n", __FUNCTION__);
@@ -947,17 +1002,17 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
         (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_COMPLETE) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_COMPLETE);
         if(server_type == HTTP_SSR_DIRECT)
         {
-            SWLOG_INFO("%s : Direct Image upgrade Success: curl ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *httpCode);
+            SWLOG_INFO("%s : Direct Image upgrade Success: curl ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *pHttp_code);
             Upgradet2CountNotify("SYS_INFO_DirectSuccess", 1);
         }
         else
         {
-            SWLOG_INFO("%s : Direct Image upgrade connection success: curl ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *httpCode);
+            SWLOG_INFO("%s : Direct Image upgrade connection success: curl ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *pHttp_code);
         }
     }else {
-        SWLOG_ERROR("%s : Direct Image upgrade Fail: curl ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *httpCode);
+        SWLOG_ERROR("%s : Direct Image upgrade Fail: curl ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *pHttp_code);
         (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_FAILED) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_FAILED);
-        dwnlError(curl_ret_code, *httpCode, server_type,device_info,lastrun,disableStatsUpdate);
+        dwnlError(curl_ret_code, *pHttp_code, server_type,device_info,lastrun,disableStatsUpdate);
         if( *(file_dwnl.pathname) != 0 )
         {
             unlink(file_dwnl.pathname);
