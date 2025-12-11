@@ -730,7 +730,7 @@ static gpointer rdkfw_progress_monitor_thread(gpointer user_data) {
         
         // Parse download progress (we ignore upload progress for firmware downloads)
         // sscanf returns number of successfully parsed items
-        int parsed = sscanf(line, "UP: %*lu of %*lu  DOWN: %llu of %llu", 
+        int parsed = sscanf(line, "UP: %*u of %*u  DOWN: %llu of %llu", 
                            (unsigned long long*)&dlnow, 
                            (unsigned long long*)&dltotal);
         
