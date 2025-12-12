@@ -2485,7 +2485,7 @@ cleanup:
 static void rdkfw_download_worker(GTask *task, gpointer source_object, 
                                   gpointer task_data, GCancellable *cancellable) {
     AsyncDownloadContext *ctx = (AsyncDownloadContext *)task_data;
-    
+    char imageHTTPURL[URL_MAX_LEN1]; 
     // NULL CHECKS: Validate critical context fields before dereferencing
     if (!ctx) {
         SWLOG_ERROR("[DOWNLOAD_WORKER] CRITICAL: NULL context!\n");
@@ -2643,8 +2643,8 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     upgrade_ctx.server_type = HTTP_SSR_DIRECT;
     SWLOG_INFO("[DOWNLOAD_WORKER]   server_type = HTTP_SSR_DIRECT\n");
     
-    //upgrade_ctx.artifactLocationUrl = ctx->download_url;
-    snprintf(upgrade_ctx.artifactLocationUrl, sizeof(upgrade_ctx.artifactLocationUrl), "%s/%s", ctx->download_url, ctx->firmware_name);
+    snprintf(imageHTTPURL, sizeof(imageHTTPURL), "%s/%s", ctx->download_url, ctx->firmware_name);
+    upgrade_ctx.artifactLocationUrl = imageHTTPURL;
     SWLOG_INFO("[DOWNLOAD_WORKER]   artifactLocationUrl = %s\n", upgrade_ctx.artifactLocationUrl);
     
     upgrade_ctx.dwlloc = download_path;
