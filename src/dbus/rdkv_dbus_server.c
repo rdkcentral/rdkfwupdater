@@ -40,6 +40,8 @@
 #include "rfcinterface.h"  // For getRFCSettings() and Rfc_t
 
 #define DWNL_PATH_FILE_LENGTH DWNL_PATH_FILE_LEN + 32
+#define MAX_URL_LEN         512
+#define MAX_URL_LEN1 MAX_URL_LEN + 128
 /**
  * Context structure for background XConf fetch operation.
  * Passed to GTask worker thread for async CheckForUpdate processing.
@@ -2485,7 +2487,7 @@ cleanup:
 static void rdkfw_download_worker(GTask *task, gpointer source_object, 
                                   gpointer task_data, GCancellable *cancellable) {
     AsyncDownloadContext *ctx = (AsyncDownloadContext *)task_data;
-    char imageHTTPURL[URL_MAX_LEN1]; 
+    char imageHTTPURL[MAX_URL_LEN1]; 
     // NULL CHECKS: Validate critical context fields before dereferencing
     if (!ctx) {
         SWLOG_ERROR("[DOWNLOAD_WORKER] CRITICAL: NULL context!\n");
