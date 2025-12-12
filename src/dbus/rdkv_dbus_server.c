@@ -2564,13 +2564,6 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     if (ret != 0) {
         SWLOG_ERROR("[DOWNLOAD_WORKER] WARNING: getDeviceProperties() failed with code %d\n", ret);
         SWLOG_WARN("[DOWNLOAD_WORKER] Continuing with zero-initialized device_info\n");
-    } else {
-        SWLOG_INFO("[DOWNLOAD_WORKER] Device properties loaded successfully:\n");
-        SWLOG_INFO("[DOWNLOAD_WORKER]   dev_type: '%s'\n", device_info.dev_type);
-        SWLOG_INFO("[DOWNLOAD_WORKER]   dev_name: '%s'\n", device_info.dev_name);
-        SWLOG_INFO("[DOWNLOAD_WORKER]   partnerId: '%s'\n", device_info.partnerId);
-        SWLOG_INFO("[DOWNLOAD_WORKER]   account_id: '%s'\n", device_info.account_id);
-        SWLOG_INFO("[DOWNLOAD_WORKER]   maint_status: %d\n", device_info.maint_status);
     }
     
     // ========== STEP 4: LOAD RFC SETTINGS (same as rdkv_main.c) ==========
@@ -2586,12 +2579,6 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     if (ret != 0) {
         SWLOG_ERROR("[DOWNLOAD_WORKER] WARNING: getRFCSettings() failed with code %d\n", ret);
         SWLOG_WARN("[DOWNLOAD_WORKER] Continuing with zero-initialized rfc_list (no throttling)\n");
-    } else {
-        SWLOG_INFO("[DOWNLOAD_WORKER] RFC settings loaded successfully:\n");
-        SWLOG_INFO("[DOWNLOAD_WORKER]   rfc_throttle: %d\n", rfc_list.rfc_throttle);
-        SWLOG_INFO("[DOWNLOAD_WORKER]   rfc_topspeed: '%s'\n", rfc_list.rfc_topspeed);
-        SWLOG_INFO("[DOWNLOAD_WORKER]   rfc_defer_download: %d\n", rfc_list.rfc_defer_download);
-        SWLOG_INFO("[DOWNLOAD_WORKER]   rfc_defer_time: %d\n", rfc_list.rfc_defer_time);
     }
     
     // ========== STEP 5: CREATE ADDITIONAL REQUIRED VARIABLES ==========
