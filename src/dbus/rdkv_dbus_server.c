@@ -2417,9 +2417,9 @@ static gboolean rdkfw_emit_download_progress(gpointer user_data) {
     
     // Check emission result
     if (signal_sent) {
-        SWLOG_INFO("[PROGRESS_SIGNAL] ✓ Signal emitted successfully\n");
+        SWLOG_INFO("[PROGRESS_SIGNAL] Signal emitted successfully\n");
     } else {
-        SWLOG_ERROR("[PROGRESS_SIGNAL] ✗ Signal emission FAILED: %s\n", 
+        SWLOG_ERROR("[PROGRESS_SIGNAL] Signal emission FAILED: %s\n", 
                    error ? error->message : "Unknown error");
         if (error) {
             g_error_free(error);
@@ -2594,9 +2594,8 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     int trigger_type = 4;  // 1=bootup, 2=scheduled, 3=TR69, 4=app, 5=delayed, 6=statred
     SWLOG_INFO("[DOWNLOAD_WORKER] trigger_type = 4 (app-initiated via D-Bus)\n");
     
-    // Initialize lastrun as empty string (EXACT PARITY with rdkv_main.c)
+    // Initialize lastrun as empty string 
     // In rdkv_main.c: char lastrun[64] = { 0 };  // Store last run time
-    // The lastrun field is NEVER modified in rdkv_main.c - always empty string
     char lastrun[64] = { 0 };
     SWLOG_INFO("[DOWNLOAD_WORKER] lastrun = \"\" (empty string, matching rdkv_main.c behavior)\n");
     
