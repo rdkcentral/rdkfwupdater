@@ -1222,7 +1222,20 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		// ========== VALIDATION PHASE ==========
 		
 		SWLOG_INFO("[DOWNLOADFIRMWARE] Starting validation...\n");
-		
+	
+	        if (!handler_id_str || !strlen(handler_id_str) || !firmware_name   || !strlen(firmware_name)   || !download_url    || !strlen(download_url)|| !type_of_firmware || !strlen(type_of_firmware)) {
+			SWLOG_ERROR("[DOWNLOADFIRMWARE] Invalid input. One or more fields are empty or NULL\n");
+			g_dbus_method_invocation_return_value(resp_ctx,
+                                g_variant_new("(sss)",
+                                        "RDKFW_DWNL_FAILED",
+                                        "DWNLERROR",
+                                        "one more inputs are empty/invalid"));
+                        g_free(handler_id_str);
+                        g_free(firmware_name);
+                        g_free(download_url);
+                        g_free(type_of_firmware);
+			return ;   
+		}	
 		// 1. Validate handler ID (not NULL, not empty)
 		if (!handler_id_str || strlen(handler_id_str) == 0) {
 			SWLOG_ERROR("[DOWNLOADFIRMWARE] REJECTED: Invalid handler ID (NULL or empty)\n");
