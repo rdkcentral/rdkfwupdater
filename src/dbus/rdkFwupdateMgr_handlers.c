@@ -571,7 +571,7 @@ static gboolean emit_download_progress_idle(gpointer user_data) {
     gboolean signal_sent = g_dbus_connection_emit_signal(
         data->connection,
         NULL,  // NULL destination = broadcast to all listeners
-        "/org/rdkfwupdater/Object",  // Object path
+        "/org/rdkfwupdater/Service",  // Object path
         "org.rdkfwupdater.Interface",  // Interface name
         "DownloadProgress",  // Signal name
         signal_data,
@@ -580,9 +580,9 @@ static gboolean emit_download_progress_idle(gpointer user_data) {
     
     // Check emission result
     if (signal_sent) {
-        SWLOG_DEBUG("[PROGRESS_IDLE] ✓ Signal emitted successfully\n");
+        SWLOG_DEBUG("[PROGRESS_IDLE] Signal emitted successfully\n");
     } else {
-        SWLOG_ERROR("[PROGRESS_IDLE] ✗ Signal emission FAILED: %s\n", 
+        SWLOG_ERROR("[PROGRESS_IDLE] Signal emission FAILED: %s\n", 
                    error ? error->message : "Unknown error");
         if (error) {
             g_error_free(error);
@@ -632,7 +632,7 @@ cleanup:
  * @param user_data ProgressMonitorContext* (must not be NULL)
  * @return NULL always
  */
-static gpointer rdkfw_progress_monitor_thread(gpointer user_data) {
+gpointer rdkfw_progress_monitor_thread(gpointer user_data) {
     ProgressMonitorContext* ctx = (ProgressMonitorContext*)user_data;
     FILE* progress_file = NULL;
     guint64 dlnow = 0;
@@ -1170,9 +1170,6 @@ DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName
     upgrade_context.trigger_type = TRIGGER_MANUAL;
     upgrade_context.rfc_list = &rfc_list;
     
-    // Progress callback is not used (librdksw_upgrade.so doesn't support it)
-    //upgrade_context.progress_callback = NULL;
-    //upgrade_context.progress_callback_data = NULL;
     
     // *** NEW: Spawn progress monitor thread if download_state provided ***
     GThread* monitor_thread = NULL;

@@ -187,4 +187,25 @@ guint64 rdkFwupdateMgr_registerProcess(const gchar *process_name,
  */
 int rdkFwupdateMgr_unregisterProcess(guint64 handler_id);
 
+/*
+ * Progress Monitor Thread (Internal Use)
+ * 
+ * Background thread that polls /opt/curl_progress file and emits D-Bus
+ * DownloadProgress signals. Used internally by download worker threads.
+ * 
+ * This function is the entry point for the progress monitoring thread.
+ * It continuously polls the curl progress file and emits D-Bus signals
+ * when download progress changes by ≥1%.
+ * 
+ * Parameters:
+ *   user_data - ProgressMonitorContext* with connection, handler_id, firmware_name
+ * 
+ * Returns:
+ *   NULL (thread entry point)
+ * 
+ * Note: This is an internal API used by rdkv_dbus_server.c for real-time
+ *       progress monitoring during firmware downloads.
+ */
+gpointer rdkfw_progress_monitor_thread(gpointer user_data);
+
 #endif // RDKFWUPDATEMGR_HANDLERS_H

@@ -68,6 +68,19 @@ static void rdkfw_download_done(GObject *source_object,
                                 GAsyncResult *res, gpointer user_data);
 static gboolean rdkfw_emit_download_progress(gpointer user_data);
 
+/* Progress monitor context structure - for real-time download progress tracking */
+typedef struct {
+    GDBusConnection* connection;        // D-Bus connection (borrowed, do NOT free)
+    gchar* handler_id;                  // Handler ID string (owned, must free)
+    gchar* firmware_name;               // Firmware name (owned, must free)
+    gboolean* stop_flag;                // Atomic flag to signal thread shutdown
+    GMutex* mutex;                      // Protects last_dlnow from race conditions
+    guint64 last_dlnow;                 // Last reported bytes (for throttling)
+    time_t last_activity_time;          // Last time progress changed (for timeout detection)
+} ProgressMonitorContext;
+
+/* Note: rdkfw_progress_monitor_thread() is declared in rdkFwupdateMgr_handlers.h */
+
 /* Concurrency control flags - enforce single operation at a time */
 static gboolean IsCheckUpdateInProgress = FALSE;
 static gboolean IsDownloadInProgress = FALSE;
@@ -1356,7 +1369,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 				g_strdup(handler_id_str)
 			);
 			
-			SWLOG_INFO("[DOWNLOADFIRMWARE] ✓ Client added to waiting list\n");
+			SWLOG_INFO("[DOWNLOADFIRMWARE] Client added to waiting list\n");
 			SWLOG_INFO("[DOWNLOADFIRMWARE]   Total waiting clients: %d\n", 
 			           g_slist_length(current_download->waiting_handler_ids));
 			
@@ -2685,7 +2698,97 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     SWLOG_INFO("[DOWNLOAD_WORKER] All fields match rdkv_main.c setup! ✅\n");
     SWLOG_INFO("[DOWNLOAD_WORKER] ========================================\n");
     
-    // ========== STEP 7: CALL rdkv_upgrade_request() ==========
+    // ========== STEP 7: SPAWN PROGRESS MONITOR THREAD ==========
+    SWLOG_INFO("[DOWNLOAD_WORKER] \n");
+    SWLOG_INFO("[DOWNLOAD_WORKER] ========== SPAWNING PROGRESS MONITOR THREAD ==========\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER] Enabling real-time progress updates to D-Bus clients\n");
+    
+    GThread* monitor_thread = NULL;
+    gboolean stop_monitor = FALSE;
+    GMutex* monitor_mutex = NULL;
+    ProgressMonitorContext* monitor_ctx = NULL;
+    
+    // Allocate and initialize mutex for thread-safe access
+    monitor_mutex = g_new0(GMutex, 1);
+    if (monitor_mutex == NULL) {
+        SWLOG_ERROR("[DOWNLOAD_WORKER] ERROR: Failed to allocate monitor mutex\n");
+        SWLOG_ERROR("[DOWNLOAD_WORKER] Continuing without progress monitoring\n");
+    } else {
+        g_mutex_init(monitor_mutex);
+        SWLOG_DEBUG("[DOWNLOAD_WORKER] Monitor mutex allocated and initialized\n");
+        
+        // Allocate progress monitor context
+        monitor_ctx = g_new0(ProgressMonitorContext, 1);
+        if (monitor_ctx == NULL) {
+            SWLOG_ERROR("[DOWNLOAD_WORKER] ERROR: Failed to allocate monitor context\n");
+            g_mutex_clear(monitor_mutex);
+            g_free(monitor_mutex);
+            monitor_mutex = NULL;
+            SWLOG_ERROR("[DOWNLOAD_WORKER] Continuing without progress monitoring\n");
+        } else {
+            SWLOG_DEBUG("[DOWNLOAD_WORKER] Monitor context allocated\n");
+            
+            // Initialize context fields
+            monitor_ctx->connection = ctx->connection;  // Borrowed pointer (do NOT free)
+            monitor_ctx->handler_id = ctx->handler_id ? g_strdup(ctx->handler_id) : NULL;
+            monitor_ctx->firmware_name = ctx->firmware_name ? g_strdup(ctx->firmware_name) : NULL;
+            monitor_ctx->stop_flag = &stop_monitor;
+            monitor_ctx->mutex = monitor_mutex;
+            monitor_ctx->last_dlnow = 0;
+            monitor_ctx->last_activity_time = time(NULL);
+            
+            SWLOG_DEBUG("[DOWNLOAD_WORKER] Monitor context initialized:\n");
+            SWLOG_DEBUG("[DOWNLOAD_WORKER]   - Handler ID: %s\n", monitor_ctx->handler_id ? monitor_ctx->handler_id : "(null)");
+            SWLOG_DEBUG("[DOWNLOAD_WORKER]   - Firmware: %s\n", monitor_ctx->firmware_name ? monitor_ctx->firmware_name : "(null)");
+            SWLOG_DEBUG("[DOWNLOAD_WORKER]   - Connection: %p\n", (void*)monitor_ctx->connection);
+            
+            // Spawn monitor thread
+            GError* thread_error = NULL;
+            monitor_thread = g_thread_try_new("rdkfw_progress_monitor", 
+                                              rdkfw_progress_monitor_thread, 
+                                              monitor_ctx, 
+                                              &thread_error);
+            
+            if (monitor_thread == NULL) {
+                SWLOG_ERROR("[DOWNLOAD_WORKER] ERROR: Failed to spawn monitor thread: %s\n",
+                           thread_error ? thread_error->message : "Unknown error");
+                
+                // Cleanup on thread creation failure
+                if (thread_error != NULL) {
+                    g_error_free(thread_error);
+                    thread_error = NULL;
+                }
+                
+                // Free string fields (g_strdup'd copies)
+                if (monitor_ctx->handler_id) {
+                    g_free(monitor_ctx->handler_id);
+                    monitor_ctx->handler_id = NULL;
+                }
+                if (monitor_ctx->firmware_name) {
+                    g_free(monitor_ctx->firmware_name);
+                    monitor_ctx->firmware_name = NULL;
+                }
+                
+                // Clear and free mutex
+                g_mutex_clear(monitor_mutex);
+                g_free(monitor_mutex);
+                monitor_mutex = NULL;
+                
+                // Free context
+                g_free(monitor_ctx);
+                monitor_ctx = NULL;
+                
+                // Continue without progress monitoring (non-fatal)
+                SWLOG_ERROR("[DOWNLOAD_WORKER] Continuing without progress monitoring\n");
+            } else {
+                SWLOG_INFO("[DOWNLOAD_WORKER] ✓ Progress monitor thread started successfully\n");
+                SWLOG_INFO("[DOWNLOAD_WORKER] Thread will poll /opt/curl_progress every 100ms\n");
+                SWLOG_INFO("[DOWNLOAD_WORKER] D-Bus signals will be emitted when progress changes ≥1%%\n");
+            }
+        }
+    }
+    
+    // ========== STEP 8: CALL rdkv_upgrade_request() ==========
     SWLOG_INFO("[DOWNLOAD_WORKER] \n");
     SWLOG_INFO("[DOWNLOAD_WORKER] ========== CALLING rdkv_upgrade_request() ==========\n");
     SWLOG_INFO("[DOWNLOAD_WORKER] This is a BLOCKING call - will not return until download completes\n");
@@ -2695,6 +2798,7 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     SWLOG_INFO("[DOWNLOAD_WORKER]   force_exit: Valid pointer\n");
     SWLOG_INFO("[DOWNLOAD_WORKER]   trigger_type: 4 (app-initiated)\n");
     SWLOG_INFO("[DOWNLOAD_WORKER]   lastrun: Empty string (matching rdkv_main.c)\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER]   progress_monitoring: %s\n", monitor_thread ? "ENABLED ✅" : "DISABLED ❌");
     SWLOG_INFO("[DOWNLOAD_WORKER] Starting download NOW...\n");
     
     void* curl_handle = NULL;
@@ -2707,7 +2811,27 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     SWLOG_INFO("[DOWNLOAD_WORKER] Return value: %d\n", curl_ret_code);
     SWLOG_INFO("[DOWNLOAD_WORKER] HTTP code: %d\n", http_code);
     
-    // ========== STEP 8: HANDLE RESULT ==========
+    // ========== STEP 9: STOP PROGRESS MONITOR THREAD ==========
+    if (monitor_thread != NULL) {
+        SWLOG_INFO("[DOWNLOAD_WORKER] Stopping progress monitor thread...\n");
+        
+        // Signal thread to stop atomically
+        g_atomic_int_set(&stop_monitor, TRUE);
+        
+        // Wait for thread to exit (thread will cleanup its own resources)
+        SWLOG_DEBUG("[DOWNLOAD_WORKER] Waiting for monitor thread to exit...\n");
+        g_thread_join(monitor_thread);
+        monitor_thread = NULL;
+        
+        SWLOG_INFO("[DOWNLOAD_WORKER] ✓ Progress monitor thread stopped cleanly\n");
+        
+        // Note: monitor_mutex and monitor_ctx are cleaned up by the thread itself
+        // Do NOT free them here to avoid double-free
+    } else {
+        SWLOG_DEBUG("[DOWNLOAD_WORKER] No monitor thread to stop (was not started)\n");
+    }
+    
+    // ========== STEP 10: HANDLE RESULT ==========
     if (curl_ret_code != 0) {
         // Download failed
         SWLOG_ERROR("[DOWNLOAD_WORKER] *** DOWNLOAD FAILED! ***\n");
