@@ -2563,10 +2563,9 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
         g_free(difw_path);
         difw_path = NULL;
     }
- // ========== STEP 3: LOAD DEVICE PROPERTIES (same as rdkv_main.c) ==========
+ // ========== STEP 3: LOAD DEVICE PROPERTIES  ==========
     SWLOG_INFO("[DOWNLOAD_WORKER] ========================================\n");
     SWLOG_INFO("[DOWNLOAD_WORKER] LOADING DEVICE PROPERTIES\n");
-    SWLOG_INFO("[DOWNLOAD_WORKER] (Mirroring rdkv_main.c setup)\n");
     SWLOG_INFO("[DOWNLOAD_WORKER] ========================================\n");
     
     DeviceProperty_t device_info;
@@ -2574,12 +2573,12 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     
     SWLOG_INFO("[DOWNLOAD_WORKER] Calling getDeviceProperties()...\n");
     int ret = getDeviceProperties(&device_info);
-    if (ret != 0) {
+    if (ret != 1) {
         SWLOG_ERROR("[DOWNLOAD_WORKER] WARNING: getDeviceProperties() failed with code %d\n", ret);
         SWLOG_WARN("[DOWNLOAD_WORKER] Continuing with zero-initialized device_info\n");
     }
     
-    // ========== STEP 4: LOAD RFC SETTINGS (same as rdkv_main.c) ==========
+    // ========== STEP 4: LOAD RFC SETTINGS ==========
     SWLOG_INFO("[DOWNLOAD_WORKER] ========================================\n");
     SWLOG_INFO("[DOWNLOAD_WORKER] LOADING RFC SETTINGS\n");
     SWLOG_INFO("[DOWNLOAD_WORKER] ========================================\n");
@@ -2601,7 +2600,7 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     
     // Force exit flag (used by downloadFile to check for cancellation)
     int force_exit = 0;
-    SWLOG_INFO("[DOWNLOAD_WORKER] force_exit = 0 (no cancellation)\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER] force_exit = 0 \n");
     
     // Trigger type: D-Bus = app-initiated (same as rdkv_main.c uses)
     int trigger_type = 4;  // 1=bootup, 2=scheduled, 3=TR69, 4=app, 5=delayed, 6=statred
@@ -2610,12 +2609,11 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     // Initialize lastrun as empty string 
     // In rdkv_main.c: char lastrun[64] = { 0 };  // Store last run time
     char lastrun[64] = { 0 };
-    SWLOG_INFO("[DOWNLOAD_WORKER] lastrun = \"\" (empty string, matching rdkv_main.c behavior)\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER] lastrun = \"\" (empty string, as in  rdkv_main.c)\n");
     
     // ========== STEP 6: CREATE RdkUpgradeContext_t ==========
     SWLOG_INFO("[DOWNLOAD_WORKER] ========================================\n");
     SWLOG_INFO("[DOWNLOAD_WORKER] CREATING RdkUpgradeContext_t\n");
-    SWLOG_INFO("[DOWNLOAD_WORKER] (Exact same structure as rdkv_main.c)\n");
     SWLOG_INFO("[DOWNLOAD_WORKER] ========================================\n");
     
     RdkUpgradeContext_t upgrade_ctx = {0};  // Zero-initialize all fields
@@ -2645,7 +2643,8 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     upgrade_ctx.server_type = HTTP_SSR_DIRECT;
     SWLOG_INFO("[DOWNLOAD_WORKER]   server_type = HTTP_SSR_DIRECT\n");
     
-    upgrade_ctx.artifactLocationUrl = ctx->download_url;
+    //upgrade_ctx.artifactLocationUrl = ctx->download_url;
+    snprintf(upgrade_ctx.artifactLocationUrl, sizeof(upgrade_ctx.artifactLocationUrl), "%s/%s", ctx->download_url, ctx->firmware_name);
     SWLOG_INFO("[DOWNLOAD_WORKER]   artifactLocationUrl = %s\n", upgrade_ctx.artifactLocationUrl);
     
     upgrade_ctx.dwlloc = download_path;
@@ -2661,13 +2660,13 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     SWLOG_INFO("[DOWNLOAD_WORKER]   delay_dwnl = 0 (no delay for D-Bus)\n");
     
     upgrade_ctx.lastrun = lastrun;
-    SWLOG_INFO("[DOWNLOAD_WORKER]   lastrun = \"\" ✅ (empty string, EXACT PARITY with rdkv_main.c)\n");
+    SWLOG_INFO("[DOWNLOAD_WORKER]   lastrun = \"\" (empty string, EXACT PARITY with rdkv_main.c)\n");
     
     upgrade_ctx.disableStatsUpdate = "yes";
     SWLOG_INFO("[DOWNLOAD_WORKER]   disableStatsUpdate = \"yes\" (D-Bus handles telemetry)\n");
     
     upgrade_ctx.device_info = &device_info;
-    SWLOG_INFO("[DOWNLOAD_WORKER]   device_info = %p (real device properties loaded)\n", 
+    SWLOG_INFO("[DOWNLOAD_WORKER]   device_info = %p (device properties loaded)\n", 
                (void*)upgrade_ctx.device_info);
     
     upgrade_ctx.force_exit = &force_exit;
@@ -2678,7 +2677,7 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     SWLOG_INFO("[DOWNLOAD_WORKER]   trigger_type = %d  (app-initiated)\n", upgrade_ctx.trigger_type);
     
     upgrade_ctx.rfc_list = &rfc_list;
-    SWLOG_INFO("[DOWNLOAD_WORKER]   rfc_list = %p (real RFC settings loaded)\n", 
+    SWLOG_INFO("[DOWNLOAD_WORKER]   rfc_list = %p ( RFC settings loaded)\n", 
                (void*)upgrade_ctx.rfc_list);
     
     // *** CRITICAL FIELDS FOR D-BUS ***
@@ -2781,9 +2780,9 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
                 // Continue without progress monitoring (non-fatal)
                 SWLOG_ERROR("[DOWNLOAD_WORKER] Continuing without progress monitoring\n");
             } else {
-                SWLOG_INFO("[DOWNLOAD_WORKER] ✓ Progress monitor thread started successfully\n");
+                SWLOG_INFO("[DOWNLOAD_WORKER] Progress monitor thread started successfully\n");
                 SWLOG_INFO("[DOWNLOAD_WORKER] Thread will poll /opt/curl_progress every 100ms\n");
-                SWLOG_INFO("[DOWNLOAD_WORKER] D-Bus signals will be emitted when progress changes ≥1%%\n");
+                SWLOG_INFO("[DOWNLOAD_WORKER] D-Bus signals will be emitted when progress changes \n");
             }
         }
     }
@@ -2798,7 +2797,7 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     SWLOG_INFO("[DOWNLOAD_WORKER]   force_exit: Valid pointer\n");
     SWLOG_INFO("[DOWNLOAD_WORKER]   trigger_type: 4 (app-initiated)\n");
     SWLOG_INFO("[DOWNLOAD_WORKER]   lastrun: Empty string (matching rdkv_main.c)\n");
-    SWLOG_INFO("[DOWNLOAD_WORKER]   progress_monitoring: %s\n", monitor_thread ? "ENABLED ✅" : "DISABLED ❌");
+    SWLOG_INFO("[DOWNLOAD_WORKER]   progress_monitoring: %s\n", monitor_thread ? "ENABLED" : "DISABLED ");
     SWLOG_INFO("[DOWNLOAD_WORKER] Starting download NOW...\n");
     
     void* curl_handle = NULL;
@@ -2823,7 +2822,7 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
         g_thread_join(monitor_thread);
         monitor_thread = NULL;
         
-        SWLOG_INFO("[DOWNLOAD_WORKER] ✓ Progress monitor thread stopped cleanly\n");
+        SWLOG_INFO("[DOWNLOAD_WORKER]  Progress monitor thread stopped cleanly\n");
         
         // Note: monitor_mutex and monitor_ctx are cleaned up by the thread itself
         // Do NOT free them here to avoid double-free
