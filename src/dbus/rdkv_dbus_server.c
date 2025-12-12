@@ -1168,6 +1168,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			           current_download->firmware_name ? current_download->firmware_name : "NULL",
 			           current_download->current_progress, current_download->status,
 			           g_slist_length(current_download->waiting_handler_ids));
+
 		}
 		
 		// NULL CHECKS: Critical pointers
@@ -1266,7 +1267,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			g_free(type_of_firmware);
 			return;
 		}
-		
+	        	
 		// 3. Check registration
 		gboolean is_registered = g_hash_table_contains(registered_processes, 
 		                                                GINT_TO_POINTER(handler_id_numeric));
@@ -1317,6 +1318,23 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 				g_free(type_of_firmware);
 				return;
 			}
+		}
+		if (IsDownloadInProgress && current_download && g_strcmp0(current_download->firmware_name, firmware_name) != 0) {
+			SWLOG_INFO("[DOWNLOADFIRMWARE] Current Download: %s (progress=%d%%, status=%d, waiting_clients=%d)\n",
+					current_download->firmware_name ? current_download->firmware_name : "NULL",
+					current_download->current_progress, current_download->status,
+					g_slist_length(current_download->waiting_handler_ids));
+			SWLOG_INFO("[DOWNLOADFIRMWARE] REJECTING DOWNLOAD REQUEST: Already downloading '%s', but new request is for '%s\n",current_download->firmware_name,firmware_name);
+			g_dbus_method_invocation_return_value(resp_ctx,
+					g_variant_new("(sss)",
+						"RDKFW_DWNL_FAILED",
+						"DWNLERROR",
+						"There is an ongoing Download for another image"));
+			g_free(handler_id_str);
+			g_free(firmware_name);
+			g_free(download_url);
+			g_free(type_of_firmware);
+			return;
 		}
 		
 		SWLOG_INFO("[DOWNLOADFIRMWARE] All validations passed\n");
@@ -1412,7 +1430,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			g_free(download_url);
 			g_free(type_of_firmware);
 			
-			SWLOG_INFO("[DOWNLOADFIRMWARE] ✓ PIGGYBACK scenario complete\n");
+			SWLOG_INFO("[DOWNLOADFIRMWARE] PIGGYBACK scenario complete\n");
 			SWLOG_INFO("[DOWNLOADFIRMWARE] ========== REQUEST COMPLETE (PIGGYBACK) ==========\n\n");
 			return;
 		}
@@ -2709,7 +2727,6 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     
     SWLOG_INFO("[DOWNLOAD_WORKER] ========================================\n");
     SWLOG_INFO("[DOWNLOAD_WORKER] RdkUpgradeContext_t FULLY POPULATED\n");
-    SWLOG_INFO("[DOWNLOAD_WORKER] All fields match rdkv_main.c setup! ✅\n");
     SWLOG_INFO("[DOWNLOAD_WORKER] ========================================\n");
     
     // ========== STEP 7: SPAWN PROGRESS MONITOR THREAD ==========
