@@ -1171,6 +1171,13 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			           current_download->firmware_name ? current_download->firmware_name : "NULL",
 			           current_download->current_progress, current_download->status,
 			           g_slist_length(current_download->waiting_handler_ids));
+			g_dbus_method_invocation_return_value(resp_ctx,
+					g_variant_new("(sss)",
+                                        "RDKFW_DWNL_FAILED",
+                                        "DWNL_ERROR",
+                                        "There is an Ongoing Firmware Download"));
+                        return;
+
 
 		}
 		
