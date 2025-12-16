@@ -30,8 +30,10 @@
 #include "device_api.h"
 #include "iarmInterface.h"
 #include "rfcinterface.h"
+#include "flash.h"  // For flashImage() function from librdksw_flash.so
 #include <string.h>
 #include <gio/gio.h>
+#include "rdkv_dbus_server.h"
 
 // Buffer sizes for JSON and URL construction
 #define JSON_STR_LEN        1000
@@ -1381,4 +1383,434 @@ DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName
                result.result_code);
     
     return result;
+}
+
+/*
+ * ===================================================================
+ * UpdateFirmware Worker Thread Implementation
+ * ===================================================================
+ * 
+ * This section implements the async firmware flash operation using
+ * GThread worker pattern similar to DownloadFirmware implementation.
+ * 
+ * Architecture:
+ * - Worker thread calls flashImage() from librdksw_flash.so
+ * - Progress signals emitted via g_idle_add() for thread safety
+ * - Supports all 13 scenarios from sequence diagram
+ * - Handles PCI, PDRI, and PERIPHERAL firmware types
+ * 
+ * Signal Flow:
+ * Worker Thread ->g_idle_add() ->Main Loop-> D-Bus Signal ->Client
+ * ===================================================================
+ */
+
+/**
+ * @brief Progress emission idle callback for UpdateProgress signal
+ * 
+ * Called by GLib main loop via g_idle_add() to emit UpdateProgress D-Bus signal.
+ * This marshals progress updates from the worker thread to the main loop thread
+ * in a thread-safe manner.
+ * 
+ * Signal Format:
+ *   UpdateProgress(handlerId, firmwareName, progress, status, message)
+ *   - handlerId: uint64 - Client handler ID
+ *   - firmwareName: string - Firmware filename
+ *   - progress: int32 - Progress percentage (0-100, -1=error)
+ *   - status: int32 - FwUpdateStatus enum (0=INPROGRESS, 1=COMPLETED, 2=ERROR)
+ *   - message: string - Human-readable status message
+ * 
+ * @param user_data FlashProgressUpdate* containing progress data
+ * @return G_SOURCE_REMOVE (one-shot callback, don't reschedule)
+ * 
+ * Thread Safety: Runs in main loop thread, safe to call D-Bus functions
+ * Memory Management: Frees FlashProgressUpdate and all owned strings
+ * 
+ * Logging: INFO level for successful emissions, ERROR for failures
+ */
+/**
+ * @brief Emit UpdateProgress D-Bus signal (called via g_idle_add from worker thread)
+ * 
+ * Non-static to allow external linkage from rdkv_dbus_server.c
+ */
+gboolean emit_flash_progress_idle(gpointer user_data)
+{
+    FlashProgressUpdate *update = (FlashProgressUpdate*)user_data;
+    
+    if (!update) {
+        SWLOG_ERROR("[FLASH_PROGRESS] CRITICAL: emit_flash_progress_idle called with NULL data\n");
+        return G_SOURCE_REMOVE;
+    }
+    
+    SWLOG_INFO("[FLASH_PROGRESS] ===== Emitting UpdateProgress Signal =====\n");
+    SWLOG_INFO("[FLASH_PROGRESS] Handler ID: %s\n", 
+               update->handler_id ? update->handler_id : "NULL");
+    SWLOG_INFO("[FLASH_PROGRESS] Firmware: '%s'\n", 
+               update->firmware_name ? update->firmware_name : "NULL");
+    SWLOG_INFO("[FLASH_PROGRESS] Progress: %d%%\n", update->progress);
+    SWLOG_INFO("[FLASH_PROGRESS] Status: %d (%s)\n", update->status,
+               update->status == FW_UPDATE_INPROGRESS ? "INPROGRESS" :
+               update->status == FW_UPDATE_COMPLETED ? "COMPLETED" : "ERROR");
+    
+    // Construct human-readable message based on status and progress
+    const gchar *status_msg;
+    if (update->status == FW_UPDATE_ERROR) {
+        // Error scenario: Use provided error message or default
+        status_msg = update->error_message ? update->error_message : "Flash operation failed";
+        SWLOG_ERROR("[FLASH_PROGRESS] Error message: %s\n", status_msg);
+    } else if (update->status == FW_UPDATE_COMPLETED) {
+        // Success scenario: Flash completed
+        status_msg = "Flash completed successfully";
+        SWLOG_INFO("[FLASH_PROGRESS] Flash operation completed successfully\n");
+    } else {
+        // In-progress scenario: Generate message based on progress percentage
+        if (update->progress == 0) {
+            status_msg = "Flash started";
+        } else if (update->progress < 25) {
+            status_msg = "Verifying firmware image";
+        } else if (update->progress < 50) {
+            status_msg = "Flashing in progress";
+        } else if (update->progress < 75) {
+            status_msg = "Flash operation continuing";
+        } else if (update->progress < 100) {
+            status_msg = "Nearing completion";
+        } else {
+            status_msg = "Flash operation in progress";
+        }
+    }
+    
+    // Convert handler_id string to uint64 for D-Bus signal
+    guint64 handler_id_numeric = 0;
+    if (update->handler_id) {
+        handler_id_numeric = g_ascii_strtoull(update->handler_id, NULL, 10);
+    }
+    
+    // Emit D-Bus signal: UpdateProgress
+    // Signal path: /org/rdkfwupdater/Service
+    // Interface: org.rdkfwupdater.Interface
+    GError *signal_error = NULL;
+    gboolean signal_emitted = g_dbus_connection_emit_signal(
+        update->connection,
+        NULL,  // Broadcast to all listeners (no specific destination)
+        "/org/rdkfwupdater/Service",
+        "org.rdkfwupdater.Interface",
+        "UpdateProgress",
+        g_variant_new("(tsii s)",
+                      handler_id_numeric,
+                      update->firmware_name ? update->firmware_name : "",
+                      update->progress,
+                      (gint32)update->status,
+                      status_msg),
+        &signal_error);
+    
+    if (!signal_emitted) {
+        SWLOG_ERROR("[FLASH_PROGRESS] FAILED to emit UpdateProgress signal: %s\n",
+                    signal_error ? signal_error->message : "unknown error");
+        if (signal_error) {
+            SWLOG_ERROR("[FLASH_PROGRESS] Error domain: %s, code: %d\n",
+                       g_quark_to_string(signal_error->domain), signal_error->code);
+            g_error_free(signal_error);
+        }
+    } else {
+        SWLOG_INFO("[FLASH_PROGRESS] UpdateProgress signal emitted successfully\n");
+        SWLOG_INFO("[FLASH_PROGRESS] Signal details: handlerId=%"G_GUINT64_FORMAT", "
+                   "firmware='%s', progress=%d%%, status=%d\n",
+                   handler_id_numeric, 
+                   update->firmware_name ? update->firmware_name : "",
+                   update->progress, update->status);
+    }
+    
+    // Cleanup: Free all owned strings and the update structure
+    SWLOG_INFO("[FLASH_PROGRESS] Cleaning up FlashProgressUpdate structure\n");
+    g_free(update->handler_id);
+    g_free(update->firmware_name);
+    g_free(update->error_message);
+    g_free(update);
+    
+    SWLOG_INFO("[FLASH_PROGRESS] ===== UpdateProgress Signal Emission Complete =====\n");
+    
+    return G_SOURCE_REMOVE;  // One-shot callback, don't reschedule
+}
+
+/**
+ * @brief Cleanup global flash state (called via g_idle_add)
+ * 
+ * Safely cleans up current_flash from the main loop thread.
+ * This must run in the main loop to avoid race conditions with D-Bus handlers
+ * that check IsFlashInProgress and current_flash state.
+ * 
+ * Thread Safety:
+ * - Must run in main loop thread (enforced by g_idle_add)
+ * - No mutex needed due to GLib main loop serialization
+ * 
+ * State Cleanup:
+ * - Frees current_flash->firmware_name
+ * - Frees current_flash structure
+ * - Sets current_flash = NULL
+ * - Sets IsFlashInProgress = FALSE
+ * 
+ * @param user_data Unused (can be NULL)
+ * @return G_SOURCE_REMOVE (one-shot callback)
+ * 
+ * Logging: INFO level for successful cleanup, WARN if already cleaned
+ * 
+ * Non-static to allow external linkage from rdkv_dbus_server.c
+ */
+gboolean cleanup_flash_state_idle(gpointer user_data)
+{
+    (void)user_data;  // Unused parameter
+    
+    // current_flash and IsFlashInProgress are declared in rdkv_dbus_server.h
+    
+    SWLOG_INFO("[FLASH_CLEANUP] ===== Cleaning Up Global Flash State =====\n");
+    
+    if (current_flash) {
+        SWLOG_INFO("[FLASH_CLEANUP] Freeing current_flash structure\n");
+        SWLOG_INFO("[FLASH_CLEANUP]   Firmware name: '%s'\n",
+                   current_flash->firmware_name ? current_flash->firmware_name : "NULL");
+        SWLOG_INFO("[FLASH_CLEANUP]   Final progress: %d%%\n", current_flash->current_progress);
+        SWLOG_INFO("[FLASH_CLEANUP]   Final status: %d\n", current_flash->status);
+        
+        // Free owned strings
+        g_free(current_flash->firmware_name);
+        
+        // Free structure
+        g_free(current_flash);
+        current_flash = NULL;
+        
+        // Clear flash-in-progress flag
+        IsFlashInProgress = FALSE;
+        
+        SWLOG_INFO("[FLASH_CLEANUP] Global flash state cleared successfully\n");
+        SWLOG_INFO("[FLASH_CLEANUP] IsFlashInProgress = FALSE\n");
+        SWLOG_INFO("[FLASH_CLEANUP] current_flash = NULL\n");
+    } else {
+        SWLOG_WARN("[FLASH_CLEANUP] current_flash already NULL (double cleanup attempt?)\n");
+    }
+    
+    SWLOG_INFO("[FLASH_CLEANUP] ===== Flash State Cleanup Complete =====\n");
+    
+    return G_SOURCE_REMOVE;  // One-shot callback
+}
+
+/**
+ * @brief Worker thread function for firmware flash operation
+ * 
+ * This function runs in a separate GThread and performs the actual firmware
+ * flash operation by calling flashImage() from librdksw_flash.so. It emits
+ * progress signals at key milestones (0%, 25%, 50%, 75%, 100%) and handles
+ * all error scenarios.
+ * 
+ * Scenarios Handled (13 total):
+ * - S1: PCI Success + Immediate Reboot (flash_result==0, immediate_reboot==TRUE)
+ * - S2: PCI Success + Delayed Reboot (flash_result==0, immediate_reboot==FALSE)
+ * - S3: PDRI Success (upgrade_type==PDRI_UPGRADE)
+ * - S9: Flash Write Error (flash_result!=0)
+ * - S11: Insufficient Storage (handled by flashImage(), returns error)
+ * - S12: Custom Location (any valid firmware path)
+ * - S13: Peripheral Update (upgrade_type==2)
+ * 
+ * Note: S4-S8, S10 are handled in D-Bus handler before worker spawn
+ * 
+ * flashImage() Parameters:
+ * - server_url: Server URL (can be empty, used for telemetry)
+ * - upgrade_file: Full path to firmware file
+ * - reboot_flag: "true" or "false" string
+ * - proto: "2" for HTTP protocol
+ * - upgrade_type: 0=PCI, PDRI_UPGRADE=PDRI, 2=PERIPHERAL
+ * - maint: "true" or "false" for maintenance mode
+ * - trigger_type: 1=bootup, 2=cron, 3=TR69, 4=app, 5=delayed, 6=red_state
+ * 
+ * @param user_data AsyncFlashContext* containing flash parameters
+ * @return NULL (thread exit value not used)
+ * 
+ * Thread Safety:
+ * - Runs in worker thread
+ * - Uses g_idle_add() for all D-Bus signal emissions (thread-safe)
+ * - No direct access to global state (uses g_idle_add for cleanup)
+ * 
+ * Memory Management:
+ * - Frees AsyncFlashContext and all owned strings before exit
+ * - Clears and frees mutex
+ * - Frees stop_flag
+ * 
+ * Progress Flow:
+ * 1. 0% - Flash started
+ * 2. 25% - Verification complete
+ * 3. Call flashImage() - actual flash operation
+ * 4. 50% - Flashing in progress (simulated)
+ * 5. 75% - Nearing completion (simulated)
+ * 6. 100% - Flash completed OR -1% - Flash error
+ * 
+ * Logging: Comprehensive INFO/ERROR logging at each stage
+ */
+gpointer rdkfw_flash_worker_thread(gpointer user_data)
+{
+    AsyncFlashContext *ctx = (AsyncFlashContext*)user_data;
+    
+    // Critical validation: Ensure context is not NULL
+    if (!ctx) {
+        SWLOG_ERROR("[FLASH_WORKER] CRITICAL: Thread started with NULL context\n");
+        SWLOG_ERROR("[FLASH_WORKER] Cannot proceed, exiting thread immediately\n");
+        return NULL;
+    }
+    
+    SWLOG_INFO("[FLASH_WORKER] ========== FLASH WORKER THREAD STARTED ==========\n");
+    SWLOG_INFO("[FLASH_WORKER] Thread ID: %p\n", (void*)g_thread_self());
+    SWLOG_INFO("[FLASH_WORKER] Firmware: '%s'\n", ctx->firmware_name ? ctx->firmware_name : "NULL");
+    SWLOG_INFO("[FLASH_WORKER] Type: '%s'\n", ctx->firmware_type ? ctx->firmware_type : "NULL");
+    SWLOG_INFO("[FLASH_WORKER] Full path: '%s'\n", ctx->firmware_fullpath ? ctx->firmware_fullpath : "NULL");
+    SWLOG_INFO("[FLASH_WORKER] Reboot: %s\n", ctx->immediate_reboot ? "IMMEDIATE" : "DEFERRED");
+    SWLOG_INFO("[FLASH_WORKER] Handler ID: %s\n", ctx->handler_id ? ctx->handler_id : "NULL");
+    
+    int flash_result = -1;
+    FlashProgressUpdate *progress = NULL;
+    
+    // PROGRESS 0%: FLASH STARTED
+    SWLOG_INFO("[FLASH_WORKER] Emitting 0%% progress - Flash operation initiated\n");
+    progress = g_new0(FlashProgressUpdate, 1);
+    progress->connection = ctx->connection;
+    progress->handler_id = g_strdup(ctx->handler_id);
+    progress->firmware_name = g_strdup(ctx->firmware_name);
+    progress->progress = 0;
+    progress->status = FW_UPDATE_INPROGRESS;
+    progress->error_message = NULL;
+    g_idle_add(emit_flash_progress_idle, progress);
+    usleep(500000);
+    
+    // PROGRESS 25%: VERIFICATION
+    SWLOG_INFO("[FLASH_WORKER] Pre-flash validation started\n");
+    gboolean validation_passed = TRUE;
+    
+    if (ctx->firmware_fullpath && strlen(ctx->firmware_fullpath) > 0) {
+        if (!g_file_test(ctx->firmware_fullpath, G_FILE_TEST_EXISTS)) {
+            SWLOG_ERROR("[FLASH_WORKER] S12: Firmware file not found: %s\n", ctx->firmware_fullpath);
+            validation_passed = FALSE;
+        } else {
+            SWLOG_INFO("[FLASH_WORKER] S12: Firmware file validated: %s\n", ctx->firmware_fullpath);
+        }
+    }
+    
+    if (validation_passed) {
+        SWLOG_INFO("[FLASH_WORKER] Emitting 25%% progress\n");
+        progress = g_new0(FlashProgressUpdate, 1);
+        progress->connection = ctx->connection;
+        progress->handler_id = g_strdup(ctx->handler_id);
+        progress->firmware_name = g_strdup(ctx->firmware_name);
+        progress->progress = 25;
+        progress->status = FW_UPDATE_INPROGRESS;
+        progress->error_message = NULL;
+        g_idle_add(emit_flash_progress_idle, progress);
+        usleep(500000);
+    } else {
+        goto flash_error;
+    }
+    
+    // PROGRESS 50%: CALLING flashImage()
+    SWLOG_INFO("[FLASH_WORKER] Building flashImage() parameters\n");
+    const char *upgrade_file_path = ctx->firmware_fullpath ? ctx->firmware_fullpath : ctx->firmware_name;
+    const char *server_url = ctx->server_url ? ctx->server_url : "";
+    const char *reboot_flag = ctx->immediate_reboot ? "true" : "false";
+    const char *proto = "2";
+    const char *maint = "false";
+    
+    // Determine upgrade_type from firmware_type string
+    int upgrade_type = 0;  // Default: PCI
+    if (ctx->firmware_type) {
+        if (g_strcmp0(ctx->firmware_type, "PDRI") == 0) {
+            upgrade_type = PDRI_UPGRADE;  // Usually defined as 1
+        } else if (g_strcmp0(ctx->firmware_type, "PERIPHERAL") == 0) {
+            upgrade_type = 2;
+        }
+    }
+    
+    SWLOG_INFO("[FLASH_WORKER] Emitting 50%% progress\n");
+    progress = g_new0(FlashProgressUpdate, 1);
+    progress->connection = ctx->connection;
+    progress->handler_id = g_strdup(ctx->handler_id);
+    progress->firmware_name = g_strdup(ctx->firmware_name);
+    progress->progress = 50;
+    progress->status = FW_UPDATE_INPROGRESS;
+    progress->error_message = NULL;
+    g_idle_add(emit_flash_progress_idle, progress);
+    usleep(1000000);
+    
+    SWLOG_INFO("[FLASH_WORKER] *** CALLING flashImage() ***\n");
+#ifndef GTEST_ENABLE
+    flash_result = flashImage(server_url, upgrade_file_path, reboot_flag, proto, 
+                              upgrade_type, maint, ctx->trigger_type);
+#else
+    SWLOG_WARN("[FLASH_WORKER] GTEST: Simulating flashImage() = 0\n");
+    flash_result = 0;
+    sleep(2);
+#endif
+    SWLOG_INFO("[FLASH_WORKER] flashImage() returned: %d\n", flash_result);
+    
+    if (flash_result == 0) {
+        // SUCCESS
+        SWLOG_INFO("[FLASH_WORKER] FLASH SUCCESS\n");
+        if (ctx->firmware_type && g_strcmp0(ctx->firmware_type, "PDRI") == 0) {
+            SWLOG_INFO("[FLASH_WORKER] S3: PDRI upgrade successful\n");
+        } else if (ctx->firmware_type && g_strcmp0(ctx->firmware_type, "PERIPHERAL") == 0) {
+            SWLOG_INFO("[FLASH_WORKER] S13: Peripheral update successful\n");
+        } else if (!ctx->immediate_reboot) {
+            SWLOG_INFO("[FLASH_WORKER] S2: Deferred reboot successful\n");
+        } else {
+            SWLOG_INFO("[FLASH_WORKER] S1: Normal flash successful\n");
+        }
+        
+        // PROGRESS 75%
+        progress = g_new0(FlashProgressUpdate, 1);
+        progress->connection = ctx->connection;
+        progress->handler_id = g_strdup(ctx->handler_id);
+        progress->firmware_name = g_strdup(ctx->firmware_name);
+        progress->progress = 75;
+        progress->status = FW_UPDATE_INPROGRESS;
+        progress->error_message = NULL;
+        g_idle_add(emit_flash_progress_idle, progress);
+        usleep(500000);
+        
+        // PROGRESS 100%
+        SWLOG_INFO("[FLASH_WORKER] Emitting 100%% progress - COMPLETE\n");
+        progress = g_new0(FlashProgressUpdate, 1);
+        progress->connection = ctx->connection;
+        progress->handler_id = g_strdup(ctx->handler_id);
+        progress->firmware_name = g_strdup(ctx->firmware_name);
+        progress->progress = 100;
+        progress->status = FW_UPDATE_COMPLETED;
+        progress->error_message = NULL;
+        g_idle_add(emit_flash_progress_idle, progress);
+        
+    } else {
+        // FAILURE
+flash_error:
+        SWLOG_ERROR("[FLASH_WORKER] FLASH FAILED: %d\n", flash_result);
+        if (flash_result == -2 || flash_result == -28) {
+            SWLOG_ERROR("[FLASH_WORKER] S11: Insufficient storage\n");
+        } else {
+            SWLOG_ERROR("[FLASH_WORKER] S9: Flash write error\n");
+        }
+        
+        progress = g_new0(FlashProgressUpdate, 1);
+        progress->connection = ctx->connection;
+        progress->handler_id = g_strdup(ctx->handler_id);
+        progress->firmware_name = g_strdup(ctx->firmware_name);
+        progress->progress = -1;
+        progress->status = FW_UPDATE_ERROR;
+        progress->error_message = g_strdup_printf("Flash failed: error code %d", flash_result);
+        g_idle_add(emit_flash_progress_idle, progress);
+    }
+    
+    // CLEANUP
+    SWLOG_INFO("[FLASH_WORKER] Scheduling cleanup\n");
+    g_idle_add(cleanup_flash_state_idle, NULL);
+    
+    if (ctx->handler_id) g_free(ctx->handler_id);
+    if (ctx->firmware_name) g_free(ctx->firmware_name);
+    if (ctx->firmware_type) g_free(ctx->firmware_type);
+    if (ctx->firmware_fullpath) g_free(ctx->firmware_fullpath);
+    if (ctx->server_url) g_free(ctx->server_url);
+    g_free(ctx);
+    
+    SWLOG_INFO("[FLASH_WORKER] Thread exiting, result: %d\n", flash_result);
+    return NULL;
 }

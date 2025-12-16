@@ -83,10 +83,16 @@ typedef struct {
 
 /* Note: rdkfw_progress_monitor_thread() is declared in rdkFwupdateMgr_handlers.h */
 
+/* Forward declarations - UpdateFirmware async operation handlers */
+// Note: These are implemented in rdkFwupdateMgr_handlers.c and externally visible
+gboolean emit_flash_progress_idle(gpointer user_data);
+gboolean cleanup_flash_state_idle(gpointer user_data);
+gpointer rdkfw_flash_worker_thread(gpointer user_data);
+
 /* Concurrency control flags - enforce single operation at a time */
 static gboolean IsCheckUpdateInProgress = FALSE;
 static gboolean IsDownloadInProgress = FALSE;
-static gboolean IsFlashInProgress =  FALSE;
+gboolean IsFlashInProgress =  FALSE;  // Non-static: accessed by worker thread cleanup
 
 /* Queue management - hold waiting clients when operation in progress */
 static GSList *waiting_checkUpdate_ids = NULL;
@@ -128,7 +134,9 @@ GHashTable *active_download_tasks = NULL;  // Map: firmwareName (gchar*) → Dow
  * NULL when no download is active.
  */
 static CurrentDownloadState *current_download = NULL;
-static CurrentFlashState *current_flash = NULL;
+
+/* UpdateFirmware flash state - Non-static for worker thread access */
+CurrentFlashState *current_flash = NULL;
 
 /* D-Bus introspection data or dbus interface : Exposes the methods for apps */
 static const gchar introspection_xml[] =
@@ -197,6 +205,14 @@ static const gchar introspection_xml[] =
 " <arg type='s' name='firmwareName'/>"
 " <arg type='s' name='status'/>"
 " <arg type='s' name='errorMessage'/>"
+" </signal>"
+" <!-- UpdateProgress: Progress updates during firmware flash operation -->"
+" <signal name='UpdateProgress'>"
+" <arg type='t' name='handlerId'/>"
+" <arg type='s' name='firmwareName'/>"
+" <arg type='i' name='progress'/>"
+" <arg type='i' name='status'/>"
+" <arg type='s' name='message'/>"
 " </signal>"
 " </interface>"
 "</node>";    
@@ -1853,23 +1869,166 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		
 		SWLOG_INFO("[UPDATEFIRMWARE] All validations passed\n");
 		SWLOG_INFO("[UPDATEFIRMWARE]   Handler ID (validated): %"G_GUINT64_FORMAT"\n", handler_id_numeric);
+		
+		// ===== INITIALIZE FLASH STATE TRACKING =====
+		SWLOG_INFO("[UPDATEFIRMWARE] Initializing global flash state tracker\n");
+		
+		current_flash = g_new0(CurrentFlashState, 1);
+		current_flash->firmware_name = g_strdup(firmware_name);
+		current_flash->current_progress = 0;
+		current_flash->status = FW_UPDATE_INPROGRESS;
+		IsFlashInProgress = TRUE;
+		
+		SWLOG_INFO("[UPDATEFIRMWARE] Flash state tracker created:\n");
+		SWLOG_INFO("[UPDATEFIRMWARE]   - firmware_name: '%s'\n", current_flash->firmware_name);
+		SWLOG_INFO("[UPDATEFIRMWARE]   - current_progress: %d%%\n", current_flash->current_progress);
+		SWLOG_INFO("[UPDATEFIRMWARE]   - status: %d (INPROGRESS)\n", current_flash->status);
+		SWLOG_INFO("[UPDATEFIRMWARE]   - IsFlashInProgress: TRUE\n");
+		
+		// ===== SEND IMMEDIATE SUCCESS RESPONSE =====
+		SWLOG_INFO("[UPDATEFIRMWARE] Sending immediate SUCCESS response to client\n");
+		
+		g_dbus_method_invocation_return_value(resp_ctx,
+			g_variant_new("(sss)", 
+				"RDKFW_UPDATE_SUCCESS", 
+				"NOTSTARTED", 
+				"Flash operation initiated"));
+		
+		SWLOG_INFO("[UPDATEFIRMWARE] SUCCESS response sent to client\n");
+		SWLOG_INFO("[UPDATEFIRMWARE] Response details:\n");
+		SWLOG_INFO("[UPDATEFIRMWARE]   - UpdateResult: 'RDKFW_UPDATE_SUCCESS'\n");
+		SWLOG_INFO("[UPDATEFIRMWARE]   - UpdateStatus: 'NOTSTARTED'\n");
+		SWLOG_INFO("[UPDATEFIRMWARE]   - message: 'Flash operation initiated'\n");
+		SWLOG_INFO("[UPDATEFIRMWARE] Client should now listen for UpdateProgress signals:\n");
+		SWLOG_INFO("[UPDATEFIRMWARE]   Signal: org.rdkfwupdater.Interface.UpdateProgress\n");
+		SWLOG_INFO("[UPDATEFIRMWARE]   Expected sequence: 0%% → 25%% → 50%% → 75%% → 100%% (or -1%% for error)\n");
+		
+		// ===== CREATE WORKER THREAD CONTEXT =====
+		SWLOG_INFO("[UPDATEFIRMWARE] Creating AsyncFlashContext for worker thread\n");
+		
+		AsyncFlashContext *flash_ctx = g_new0(AsyncFlashContext, 1);
+		flash_ctx->connection = rdkv_conn_dbus;  // Borrowed pointer (do NOT free)
+		flash_ctx->handler_id = handler_id_str;  // Ownership transferred (will be freed by worker)
+		flash_ctx->firmware_name = firmware_name;  // Ownership transferred
+		flash_ctx->firmware_type = type_of_firmware;  // Ownership transferred
+		flash_ctx->firmware_fullpath = firmware_fullpath;  // Ownership transferred (already allocated)
+		flash_ctx->server_url = g_strdup("");  // Empty string (TODO: Could fetch from XConf cache)
+		flash_ctx->immediate_reboot = (g_strcmp0(rebootImmediately, "true") == 0);
+		flash_ctx->trigger_type = 4;  // 4 = App triggered (D-Bus API call)
+		flash_ctx->stop_flag = g_new0(gboolean, 1);
+		flash_ctx->mutex = g_new0(GMutex, 1);
+		g_mutex_init(flash_ctx->mutex);
+		flash_ctx->last_progress = 0;
+		flash_ctx->operation_start_time = time(NULL);
+		
+		SWLOG_INFO("[UPDATEFIRMWARE] AsyncFlashContext created successfully:\n");
+		SWLOG_INFO("[UPDATEFIRMWARE]   Context Details:\n");
+		SWLOG_INFO("[UPDATEFIRMWARE]     - connection: %p (borrowed)\n", (void*)flash_ctx->connection);
+		SWLOG_INFO("[UPDATEFIRMWARE]     - handler_id: '%s'\n", flash_ctx->handler_id);
+		SWLOG_INFO("[UPDATEFIRMWARE]     - firmware_name: '%s'\n", flash_ctx->firmware_name);
+		SWLOG_INFO("[UPDATEFIRMWARE]     - firmware_type: '%s'\n", flash_ctx->firmware_type);
+		SWLOG_INFO("[UPDATEFIRMWARE]     - firmware_fullpath: '%s'\n", flash_ctx->firmware_fullpath);
+		SWLOG_INFO("[UPDATEFIRMWARE]     - server_url: '%s'\n", flash_ctx->server_url);
+		SWLOG_INFO("[UPDATEFIRMWARE]     - immediate_reboot: %s\n", 
+		           flash_ctx->immediate_reboot ? "TRUE" : "FALSE");
+		SWLOG_INFO("[UPDATEFIRMWARE]     - trigger_type: %d (4=App triggered)\n", flash_ctx->trigger_type);
+		SWLOG_INFO("[UPDATEFIRMWARE]     - operation_start_time: %ld\n", flash_ctx->operation_start_time);
+		
+		// ===== SPAWN WORKER THREAD =====
+		SWLOG_INFO("[UPDATEFIRMWARE] Spawning GThread worker for flash operation\n");
+		SWLOG_INFO("[UPDATEFIRMWARE] Thread name: 'rdkfw_flash_worker'\n");
+		SWLOG_INFO("[UPDATEFIRMWARE] Thread function: rdkfw_flash_worker_thread()\n");
+		
+		GError *thread_error = NULL;
+		GThread *flash_thread = g_thread_try_new("rdkfw_flash_worker",
+		                                         rdkfw_flash_worker_thread,
+		                                         flash_ctx,
+		                                         &thread_error);
+		
+		if (!flash_thread) {
+			// Thread spawn failed - critical error
+			SWLOG_ERROR("[UPDATEFIRMWARE] CRITICAL: Failed to spawn flash worker thread!\n");
+			SWLOG_ERROR("[UPDATEFIRMWARE] Error: %s\n", 
+			            thread_error ? thread_error->message : "unknown error");
 			
-		gchar* app_id=NULL;
-		g_variant_get(rdkv_req_payload, "(s)", &app_id);
-
-		SWLOG_INFO("[D-BUS] UpdateFirmware request: process='%s', sender='%s'\n",
-				app_id, rdkv_req_caller_id);
-		SWLOG_INFO("[D-BUS] WARNING: This will flash firmware and reboot system!\n");
-
-		TaskContext *ctx = create_task_context(TASK_TYPE_UPDATE, app_id, rdkv_req_caller_id, resp_ctx);
-		guint task_id = next_task_id++;
-		g_hash_table_insert(active_tasks, GUINT_TO_POINTER(task_id), ctx);
-
-		SWLOG_INFO("[D-BUS] Spawning ASYNC Upgrade task-%d\n", task_id);
-
-		g_timeout_add(100, upgrade_task, ctx);
-
-		g_free(app_id);
+			if (thread_error) {
+				SWLOG_ERROR("[UPDATEFIRMWARE] Error details: domain=%s, code=%d\n",
+				           g_quark_to_string(thread_error->domain), thread_error->code);
+				g_error_free(thread_error);
+			}
+			
+			// Emit error signal to client
+			SWLOG_ERROR("[UPDATEFIRMWARE] Emitting error signal to client\n");
+			FlashProgressUpdate *error_update = g_new0(FlashProgressUpdate, 1);
+			error_update->progress = -1;
+			error_update->status = FW_UPDATE_ERROR;
+			error_update->handler_id = g_strdup(flash_ctx->handler_id);
+			error_update->firmware_name = g_strdup(flash_ctx->firmware_name);
+			error_update->error_message = g_strdup("Failed to spawn flash worker thread");
+			error_update->connection = rdkv_conn_dbus;
+			g_idle_add(emit_flash_progress_idle, error_update);
+			
+			// Cleanup flash_ctx
+			SWLOG_ERROR("[UPDATEFIRMWARE] Cleaning up failed flash context\n");
+			g_free(flash_ctx->handler_id);
+			g_free(flash_ctx->firmware_name);
+			g_free(flash_ctx->firmware_type);
+			g_free(flash_ctx->firmware_fullpath);
+			g_free(flash_ctx->server_url);
+			g_mutex_clear(flash_ctx->mutex);
+			g_free(flash_ctx->mutex);
+			g_free(flash_ctx->stop_flag);
+			g_free(flash_ctx);
+			
+			// Cleanup global state
+			SWLOG_ERROR("[UPDATEFIRMWARE] Cleaning up global flash state\n");
+			g_free(current_flash->firmware_name);
+			g_free(current_flash);
+			current_flash = NULL;
+			IsFlashInProgress = FALSE;
+			
+			// Cleanup remaining input strings
+			g_free(rebootImmediately);
+			g_free(loc_of_firmware);
+			
+			SWLOG_ERROR("[UPDATEFIRMWARE] Thread spawn failure handling complete\n");
+			return;
+		}
+		
+		// Thread spawned successfully
+		SWLOG_INFO("[UPDATEFIRMWARE] ===== Flash Worker Thread Spawned Successfully =====\n");
+		SWLOG_INFO("[UPDATEFIRMWARE] Thread ID: %p\n", (void*)flash_thread);
+		SWLOG_INFO("[UPDATEFIRMWARE] Thread is now running independently\n");
+		SWLOG_INFO("[UPDATEFIRMWARE] Worker thread will:\n");
+		SWLOG_INFO("[UPDATEFIRMWARE]   1. Emit UpdateProgress(0%%, INPROGRESS)\n");
+		SWLOG_INFO("[UPDATEFIRMWARE]   2. Emit UpdateProgress(25%%, INPROGRESS)\n");
+		SWLOG_INFO("[UPDATEFIRMWARE]   3. Call flashImage() from librdksw_flash.so\n");
+		SWLOG_INFO("[UPDATEFIRMWARE]   4. Emit UpdateProgress(50%%, INPROGRESS)\n");
+		SWLOG_INFO("[UPDATEFIRMWARE]   5. Emit UpdateProgress(75%%, INPROGRESS)\n");
+		SWLOG_INFO("[UPDATEFIRMWARE]   6. Emit UpdateProgress(100%%, COMPLETED) or (-1, ERROR)\n");
+		SWLOG_INFO("[UPDATEFIRMWARE]   7. Cleanup global state via g_idle_add\n");
+		SWLOG_INFO("[UPDATEFIRMWARE]   8. Exit thread\n");
+		
+		g_thread_unref(flash_thread);  // Detach thread (runs independently)
+		
+		SWLOG_INFO("[UPDATEFIRMWARE] Thread detached (g_thread_unref called)\n");
+		SWLOG_INFO("[UPDATEFIRMWARE] Thread will run until flash operation completes\n");
+		
+		// Cleanup remaining input strings (ownership transferred to flash_ctx)
+		// Note: handler_id_str, firmware_name, type_of_firmware, firmware_fullpath 
+		// are now owned by flash_ctx and will be freed by worker thread
+		SWLOG_INFO("[UPDATEFIRMWARE] Cleaning up non-transferred input strings\n");
+		g_free(rebootImmediately);
+		g_free(loc_of_firmware);
+		
+		SWLOG_INFO("[UPDATEFIRMWARE] ========== REQUEST HANDLING COMPLETE ==========\n");
+		SWLOG_INFO("[UPDATEFIRMWARE] Summary:\n");
+		SWLOG_INFO("[UPDATEFIRMWARE]   - Handler ID: %"G_GUINT64_FORMAT"\n", handler_id_numeric);
+		SWLOG_INFO("[UPDATEFIRMWARE]   - Firmware: '%s'\n", flash_ctx->firmware_name);
+		SWLOG_INFO("[UPDATEFIRMWARE]   - Type: '%s'\n", flash_ctx->firmware_type);
+		SWLOG_INFO("[UPDATEFIRMWARE]   - Response: SUCCESS (NOTSTARTED)\n");
+		SWLOG_INFO("[UPDATEFIRMWARE]   - Worker: Spawned and running\n");
+		SWLOG_INFO("[UPDATEFIRMWARE]   - Next: Client receives UpdateProgress signals\n");
 	}
 
 	/* REGISTER PROCESS */

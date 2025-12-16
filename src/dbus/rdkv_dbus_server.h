@@ -191,6 +191,99 @@ typedef struct {
     FwUpdateStatus status;            // Current flash status
 } CurrentFlashState;
 
+/*
+ * ===================================================================
+ * UpdateFirmware Worker Thread Structures
+ * ===================================================================
+ * These structures support the GThread-based async flash architecture
+ * with progress signal emission and flashImage() integration.
+ * 
+ * Design Pattern:
+ * 1. AsyncFlashContext: Passed to worker thread via GThread
+ * 2. FlashProgressUpdate: Passed to main loop via g_idle_add for signal emission
+ * 3. CurrentFlashState: Global tracking for current flash operation
+ * 
+ * Thread Safety:
+ * - AsyncFlashContext: Immutable once passed to worker (safe)
+ * - FlashProgressUpdate: Created per signal, freed after emission (safe)
+ * - CurrentFlashState: Protected by main loop execution (no mutex needed)
+ */
+
+/*
+ * AsyncFlashContext
+ * 
+ * Context data passed to worker thread for async firmware flash operation.
+ * Contains all information needed to perform flash without accessing
+ * shared state (thread-safe by immutability).
+ * 
+ * Lifecycle:
+ * 1. Created in D-Bus handler (main loop thread)
+ * 2. Passed to GThread via g_thread_try_new()
+ * 3. Used by worker thread in rdkfw_flash_worker_thread()
+ * 4. Freed by worker thread before exit
+ * 
+ * Memory: ~512 bytes (strings + primitives)
+ * 
+ * All gchar* fields are OWNED (must call g_free when done)
+ * GDBusConnection* is BORROWED (do NOT free)
+ */
+typedef struct {
+    // D-Bus communication
+    GDBusConnection *connection;        // D-Bus connection for signal emission (borrowed, NOT owned)
+    gchar *handler_id;                  // Handler ID string (owned, must free)
+    
+    // Firmware identification
+    gchar *firmware_name;               // Firmware filename (e.g., "image_v2.bin") (owned)
+    gchar *firmware_type;               // Firmware type: "PCI", "PDRI", "PERIPHERAL" (owned)
+    gchar *firmware_fullpath;           // Full path to firmware file (e.g., "/opt/firmware.bin") (owned)
+    gchar *server_url;                  // Server URL for telemetry (owned, can be empty string)
+    
+    // Flash parameters
+    gboolean immediate_reboot;          // TRUE = reboot after flash, FALSE = defer reboot
+    int trigger_type;                   // Trigger type (1=bootup, 2=cron, 3=TR69, 4=app, 5=delayed, 6=red_state)
+    
+    // State synchronization
+    gboolean *stop_flag;                // Atomic shutdown flag (borrowed, points to stack variable)
+    GMutex *mutex;                      // Mutex for thread safety (owned, must clear and free)
+    
+    // Progress tracking
+    int last_progress;                  // Last emitted progress percentage (0-100)
+    time_t operation_start_time;        // Flash start time for timeout detection
+} AsyncFlashContext;
+
+/*
+ * FlashProgressUpdate
+ * 
+ * Progress data passed from worker thread to main loop via g_idle_add().
+ * Contains all data needed to emit a single UpdateProgress D-Bus signal.
+ * 
+ * Usage Pattern:
+ * Worker thread:
+ *   FlashProgressUpdate *update = g_new0(FlashProgressUpdate, 1);
+ *   update->progress = 50;
+ *   update->status = FW_UPDATE_INPROGRESS;
+ *   update->handler_id = g_strdup(ctx->handler_id);
+ *   update->firmware_name = g_strdup(ctx->firmware_name);
+ *   update->error_message = NULL;  // or g_strdup(error_desc) for errors
+ *   update->connection = ctx->connection;
+ *   g_idle_add(emit_flash_progress_idle, update);
+ * 
+ * Main loop (automatically invoked):
+ *   emit_flash_progress_idle() emits signal, then frees all fields
+ * 
+ * Memory: ~192 bytes (3 strings + int + enum + pointer)
+ * 
+ * All gchar* fields are OWNED (freed in emit_flash_progress_idle)
+ * GDBusConnection* is BORROWED (do NOT free)
+ */
+typedef struct {
+    int progress;                       // Progress percentage (0-100, -1 for error)
+    FwUpdateStatus status;              // Flash status: FW_UPDATE_INPROGRESS/COMPLETED/ERROR
+    gchar *handler_id;                  // Handler ID string (owned, must free)
+    gchar *firmware_name;               // Firmware name for signal payload (owned, must free)
+    gchar *error_message;               // Error description if status==ERROR (owned, can be NULL)
+    GDBusConnection *connection;        // D-Bus connection for signal emission (borrowed)
+} FlashProgressUpdate;
 
 /* End of UpdateFirmware async structures */
 
@@ -346,5 +439,13 @@ extern int setup_dbus_server();
  * Called during daemon shutdown.
  */
 extern void cleanup_dbus();
+
+/* Global state variables - accessed by worker threads */
+extern CurrentFlashState *current_flash;
+extern gboolean IsFlashInProgress;
+
+/* Helper functions for worker threads */
+extern gboolean emit_flash_progress_idle(gpointer user_data);
+extern gboolean cleanup_flash_state_idle(gpointer user_data);
 
 #endif

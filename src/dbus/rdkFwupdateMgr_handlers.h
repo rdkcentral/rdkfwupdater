@@ -142,6 +142,24 @@ int rdkFwupdateMgr_updateFirmware(const gchar *handler_id,
                                   gchar **status_message);
 
 /*
+ * Flash Worker Thread Function
+ * 
+ * Worker thread that performs firmware flash operation by calling flashImage()
+ * from librdksw_flash.so. Emits UpdateProgress signals for client notification.
+ * 
+ * This function is called in a separate GThread spawned by the UpdateFirmware
+ * D-Bus handler. It performs the blocking flash operation and emits progress
+ * signals at key milestones (0%, 25%, 50%, 75%, 100% or error).
+ * 
+ * @param user_data AsyncFlashContext* containing flash parameters
+ * @return NULL (thread exit value not used)
+ * 
+ * Thread Safety: Uses g_idle_add() for all D-Bus signal emissions
+ * Memory: Frees AsyncFlashContext before exit
+ */
+gpointer rdkfw_flash_worker_thread(gpointer user_data);
+
+/*
  * Subscribe to Events (Future Implementation)
  * 
  * Registers callback endpoint for firmware update events.
