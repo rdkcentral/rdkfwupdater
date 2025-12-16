@@ -86,6 +86,7 @@ typedef struct {
 /* Concurrency control flags - enforce single operation at a time */
 static gboolean IsCheckUpdateInProgress = FALSE;
 static gboolean IsDownloadInProgress = FALSE;
+static gboolean IsFlashInProgress =  FALSE;
 
 /* Queue management - hold waiting clients when operation in progress */
 static GSList *waiting_checkUpdate_ids = NULL;
@@ -127,6 +128,7 @@ GHashTable *active_download_tasks = NULL;  // Map: firmwareName (gchar*) → Dow
  * NULL when no download is active.
  */
 static CurrentDownloadState *current_download = NULL;
+static CurrentFlashState *current_flash = NULL;
 
 /* D-Bus introspection data or dbus interface : Exposes the methods for apps */
 static const gchar introspection_xml[] =
@@ -165,12 +167,13 @@ static const gchar introspection_xml[] =
 " </method>"
 " <!-- UpdateFirmware: Flash and install firmware -->"
 " <method name='UpdateFirmware'>"
-" <arg type='t' name='handlerId' direction='in'/>"
-" <arg type='s' name='currentVersion' direction='in'/>"
-" <arg type='s' name='targetVersion' direction='in'/>"
-" <arg type='s' name='option1' direction='in'/>"
-" <arg type='s' name='option2' direction='in'/>"
-" <arg type='b' name='success' direction='out'/>"
+" <arg type='s' name='handlerId' direction='in'/>"
+" <arg type='s' name='firmwareName' direction='in'/>"
+" <arg type='s' name='TypeOfFirmware' direction='in'/>"
+" <arg type='s' name='LocationOfFirmware' direction='in'/>"
+" <arg type='s' name='rebootImmediately' direction='in'/>"
+" <arg type='s' name='UpdateResult' direction='out'/>"
+" <arg type='s' name='UpdateStatus' direction='out'/>"
 " <arg type='s' name='message' direction='out'/>"
 " </method>"
 " <!-- Signals -->"
@@ -1184,7 +1187,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			g_dbus_method_invocation_return_value(resp_ctx,
 				g_variant_new("(sss)", 
 					"RDKFW_DWNL_FAILED",
-					"DWNLERROR",
+					"DWNL_ERROR",
 					"Internal error: request payload is missing"));
 			return;
 		}
@@ -1194,7 +1197,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			g_dbus_method_invocation_return_value(resp_ctx,
 				g_variant_new("(sss)", 
 					"RDKFW_DWNL_FAILED",
-					"DWNLERROR",
+					"DWNL_ERROR",
 					"Internal error: D-Bus connection unavailable"));
 			return;
 		}
@@ -1229,7 +1232,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			g_dbus_method_invocation_return_value(resp_ctx,
                                 g_variant_new("(sss)",
                                         "RDKFW_DWNL_FAILED",
-                                        "DWNLERROR",
+                                        "DWNL_ERROR",
                                         "one more inputs are empty/invalid"));
                         g_free(handler_id_str);
                         g_free(firmware_name);
@@ -1243,7 +1246,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			g_dbus_method_invocation_return_value(resp_ctx,
 				g_variant_new("(sss)", 
 					"RDKFW_DWNL_FAILED",
-					"DWNLERROR",
+					"DWNL_ERROR",
 					"Invalid handler ID"));
 			g_free(handler_id_str);
 			g_free(firmware_name);
@@ -1259,7 +1262,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			g_dbus_method_invocation_return_value(resp_ctx,
 				g_variant_new("(sss)", 
 					"RDKFW_DWNL_FAILED",
-					"DWNLERROR",
+					"DWNL_ERROR",
 					"Invalid handler ID format"));
 			g_free(handler_id_str);
 			g_free(firmware_name);
@@ -1277,7 +1280,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			g_dbus_method_invocation_return_value(resp_ctx,
 				g_variant_new("(sss)", 
 					"RDKFW_DWNL_FAILED",
-					"DWNLERROR",
+					"DWNL_ERROR",
 					"Handler not registered"));
 			g_free(handler_id_str);
 			g_free(firmware_name);
@@ -1292,7 +1295,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			g_dbus_method_invocation_return_value(resp_ctx,
 				g_variant_new("(sss)", 
 					"RDKFW_DWNL_FAILED",
-					"DWNLERROR",
+					"DWNL_ERROR",
 					"Invalid firmware name"));
 			g_free(handler_id_str);
 			g_free(firmware_name);
@@ -1310,7 +1313,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 				g_dbus_method_invocation_return_value(resp_ctx,
 					g_variant_new("(sss)", 
 						"RDKFW_DWNL_FAILED",
-						"DWNLERROR",
+						"DWNL_ERROR",
 						"Invalid download URL format"));
 				g_free(handler_id_str);
 				g_free(firmware_name);
@@ -1328,7 +1331,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			g_dbus_method_invocation_return_value(resp_ctx,
 					g_variant_new("(sss)",
 						"RDKFW_DWNL_FAILED",
-						"DWNLERROR",
+						"DWNL_ERROR",
 						"There is an ongoing Download for another image"));
 			g_free(handler_id_str);
 			g_free(firmware_name);
@@ -1452,7 +1455,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			g_dbus_method_invocation_return_value(resp_ctx,
 				g_variant_new("(sss)", 
 					"RDKFW_DWNL_FAILED",
-					"DWNLERROR",
+					"DWNL_ERROR",
 					"Internal error: memory allocation failed"));
 			g_free(handler_id_str);
 			g_free(firmware_name);
@@ -1486,7 +1489,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			g_dbus_method_invocation_return_value(resp_ctx,
 				g_variant_new("(sss)", 
 					"RDKFW_DWNL_FAILED",
-					"DWNLERROR",
+					"DWNL_ERROR",
 					"Internal error: memory allocation failed"));
 			g_free(handler_id_str);
 			g_free(firmware_name);
@@ -1523,7 +1526,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			g_dbus_method_invocation_return_value(resp_ctx,
 				g_variant_new("(sss)", 
 					"RDKFW_DWNL_FAILED",
-					"DWNLERROR",
+					"DWNL_ERROR",
 					"Internal error: memory allocation failed"));
 			g_free(handler_id_str);
 			g_free(firmware_name);
@@ -1561,7 +1564,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			g_dbus_method_invocation_return_value(resp_ctx,
 				g_variant_new("(sss)", 
 					"RDKFW_DWNL_FAILED",
-					"DWNLERROR",
+					"DWNL_ERROR",
 					"Internal error: failed to create async task"));
 			g_free(handler_id_str);
 			g_free(firmware_name);
@@ -1601,7 +1604,249 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 	}
 
 	/* UPGRADE REQUEST - */
+	/* ====================================================================
+         * UPDATE FIRMWARE REQUEST - Async GTask-based Implementation
+         * ====================================================================
+         * This handler implements the following features:
+         * 1. Comprehensive input validation (handler_id, firmware_name, etc.)
+         * 2. Check if there is an ongoing flash - based on isUpdateInProgress
+         * 3. Piggyback support (multiple clients gets the update progress)
+         * 4. GTask worker thread for blocking Flash operation
+         * 5. Progress signals via g_idle_add() for thread-safe emission
+         * 6. Robust error handling and cleanup
+         * ==================================================================*/
 	else if (g_strcmp0(rdkv_req_method, "UpdateFirmware") == 0) {
+		SWLOG_INFO("[UPDATEFIRMWARE] ========== NEW FLASH REQUEST ==========\n");
+		SWLOG_INFO("[UPDATEFIRMWARE] Timestamp: %ld\n", (long)time(NULL));
+		SWLOG_INFO("[UPDATEFIRMWARE] D-Bus Sender: %s\n", rdkv_req_caller_id ? rdkv_req_caller_id : "NULL");
+		SWLOG_INFO("[UPDATEFIRMWARE] Daemon State: IsFlashInProgress=%s, Registered=%d\n",
+                            IsFlashInProgress ? "YES" : "NO", g_hash_table_size(registered_processes));
+		
+		if (IsDownloadInProgress) {
+			SWLOG_INFO("[UPDATEFIRMWARE] There is an Ongoing Firmware Download\n");
+			SWLOG_INFO("[UPDATEFIRMWARE] Cannot Flash the device now.Try after sometime\n");
+			g_dbus_method_invocation_return_value(resp_ctx,
+					g_variant_new("(sss)",
+				        "RDKFW_UPDATE_FAILED",                                                                              
+                                        "UPDATE_ERROR",                                                                                     
+                                        "On going Firmware Download"));
+			return;	
+
+		}
+
+		if (IsFlashInProgress) {
+			// TODO  - MADHU: HAVE TO CHECK HOW THE PERCENTAGE OF PROGRESS CAN BE READ ; FOR NOW NULL 
+                        SWLOG_INFO("[UPDATEFIRMWARE] Current Flash: %s (progress=%d%%, status=%d)\n",
+                                   current_flash->firmware_name ? current_flash->firmware_name : "NULL",
+                                   current_flash->current_progress, current_flash->status);
+			g_dbus_method_invocation_return_value(resp_ctx,
+					g_variant_new("(sss)",
+                                        "RDKFW_UPDATE_FAILED",
+                                        "UPDATE_ERROR",
+                                        "On going Flash Firmware"));
+                        return;
+
+                }
+
+		// NULL CHECKS: Critical pointers
+                SWLOG_INFO("[UPDATEFIRMWARE] Validating critical pointers...\n");
+
+                if (!resp_ctx) {
+                        SWLOG_ERROR("[UPDATEFIRMWARE] CRITICAL: resp_ctx is NULL, cannot send response!\n");
+                        return;
+                }
+
+                if (!rdkv_req_payload) {
+                        SWLOG_ERROR("[UPDATEFIRMWARE] CRITICAL: rdkv_req_payload is NULL!\n");
+                        g_dbus_method_invocation_return_value(resp_ctx,
+                                g_variant_new("(sss)",
+                                        "RDKFW_UPDATE_FAILED",
+                                        "UPDATE_ERROR",
+                                        "Internal error: request payload is missing"));
+                        return;
+                }
+
+                if (!rdkv_conn_dbus) {
+                        SWLOG_ERROR("[UPDATEFIRMWARE] CRITICAL: D-Bus connection is NULL!\n");
+                        g_dbus_method_invocation_return_value(resp_ctx,
+                                g_variant_new("(sss)",
+                                        "RDKFW_UPDATE_FAILED",
+                                        "UPDATE_ERROR",
+                                        "Internal error: D-Bus connection unavailable"));
+                        return;
+                }
+
+		// ========== EXTRACT INPUT PARAMETERS ==========
+		gchar *handler_id_str = NULL;
+		gchar *firmware_name = NULL;
+                gchar *loc_of_firmware = NULL;
+                gchar *type_of_firmware = NULL;
+                gchar *rebootImmediately = NULL;
+
+                // Parse D-Bus parameters: (s handlerId, s firmwareName, s loc_of_firmware, s typeOfFirmware, s rebootImmediately)
+                g_variant_get(rdkv_req_payload, "(ssss)",
+                              &handler_id_str,
+                              &firmware_name,
+			      &type_of_firmware,
+                              &loc_of_firmware,
+                              &rebootImmediately);
+
+                SWLOG_INFO("[UPDATEFIRMWARE] Input parameters:\n");
+                SWLOG_INFO("[UPDATEFIRMWARE]   handler_id: '%s'\n", handler_id_str ? handler_id_str : "NULL");
+                SWLOG_INFO("[UPDATEFIRMWARE]   firmware_name: '%s'\n", firmware_name ? firmware_name : "NULL");
+                SWLOG_INFO("[UPDATEFIRMWARE]   loc_of_firmware: '%s'\n",loc_of_firmware && strlen(loc_of_firmware) > 0 ? loc_of_firmware : "(empty)");
+                SWLOG_INFO("[UPDATEFIRMWARE]   type_of_firmware: '%s'\n", type_of_firmware ? type_of_firmware : "NULL");
+                SWLOG_INFO("[UPDATEFIRMWARE]   rebootImmediately: '%s'\n", rebootImmediately ? rebootImmediately : "NULL");
+
+
+		
+		// ========== VALIDATION PHASE ==========
+		
+		SWLOG_INFO("[UPDATEFIRMWARE] Starting validation...\n");
+	
+	        if (!handler_id_str || !strlen(handler_id_str) || !firmware_name   || !strlen(firmware_name)   || !loc_of_firmware    || !strlen(loc_of_firmware)|| !type_of_firmware || !strlen(type_of_firmware) || !rebootImmediately || !strlen(rebootImmediately)) {
+			SWLOG_ERROR("[UPLOADFIRMWARE] Invalid input. One or more fields are empty or NULL\n");
+			g_dbus_method_invocation_return_value(resp_ctx,
+                                g_variant_new("(sss)",
+                                        "RDKFW_UPDATE_FAILED",
+                                        "UPDATE_ERROR",
+                                        "one more inputs are empty/invalid"));
+                        g_free(handler_id_str);
+                        g_free(firmware_name);
+                        g_free(loc_of_firmware);
+                        g_free(type_of_firmware);
+			g_free(rebootImmediately);
+			return ;   
+		}	
+		// 1. Validate handler ID (not NULL, not empty)
+		if (!handler_id_str || strlen(handler_id_str) == 0) {
+			SWLOG_ERROR("[DOWNLOADFIRMWARE] REJECTED: Invalid handler ID (NULL or empty)\n");
+			g_dbus_method_invocation_return_value(resp_ctx,
+				g_variant_new("(sss)", 
+					"RDKFW_UPDATE_FAILED",
+					"UPDATE_ERROR",
+					"Invalid handler ID"));
+			g_free(handler_id_str);
+			g_free(firmware_name);
+			g_free(loc_of_firmware);
+			g_free(type_of_firmware);
+			 g_free(rebootImmediately);
+			return;
+		}
+		
+		// 2. Convert handler_id string to numeric
+		guint64 handler_id_numeric = g_ascii_strtoull(handler_id_str, NULL, 10);
+		if (handler_id_numeric == 0) {
+			SWLOG_ERROR("[UPDATEFIRMWARE] REJECTED: Invalid handler ID format\n");
+			g_dbus_method_invocation_return_value(resp_ctx,
+				g_variant_new("(sss)", 
+					"RDKFW_UPDATE_FAILED",
+					"UPDATE_ERROR",
+					"Invalid handler ID format"));
+			g_free(handler_id_str);
+			g_free(firmware_name);
+			g_free(loc_of_firmware);
+			g_free(type_of_firmware);
+			 g_free(rebootImmediately);
+			return;
+		}
+	        	
+		// 3. Check registration
+		gboolean is_registered = g_hash_table_contains(registered_processes, 
+		                                                GINT_TO_POINTER(handler_id_numeric));
+		if (!is_registered) {
+			SWLOG_ERROR("[UPDATEFIRMWARE] REJECTED: Handler %"G_GUINT64_FORMAT" not registered\n", 
+			           handler_id_numeric);
+			g_dbus_method_invocation_return_value(resp_ctx,
+				g_variant_new("(sss)", 
+					"RDKFW_UPDATE_FAILED",
+					"UPDATE_ERROR",
+					"Handler not registered"));
+			g_free(handler_id_str);
+			g_free(firmware_name);
+			g_free(loc_of_firmware);
+			g_free(type_of_firmware);
+			g_free(rebootImmediately);
+			return;
+		}
+		
+		// 4. Validate firmware name (Scenario 3)
+		if (!firmware_name || strlen(firmware_name) == 0) {
+			SWLOG_ERROR("[UPDATEFIRMWARE] REJECTED: Invalid firmware name (NULL or empty)\n");
+			g_dbus_method_invocation_return_value(resp_ctx,
+				g_variant_new("(sss)", 
+					"RDKFW_UPDATE_FAILED",
+					"UPDATE_ERROR",
+					"Invalid firmware name"));
+			g_free(handler_id_str);
+			g_free(firmware_name);
+			g_free(loc_of_firmware);
+			g_free(type_of_firmware);
+			g_free(rebootImmediately);
+			return;
+		}
+		
+		// 5. Validate location of firmware (if custom path provided, it must be non-empty)
+		// If no custom path provided, use default firmware directory
+		if (loc_of_firmware == NULL || strlen(loc_of_firmware) == 0) {
+			loc_of_firmware = get_difw_path();
+		}
+
+		// Validate firmware directory was obtained
+		if (loc_of_firmware == NULL || strlen(loc_of_firmware) == 0) {
+			SWLOG_ERROR("[UPDATEFIRMWARE] REJECTED: Firmware directory path is empty or null\n");
+			g_dbus_method_invocation_return_value(resp_ctx,
+					g_variant_new("(sss)",
+					"RDKFW_UPDATE_FAILED",
+					"UPDATE_ERROR",
+					"Firmware directory path is not available"));
+			g_free(handler_id_str);
+			g_free(firmware_name);
+			g_free(loc_of_firmware);
+			g_free(type_of_firmware);
+			g_free(rebootImmediately);
+			return;
+		}
+		// Validate firmware directory exists on the device
+		if (!g_file_test(loc_of_firmware, G_FILE_TEST_IS_DIR)) {
+			SWLOG_ERROR("[DOWNLOADFIRMWARE] REJECTED: Directory does not exist: %s\n", loc_of_firmware);
+			gchar *error_msg = g_strdup_printf("Directory '%s' does not exist", loc_of_firmware);
+			g_dbus_method_invocation_return_value(resp_ctx,
+					g_variant_new("(sss)",
+					"RDKFW_UPDATE_FAILED",
+					"UPDATE_ERROR",
+					error_msg));
+			g_free(error_msg);
+			g_free(handler_id_str);
+			g_free(firmware_name);
+			g_free(loc_of_firmware);
+			g_free(type_of_firmware);
+			g_free(rebootImmediately);
+			return;
+		}
+
+		gchar *firmware_fullpath = g_build_filename(loc_of_firmware, firmware_name, NULL); // full path for the firmware file name i.e /opt/CDL/firmware.bin<
+	        if (!g_file_test(firmware_fullpath, G_FILE_TEST_EXISTS)) {
+		   SWLOG_ERROR("[UPDATEFIRMWARE] REJECTED: Firmware file not found: %s\n", firmware_fullpath);
+		   gchar *error_msg = g_strdup_printf("'%s' is not present in '%s' path", firmware_name, loc_of_firmware);
+		   g_dbus_method_invocation_return_value(resp_ctx,
+				   g_variant_new("(sss)",
+			           "RDKFW_UPDATE_FAILED",
+				   "UPDATE_ERROR",
+				   error_msg));
+		   g_free(error_msg);
+		   g_free(firmware_fullpath);
+		   g_free(handler_id_str);
+		   g_free(firmware_name);
+		   g_free(loc_of_firmware);
+		   g_free(type_of_firmware);
+		   g_free(rebootImmediately);
+		   return;
+		}
+		
+		SWLOG_INFO("[UPDATEFIRMWARE] All validations passed\n");
+		SWLOG_INFO("[UPDATEFIRMWARE]   Handler ID (validated): %"G_GUINT64_FORMAT"\n", handler_id_numeric);
+			
 		gchar* app_id=NULL;
 		g_variant_get(rdkv_req_payload, "(s)", &app_id);
 
@@ -2237,7 +2482,7 @@ static void rdkfw_xconf_fetch_done(GObject *source_object, GAsyncResult *res, gp
         SWLOG_ERROR("[COMPLETE]   Context is NULL (should never happen at this point!)\n");
     }
     
-    SWLOG_INFO("==============DOWNLOAD COMPLETION CALLBACK FINISHED============\n");
+    SWLOG_INFO("==============CHECKFORUPDATE COMPLETION CALLBACK FINISHED============\n");
 }
 
 /* ============================================================================
@@ -2423,7 +2668,7 @@ static gboolean rdkfw_emit_download_progress(gpointer user_data) {
             message_str = "Download completed successfully";
             break;
         case FW_DWNL_ERROR:
-            status_str = "DWNLERROR";
+            status_str = "DWNL_ERROR";
             message_str = "Download failed";
             break;
         default:

@@ -35,6 +35,11 @@ typedef struct {
     gchar *lib_version;
     guint64 handler_id;
     gboolean is_registered;
+
+    // New fields for download test orchestration
+    GMainLoop *loop;              // Main loop used to wait for download signals
+    gboolean download_done;       // Flag set when download finishes or fails
+    gboolean download_success;    // Result of download (TRUE = success)
 } TestClientContext;
 
 // Function prototypes
@@ -117,33 +122,100 @@ static void on_download_progress_signal(GDBusConnection *connection,
                                         gpointer user_data)
 {
     TestClientContext *client = (TestClientContext*)user_data;
-    gchar *handler_id;
-    gint progress;
-    gchar *status_message;
-    
-    // Extract signal parameters
-    g_variant_get(parameters, "(sig)", &handler_id, &progress, &status_message);
-    
+    guint64 handler_id_numeric = 0;
+    gchar *firmware_name = NULL;
+    guint32 progress = 0;
+    gchar *status_message = NULL;
+    gchar *message = NULL;
+
+    // Signal parameters expected from daemon: (t handlerId, s firmwareName, u progress, s status, s message)
+    g_variant_get(parameters, "(tsuss)", &handler_id_numeric, &firmware_name, &progress, &status_message, &message);
+
     printf("\nD-Bus Signal Received: DownloadProgress\n");
     PRINT_INFO("Signal Details:");
-    PRINT_INFO("  Handler ID: %s", handler_id);
-    PRINT_INFO("  Progress: %d%%", progress);
-    PRINT_INFO("  Status Message: %s", status_message);
-    
-    // Check if this signal is for our client (like real library would do)
-    gchar *our_handler_str = g_strdup_printf("%"G_GUINT64_FORMAT, client->handler_id);
-    if (g_strcmp0(handler_id, our_handler_str) == 0) {
+    PRINT_INFO("  Handler ID: %" G_GUINT64_FORMAT, handler_id_numeric);
+    PRINT_INFO("  Firmware: %s", firmware_name ? firmware_name : "(null)");
+    PRINT_INFO("  Progress: %u%%", progress);
+    PRINT_INFO("  Status: %s", status_message ? status_message : "(null)");
+    PRINT_INFO("  Message: %s", message ? message : "(null)");
+
+    // Verify this signal is for our handler
+    if (client && client->handler_id == handler_id_numeric) {
         PRINT_SUCCESS("Signal is for our handler - download progress update");
+
+        // If progress indicates completion, mark done and quit loop
+        if (progress >= 100 || (status_message && g_strcmp0(status_message, "COMPLETED") == 0)) {
+            client->download_done = TRUE;
+            client->download_success = TRUE;
+            if (client->loop) g_main_loop_quit(client->loop);
+        }
     } else {
-        PRINT_WARN("Signal is for different handler (%s vs %s) - ignoring", handler_id, our_handler_str);
+        PRINT_WARN("Signal is for different handler (%" G_GUINT64_FORMAT " vs %" G_GUINT64_FORMAT ") - ignoring",
+                   handler_id_numeric, client ? client->handler_id : 0);
     }
-    g_free(our_handler_str);
-    
-    // Free extracted strings
-    g_free(handler_id);
-    g_free(status_message);
-    
+
+    // Free duplicated strings returned by g_variant_get
+    if (firmware_name) g_free(firmware_name);
+    if (status_message) g_free(status_message);
+    if (message) g_free(message);
+
     printf("Signal processing complete\n\n");
+}
+
+/**
+ * Signal callback for DownloadError - final error notification
+ */
+static void on_download_error_signal(GDBusConnection *connection,
+                                     const gchar *sender_name,
+                                     const gchar *object_path,
+                                     const gchar *interface_name,
+                                     const gchar *signal_name,
+                                     GVariant *parameters,
+                                     gpointer user_data)
+{
+    TestClientContext *client = (TestClientContext*)user_data;
+    guint64 handler_id_numeric = 0;
+    gchar *firmware_name = NULL;
+    gchar *status = NULL;
+    gchar *error_message = NULL;
+
+    // Signal parameters: (t handlerId, s firmwareName, s status, s errorMessage)
+    g_variant_get(parameters, "(tsss)", &handler_id_numeric, &firmware_name, &status, &error_message);
+
+    printf("\nD-Bus Signal Received: DownloadError\n");
+    PRINT_INFO("Signal Details:");
+    PRINT_INFO("  Handler ID: %" G_GUINT64_FORMAT, handler_id_numeric);
+    PRINT_INFO("  Firmware: %s", firmware_name ? firmware_name : "(null)");
+    PRINT_INFO("  Status: %s", status ? status : "(null)");
+    PRINT_INFO("  Error: %s", error_message ? error_message : "(null)");
+
+    if (client && client->handler_id == handler_id_numeric) {
+        PRINT_ERROR("Download failed for our handler");
+        client->download_done = TRUE;
+        client->download_success = FALSE;
+        if (client->loop) g_main_loop_quit(client->loop);
+    } else {
+        PRINT_WARN("DownloadError signal for other handler - ignoring");
+    }
+
+    if (firmware_name) g_free(firmware_name);
+    if (status) g_free(status);
+    if (error_message) g_free(error_message);
+
+    printf("Signal processing complete\n\n");
+}
+
+// Timeout callback for download wait
+static gboolean download_timeout_cb(gpointer user_data)
+{
+    TestClientContext *client = (TestClientContext*)user_data;
+    PRINT_ERROR("Download wait timed out");
+    if (client) {
+        client->download_done = TRUE;
+        client->download_success = FALSE;
+        if (client->loop) g_main_loop_quit(client->loop);
+    }
+    return G_SOURCE_REMOVE;
 }
 
 /**
@@ -169,6 +241,8 @@ static TestClientContext* test_client_new(const gchar *process_name, const gchar
     client->lib_version = g_strdup(lib_version);
     client->handler_id = 0;
     client->is_registered = FALSE;
+    client->download_done = FALSE;
+    client->download_success = FALSE;
     
     // Subscribe to CheckForUpdateComplete signal (like real library would do)
     PRINT_INFO("Subscribing to CheckForUpdateComplete D-Bus signals...");
@@ -197,6 +271,22 @@ static TestClientContext* test_client_new(const gchar *process_name, const gchar
         NULL,                                 // arg0 (no filtering)
         G_DBUS_SIGNAL_FLAGS_NONE,
         on_download_progress_signal,          // callback
+        client,                               // user_data
+        NULL                                  // user_data_free_func
+    );
+    PRINT_SUCCESS("Subscribed to D-Bus signals successfully");
+    
+    // Subscribe to DownloadError signal
+    PRINT_INFO("Subscribing to DownloadError D-Bus signals...");
+    g_dbus_connection_signal_subscribe(
+        client->connection,
+        DBUS_SERVICE_NAME,                    // sender
+        DBUS_INTERFACE_NAME,                  // interface
+        "DownloadError",                     // signal name
+        DBUS_OBJECT_PATH,                     // object path
+        NULL,                                 // arg0 (no filtering)
+        G_DBUS_SIGNAL_FLAGS_NONE,
+        on_download_error_signal,             // callback
         client,                               // user_data
         NULL                                  // user_data_free_func
     );
@@ -374,6 +464,15 @@ static gboolean test_client_download_firmware(TestClientContext *client, const c
         return FALSE;
     }
 
+    // Call CheckForUpdate first and process response (helps pick firmware info)
+    PRINT_INFO("Performing CheckForUpdate before initiating download (informational)");
+    test_client_check_update(client);
+
+    if (!download_url || strlen(download_url) == 0) {
+        PRINT_ERROR("Download URL must be provided for DownloadFirmware test (daemon will not accept empty URL)");
+        return FALSE;
+    }
+
     handler_id_str = g_strdup_printf("%"G_GUINT64_FORMAT, client->handler_id);
     PRINT_INFO("Calling DownloadFirmware with handler='%s', firmware='%s', url='%s', type='%s'",
                handler_id_str, firmware_name ? firmware_name : "(null)", download_url ? download_url : "(null)", type_of_firmware ? type_of_firmware : "(null)");
@@ -401,14 +500,37 @@ static gboolean test_client_download_firmware(TestClientContext *client, const c
         g_free(res1); g_free(res2); g_free(res3);
         g_variant_unref(result);
 
-        // Wait a short period to receive DownloadProgress signals
-        PRINT_INFO("Waiting up to 10 seconds for DownloadProgress signals...");
-        GMainContext *context = g_main_context_default();
-        for (int i = 0; i < 100; i++) {
-            g_main_context_iteration(context, FALSE);
-            usleep(100000); // 100ms
+        // Setup main loop and wait for signals, with timeout
+        client->download_done = FALSE;
+        client->download_success = FALSE;
+        client->loop = g_main_loop_new(NULL, FALSE);
+
+        // Timeout after 60 seconds
+        guint timeout_id = g_timeout_add_seconds(60, download_timeout_cb, client);
+
+        PRINT_INFO("Waiting for DownloadProgress/DownloadError signals (timeout: 60s)...");
+        g_main_loop_run(client->loop);
+
+        // If we returned before timeout, remove timeout source
+        g_source_remove(timeout_id);
+
+        // Clean up loop
+        if (client->loop) {
+            g_main_loop_unref(client->loop);
+            client->loop = NULL;
         }
-        return TRUE;
+
+        if (client->download_done && client->download_success) {
+            PRINT_SUCCESS("Download completed successfully (received terminal signal)");
+            return TRUE;
+        } else if (client->download_done && !client->download_success) {
+            PRINT_ERROR("Download failed (received error signal)");
+            return FALSE;
+        } else {
+            PRINT_ERROR("Download did not complete within timeout");
+            return FALSE;
+        }
+
     } else {
         PRINT_ERROR("DownloadFirmware call failed: %s", error->message);
         g_error_free(error);

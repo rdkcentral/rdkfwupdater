@@ -49,7 +49,7 @@ typedef enum {
 /*
  * Firmware Download Status Enumeration
  * 
- * Matches the client library FwDwnlStatus enum for consistency
+ * Matches the client library fwdwnlstatus enum for consistency
  */
 typedef enum {
     FW_DWNL_NOTSTARTED = 0,    // Download accepted but not yet started
@@ -57,6 +57,17 @@ typedef enum {
     FW_DWNL_COMPLETED = 2,     // Download completed successfully (100%)
     FW_DWNL_ERROR = 3          // Download failed
 } FwDwnlStatus;
+
+/*
+ * Firmware Flash Status Enumeration
+ *
+ * Matches the client library fwupdatestatus enum for consistency
+ */
+typedef enum {
+    FW_UPDATE_INPROGRESS = 0,    // Flash in progress (0-99%)
+    FW_UPDATE_COMPLETED = 1,     // Flash completed successfully (100%)
+    FW_UPDATE_ERROR = 2          // Flash failed
+} FwUpdateStatus;
 
 /*
  * ===================================================================
@@ -155,6 +166,33 @@ typedef struct {
 } CurrentDownloadState;
 
 /* End of DownloadFirmware async structures */
+
+/*
+ * CurrentDownloadState
+ *
+ * Global state tracker for the currently active flash operation.
+ * Enables flash status notifying  mechanism- subsequent clients' requests will get rejected with ongoing flash info.
+ *
+ * Access Pattern:
+ * - Only accessed from main loop thread (D-Bus handlers and idle callbacks)
+ * - No mutex needed due to GLib main loop serialization guarantees.
+ *
+ * Lifecycle:
+ * 1. Created when first client initiates flash/update
+ * 2. Updated by progress callbacks (via g_idle_add)
+ * 3. Queried by subsequent clients (piggyback check) - library takes care of listening to this signal
+ * 4. Destroyed in async_flash_complete() callback
+ *
+ * Memory: ~256 bytes (2 strings + int + enum + GSList)
+ */
+typedef struct {
+    gchar *firmware_name;           // Name of firmware being flashed
+    int current_progress;           // Latest progress percentage (0-100)
+    FwUpdateStatus status;            // Current flash status
+} CurrentFlashState;
+
+
+/* End of UpdateFirmware async structures */
 
 /*
  * Async Task Context
