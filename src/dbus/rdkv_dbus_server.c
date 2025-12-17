@@ -806,6 +806,7 @@ static gboolean check_update_task(gpointer user_data)
 }
 #endif
 
+#if 0
 /*Async Upgrade Task - calls upgradeFW function*/
 static gboolean upgrade_task(gpointer user_data)
 {
@@ -829,6 +830,7 @@ static gboolean upgrade_task(gpointer user_data)
 	free_task_context(ctx);
 	return G_SOURCE_REMOVE;
 }
+#endif
 
 /**
  * @brief Main D-Bus method call handler - dispatches all client requests.
