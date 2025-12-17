@@ -1709,11 +1709,11 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
                 gchar *rebootImmediately = NULL;
 
                 // Parse D-Bus parameters: (s handlerId, s firmwareName, s loc_of_firmware, s typeOfFirmware, s rebootImmediately)
-                g_variant_get(rdkv_req_payload, "(ssss)",
+                g_variant_get(rdkv_req_payload, "(sssss)",
                               &handler_id_str,
                               &firmware_name,
-			      &type_of_firmware,
                               &loc_of_firmware,
+			      &type_of_firmware,
                               &rebootImmediately);
 
                 SWLOG_INFO("[UPDATEFIRMWARE] Input parameters:\n");
