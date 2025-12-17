@@ -70,11 +70,11 @@ static TestClientContext* test_client_new(const gchar *process_name, const gchar
 static gboolean test_client_register(TestClientContext *client);
 static gboolean test_client_check_update(TestClientContext *client);
 static gboolean test_client_download_firmware(TestClientContext *client, const char *firmware_name, const char *download_url, const char *type_of_firmware);
-static gboolean test_client_update_firmware(TestClientContext *client, const char *firmware_name, const char *type_of_firmware, const char *location, const char *reboot);
+static gboolean test_client_update_firmware(TestClientContext *client, const char *firmware_name, const char *type_of_firmware, const char *location, const char *reboot) __attribute__((unused));
 static gboolean test_client_unregister(TestClientContext *client);
 static void test_client_free(TestClientContext *client);
 static void print_usage(const char *program_name);
-static void print_full_help(const char *program_name);
+static void print_full_help(const char *program_name) __attribute__((unused));
 static void run_test_scenario(TestClientContext *client, const gchar *test_mode, const char *program_name);
 
 // Utility macros for output
