@@ -429,7 +429,7 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
         }
 
         if (server_type == HTTP_SSR_DIRECT || server_type == HTTP_XCONF_DIRECT) {
-            ret_curl_code = downloadFile(server_type, artifactLocationUrl, dwlloc, pPostFields, pHttp_code, curl, force_exit, immed_reboot_flag, device_info,lastrun,rfc_list,disableStatsUpdate); //HERE MADHU
+            ret_curl_code = downloadFile(context, pHttp_code, curl);
             if ((server_type == HTTP_XCONF_DIRECT) && (ret_curl_code == 6 || ret_curl_code == 28)) {
                 SWLOG_INFO("%s: Checking IP and Route configuration\n", __FUNCTION__);
                 if (true == (CheckIProuteConnectivity(GATEWAYIP_FILE))) {
@@ -456,7 +456,7 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
             }
             if (ret_curl_code != CURL_SUCCESS ||
                 (*pHttp_code != HTTP_SUCCESS && *pHttp_code != HTTP_CHUNK_SUCCESS && *pHttp_code != HTTP_PAGE_NOT_FOUND)) {
-                ret_curl_code = retryDownload(server_type, artifactLocationUrl, dwlloc, pPostFields, RETRY_COUNT, 60, pHttp_code, curl,force_exit,immed_reboot_flag, device_info,lastrun,rfc_list,disableStatsUpdate);
+                ret_curl_code = retryDownload(context, RETRY_COUNT, 60, pHttp_code, curl);
                 if (ret_curl_code == CURL_CONNECTIVITY_ISSUE || *pHttp_code == 0) {
                     if (server_type == HTTP_SSR_DIRECT) {
                         SWLOG_ERROR("%s : Direct Image upgrade Failed: http_code:%d, attempting codebig\n", __FUNCTION__, *pHttp_code);
@@ -471,19 +471,19 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
                     {
                         server_type = HTTP_XCONF_CODEBIG;
                     }
-                    ret_curl_code = fallBack(server_type, artifactLocationUrl, dwlloc, pPostFields, pHttp_code, curl, force_exit,immed_reboot_flag,device_info,lastrun,rfc_list,disableStatsUpdate);
+                    ret_curl_code = fallBack(context, pHttp_code, curl);
                 }
             }
         }
         else if (server_type == HTTP_SSR_CODEBIG || server_type == HTTP_XCONF_CODEBIG) {
-            ret_curl_code = codebigdownloadFile(server_type, artifactLocationUrl, dwlloc, pPostFields, pHttp_code,curl,force_exit,immed_reboot_flag,device_info,lastrun,rfc_list,disableStatsUpdate);
+            ret_curl_code = codebigdownloadFile(context, pHttp_code, curl);
             if (ret_curl_code != CURL_SUCCESS ||
                 (*pHttp_code != HTTP_SUCCESS && *pHttp_code != HTTP_CHUNK_SUCCESS && *pHttp_code != HTTP_PAGE_NOT_FOUND)) {
                 if( ret_curl_code != CODEBIG_SIGNING_FAILED )
                 {
                     // if CODEBIG_SIGNING_FAILED, no point in retrying codebig since signing won't correct
                     // but it might work when falling back to direct 
-                    ret_curl_code = retryDownload(server_type, artifactLocationUrl, dwlloc, pPostFields, CB_RETRY_COUNT, 10, pHttp_code, curl, force_exit,immed_reboot_flag,device_info,lastrun,rfc_list,disableStatsUpdate);
+                    ret_curl_code = retryDownload(context, CB_RETRY_COUNT, 10, pHttp_code, curl);
                 }
                 if (ret_curl_code == CURL_CONNECTIVITY_ISSUE || *pHttp_code == 0) {
                     if (server_type == HTTP_SSR_CODEBIG) {
@@ -499,7 +499,7 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
                     {
                         server_type = HTTP_XCONF_DIRECT;
                     }
-                    ret_curl_code = fallBack(server_type, artifactLocationUrl, dwlloc, pPostFields, pHttp_code, curl, force_exit,immed_reboot_flag,device_info,lastrun,rfc_list,disableStatsUpdate);
+                    ret_curl_code = fallBack(context, pHttp_code, curl);
                 }
             }
         }
@@ -605,7 +605,18 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
  * @return int: success/failure
  * */
 #ifndef GTEST_BASIC
-int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode, void **curl,int *force_exit,const char *immed_reboot_flag, const DeviceProperty_t *device_info,const char *lastrun,const Rfc_t *rfc_list,char *disableStatsUpdate) {	
+int codebigdownloadFile(
+    const RdkUpgradeContext_t* context,
+    int *httpCode,
+    void **curl
+) {
+    int server_type = context->server_type;
+    const char* artifactLocationUrl = context->artifactLocationUrl;
+    const void* localDownloadLocation = context->dwlloc;
+    char* pPostFields = context->pPostFields;
+    int* force_exit = context->force_exit;
+    const char* lastrun = context->lastrun;
+
     int signFailed = 1;           // 0 for success, 1 indicates failed
     FileDwnl_t file_dwnl;
     char oAuthHeader[BIG_BUF_LEN]  = "Authorization: OAuth realm=\"\", ";
@@ -746,7 +757,21 @@ int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const
  * @return int: success/failure
  * */
 #ifndef GTEST_BASIC
-int downloadFile( int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode, void **curl, int *force_exit, const char *immed_reboot_flag, const DeviceProperty_t *device_info,const char *lastrun,const Rfc_t *rfc_list,char *disableStatsUpdate){
+int downloadFile(
+    const RdkUpgradeContext_t* context,
+    int *httpCode,
+    void **curl
+) {
+    int server_type = context->server_type;
+    const char* artifactLocationUrl = context->artifactLocationUrl;
+    const void* localDownloadLocation = context->dwlloc;
+    char* pPostFields = context->pPostFields;
+    int* force_exit = context->force_exit;
+    const char* immed_reboot_flag = context->immed_reboot_flag;
+    const DeviceProperty_t* device_info = context->device_info;
+    const char* lastrun = context->lastrun;
+    const Rfc_t* rfc_list = context->rfc_list;
+    char* disableStatsUpdate = context->disableStatsUpdate;
 
     int app_mode = 0;
 //The following compilation LIBRDKCERTSELECTOR is enabled only Comcast proprietary code until the rdk-cert-config(Cert selector) component becomes open-source.    
@@ -1028,17 +1053,17 @@ int downloadFile( int server_type, const char* artifactLocationUrl, const void* 
 }
 #endif
 
-/* Description: Download retry logic
- * @param: server_type : Type of the server.
- * @param: artifactLocationUrl : server url
- * @param: localDownloadLocation : Download path.
- * @param: retry_cnt : Use for retry logic.
- * @param: delay : delay between retry
- * @param: httCode : Send back httpCode 
- * @param: curl : curl handle for codebig operations
- * @return int:  Success/Failure
- * */
-int retryDownload(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char *pPostFields, int retry_cnt, int delay, int *httpCode, void **curl , int *force_exit,const char *immed_reboot_flag,const DeviceProperty_t *device_info,const char *lastrun,const Rfc_t *rfc_list,char *disableStatsUpdate){
+int retryDownload(
+    const RdkUpgradeContext_t* context,
+    int retry_cnt,
+    int delay,
+    int *httpCode,
+    void **curl
+) {
+    int server_type = context->server_type;
+    const char* artifactLocationUrl = context->artifactLocationUrl;
+    const void* localDownloadLocation = context->dwlloc;
+
     int curl_ret_code = -1;
     int retry_completed = 1;
     
@@ -1057,7 +1082,7 @@ int retryDownload(int server_type, const char* artifactLocationUrl, const void* 
         }
         while( retry_completed <= retry_cnt) {
             sleep(delay);
-            curl_ret_code = downloadFile(server_type, artifactLocationUrl, localDownloadLocation, pPostFields, httpCode, curl, force_exit,immed_reboot_flag,device_info,lastrun,rfc_list,disableStatsUpdate);
+            curl_ret_code = downloadFile(context, httpCode, curl);
             if ((curl_ret_code == CURL_SUCCESS) && (*httpCode == HTTP_SUCCESS || *httpCode == HTTP_CHUNK_SUCCESS)) {
 	        if(server_type == HTTP_SSR_DIRECT)
 	        {
@@ -1082,7 +1107,7 @@ int retryDownload(int server_type, const char* artifactLocationUrl, const void* 
     } else if (server_type == HTTP_SSR_CODEBIG || server_type == HTTP_XCONF_CODEBIG) {
         while(retry_completed <= retry_cnt) {
             sleep(delay);
-            curl_ret_code = codebigdownloadFile(server_type, artifactLocationUrl, localDownloadLocation, pPostFields, httpCode, curl, force_exit,immed_reboot_flag,device_info,lastrun,rfc_list,disableStatsUpdate);
+            curl_ret_code = codebigdownloadFile(context, httpCode, curl);
             if ((curl_ret_code == CURL_SUCCESS) && (*httpCode == HTTP_SUCCESS || *httpCode == HTTP_CHUNK_SUCCESS)) {
                 SWLOG_INFO("%s : Codebig Image upgrade Success: ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *httpCode);
                 break;
@@ -1103,15 +1128,15 @@ int retryDownload(int server_type, const char* artifactLocationUrl, const void* 
     return curl_ret_code;
 }
 
-/* Description: Use for fall back between direct to codebig and vise versa
- * @param: server_type : Type of the server.
- * @param: artifactLocationUrl : server url
- * @param: localDownloadLocation : Download path.
- * @param: httCode : Send back httpCode 
- * @param: curl : curl handle for codebig operations
- * @return int:  Success/Failure
- * */
-int fallBack(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char *pPostFields, int *httpCode, void **curl, int *force_exit, const char *immed_reboot_flag, const DeviceProperty_t *device_info,const char *lastrun,const Rfc_t *rfc_list,char *disableStatsUpdate) {
+int fallBack(
+    const RdkUpgradeContext_t* context,
+    int *httpCode,
+    void **curl
+) {
+    int server_type = context->server_type;
+    const char* artifactLocationUrl = context->artifactLocationUrl;
+    const void* localDownloadLocation = context->dwlloc;
+
     int curl_ret_code = -1;
 
     if (artifactLocationUrl == NULL || localDownloadLocation == NULL || httpCode == NULL || curl == NULL) {
@@ -1121,7 +1146,7 @@ int fallBack(int server_type, const char* artifactLocationUrl, const void* local
 
     if (server_type == HTTP_SSR_DIRECT || server_type == HTTP_XCONF_DIRECT) {
         SWLOG_INFO("%s: calling downloadFile\n", __FUNCTION__ );
-        curl_ret_code = downloadFile(server_type, artifactLocationUrl, localDownloadLocation, pPostFields, httpCode, curl, force_exit, immed_reboot_flag, device_info,lastrun,rfc_list,disableStatsUpdate);
+        curl_ret_code = downloadFile(context, httpCode, curl);
         if (*httpCode != HTTP_SUCCESS && *httpCode != HTTP_CHUNK_SUCCESS && *httpCode != 404) {
             SWLOG_ERROR("%s : Direct image upgrade failover request failed return=%d, httpcode=%d\n", __FUNCTION__, curl_ret_code, *httpCode);
         } else {
@@ -1130,7 +1155,7 @@ int fallBack(int server_type, const char* artifactLocationUrl, const void* local
     } else if (server_type == HTTP_SSR_CODEBIG || server_type == HTTP_XCONF_CODEBIG) {
         //curl_ret_code = codebigdownloadFile(artifactLocationUrl, localDownloadLocation, httpCode);
         SWLOG_INFO("%s: calling retryDownload\n", __FUNCTION__ );
-        curl_ret_code = retryDownload(server_type, artifactLocationUrl, localDownloadLocation, pPostFields, CB_RETRY_COUNT, 10, httpCode, curl, force_exit, immed_reboot_flag,device_info,lastrun,rfc_list,disableStatsUpdate);
+        curl_ret_code = retryDownload(context, CB_RETRY_COUNT, 10, httpCode, curl);
         if ((curl_ret_code == CURL_SUCCESS) && (*httpCode == HTTP_SUCCESS || *httpCode == HTTP_CHUNK_SUCCESS)) {
             SWLOG_INFO("%s : Codebig Image upgrade Success: ret=%d httpcode=%d\n", __FUNCTION__, curl_ret_code, *httpCode);
             if ((filePresentCheck(DIRECT_BLOCK_FILENAME)) != 0) {
