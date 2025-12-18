@@ -1494,7 +1494,7 @@ gboolean emit_flash_progress_idle(gpointer user_data)
         "/org/rdkfwupdater/Service",
         "org.rdkfwupdater.Interface",
         "UpdateProgress",
-        g_variant_new("(tsii s)",
+        g_variant_new("(ii)",
                       handler_id_numeric,
                       update->firmware_name ? update->firmware_name : "",
                       update->progress,
@@ -1640,7 +1640,7 @@ gboolean cleanup_flash_state_idle(gpointer user_data)
  * 4. 50% - Flashing in progress (simulated)
  * 5. 75% - Nearing completion (simulated)
  * 6. 100% - Flash completed OR -1% - Flash error
- * 
+ * no need of specific free for progress structure. emit_flash_progress_idle  will take care. 
  * Logging: Comprehensive INFO/ERROR logging at each stage
  */
 gpointer rdkfw_flash_worker_thread(gpointer user_data)
@@ -1667,7 +1667,14 @@ gpointer rdkfw_flash_worker_thread(gpointer user_data)
     
     // PROGRESS 0%: FLASH STARTED
     SWLOG_INFO("[FLASH_WORKER] Emitting 0%% progress - Flash operation initiated\n");
-    progress = g_new0(FlashProgressUpdate, 1);
+    //FlashProgressUpdate *progress = NULL;
+    /* Allocate and zero-initialize */
+    progress = (FlashProgressUpdate *)calloc(1, sizeof(FlashProgressUpdate));
+    if (!progress) {
+	    SWLOG_ERROR("[FLASH_WORKER] Failed to allocate FlashProgressUpdate\n");
+	    goto flash_error;
+    }
+    /* Populate fields */
     progress->connection = ctx->connection;
     progress->handler_id = g_strdup(ctx->handler_id);
     progress->firmware_name = g_strdup(ctx->firmware_name);
@@ -1676,6 +1683,17 @@ gpointer rdkfw_flash_worker_thread(gpointer user_data)
     progress->error_message = NULL;
     g_idle_add(emit_flash_progress_idle, progress);
     usleep(500000);
+
+
+   // progress = g_new0(FlashProgressUpdate, 1);
+    //progress->connection = ctx->connection;
+    //progress->handler_id = g_strdup(ctx->handler_id);
+    //progress->firmware_name = g_strdup(ctx->firmware_name);
+    //progress->progress = 0;
+    //progress->status = FW_UPDATE_INPROGRESS;
+    //progress->error_message = NULL;
+    //g_idle_add(emit_flash_progress_idle, progress);
+    //usleep(500000);
     
     // PROGRESS 25%: VERIFICATION
     SWLOG_INFO("[FLASH_WORKER] Pre-flash validation started\n");
@@ -1692,15 +1710,32 @@ gpointer rdkfw_flash_worker_thread(gpointer user_data)
     
     if (validation_passed) {
         SWLOG_INFO("[FLASH_WORKER] Emitting 25%% progress\n");
-        progress = g_new0(FlashProgressUpdate, 1);
-        progress->connection = ctx->connection;
-        progress->handler_id = g_strdup(ctx->handler_id);
-        progress->firmware_name = g_strdup(ctx->firmware_name);
-        progress->progress = 25;
-        progress->status = FW_UPDATE_INPROGRESS;
-        progress->error_message = NULL;
+	//FlashProgressUpdate *progress = NULL;
+	/* Allocate and zero-initialize */
+	progress = (FlashProgressUpdate *)calloc(1, sizeof(FlashProgressUpdate));
+	if (!progress) {
+        SWLOG_ERROR("[FLASH_WORKER] Failed to allocate FlashProgressUpdate\n");
+        goto flash_error;
+	}
+	/* Populate fields */
+	progress->connection = ctx->connection;
+	progress->handler_id = g_strdup(ctx->handler_id);
+	progress->firmware_name = g_strdup(ctx->firmware_name);
+	progress->progress = 25;
+	progress->status = FW_UPDATE_INPROGRESS;
+	progress->error_message = NULL;
         g_idle_add(emit_flash_progress_idle, progress);
-        usleep(500000);
+	usleep(500000);	
+	
+	//progress = g_new0(FlashProgressUpdate, 1);
+        //progress->connection = ctx->connection;
+        //progress->handler_id = g_strdup(ctx->handler_id);
+        //progress->firmware_name = g_strdup(ctx->firmware_name);
+        //progress->progress = 25;
+       // progress->status = FW_UPDATE_INPROGRESS;
+       // progress->error_message = NULL;
+       // g_idle_add(emit_flash_progress_idle, progress);
+       // usleep(500000);
     } else {
         goto flash_error;
     }
@@ -1724,7 +1759,14 @@ gpointer rdkfw_flash_worker_thread(gpointer user_data)
     }
     
     SWLOG_INFO("[FLASH_WORKER] Emitting 50%% progress\n");
-    progress = g_new0(FlashProgressUpdate, 1);
+    //FlashProgressUpdate *progress = NULL;
+    /* Allocate and zero-initialize */
+    progress = (FlashProgressUpdate *)calloc(1, sizeof(FlashProgressUpdate));
+    if (!progress) {
+	    SWLOG_ERROR("[FLASH_WORKER] Failed to allocate FlashProgressUpdate\n");
+	    goto flash_error;
+    }
+    /* Populate fields */
     progress->connection = ctx->connection;
     progress->handler_id = g_strdup(ctx->handler_id);
     progress->firmware_name = g_strdup(ctx->firmware_name);
@@ -1732,7 +1774,17 @@ gpointer rdkfw_flash_worker_thread(gpointer user_data)
     progress->status = FW_UPDATE_INPROGRESS;
     progress->error_message = NULL;
     g_idle_add(emit_flash_progress_idle, progress);
-    usleep(1000000);
+    usleep(500000);
+
+   // progress = g_new0(FlashProgressUpdate, 1);
+   // progress->connection = ctx->connection;
+   // progress->handler_id = g_strdup(ctx->handler_id);
+   // progress->firmware_name = g_strdup(ctx->firmware_name);
+   // progress->progress = 50;
+   // progress->status = FW_UPDATE_INPROGRESS;
+   // progress->error_message = NULL;
+   // g_idle_add(emit_flash_progress_idle, progress);
+   // usleep(1000000);
     
     SWLOG_INFO("[FLASH_WORKER] *** CALLING flashImage() ***\n");
 #ifndef GTEST_ENABLE
@@ -1759,19 +1811,44 @@ gpointer rdkfw_flash_worker_thread(gpointer user_data)
         }
         
         // PROGRESS 75%
-        progress = g_new0(FlashProgressUpdate, 1);
-        progress->connection = ctx->connection;
-        progress->handler_id = g_strdup(ctx->handler_id);
-        progress->firmware_name = g_strdup(ctx->firmware_name);
-        progress->progress = 75;
-        progress->status = FW_UPDATE_INPROGRESS;
+	//FlashProgressUpdate *progress = NULL;                                                                                                                      
+        /* Allocate and zero-initialize */                                                                                                                         
+        progress = (FlashProgressUpdate *)calloc(1, sizeof(FlashProgressUpdate));                                                                                  
+        if (!progress) {                                                                                                                                           
+        SWLOG_ERROR("[FLASH_WORKER] Failed to allocate FlashProgressUpdate\n");                                                                                    
+        goto flash_error;                                                                                                                                          
+        }                                                                                                                                                          
+        /* Populate fields */                                                                                                                                      
+        progress->connection = ctx->connection;                                                                                                                    
+        progress->handler_id = g_strdup(ctx->handler_id);                                                                                                          
+        progress->firmware_name = g_strdup(ctx->firmware_name);                                                                                                    
+        progress->progress = 75;                                                                                                                                   
+        progress->status = FW_UPDATE_INPROGRESS;                                                                                                                   
         progress->error_message = NULL;
-        g_idle_add(emit_flash_progress_idle, progress);
-        usleep(500000);
+        g_idle_add(emit_flash_progress_idle, progress);                                                                                                            
+        usleep(500000);                           
+
+
+       // progress = g_new0(FlashProgressUpdate, 1);
+        //progress->connection = ctx->connection;
+        //progress->handler_id = g_strdup(ctx->handler_id);
+        //progress->firmware_name = g_strdup(ctx->firmware_name);
+        //progress->progress = 75;
+        //progress->status = FW_UPDATE_INPROGRESS;
+        //progress->error_message = NULL;
+        //g_idle_add(emit_flash_progress_idle, progress);
+        //usleep(500000);
         
         // PROGRESS 100%
         SWLOG_INFO("[FLASH_WORKER] Emitting 100%% progress - COMPLETE\n");
-        progress = g_new0(FlashProgressUpdate, 1);
+	FlashProgressUpdate *progress = NULL;
+        /* Allocate and zero-initialize */
+        progress = (FlashProgressUpdate *)calloc(1, sizeof(FlashProgressUpdate));
+        if (!progress) {
+        SWLOG_ERROR("[FLASH_WORKER] Failed to allocate FlashProgressUpdate\n");
+        goto flash_error;
+        }
+        /* Populate fields */
         progress->connection = ctx->connection;
         progress->handler_id = g_strdup(ctx->handler_id);
         progress->firmware_name = g_strdup(ctx->firmware_name);
@@ -1779,6 +1856,17 @@ gpointer rdkfw_flash_worker_thread(gpointer user_data)
         progress->status = FW_UPDATE_COMPLETED;
         progress->error_message = NULL;
         g_idle_add(emit_flash_progress_idle, progress);
+        usleep(500000);
+
+
+        //progress = g_new0(FlashProgressUpdate, 1);
+        //progress->connection = ctx->connection;
+        //progress->handler_id = g_strdup(ctx->handler_id);
+       // progress->firmware_name = g_strdup(ctx->firmware_name);
+       // progress->progress = 100;
+       // progress->status = FW_UPDATE_COMPLETED;
+        //progress->error_message = NULL;
+       // g_idle_add(emit_flash_progress_idle, progress);
         
     } else {
         // FAILURE
@@ -1790,7 +1878,14 @@ flash_error:
             SWLOG_ERROR("[FLASH_WORKER] S9: Flash write error\n");
         }
         
-        progress = g_new0(FlashProgressUpdate, 1);
+       FlashProgressUpdate *progress = NULL;
+        /* Allocate and zero-initialize */
+        progress = (FlashProgressUpdate *)calloc(1, sizeof(FlashProgressUpdate));
+        if (!progress) {
+        SWLOG_ERROR("[FLASH_WORKER] Failed to allocate FlashProgressUpdate\n");
+        goto flash_error;
+        }
+        /* Populate fields */
         progress->connection = ctx->connection;
         progress->handler_id = g_strdup(ctx->handler_id);
         progress->firmware_name = g_strdup(ctx->firmware_name);
@@ -1798,6 +1893,17 @@ flash_error:
         progress->status = FW_UPDATE_ERROR;
         progress->error_message = g_strdup_printf("Flash failed: error code %d", flash_result);
         g_idle_add(emit_flash_progress_idle, progress);
+        usleep(500000);
+
+
+       // progress = g_new0(FlashProgressUpdate, 1);
+        //progress->connection = ctx->connection;
+        //progress->handler_id = g_strdup(ctx->handler_id);
+       // progress->firmware_name = g_strdup(ctx->firmware_name);
+       // progress->progress = -1;
+       // progress->status = FW_UPDATE_ERROR;
+        //progress->error_message = g_strdup_printf("Flash failed: error code %d", flash_result);
+       // g_idle_add(emit_flash_progress_idle, progress);
     }
     
     // CLEANUP

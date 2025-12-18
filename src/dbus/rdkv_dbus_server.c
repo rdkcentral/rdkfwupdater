@@ -1893,7 +1893,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		g_dbus_method_invocation_return_value(resp_ctx,
 			g_variant_new("(sss)", 
 				"RDKFW_UPDATE_SUCCESS", 
-				"NOTSTARTED", 
+				"UPDATE_IN_PROGRESS", 
 				"Flash operation initiated"));
 		
 		SWLOG_INFO("[UPDATEFIRMWARE] SUCCESS response sent to client\n");
@@ -1914,12 +1914,11 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		flash_ctx->firmware_name = firmware_name;  // Ownership transferred
 		flash_ctx->firmware_type = type_of_firmware;  // Ownership transferred
 		flash_ctx->firmware_fullpath = firmware_fullpath;  // Ownership transferred (already allocated)
-		flash_ctx->server_url = g_strdup("");  // Empty string (TODO: Could fetch from XConf cache)
+		// Use placeholder URL to satisfy imageFlasher.sh validation
+		// For mediaclient devices, this URL is not used for actual flashing
+		flash_ctx->server_url = g_strdup("http://Dummy-xconf-server/firmware"); // Not required for using FlashApp. it is only passed for script validation
 		flash_ctx->immediate_reboot = (g_strcmp0(rebootImmediately, "true") == 0);
 		flash_ctx->trigger_type = 4;  // 4 = App triggered (D-Bus API call)
-		flash_ctx->stop_flag = g_new0(gboolean, 1);
-		flash_ctx->mutex = g_new0(GMutex, 1);
-		g_mutex_init(flash_ctx->mutex);
 		flash_ctx->last_progress = 0;
 		flash_ctx->operation_start_time = time(NULL);
 		
@@ -1977,9 +1976,9 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			g_free(flash_ctx->firmware_type);
 			g_free(flash_ctx->firmware_fullpath);
 			g_free(flash_ctx->server_url);
-			g_mutex_clear(flash_ctx->mutex);
-			g_free(flash_ctx->mutex);
-			g_free(flash_ctx->stop_flag);
+			//g_mutex_clear(flash_ctx->mutex);
+			//g_free(flash_ctx->mutex);
+			//g_free(flash_ctx->stop_flag);
 			g_free(flash_ctx);
 			
 			// Cleanup global state
@@ -2024,11 +2023,10 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		g_free(loc_of_firmware);
 		
 		SWLOG_INFO("[UPDATEFIRMWARE] ========== REQUEST HANDLING COMPLETE ==========\n");
-		SWLOG_INFO("[UPDATEFIRMWARE] Summary:\n");
 		SWLOG_INFO("[UPDATEFIRMWARE]   - Handler ID: %"G_GUINT64_FORMAT"\n", handler_id_numeric);
 		SWLOG_INFO("[UPDATEFIRMWARE]   - Firmware: '%s'\n", flash_ctx->firmware_name);
 		SWLOG_INFO("[UPDATEFIRMWARE]   - Type: '%s'\n", flash_ctx->firmware_type);
-		SWLOG_INFO("[UPDATEFIRMWARE]   - Response: SUCCESS (NOTSTARTED)\n");
+		SWLOG_INFO("[UPDATEFIRMWARE]   - Response: SUCCESS (IN_PROGRESS)\n");
 		SWLOG_INFO("[UPDATEFIRMWARE]   - Worker: Spawned and running\n");
 		SWLOG_INFO("[UPDATEFIRMWARE]   - Next: Client receives UpdateProgress signals\n");
 	}

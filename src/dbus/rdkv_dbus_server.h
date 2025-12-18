@@ -235,17 +235,12 @@ typedef struct {
     // Firmware identification
     gchar *firmware_name;               // Firmware filename (e.g., "image_v2.bin") (owned)
     gchar *firmware_type;               // Firmware type: "PCI", "PDRI", "PERIPHERAL" (owned)
-    gchar *firmware_fullpath;           // Full path to firmware file (e.g., "/opt/firmware.bin") (owned)
-    gchar *server_url;                  // Server URL for telemetry (owned, can be empty string)
+    gchar *firmware_fullpath;           // Full path to firmware file (e.g., "/opt/CDL/firmware.bin") (owned)
+    gchar *server_url;                  // Server URL for telemetry (owned e.g "https://dac15cdlserver.ae.ccp.xcal.tv/Images/SKXI11ADS_MIDDLEWARE_DEV_develop_20251209085722_DEM.bin")
     
     // Flash parameters
     gboolean immediate_reboot;          // TRUE = reboot after flash, FALSE = defer reboot
     int trigger_type;                   // Trigger type (1=bootup, 2=cron, 3=TR69, 4=app, 5=delayed, 6=red_state)
-    
-    // State synchronization
-    gboolean *stop_flag;                // Atomic shutdown flag (borrowed, points to stack variable)
-    GMutex *mutex;                      // Mutex for thread safety (owned, must clear and free)
-    
     // Progress tracking
     int last_progress;                  // Last emitted progress percentage (0-100)
     time_t operation_start_time;        // Flash start time for timeout detection
