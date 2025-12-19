@@ -1,10 +1,6 @@
 /*
  * testClient.c - RDK Firmware Update Manager D-Bus Test Client
- *
- * Copyright (c) 2025 RDK Management, LLC
- * Licensed under the Apache License, Version 2.0
- *
- * Production test client for validating firmware update daemon functionality.
+ * test client for validating firmware update daemon functionality.
  * Supports all D-Bus API methods: RegisterProcess, CheckForUpdate,
  * DownloadFirmware, UpdateFirmware, and UnregisterProcess.
  *
