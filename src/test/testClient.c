@@ -47,10 +47,10 @@ static const char* get_timestamp(void) {
     return buf;
 }
 
-#define LOG_ERROR(fmt, ...) fprintf(stderr, "[%s] ERROR: " fmt "\n", get_timestamp(), ##__VA_ARGS__)
-#define LOG_WARN(fmt, ...)  do { if (g_log_level >= LOG_WARN_LVL) printf("[%s] WARN:  " fmt "\n", get_timestamp(), ##__VA_ARGS__); } while(0)
-#define LOG_INFO(fmt, ...)  do { if (g_log_level >= LOG_INFO_LVL) printf("[%s] INFO:  " fmt "\n", get_timestamp(), ##__VA_ARGS__); } while(0)
-#define LOG_DEBUG(fmt, ...) do { if (g_log_level >= LOG_DEBUG_LVL) printf("[%s] DEBUG: " fmt "\n", get_timestamp(), ##__VA_ARGS__); } while(0)
+#define LOG_ERROR(fmt, ...) fprintf(stderr, "[%s] TC_ERROR: " fmt "\n", get_timestamp(), ##__VA_ARGS__)
+#define LOG_WARN(fmt, ...)  do { if (g_log_level >= LOG_WARN_LVL) printf("[%s] TC_WARN:  " fmt "\n", get_timestamp(), ##__VA_ARGS__); } while(0)
+#define LOG_INFO(fmt, ...)  do { if (g_log_level >= LOG_INFO_LVL) printf("[%s] TC_INFO:  " fmt "\n", get_timestamp(), ##__VA_ARGS__); } while(0)
+#define LOG_DEBUG(fmt, ...) do { if (g_log_level >= LOG_DEBUG_LVL) printf("[%s] TC_DEBUG: " fmt "\n", get_timestamp(), ##__VA_ARGS__); } while(0)
 
 typedef struct {
     GDBusConnection *connection;
