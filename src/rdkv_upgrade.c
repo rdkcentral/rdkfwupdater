@@ -879,10 +879,10 @@ int downloadFile(
 
     if ((1 == (isThrottleEnabled(device_info->dev_name, immed_reboot_flag, app_mode)))) {
         SWLOG_INFO("%s :At line 804\n", __FUNCTION__);
-        /* Ensure rfc_list and rfc_throttle are valid before dereferencing to avoid
-         * passing a NULL pointer to strncmp (Coverity: FORWARD_NULL).
-         */
-        if (rfc_list != NULL && rfc_list->rfc_throttle != NULL && rfc_list->rfc_throttle[0] != '\0' &&
+        /* Coverity fix: NO_EFFECT - rfc_throttle is a char array, not a pointer.
+         * Removed redundant "!= NULL" check. Only check for non-empty string.
+         * Ensure rfc_list is valid before dereferencing. */
+        if (rfc_list != NULL && rfc_list->rfc_throttle[0] != '\0' &&
             0 == (strncmp(rfc_list->rfc_throttle, "true", 4))) {
             max_dwnl_speed = atoi(rfc_list->rfc_topspeed);
             SWLOG_INFO("%s : Throttle feature is Enable\n", __FUNCTION__);

@@ -830,11 +830,9 @@ gpointer rdkfw_progress_monitor_thread(gpointer user_data) {
                g_atomic_int_get(ctx->stop_flag));
 
 cleanup:
-    // Cleanup: Ensure file is closed if still open
-    if (progress_file != NULL) {
-        fclose(progress_file);
-        progress_file = NULL;
-    }
+    /* Coverity fix: DEADCODE - Removed unreachable fclose(progress_file) check.
+     * progress_file is always closed and set to NULL within the loop (lines 723, 730-731)
+     * before any break/continue, so it's always NULL when reaching this cleanup label. */
     
     // Cleanup: Free all allocated resources
     if (ctx != NULL) {
@@ -1294,14 +1292,28 @@ DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName
         // Signal thread to stop atomically
         g_atomic_int_set(&stop_monitor, TRUE);
         
-        // Wait for thread to exit (thread will cleanup its own resources)
-        g_thread_join(monitor_thread);
-        monitor_thread = NULL;
+        /* Coverity fix: RESOURCE_LEAK - g_thread_join() already frees the thread handle.
+         * Setting monitor_thread = NULL after join prevents double-join but Coverity 
+         * incorrectly flags this as a leak. The GThread is properly freed by g_thread_join(). */
+        (void)g_thread_join(monitor_thread);  // Cast to void to indicate intentional discard
+        monitor_thread = NULL;  // Prevent double-join, not a leak
         
         SWLOG_INFO("[DOWNLOAD_HANDLER] Progress monitor thread stopped cleanly\n");
         
         // Note: monitor_mutex and monitor_ctx are cleaned up by the thread itself
         // Do NOT free them here to avoid double-free
+    } else if (monitor_ctx != NULL) {
+        /* Coverity fix: RESOURCE_LEAK - If monitor_thread is NULL but monitor_ctx was allocated
+         * and thread creation failed, we need to clean it up here. */
+        SWLOG_DEBUG("[DOWNLOAD_HANDLER] Cleaning up monitor_ctx (thread was not started)\n");
+        if (monitor_ctx->handler_id) g_free(monitor_ctx->handler_id);
+        if (monitor_ctx->firmware_name) g_free(monitor_ctx->firmware_name);
+        if (monitor_ctx->mutex) {
+            g_mutex_clear(monitor_ctx->mutex);
+            g_free(monitor_ctx->mutex);
+        }
+        g_free(monitor_ctx);
+        monitor_ctx = NULL;
     }
     
     // Analyze download result
