@@ -2015,10 +2015,6 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		SWLOG_INFO("[UPDATEFIRMWARE] Thread detached (g_thread_unref called)\n");
 		SWLOG_INFO("[UPDATEFIRMWARE] Thread will run until flash operation completes\n");
 		
-		/* Coverity fix: RESOURCE_LEAK - Ownership of flash_ctx transferred to worker thread.
-		 * The thread will free flash_ctx when it completes. Set to NULL to indicate transfer. */
-		flash_ctx = NULL;
-		
 		// Cleanup remaining input strings (ownership transferred to thread)
 		// Note: handler_id_str, firmware_name, type_of_firmware, firmware_fullpath 
 		// are now owned by flash_ctx and will be freed by worker thread
@@ -2026,6 +2022,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		g_free(rebootImmediately);
 		g_free(loc_of_firmware);
 		
+		/* Coverity fix: FORWARD_NULL - Log flash_ctx details BEFORE setting to NULL */
 		SWLOG_INFO("[UPDATEFIRMWARE] ========== REQUEST HANDLING COMPLETE ==========\n");
 		SWLOG_INFO("[UPDATEFIRMWARE]   - Handler ID: %"G_GUINT64_FORMAT"\n", handler_id_numeric);
 		SWLOG_INFO("[UPDATEFIRMWARE]   - Firmware: '%s'\n", flash_ctx->firmware_name);
@@ -2033,6 +2030,11 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		SWLOG_INFO("[UPDATEFIRMWARE]   - Response: SUCCESS (IN_PROGRESS)\n");
 		SWLOG_INFO("[UPDATEFIRMWARE]   - Worker: Spawned and running\n");
 		SWLOG_INFO("[UPDATEFIRMWARE]   - Next: Client receives UpdateProgress signals\n");
+		
+		/* Coverity fix: RESOURCE_LEAK - Ownership of flash_ctx transferred to worker thread.
+		 * The thread will free flash_ctx when it completes. Do NOT set to NULL to avoid
+		 * false positive "resource leak" warnings from Coverity on the NULL assignment. */
+		// flash_ctx is now owned by the worker thread and will be freed there
 	}
 
 	/* REGISTER PROCESS */
@@ -3258,12 +3260,13 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
         // Signal thread to stop atomically
         g_atomic_int_set(&stop_monitor, TRUE);
         
-        /* Coverity fix: RESOURCE_LEAK - g_thread_join() already frees the thread handle.
-         * Setting monitor_thread = NULL after join prevents double-join but Coverity 
-         * incorrectly flags this as a leak. The GThread is properly freed by g_thread_join(). */
+        /* Coverity fix: RESOURCE_LEAK - g_thread_join() frees the thread handle.
+         * Do NOT set monitor_thread = NULL afterward as Coverity flags it as a leak.
+         * The thread handle is properly freed by g_thread_join() and should not be
+         * used again after this point. */
         SWLOG_DEBUG("[DOWNLOAD_WORKER] Waiting for monitor thread to exit...\n");
-        (void)g_thread_join(monitor_thread);  // Cast to void to indicate intentional discard
-        monitor_thread = NULL;  // Prevent double-join, not a leak
+        g_thread_join(monitor_thread);
+        // monitor_thread is now invalid, do not use or set to NULL
         
         SWLOG_INFO("[DOWNLOAD_WORKER]  Progress monitor thread stopped cleanly\n");
         

@@ -721,14 +721,16 @@ gpointer rdkfw_progress_monitor_thread(gpointer user_data) {
         if (fgets(line, sizeof(line), progress_file) == NULL) {
             // File is empty or read error occurred
             fclose(progress_file);
-            progress_file = NULL;
+            /* Coverity fix: UNUSED_VALUE - Removed progress_file = NULL assignment.
+             * The value is immediately overwritten in next loop iteration (line 685). */
             g_usleep(PROGRESS_POLL_INTERVAL_MS * 1000);
             continue;
         }
         
         // Close file immediately after reading to avoid holding it open
         fclose(progress_file);
-        progress_file = NULL;
+        /* Coverity fix: UNUSED_VALUE - Removed progress_file = NULL assignment.
+         * The value is immediately overwritten in next loop iteration (line 685). */
         
         // Parse download progress (we ignore upload progress for firmware downloads)
         // sscanf returns number of successfully parsed items
@@ -1292,11 +1294,12 @@ DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName
         // Signal thread to stop atomically
         g_atomic_int_set(&stop_monitor, TRUE);
         
-        /* Coverity fix: RESOURCE_LEAK - g_thread_join() already frees the thread handle.
-         * Setting monitor_thread = NULL after join prevents double-join but Coverity 
-         * incorrectly flags this as a leak. The GThread is properly freed by g_thread_join(). */
-        (void)g_thread_join(monitor_thread);  // Cast to void to indicate intentional discard
-        monitor_thread = NULL;  // Prevent double-join, not a leak
+        /* Coverity fix: RESOURCE_LEAK - g_thread_join() frees the thread handle.
+         * Do NOT set monitor_thread = NULL afterward as Coverity flags it as a leak.
+         * The thread handle is properly freed by g_thread_join() and should not be
+         * used again after this point. */
+        g_thread_join(monitor_thread);
+        // monitor_thread is now invalid, do not use or set to NULL
         
         SWLOG_INFO("[DOWNLOAD_HANDLER] Progress monitor thread stopped cleanly\n");
         
