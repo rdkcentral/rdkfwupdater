@@ -2015,21 +2015,23 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		SWLOG_INFO("[UPDATEFIRMWARE] Thread detached (g_thread_unref called)\n");
 		SWLOG_INFO("[UPDATEFIRMWARE] Thread will run until flash operation completes\n");
 		
+		/* Coverity fix: FORWARD_NULL - Log details using function parameters BEFORE freeing them.
+		 * We must log BEFORE calling g_free() to avoid use-after-free. */
+		SWLOG_INFO("[UPDATEFIRMWARE] ========== REQUEST HANDLING COMPLETE ==========\n");
+		SWLOG_INFO("[UPDATEFIRMWARE]   - Handler ID: %"G_GUINT64_FORMAT"\n", handler_id_numeric);
+		SWLOG_INFO("[UPDATEFIRMWARE]   - Firmware: '%s'\n", firmware_name);
+		SWLOG_INFO("[UPDATEFIRMWARE]   - Location: '%s'\n", loc_of_firmware);
+		SWLOG_INFO("[UPDATEFIRMWARE]   - Type: '%s'\n", type_of_firmware);
+		SWLOG_INFO("[UPDATEFIRMWARE]   - Response: SUCCESS (IN_PROGRESS)\n");
+		SWLOG_INFO("[UPDATEFIRMWARE]   - Worker: Spawned and running\n");
+		SWLOG_INFO("[UPDATEFIRMWARE]   - Next: Client receives UpdateProgress signals\n");
+		
 		// Cleanup remaining input strings (ownership transferred to thread)
 		// Note: handler_id_str, firmware_name, type_of_firmware, firmware_fullpath 
 		// are now owned by flash_ctx and will be freed by worker thread
 		SWLOG_INFO("[UPDATEFIRMWARE] Cleaning up non-transferred input strings\n");
 		g_free(rebootImmediately);
 		g_free(loc_of_firmware);
-		
-		/* Coverity fix: FORWARD_NULL - Log flash_ctx details BEFORE setting to NULL */
-		SWLOG_INFO("[UPDATEFIRMWARE] ========== REQUEST HANDLING COMPLETE ==========\n");
-		SWLOG_INFO("[UPDATEFIRMWARE]   - Handler ID: %"G_GUINT64_FORMAT"\n", handler_id_numeric);
-		SWLOG_INFO("[UPDATEFIRMWARE]   - Firmware: '%s'\n", flash_ctx->firmware_name);
-		SWLOG_INFO("[UPDATEFIRMWARE]   - Type: '%s'\n", flash_ctx->firmware_type);
-		SWLOG_INFO("[UPDATEFIRMWARE]   - Response: SUCCESS (IN_PROGRESS)\n");
-		SWLOG_INFO("[UPDATEFIRMWARE]   - Worker: Spawned and running\n");
-		SWLOG_INFO("[UPDATEFIRMWARE]   - Next: Client receives UpdateProgress signals\n");
 		
 		/* Coverity fix: RESOURCE_LEAK - Ownership of flash_ctx transferred to worker thread.
 		 * The thread will free flash_ctx when it completes. Do NOT set to NULL to avoid
@@ -3266,8 +3268,9 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
          * used again after this point. */
         SWLOG_DEBUG("[DOWNLOAD_WORKER] Waiting for monitor thread to exit...\n");
         g_thread_join(monitor_thread);
-        /* Coverity workaround: Set to NULL to suppress "going out of scope" warning.
-         * This is cosmetic - the thread was already freed by g_thread_join() above. */
+        /* coverity[leaked_storage] - False positive: g_thread_join() already freed the GThread.
+         * Setting to NULL is defensive programming to prevent double-join. GLib documentation
+         * confirms the thread handle is consumed by g_thread_join(). */
         monitor_thread = NULL;
         
         SWLOG_INFO("[DOWNLOAD_WORKER]  Progress monitor thread stopped cleanly\n");
@@ -3314,6 +3317,7 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
             SWLOG_INFO("[DOWNLOAD_WORKER] Stopping monitor thread due to download error...\n");
             g_atomic_int_set(&stop_monitor, TRUE);
             g_thread_join(monitor_thread);
+            /* coverity[leaked_storage] - False positive: thread already freed by g_thread_join() */
             monitor_thread = NULL;  // Suppress Coverity "going out of scope" warning
         } else if (monitor_ctx != NULL) {
             SWLOG_DEBUG("[DOWNLOAD_WORKER] Cleaning up monitor_ctx (thread was not started)\n");
@@ -3337,6 +3341,7 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
             g_idle_add(rdkfw_emit_download_progress, error_update);
         }
         
+        /* coverity[leaked_storage] - False positive: monitor_thread cleaned up above */
         g_task_return_boolean(task, FALSE);
         return;
     }
@@ -3351,6 +3356,7 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
             SWLOG_INFO("[DOWNLOAD_WORKER] Stopping monitor thread due to HTTP error...\n");
             g_atomic_int_set(&stop_monitor, TRUE);
             g_thread_join(monitor_thread);
+            /* coverity[leaked_storage] - False positive: thread already freed by g_thread_join() */
             monitor_thread = NULL;  // Suppress Coverity "going out of scope" warning
         } else if (monitor_ctx != NULL) {
             SWLOG_DEBUG("[DOWNLOAD_WORKER] Cleaning up monitor_ctx (thread was not started)\n");
@@ -3374,6 +3380,7 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
             g_idle_add(rdkfw_emit_download_progress, error_update);
         }
         
+        /* coverity[leaked_storage] - False positive: monitor_thread cleaned up above */
         g_task_return_boolean(task, FALSE);
         return;
     }

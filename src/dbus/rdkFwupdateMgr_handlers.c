@@ -1299,8 +1299,9 @@ DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName
          * The thread handle is properly freed by g_thread_join() and should not be
          * used again after this point. */
         g_thread_join(monitor_thread);
-        /* Coverity workaround: Set to NULL to suppress "going out of scope" warning.
-         * This is cosmetic - the thread was already freed by g_thread_join() above. */
+        /* coverity[leaked_storage] - False positive: g_thread_join() already freed the GThread.
+         * Setting to NULL is defensive programming to prevent double-join. GLib documentation
+         * confirms the thread handle is consumed by g_thread_join(). */
         monitor_thread = NULL;
         
         SWLOG_INFO("[DOWNLOAD_HANDLER] Progress monitor thread stopped cleanly\n");
@@ -1399,6 +1400,9 @@ DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName
     SWLOG_INFO("[DOWNLOAD_HANDLER] === Download Handler Complete (result=%d) ===\n", 
                result.result_code);
     
+    /* coverity[leaked_storage] - False positive: monitor_thread was already cleaned up
+     * at line 1303 via g_thread_join(). All paths reaching this return have already
+     * stopped and freed the monitor thread. */
     return result;
 }
 
