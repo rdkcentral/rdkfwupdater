@@ -1299,7 +1299,9 @@ DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName
          * The thread handle is properly freed by g_thread_join() and should not be
          * used again after this point. */
         g_thread_join(monitor_thread);
-        // monitor_thread is now invalid, do not use or set to NULL
+        /* Coverity workaround: Set to NULL to suppress "going out of scope" warning.
+         * This is cosmetic - the thread was already freed by g_thread_join() above. */
+        monitor_thread = NULL;
         
         SWLOG_INFO("[DOWNLOAD_HANDLER] Progress monitor thread stopped cleanly\n");
         
@@ -1509,7 +1511,7 @@ gboolean emit_flash_progress_idle(gpointer user_data)
         "/org/rdkfwupdater/Service",
         "org.rdkfwupdater.Interface",
         "UpdateProgress",
-        g_variant_new("(ii)",
+        g_variant_new("(tsiis)",
                       handler_id_numeric,
                       update->firmware_name ? update->firmware_name : "",
                       update->progress,

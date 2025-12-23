@@ -3266,7 +3266,9 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
          * used again after this point. */
         SWLOG_DEBUG("[DOWNLOAD_WORKER] Waiting for monitor thread to exit...\n");
         g_thread_join(monitor_thread);
-        // monitor_thread is now invalid, do not use or set to NULL
+        /* Coverity workaround: Set to NULL to suppress "going out of scope" warning.
+         * This is cosmetic - the thread was already freed by g_thread_join() above. */
+        monitor_thread = NULL;
         
         SWLOG_INFO("[DOWNLOAD_WORKER]  Progress monitor thread stopped cleanly\n");
         
@@ -3307,6 +3309,23 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
         
         SWLOG_ERROR("[DOWNLOAD_WORKER]   Error description: %s\n", error_desc);
         
+        /* Coverity fix: RESOURCE_LEAK - Stop monitor thread before returning on error */
+        if (monitor_thread != NULL) {
+            SWLOG_INFO("[DOWNLOAD_WORKER] Stopping monitor thread due to download error...\n");
+            g_atomic_int_set(&stop_monitor, TRUE);
+            g_thread_join(monitor_thread);
+            monitor_thread = NULL;  // Suppress Coverity "going out of scope" warning
+        } else if (monitor_ctx != NULL) {
+            SWLOG_DEBUG("[DOWNLOAD_WORKER] Cleaning up monitor_ctx (thread was not started)\n");
+            if (monitor_ctx->handler_id) g_free(monitor_ctx->handler_id);
+            if (monitor_ctx->firmware_name) g_free(monitor_ctx->firmware_name);
+            if (monitor_ctx->mutex) {
+                g_mutex_clear(monitor_ctx->mutex);
+                g_free(monitor_ctx->mutex);
+            }
+            g_free(monitor_ctx);
+        }
+        
         // Emit error signal
         ProgressUpdate *error_update = g_new0(ProgressUpdate, 1);
         if (error_update) {
@@ -3326,6 +3345,23 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     if (http_code != 200 && http_code != 206) {
         SWLOG_ERROR("[DOWNLOAD_WORKER] *** HTTP ERROR! ***\n");
         SWLOG_ERROR("[DOWNLOAD_WORKER]   HTTP code = %d\n", http_code);
+        
+        /* Coverity fix: RESOURCE_LEAK - Stop monitor thread before returning on error */
+        if (monitor_thread != NULL) {
+            SWLOG_INFO("[DOWNLOAD_WORKER] Stopping monitor thread due to HTTP error...\n");
+            g_atomic_int_set(&stop_monitor, TRUE);
+            g_thread_join(monitor_thread);
+            monitor_thread = NULL;  // Suppress Coverity "going out of scope" warning
+        } else if (monitor_ctx != NULL) {
+            SWLOG_DEBUG("[DOWNLOAD_WORKER] Cleaning up monitor_ctx (thread was not started)\n");
+            if (monitor_ctx->handler_id) g_free(monitor_ctx->handler_id);
+            if (monitor_ctx->firmware_name) g_free(monitor_ctx->firmware_name);
+            if (monitor_ctx->mutex) {
+                g_mutex_clear(monitor_ctx->mutex);
+                g_free(monitor_ctx->mutex);
+            }
+            g_free(monitor_ctx);
+        }
         
         // Emit error signal
         ProgressUpdate *error_update = g_new0(ProgressUpdate, 1);
