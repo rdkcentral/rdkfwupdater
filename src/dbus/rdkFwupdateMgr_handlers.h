@@ -23,11 +23,12 @@
  * determine what action the client should take.
  */
 typedef enum {
-    UPDATE_AVAILABLE = 0,     // New firmware available - client can proceed with download
-    UPDATE_NOT_AVAILABLE = 1, // Already on latest firmware - no action needed
+    FIRMWARE_AVAILABLE = 0,     // New firmware available - client can proceed with download
+    FIRMWARE_NOT_AVAILABLE = 1, // Already on latest firmware - no action needed
     UPDATE_NOT_ALLOWED = 2,   // Firmware not compatible with this device model
-    RDKFW_FAILED = 3,         // Internal firmware service failure
-    UPDATE_ERROR = 4          // Communication error (network, XConf server, etc.)
+    FIRMWARE_CHECK_ERROR = 3, //Error occurred while checking for updates.
+    IGNORE_OPTOUT = 4,         //  Firmware Download not allowed.
+    BYPASS_OPTOUT = 5          // Firmware Download not allowed.
 } CheckForUpdateResult;
 
 /*

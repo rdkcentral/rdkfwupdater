@@ -403,7 +403,7 @@ static CheckUpdateResponse create_success_response(const gchar *available_versio
 
     gboolean is_update_available = img_status && available_version && (g_strcmp0(current_img_buffer, available_version) != 0);
     if (is_update_available) {
-    response.result_code = UPDATE_AVAILABLE;
+    response.result_code = FIRMWARE_AVAILABLE;
     response.current_img_version = g_strdup(current_img_buffer);
     response.available_version = g_strdup(available_version);
     response.update_details = g_strdup(update_details ? update_details : "");
@@ -412,7 +412,7 @@ static CheckUpdateResponse create_success_response(const gchar *available_versio
     SWLOG_INFO("[rdkFwupdateMgr] create_success_response: Response created with current image: '%s', available: '%s', status: '%s'\n", 
                response.current_img_version, response.available_version, response.status_message);
     }else {
-        response.result_code = UPDATE_NOT_AVAILABLE;
+        response.result_code = FIRMWARE_NOT_AVAILABLE;
         response.current_img_version = g_strdup(current_img_buffer);
         response.available_version = g_strdup(available_version ? available_version : "");
         response.update_details = g_strdup("");
@@ -428,7 +428,7 @@ static CheckUpdateResponse create_success_response(const gchar *available_versio
  * Sets available_version and update_details to empty strings. Retrieves current
  * firmware version and provides default status messages if none supplied.
  * 
- * @param result_code Result code (UPDATE_NOT_AVAILABLE, UPDATE_ERROR, etc.)
+ * @param result_code Result code (FIRMWARE_NOT_AVAILABLE, FIRMWARE_CHECK_ERROR, etc.)
  * @param status_message Optional custom status message (can be NULL for default)
  * @return CheckUpdateResponse structure with allocated strings (must be freed by caller)
  */
@@ -453,14 +453,23 @@ static CheckUpdateResponse create_result_response(CheckForUpdateResult result_co
         default_status = status_message;
     } else {
         switch(result_code) {
-            case UPDATE_AVAILABLE:
-                default_status = "Update available";
+            case FIRMWARE_AVAILABLE:
+                default_status = "Firmware update available";
                 break;
-            case UPDATE_NOT_AVAILABLE:
-                default_status = "No update available";
+            case FIRMWARE_NOT_AVAILABLE:
+                default_status = "No firmware update available";
                 break;
-            case UPDATE_ERROR:
+            case UPDATE_NOT_ALLOWED:
+                default_status = "Firmware not compatible with this device model";
+                break;
+            case FIRMWARE_CHECK_ERROR:
                 default_status = "Error checking for updates";
+                break;
+            case IGNORE_OPTOUT:
+                default_status = "Firmware download not allowed - IGNORE_OPTOUT";
+                break;
+            case BYPASS_OPTOUT:
+                default_status = "Firmware download not allowed - BYPASS_OPTOUT";
                 break;
             default:
                 default_status = "Unknown status";
@@ -893,7 +902,7 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
     
     if (!handler_id) {
         SWLOG_ERROR("[rdkFwupdateMgr] CRITICAL ERROR: handler_id is NULL!\n");
-        return create_result_response(UPDATE_ERROR, "Internal error - invalid handler ID");
+        return create_result_response(FIRMWARE_CHECK_ERROR, "Internal error - invalid handler ID");
     }
     
     SWLOG_INFO("[rdkFwupdateMgr] CheckForUpdate: handler=%s\n", handler_id);
@@ -937,7 +946,7 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
                 SWLOG_ERROR("[rdkFwupdateMgr]   - Device model: '%s'\n", device_info.model);
                 SWLOG_ERROR("[rdkFwupdateMgr]   - cloudFWFile: '%s'\n", response.cloudFWFile);
                 SWLOG_ERROR("[rdkFwupdateMgr]   - Reason: Model name not found in firmware filename\n");
-                return create_result_response(UPDATE_NOT_AVAILABLE, "Firmware validation failed - not for this device model");
+                return create_result_response(UPDATE_NOT_ALLOWED, "Firmware validation failed - not for this device model");
             }
             SWLOG_INFO("[rdkFwupdateMgr] VALIDATION PASSED - Firmware is valid for this device\n");
             SWLOG_INFO("[rdkFwupdateMgr] ===== VALIDATION & COMPARISON COMPLETE =====\n");
@@ -1006,16 +1015,16 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
         } else {
             SWLOG_INFO("[rdkFwupdateMgr] XConf returned no firmware version - no update available\n");
             g_free(update_details);
-            return create_result_response(UPDATE_NOT_AVAILABLE, "No firmware update available");
+            return create_result_response(FIRMWARE_NOT_AVAILABLE, "No firmware update available");
         }
     } else {
         // XConf query failed - network or server error
         SWLOG_ERROR("[rdkFwupdateMgr] XConf communication failed: ret=%d, http=%d\n", ret, http_code);
         
         if (http_code != 200) {
-            return create_result_response(UPDATE_ERROR, "Network error - unable to reach update server");
+            return create_result_response(FIRMWARE_CHECK_ERROR, "Network error - unable to reach update server");
         } else {
-            return create_result_response(UPDATE_ERROR, "Update check failed - server communication error");
+            return create_result_response(FIRMWARE_CHECK_ERROR, "Update check failed - server communication error");
         }
     }
 }
