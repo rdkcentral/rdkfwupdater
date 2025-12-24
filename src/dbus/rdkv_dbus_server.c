@@ -783,8 +783,14 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			
 			SWLOG_INFO("[CHECK_UPDATE] Cache data loaded successfully\n");
 			SWLOG_INFO("[CHECK_UPDATE] Cached Firmware Data:\n");
-			SWLOG_INFO("[CHECK_UPDATE]   Status Code: %d ", response.result_code);
-			switch(response.result_code) {
+			SWLOG_INFO("[CHECK_UPDATE]   API Result: %d ", response.result);
+			switch(response.result) {
+				case 0: SWLOG_INFO(" (CHECK_FOR_UPDATE_SUCCESS)\n"); break;
+				case 1: SWLOG_INFO(" (CHECK_FOR_UPDATE_FAIL)\n"); break;
+				default: SWLOG_INFO(" (UNKNOWN)\n"); break;
+			}
+			SWLOG_INFO("[CHECK_UPDATE]   Firmware Status Code: %d ", response.status_code);
+			switch(response.status_code) {
 				case 0: SWLOG_INFO(" (FIRMWARE_AVAILABLE)\n"); break;
 				case 1: SWLOG_INFO(" (FIRMWARE_NOT_AVAILABLE)\n"); break;
 				case 2: SWLOG_INFO(" (UPDATE_NOT_ALLOWED)\n"); break;
@@ -2234,8 +2240,14 @@ static void rdkfw_xconf_fetch_worker(GTask *task, gpointer source_object, gpoint
     SWLOG_INFO("[ASYNC_FETCH] ========================================\n");
     SWLOG_INFO("[ASYNC_FETCH] XConf fetch completed in worker thread!\n");
     SWLOG_INFO("[ASYNC_FETCH] Response data:\n");
-    SWLOG_INFO("[ASYNC_FETCH]   - Result code: %d ", response.result_code);
-    switch(response.result_code) {
+    SWLOG_INFO("[ASYNC_FETCH]   - API Result: %d ", response.result);
+    switch(response.result) {
+        case 0: SWLOG_INFO("(CHECK_FOR_UPDATE_SUCCESS)\n"); break;
+        case 1: SWLOG_INFO("(CHECK_FOR_UPDATE_FAIL)\n"); break;
+        default: SWLOG_INFO("(UNKNOWN)\n"); break;
+    }
+    SWLOG_INFO("[ASYNC_FETCH]   - Firmware Status Code: %d ", response.status_code);
+    switch(response.status_code) {
         case 0: SWLOG_INFO("(FIRMWARE_AVAILABLE)\n"); break;
         case 1: SWLOG_INFO("(FIRMWARE_NOT_AVAILABLE)\n"); break;
         case 2: SWLOG_INFO("(UPDATE_NOT_ALLOWED)\n"); break;
