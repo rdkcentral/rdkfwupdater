@@ -313,7 +313,7 @@ typedef struct {
             gchar *client_fwdata_availableVersion; // Client's available version (usually NULL)
             gchar *client_fwdata_updateDetails;    // Client's update details (usually NULL)
             gchar *client_fwdata_status;           // Client's current status string
-            CheckForUpdateResult result_code;      // Result of update check
+            CheckForUpdateStatus result_code;      // Firmware status code (FIRMWARE_AVAILABLE, NOT_AVAILABLE, etc.)
         } check_update;
         
         /* Download task data */
