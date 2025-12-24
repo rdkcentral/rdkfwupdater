@@ -402,17 +402,20 @@ static CheckUpdateResponse create_success_response(const gchar *available_versio
     SWLOG_INFO("[rdkFwupdateMgr]   - current_img_buffer: '%s'\n", current_img_buffer);
 
     gboolean is_update_available = img_status && available_version && (g_strcmp0(current_img_buffer, available_version) != 0);
-    if (is_update_available) {
-    response.result_code = FIRMWARE_AVAILABLE;
-    response.current_img_version = g_strdup(current_img_buffer);
-    response.available_version = g_strdup(available_version);
-    response.update_details = g_strdup(update_details ? update_details : "");
-    response.status_message = g_strdup(status_message ? status_message : "Firmware update available");
     
-    SWLOG_INFO("[rdkFwupdateMgr] create_success_response: Response created with current image: '%s', available: '%s', status: '%s'\n", 
-               response.current_img_version, response.available_version, response.status_message);
-    }else {
-        response.result_code = FIRMWARE_NOT_AVAILABLE;
+    response.result = CHECK_FOR_UPDATE_SUCCESS;  // API call succeeded
+    
+    if (is_update_available) {
+        response.status_code = FIRMWARE_AVAILABLE;
+        response.current_img_version = g_strdup(current_img_buffer);
+        response.available_version = g_strdup(available_version);
+        response.update_details = g_strdup(update_details ? update_details : "");
+        response.status_message = g_strdup(status_message ? status_message : "Firmware update available");
+        
+        SWLOG_INFO("[rdkFwupdateMgr] create_success_response: Response created with current image: '%s', available: '%s', status: '%s'\n", 
+                   response.current_img_version, response.available_version, response.status_message);
+    } else {
+        response.status_code = FIRMWARE_NOT_AVAILABLE;
         response.current_img_version = g_strdup(current_img_buffer);
         response.available_version = g_strdup(available_version ? available_version : "");
         response.update_details = g_strdup("");
@@ -432,7 +435,7 @@ static CheckUpdateResponse create_success_response(const gchar *available_versio
  * @param status_message Optional custom status message (can be NULL for default)
  * @return CheckUpdateResponse structure with allocated strings (must be freed by caller)
  */
-static CheckUpdateResponse create_result_response(CheckForUpdateResult result_code,
+static CheckUpdateResponse create_result_response(CheckForUpdateStatus status_code,
                                                   const gchar *status_message) {
     CheckUpdateResponse response = {0};
     char current_img_buffer[256] = {0};
@@ -443,7 +446,8 @@ static CheckUpdateResponse create_result_response(CheckForUpdateResult result_co
     SWLOG_INFO("[rdkFwupdateMgr]   - currentImg status: %s\n", img_status ? "SUCCESS" : "FAILED");
     SWLOG_INFO("[rdkFwupdateMgr]   - current_img_buffer: '%s'\n", current_img_buffer);
     
-    response.result_code = result_code;
+    response.result = CHECK_FOR_UPDATE_SUCCESS;  // API call succeeded
+    response.status_code = status_code;           // Firmware status
     response.current_img_version = g_strdup(img_status ? current_img_buffer : "Unknown");
     response.available_version = g_strdup("");
     response.update_details = g_strdup("");
@@ -452,7 +456,7 @@ static CheckUpdateResponse create_result_response(CheckForUpdateResult result_co
     if (status_message) {
         default_status = status_message;
     } else {
-        switch(result_code) {
+        switch(status_code) {
             case FIRMWARE_AVAILABLE:
                 default_status = "Firmware update available";
                 break;

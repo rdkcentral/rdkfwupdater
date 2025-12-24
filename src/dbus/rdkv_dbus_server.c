@@ -157,6 +157,7 @@ static const gchar introspection_xml[] =
 "<method name='CheckForUpdate'>"
 "<arg type='s' name='handler_process_name' direction='in'/>" //Handler/Client ID - only input needed
 //FwData structure - All output parameters filled by server
+"<arg type='i' name='result' direction='out'/>" //API call result: 0=SUCCESS, 1=FAIL
 "<arg type='s' name='fwdata_version' direction='out'/>" //Current firmware version (detected by server)
 "<arg type='s' name='fwdata_availableVersion' direction='out'/>" //Available version (from XConf)
 "<arg type='s' name='fwdata_updateDetails' direction='out'/>" //Update details (from XConf)
@@ -187,7 +188,8 @@ static const gchar introspection_xml[] =
 " <!-- Signals -->"
 " <signal name='CheckForUpdateComplete'>"
 " <arg type='t' name='handlerId'/>"
-" <arg type='i' name='resultCode'/>"
+" <arg type='i' name='result'/>"
+" <arg type='i' name='statusCode'/>"
 " <arg type='s' name='currentVersion'/>"
 " <arg type='s' name='availableVersion'/>"
 " <arg type='s' name='updateDetails'/>"
@@ -583,15 +585,15 @@ void complete_CheckUpdate_waiting_tasks(TaskContext *ctx)
 				case 5: SWLOG_INFO("(BYPASS_OPTOUT)\n"); break;
 				default: SWLOG_INFO("(UNKNOWN_STATUS)\n"); break;
 			}
-			
-			SWLOG_INFO("[CHECK_UPDATE] Sending D-Bus response to client...\n");
-			g_dbus_method_invocation_return_value(context->invocation,
-				g_variant_new("(ssssi)",
-					version,     // Current/Detected Fw Version (from server)
-					available,   // Available Version (from XConf)
-					details,     // Update Details (from XConf)
-					status_str,  // Status string from FwData structure (optional field)
-					(gint32)context->data.check_update.result_code));    // Status Code (0=FIRMWARE_AVAILABLE, 1=FIRMWARE_NOT_AVAILABLE, 2=UPDATE_NOT_ALLOWED, 3=FIRMWARE_CHECK_ERROR, 4=IGNORE_OPTOUT, 5=BYPASS_OPTOUT)
+					SWLOG_INFO("[CHECK_UPDATE] Sending D-Bus response to client...\n");
+		g_dbus_method_invocation_return_value(context->invocation,
+			g_variant_new("(issssi)",
+				0,           // result: CHECK_FOR_UPDATE_SUCCESS (API call succeeded)
+				version,     // Current/Detected Fw Version (from server)
+				available,   // Available Version (from XConf)
+				details,     // Update Details (from XConf)
+				status_str,  // Status string from FwData structure (optional field)
+				(gint32)context->data.check_update.result_code));    // Status Code (0=FIRMWARE_AVAILABLE, 1=FIRMWARE_NOT_AVAILABLE, 2=UPDATE_NOT_ALLOWED, 3=FIRMWARE_CHECK_ERROR, 4=IGNORE_OPTOUT, 5=BYPASS_OPTOUT)
 
 			SWLOG_INFO("[CHECK_UPDATE] Response sent successfully to client\n");
 			
@@ -603,9 +605,10 @@ void complete_CheckUpdate_waiting_tasks(TaskContext *ctx)
 				"/org/rdkfwupdater/Service",
 				"org.rdkfwupdater.Interface",
 				"CheckForUpdateComplete",
-				g_variant_new("(sissss)",
-					context->process_name,                              // handler_id
-					(gint32)context->data.check_update.result_code,     // result_code  
+				g_variant_new("(tiissss)",
+					g_ascii_strtoull(context->process_name, NULL, 10),  // handler_id (uint64)
+					(gint32)CHECK_FOR_UPDATE_SUCCESS,                   // result (API call result)
+					(gint32)context->data.check_update.result_code,     // status_code (firmware status)
 					version,                                            // current_version
 					available,                                          // available_version
 					details,                                            // update_details
@@ -728,29 +731,42 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		SWLOG_INFO("[CHECK_UPDATE]   Active Tasks (hash table): %d\n", g_hash_table_size(active_tasks));
 		SWLOG_INFO("[CHECK_UPDATE]   Waiting Queue (list): %d task(s)\n", g_slist_length(waiting_checkUpdate_ids));
 		
-		// 1. VALIDATE HANDLER ID
-		if (!handler_process_name || strlen(handler_process_name) == 0) {
-			SWLOG_ERROR("[CHECK_UPDATE] REJECTED: Invalid handler ID\n");
-			g_dbus_method_invocation_return_error(resp_ctx, 
-				G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "Invalid handler ID");
-			g_free(handler_process_name);
-			return;
-		}
-		
-		// 2. VALIDATE REGISTRATION
-		guint64 handler_id_numeric = g_ascii_strtoull(handler_process_name, NULL, 10);
-		gboolean is_registered = g_hash_table_contains(registered_processes, GINT_TO_POINTER(handler_id_numeric));
-		
-		SWLOG_INFO("[CHECK_UPDATE] Registration check: %s\n", is_registered ? "REGISTERED" : "NOT REGISTERED");
-		
-		if (!is_registered) {
-			SWLOG_ERROR("[CHECK_UPDATE] REJECTED: Handler not registered\n");
-			g_dbus_method_invocation_return_error(resp_ctx, 
-				G_DBUS_ERROR, G_DBUS_ERROR_ACCESS_DENIED, 
-				"Handler not registered. Call RegisterProcess first.");
-			g_free(handler_process_name);
-			return;
-		}
+	// 1. VALIDATE HANDLER ID
+	if (!handler_process_name || strlen(handler_process_name) == 0) {
+		SWLOG_ERROR("[CHECK_UPDATE] REJECTED: Invalid handler ID\n");
+		// Return proper signature (issssi) with CHECK_FOR_UPDATE_SUCCESS + FIRMWARE_CHECK_ERROR
+		g_dbus_method_invocation_return_value(resp_ctx,
+			g_variant_new("(issssi)",
+				0,   // result: CHECK_FOR_UPDATE_SUCCESS (validation handled gracefully)
+				"",  // fwdata_version (empty)
+				"",  // fwdata_availableVersion (empty)
+				"",  // fwdata_updateDetails (empty)
+				"Invalid handler ID",  // fwdata_status (error message)
+				3)); // fwdata_status_code: FIRMWARE_CHECK_ERROR
+		g_free(handler_process_name);
+		return;
+	}
+	
+	// 2. VALIDATE REGISTRATION
+	guint64 handler_id_numeric = g_ascii_strtoull(handler_process_name, NULL, 10);
+	gboolean is_registered = g_hash_table_contains(registered_processes, GINT_TO_POINTER(handler_id_numeric));
+	
+	SWLOG_INFO("[CHECK_UPDATE] Registration check: %s\n", is_registered ? "REGISTERED" : "NOT REGISTERED");
+	
+	if (!is_registered) {
+		SWLOG_ERROR("[CHECK_UPDATE] REJECTED: Handler not registered\n");
+		// Return proper signature (issssi) with CHECK_FOR_UPDATE_SUCCESS + FIRMWARE_CHECK_ERROR
+		g_dbus_method_invocation_return_value(resp_ctx,
+			g_variant_new("(issssi)",
+				0,   // result: CHECK_FOR_UPDATE_SUCCESS (validation handled gracefully)
+				"",  // fwdata_version (empty)
+				"",  // fwdata_availableVersion (empty)
+				"",  // fwdata_updateDetails (empty)
+				"Handler not registered. Call RegisterProcess first.",  // fwdata_status (error message)
+				3)); // fwdata_status_code: FIRMWARE_CHECK_ERROR
+		g_free(handler_process_name);
+		return;
+	}
 		
 		// 3. CHECK CACHE (FAST, NON-BLOCKING)
 		SWLOG_INFO("\n[STEP 3] Cache Check\n");
@@ -783,16 +799,16 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			           response.available_version ? response.available_version : "N/A");
 			SWLOG_INFO("[CHECK_UPDATE]   - Status Message: '%s'\n", 
 			           response.status_message ? response.status_message : "N/A");
-			
-			SWLOG_INFO("[CHECK_UPDATE] Sending immediate D-Bus method response\n");
-			// Send immediate D-Bus response
-			g_dbus_method_invocation_return_value(resp_ctx,
-				g_variant_new("(ssssi)",
-					response.current_img_version ? response.current_img_version : "",
-					response.available_version ? response.available_version : "",
-					response.update_details ? response.update_details : "",
-					response.status_message ? response.status_message : "",
-					response.result_code));
+					SWLOG_INFO("[CHECK_UPDATE] Sending immediate D-Bus method response\n");
+		// Send immediate D-Bus response (issssi): result + 4 strings + status_code
+		g_dbus_method_invocation_return_value(resp_ctx,
+			g_variant_new("(issssi)",
+				response.result,  // API call result (SUCCESS/FAIL)
+				response.current_img_version ? response.current_img_version : "",
+				response.available_version ? response.available_version : "",
+				response.update_details ? response.update_details : "",
+				response.status_message ? response.status_message : "",
+				response.status_code));  // Firmware status (0-5)
 			
 			SWLOG_INFO("[CHECK_UPDATE] D-Bus method response sent successfully\n");
 			
@@ -803,9 +819,10 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 				NULL, "/org/rdkfwupdater/Service",
 				"org.rdkfwupdater.Interface",
 				"CheckForUpdateComplete",
-				g_variant_new("(sissss)",
-					handler_process_name,
-					(gint32)response.result_code,
+				g_variant_new("(tiissss)",
+					g_ascii_strtoull(handler_process_name, NULL, 10),   // handler_id (uint64)
+					(gint32)response.result,                            // result (API call result)
+					(gint32)response.status_code,                       // status_code (firmware status)
 					response.current_img_version ? response.current_img_version : "",
 					response.available_version ? response.available_version : "",
 					response.update_details ? response.update_details : "",
@@ -840,12 +857,18 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		SWLOG_INFO("    3. Waits for CheckForUpdateComplete signal\n");
 		SWLOG_INFO("    4. Receives real result when XConf fetch completes\n");
 		
-		// 4. SEND IMMEDIATE FIRMWARE_CHECK_ERROR RESPONSE
-		SWLOG_INFO("\nImmediate Response\n");
-		SWLOG_INFO("  Sending: D-Bus method response\n");
-		SWLOG_INFO("  Response: FIRMWARE_CHECK_ERROR (status=3) - checking XConf server\n");
-		g_dbus_method_invocation_return_value(resp_ctx,
-			g_variant_new("(ssssi)", "", "", "", "Firmware check in progress - checking XConf server", 3));
+	// 4. SEND IMMEDIATE FIRMWARE_CHECK_ERROR RESPONSE
+	SWLOG_INFO("\nImmediate Response\n");
+	SWLOG_INFO("  Sending: D-Bus method response\n");
+	SWLOG_INFO("  Response: FIRMWARE_CHECK_ERROR (status=3) - checking XConf server\n");
+	g_dbus_method_invocation_return_value(resp_ctx,
+		g_variant_new("(issssi)",
+			0,   // result: CHECK_FOR_UPDATE_SUCCESS
+			"",  // current_version (empty - not known yet)
+			"",  // available_version (empty - not known yet)
+			"",  // update_details (empty - not known yet)
+			"Firmware check in progress - checking XConf server",  // status message
+			3)); // status_code: FIRMWARE_CHECK_ERROR (check in progress)
 		
 		SWLOG_INFO("[CHECK_UPDATE] Response sent successfully\n");
 		SWLOG_INFO("  Client now knows: Firmware check in progress, wait for signal\n");
@@ -2234,9 +2257,10 @@ static void rdkfw_xconf_fetch_worker(GTask *task, gpointer source_object, gpoint
     SWLOG_INFO("[ASYNC_FETCH] Packaging result for completion callback...\n");
     
     // Package results for completion callback (which runs on main loop)
-    GVariant *result_variant = g_variant_new("(sissss)",
-        ctx->handler_id,
-        (gint32)response.result_code,
+    GVariant *result_variant = g_variant_new("(tiissss)",
+        g_ascii_strtoull(ctx->handler_id, NULL, 10),            // handler_id (uint64)
+        (gint32)response.result,                                // result (API call result)
+        (gint32)response.status_code,                           // status_code (firmware status)
         response.current_img_version ? response.current_img_version : "",
         response.available_version ? response.available_version : "",
         response.update_details ? response.update_details : "",
@@ -2373,17 +2397,24 @@ static void rdkfw_xconf_fetch_done(GObject *source_object, GAsyncResult *res, gp
                g_slist_length(waiting_checkUpdate_ids));
     
     // Extract data for logging with NULL checks
-    gchar *handler_id_str = NULL;
-    gint32 result_code = -1;
+    guint64 handler_id_num = 0;
+    gint32 api_result = -1;
+    gint32 status_code = -1;
     gchar *current_ver = NULL, *available_ver = NULL, *update_details = NULL, *status_msg = NULL;
     
-    g_variant_get(result, "(sissss)", &handler_id_str, &result_code,
+    g_variant_get(result, "(tiissss)", &handler_id_num, &api_result, &status_code,
                  &current_ver, &available_ver, &update_details, &status_msg);
     
     SWLOG_INFO("[COMPLETE]   Signal payload:\n");
-    SWLOG_INFO("[COMPLETE]     - Handler ID: '%s'\n", handler_id_str ? handler_id_str : "NULL");
-    SWLOG_INFO("[COMPLETE]     - Result code: %d ", result_code);
-    switch(result_code) {
+    SWLOG_INFO("[COMPLETE]     - Handler ID: %" G_GUINT64_FORMAT "\n", handler_id_num);
+    SWLOG_INFO("[COMPLETE]     - API Result: %d ", api_result);
+    switch(api_result) {
+        case 0: SWLOG_INFO("(CHECK_FOR_UPDATE_SUCCESS)\n"); break;
+        case 1: SWLOG_INFO("(CHECK_FOR_UPDATE_FAIL)\n"); break;
+        default: SWLOG_INFO("(UNKNOWN)\n"); break;
+    }
+    SWLOG_INFO("[COMPLETE]     - Firmware Status Code: %d ", status_code);
+    switch(status_code) {
         case 0: SWLOG_INFO("(FIRMWARE_AVAILABLE)\n"); break;
         case 1: SWLOG_INFO("(FIRMWARE_NOT_AVAILABLE)\n"); break;
         case 2: SWLOG_INFO("(UPDATE_NOT_ALLOWED)\n"); break;
@@ -2398,7 +2429,6 @@ static void rdkfw_xconf_fetch_done(GObject *source_object, GAsyncResult *res, gp
     SWLOG_INFO("[COMPLETE]     - Status message: '%s'\n", status_msg ? status_msg : "NULL");
     
     // Free extracted strings (g_variant_get duplicates them)
-    if (handler_id_str) g_free(handler_id_str);
     if (current_ver) g_free(current_ver);
     if (available_ver) g_free(available_ver);
     if (update_details) g_free(update_details);

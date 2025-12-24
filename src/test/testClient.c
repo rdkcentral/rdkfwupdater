@@ -187,10 +187,10 @@ static gboolean client_unregister(TestClientContext *ctx) {
 }
 
 static gboolean api_check_for_update(TestClientContext *ctx, const gchar *hid) {
-    GError *err = NULL; gchar *cv = NULL, *av = NULL, *d = NULL, *st = NULL; gint32 sc = 0;
+    GError *err = NULL; gchar *cv = NULL, *av = NULL, *d = NULL, *st = NULL; gint32 result = 0, sc = 0;
     LOG_INFO("Calling CheckForUpdate (handler: %s)", hid);
-    GVariant *r = g_dbus_connection_call_sync(ctx->connection, DBUS_SERVICE_NAME, DBUS_OBJECT_PATH, DBUS_INTERFACE_NAME, "CheckForUpdate", g_variant_new("(s)", hid), G_VARIANT_TYPE("(ssssi)"), G_DBUS_CALL_FLAGS_NONE, 5000, NULL, &err);
-    if (r) { g_variant_get(r, "(ssssi)", &cv, &av, &d, &st, &sc); LOG_INFO("Response: current=%s, available=%s, status_code=%d", cv ? cv : "", av ? av : "", sc); g_free(cv); g_free(av); g_free(d); g_free(st); g_variant_unref(r); return TRUE; }
+    GVariant *r = g_dbus_connection_call_sync(ctx->connection, DBUS_SERVICE_NAME, DBUS_OBJECT_PATH, DBUS_INTERFACE_NAME, "CheckForUpdate", g_variant_new("(s)", hid), G_VARIANT_TYPE("(issssi)"), G_DBUS_CALL_FLAGS_NONE, 5000, NULL, &err);
+    if (r) { g_variant_get(r, "(issssi)", &result, &cv, &av, &d, &st, &sc); LOG_INFO("Response: result=%d, current=%s, available=%s, status_code=%d", result, cv ? cv : "", av ? cv : "", sc); g_free(cv); g_free(av); g_free(d); g_free(st); g_variant_unref(r); return TRUE; }
     LOG_ERROR("CheckForUpdate failed: %s", err->message); g_error_free(err); return FALSE;
 }
 

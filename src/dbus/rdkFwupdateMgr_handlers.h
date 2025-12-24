@@ -17,19 +17,30 @@
 #include "json_process.h"  // For XCONFRES structure
 
 /*
- * CheckForUpdate Result Codes
+ * CheckForUpdate API Call Result
  * 
- * These codes indicate the outcome of a CheckForUpdate request and
+ * Indicates whether the CheckForUpdate method call itself succeeded or failed.
+ * This is separate from the firmware update status.
+ */
+typedef enum {
+    CHECK_FOR_UPDATE_SUCCESS = 0,  // API call succeeded - check status_code for firmware status
+    CHECK_FOR_UPDATE_FAIL = 1      // API call failed - validation error, internal error, etc.
+} CheckForUpdateResult;
+
+/*
+ * CheckForUpdate Status Codes
+ * 
+ * These codes indicate the outcome of the firmware update check and
  * determine what action the client should take.
  */
 typedef enum {
     FIRMWARE_AVAILABLE = 0,     // New firmware available - client can proceed with download
     FIRMWARE_NOT_AVAILABLE = 1, // Already on latest firmware - no action needed
-    UPDATE_NOT_ALLOWED = 2,   // Firmware not compatible with this device model
-    FIRMWARE_CHECK_ERROR = 3, //Error occurred while checking for updates.
-    IGNORE_OPTOUT = 4,         //  Firmware Download not allowed.
-    BYPASS_OPTOUT = 5          // Firmware Download not allowed.
-} CheckForUpdateResult;
+    UPDATE_NOT_ALLOWED = 2,     // Firmware not compatible with this device model
+    FIRMWARE_CHECK_ERROR = 3,   // Error occurred while checking for updates
+    IGNORE_OPTOUT = 4,          // Firmware Download not allowed
+    BYPASS_OPTOUT = 5           // Firmware Download not allowed
+} CheckForUpdateStatus;
 
 /*
  * CheckForUpdate Response Structure
@@ -39,7 +50,8 @@ typedef enum {
  * checkupdate_response_free() to prevent memory leaks.
  */
 typedef struct {
-    CheckForUpdateResult result_code;  // Result of the update check
+    CheckForUpdateResult result;       // API call result (SUCCESS/FAIL)
+    CheckForUpdateStatus status_code;  // Firmware update status (0-5)
     gchar *current_img_version;        // Currently running firmware version
     gchar *available_version;          // Available firmware version from XConf server
     gchar *update_details;             // Detailed update info (URL, protocol, flags, etc.)
