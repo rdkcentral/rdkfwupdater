@@ -140,13 +140,8 @@ extern "C" int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** c
         cerr << "rdkv_upgrade_request: g_RdkFwupdateMgrMock is NULL" << endl;
         return -1;
     }
-    // Note: The mock interface uses a different signature for convenience
-    // We need to extract the relevant fields from context
-    RdkUpgradeContext_t* non_const_ctx = const_cast<RdkUpgradeContext_t*>(context);
-    return g_RdkFwupdateMgrMock->rdkv_upgrade_request(non_const_ctx, context->lastrun, 
-                                                       context->delay_dwnl, context->immed_reboot_flag,
-                                                       context->disableStatsUpdate, context->rfc_list, 
-                                                       *context->force_exit);
+    // Direct pass-through to mock with correct 3-parameter signature
+     return g_RdkFwupdateMgrMock->rdkv_upgrade_request(context, curl, pHttp_code);
 }
 
 // =============================================================================

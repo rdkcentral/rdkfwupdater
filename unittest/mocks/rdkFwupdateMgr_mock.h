@@ -57,9 +57,7 @@ public:
     virtual bool isConnectedToInternet() = 0;
     
     // Upgrade request mock
-    virtual int rdkv_upgrade_request(RdkUpgradeContext_t *context, const char *lastrun,
-                                     int delay_dwnl, const char *immed_reboot_flag,
-                                     char *disableStatsUpdate, Rfc_t *rfc_list, int force_exit) = 0;
+    virtual int rdkv_upgrade_request(RdkUpgradeContext_t *context, void **curl, int *pHttp_code) = 0;
 };
 
 /**
@@ -79,10 +77,7 @@ public:
     MOCK_METHOD(size_t, GetFirmwareVersion, (char *pFWVersion, size_t szBufSize), ());
     MOCK_METHOD(int, filePresentCheck, (const char *filename), ());
     MOCK_METHOD(bool, isConnectedToInternet, (), ());
-    MOCK_METHOD(int, rdkv_upgrade_request, 
-                (RdkUpgradeContext_t *context, const char *lastrun, int delay_dwnl, 
-                 const char *immed_reboot_flag, char *disableStatsUpdate, Rfc_t *rfc_list, 
-                 int force_exit), ());
+    MOCK_METHOD(int, rdkv_upgrade_request,(RdkUpgradeContext_t *context, void **curl, int *pHttp_code), ());
 };
 
 // Global mock pointer for C code to access

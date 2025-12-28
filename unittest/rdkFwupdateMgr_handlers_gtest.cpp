@@ -744,9 +744,25 @@ protected:
         memset(&response, 0, sizeof(XCONFRES));
         http_code = 0;
         
+        // Initialize global device_info and cur_img_detail (CRITICAL for avoiding segfault)
+        memset(&device_info, 0, sizeof(device_info));
+        memset(&cur_img_detail, 0, sizeof(cur_img_detail));
+
+	// Set up minimal device info to prevent NULL pointer dereferences
+        strncpy(device_info.dev_type, "hybrid", sizeof(device_info.dev_type) - 1);
+        strncpy(device_info.maint_status, "false", sizeof(device_info.maint_status) - 1);
+        strncpy(device_info.model, "TEST_MODEL", sizeof(device_info.model) - 1);
+
+
         // Clean up any existing cache files
         CleanupTestFiles();
-        
+	
+	 // Create mock instance if not already created
+        if (!g_RdkFwupdateMgrMock) {
+            g_RdkFwupdateMgrMock = new testing::NiceMock<RdkFwupdateMgrMock>();
+        }
+	
+
         // Initialize mocks (getRFCSettings is called by fetch_xconf_firmware_info)
         EXPECT_CALL(*g_RdkFwupdateMgrMock, getRFCSettings(testing::_))
             .WillRepeatedly(testing::Invoke([](Rfc_t* rfc_list) {
@@ -762,6 +778,12 @@ protected:
         
         // Clean up test files
         CleanupTestFiles();
+	// Clean up mock instance
+        if (g_RdkFwupdateMgrMock) {
+            delete g_RdkFwupdateMgrMock;
+            g_RdkFwupdateMgrMock = nullptr;
+        }
+
     }
     
     void CleanupTestFiles() {
@@ -780,7 +802,7 @@ protected:
  * @brief Verify complete success scenario with HTTP 200 and valid XConf response
  * @note DISABLED: Segfaults due to complex mock setup - needs investigation
  */
-TEST_F(FetchXconfFirmwareInfoTest, DISABLED_Success_Http200_ValidResponse_ParseSuccess) {
+TEST_F(FetchXconfFirmwareInfoTest, Success_Http200_ValidResponse_ParseSuccess) {
     const char* test_url = "http://xconf.test.example.com/xconf/swu/stb";
     const char* test_json = "{\"estbMacAddress\":\"AA:BB:CC:DD:EE:FF\"}";
     const char* xconf_response = MOCK_XCONF_RESPONSE_UPDATE_AVAILABLE;
@@ -812,14 +834,13 @@ TEST_F(FetchXconfFirmwareInfoTest, DISABLED_Success_Http200_ValidResponse_ParseS
         }));
     
     // Mock: rdkv_upgrade_request - simulates successful HTTP download
-    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_, testing::_, testing::_, testing::_, testing::_))
-        .WillOnce(testing::Invoke([](RdkUpgradeContext_t* context, const char* lastrun, int delay, const char* immed_reboot,
-                                      char* disableStats, Rfc_t* rfc, int force_exit) {
-            // Mock returns success - actual HTTP code is set via the pHttp_code parameter in real function
-            // For this mock, we just return 0 to indicate success
-            return 0; // Success
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
+        .WillOnce(testing::Invoke([](RdkUpgradeContext_t* context, void** curl, int* pHttp_code) {
+            // Simulate successful XConf communication: ret=0, http_code=200
+            *pHttp_code = 200;  // MUST set this - checked at line 289
+            return 0; // Success (0 = no errors)
         }));
-    
+
     // Mock: getXconfRespData - parse success
     EXPECT_CALL(*g_RdkFwupdateMgrMock, getXconfRespData(testing::_, testing::_))
         .WillOnce(testing::Invoke([](XCONFRES* pResponse, char* jsonData) {
@@ -862,7 +883,7 @@ TEST_F(FetchXconfFirmwareInfoTest, DISABLED_Success_Http200_ValidResponse_ParseS
  * @brief Verify proper error handling when download buffer allocation fails
  * @note DISABLED: Part of FetchXconfFirmwareInfoTest suite - needs investigation
  */
-TEST_F(FetchXconfFirmwareInfoTest, DISABLED_Failure_AllocDownloadDataMem_ReturnsError) {
+TEST_F(FetchXconfFirmwareInfoTest, Failure_AllocDownloadDataMem_ReturnsError) {
     // Mock: allocDowndLoadDataMem - failure
     EXPECT_CALL(*g_RdkFwupdateMgrMock, allocDowndLoadDataMem(testing::_, DEFAULT_DL_ALLOC))
         .WillOnce(testing::Return(-1));
@@ -887,7 +908,7 @@ TEST_F(FetchXconfFirmwareInfoTest, DISABLED_Failure_AllocDownloadDataMem_Returns
  * @brief Verify error handling when GetServURL returns 0 (no URL configured)
  * @note DISABLED: Part of FetchXconfFirmwareInfoTest suite - needs investigation
  */
-TEST_F(FetchXconfFirmwareInfoTest, DISABLED_Failure_GetServURL_ReturnsZero_NoValidURL) {
+TEST_F(FetchXconfFirmwareInfoTest, Failure_GetServURL_ReturnsZero_NoValidURL) {
     // Mock: allocDowndLoadDataMem - success
     EXPECT_CALL(*g_RdkFwupdateMgrMock, allocDowndLoadDataMem(testing::_, DEFAULT_DL_ALLOC))
         .WillOnce(testing::Return(0));
@@ -897,8 +918,9 @@ TEST_F(FetchXconfFirmwareInfoTest, DISABLED_Failure_GetServURL_ReturnsZero_NoVal
         .WillOnce(testing::Return(0));
     
     // Mock: createJsonString should still be called (before URL check)
-    EXPECT_CALL(*g_RdkFwupdateMgrMock, createJsonString(testing::_, JSON_STR_LEN))
-        .WillOnce(testing::Return(0));
+    //  (Code flow: GetServURL returns 0 - if(len) check fails - createJsonString never called)
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, createJsonString(testing::_, testing::_))
+        .Times(0);
     
     // Execute: Call fetch_xconf_firmware_info
     int result = fetch_xconf_firmware_info(&response, 0, &http_code);
@@ -928,7 +950,7 @@ TEST_F(FetchXconfFirmwareInfoTest, DISABLED_Failure_GetServURL_ReturnsZero_NoVal
  * @test fetch_xconf_firmware_info() JSON parse failure
  * @brief Verify error handling when getXconfRespData() fails to parse response
  */
-TEST_F(FetchXconfFirmwareInfoTest, DISABLED_Failure_GetXconfRespData_ParseFail) {
+TEST_F(FetchXconfFirmwareInfoTest, Failure_GetXconfRespData_ParseFail) {
     const char* test_url = "http://xconf.test.example.com/xconf/swu/stb";
     const char* test_json = "{\"estbMacAddress\":\"AA:BB:CC:DD:EE:FF\"}";
     const char* xconf_response = "{ \"invalid\": \"json\" ";  // Corrupt JSON
@@ -961,6 +983,12 @@ TEST_F(FetchXconfFirmwareInfoTest, DISABLED_Failure_GetXconfRespData_ParseFail) 
     
     // Note: rdkv_upgrade_request stub in miscellaneous_mock.cpp will return success
     // (ret=0, http_code=200) by default - no need to mock here
+     // Mock: rdkv_upgrade_request - simulates successful HTTP download
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
+        .WillOnce(testing::Invoke([](RdkUpgradeContext_t* context, void** curl, int* pHttp_code) {
+            *pHttp_code = 200;  // HTTP success
+            return 0;  // Success
+        }));
     
     // Mock: getXconfRespData - parse failure
     EXPECT_CALL(*g_RdkFwupdateMgrMock, getXconfRespData(testing::_, testing::_))
@@ -982,7 +1010,7 @@ TEST_F(FetchXconfFirmwareInfoTest, DISABLED_Failure_GetXconfRespData_ParseFail) 
  * @test fetch_xconf_firmware_info() cache creation
  * @brief Verify cache file is created after successful XConf fetch
  */
-TEST_F(FetchXconfFirmwareInfoTest, DISABLED_Success_CacheSaveSuccess) {
+TEST_F(FetchXconfFirmwareInfoTest, Success_CacheSaveSuccess) {
     const char* test_url = "http://xconf.test.example.com/xconf/swu/stb";
     const char* test_json = "{\"estbMacAddress\":\"AA:BB:CC:DD:EE:FF\"}";
     const char* xconf_response = MOCK_XCONF_RESPONSE_UPDATE_AVAILABLE;
@@ -1020,6 +1048,12 @@ TEST_F(FetchXconfFirmwareInfoTest, DISABLED_Success_CacheSaveSuccess) {
     
     // Note: rdkv_upgrade_request stub in miscellaneous_mock.cpp will return success
     // (ret=0, http_code=200) by default - no need to mock here
+    // Mock: rdkv_upgrade_request - simulates successful HTTP download
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
+        .WillOnce(testing::Invoke([](RdkUpgradeContext_t* context, void** curl, int* pHttp_code) {
+            *pHttp_code = 200;  // HTTP success
+            return 0;  // Success
+        }));
     
     // Mock: getXconfRespData - parse success
     EXPECT_CALL(*g_RdkFwupdateMgrMock, getXconfRespData(testing::_, testing::_))
@@ -1062,7 +1096,7 @@ TEST_F(FetchXconfFirmwareInfoTest, DISABLED_Success_CacheSaveSuccess) {
  * @test fetch_xconf_firmware_info() with server_type=0 (direct)
  * @brief Verify function works correctly with SERVER_DIRECT server type
  */
-TEST_F(FetchXconfFirmwareInfoTest, DISABLED_Success_ServerTypeDirect_ValidResponse) {
+TEST_F(FetchXconfFirmwareInfoTest, Success_ServerTypeDirect_ValidResponse) {
     const char* test_url = "http://xconf.direct.example.com/xconf/swu/stb";
     const char* test_json = "{\"estbMacAddress\":\"AA:BB:CC:DD:EE:FF\"}";
     const char* xconf_response = MOCK_XCONF_RESPONSE_UPDATE_AVAILABLE;
@@ -1096,7 +1130,12 @@ TEST_F(FetchXconfFirmwareInfoTest, DISABLED_Success_ServerTypeDirect_ValidRespon
     
     // Note: rdkv_upgrade_request stub in miscellaneous_mock.cpp will return success
     // (ret=0, http_code=200) and set server_type in context - no mocking needed
-    
+   // Mock: rdkv_upgrade_request - simulates successful HTTP download
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
+        .WillOnce(testing::Invoke([](RdkUpgradeContext_t* context, void** curl, int* pHttp_code) {
+            *pHttp_code = 200;  // HTTP success
+            return 0;  // Success
+        })); 
     // Mock: getXconfRespData - parse success
     EXPECT_CALL(*g_RdkFwupdateMgrMock, getXconfRespData(testing::_, testing::_))
         .WillOnce(testing::Invoke([](XCONFRES* pResponse, char* jsonData) {
