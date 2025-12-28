@@ -63,9 +63,9 @@ extern "C" {
     bool checkt2ValNotify( int iCurlCode, int iUpgradeType, char *Url  );
     unsigned int doGetDwnlBytes(void *in_curl);
     bool checkForTlsErrors(int curl_code, const char *type);
-    int retryDownload(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char *pPostFields, int retry_cnt, int delay, int *httpCode, void **curl, int *force_exit, const char *immed_reboot_flag, const DeviceProperty_t *device_info, const char *lastrun, const Rfc_t *rfc_list, char *disableStatsUpdate);
+    int retryDownload(const RdkUpgradeContext_t* context, int retry_cnt, int delay, int *httpCode, void **curl);
 
-    int downloadFile(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode, void **curl, int *force_exit, const char *immed_reboot_flag, const DeviceProperty_t *device_info, const char *lastrun, const Rfc_t *rfc_list, char *disableStatsUpdate);
+    int downloadFile(const RdkUpgradeContext_t* context, int *httpCode, void **curl);
     int checkTriggerUpgrade(XCONFRES *response, const char *model_num);
     void setForceStop(int value);
     T2ERROR t2_event_s(char* marker, char* value);
@@ -88,7 +88,7 @@ extern "C" {
     void getPidStore(const char *key, const char *value);
     void dwnlError(int curl_code, int http_code, int server_type, const DeviceProperty_t *device_info, const char *lastrun, char *disableStatsUpdate);
     int peripheral_firmware_dndl(char *pCloudFWLocation, char *pPeripheralFirmwares);
-    int fallBack(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char *pPostFields, int *httpCode, void **curl, int *force_exit, const char *immed_reboot_flag, const DeviceProperty_t *device_info, const char *lastrun, const Rfc_t *rfc_list, char *disableStatsUpdate);
+    int fallBack(const RdkUpgradeContext_t* context, int *httpCode, void **curl);
     void saveHTTPCode(int http_code, const char *lastrun);
     int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* pHttp_code);
     size_t getContentLength(const char *file);
@@ -274,7 +274,8 @@ TEST(MainHelperFunctionTest, checkForTlsErrorspositive){
 }
 
 TEST(MainHelperFunctionTest, retryDownloadtest){
-    EXPECT_EQ(retryDownload(1, NULL, NULL, NULL, 1, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL), -1);
+    // Test with NULL context - should handle gracefully
+    EXPECT_EQ(retryDownload(NULL, 1, 0, NULL, NULL), -1);
 }
 
 TEST(MainHelperFunctionTest, retryDownloadtest1){
@@ -284,7 +285,15 @@ TEST(MainHelperFunctionTest, retryDownloadtest1){
     int code = HTTP_SUCCESS;
     int force_exit = 0;
     void *curl = NULL;
-    EXPECT_EQ(retryDownload(HTTP_SSR_DIRECT, "test", "test1", (char*)"test2", 1, 0, &code, &curl, &force_exit, NULL, NULL, NULL, NULL, NULL), CURL_SUCCESS);
+    
+    RdkUpgradeContext_t context = {};
+    context.server_type = HTTP_SSR_DIRECT;
+    context.artifactLocationUrl = "test";
+    context.dwlloc = "test1";
+    context.pPostFields = (char*)"test2";
+    context.force_exit = &force_exit;
+    
+    EXPECT_EQ(retryDownload(&context, 1, 0, &code, &curl), CURL_SUCCESS);
     global_mockdownloadfileops_ptr = NULL;
 }
 TEST(MainHelperFunctionTest, retryDownloadtest2){
@@ -294,7 +303,15 @@ TEST(MainHelperFunctionTest, retryDownloadtest2){
     int code = HTTP_CHUNK_SUCCESS;
     int force_exit = 0;
     void *curl = NULL;
-    EXPECT_EQ(retryDownload(HTTP_XCONF_DIRECT, "test", "test1", (char*)"test2", 1, 0, &code, &curl, &force_exit, NULL, NULL, NULL, NULL, NULL), CURL_SUCCESS);
+    
+    RdkUpgradeContext_t context = {};
+    context.server_type = HTTP_XCONF_DIRECT;
+    context.artifactLocationUrl = "test";
+    context.dwlloc = "test1";
+    context.pPostFields = (char*)"test2";
+    context.force_exit = &force_exit;
+    
+    EXPECT_EQ(retryDownload(&context, 1, 0, &code, &curl), CURL_SUCCESS);
     global_mockdownloadfileops_ptr = NULL;
 }
 
@@ -305,7 +322,15 @@ TEST(MainHelperFunctionTest, retryDownloadtest3){
     int code = HTTP_PAGE_NOT_FOUND;
     int force_exit = 0;
     void *curl = NULL;
-    EXPECT_EQ(retryDownload(HTTP_XCONF_DIRECT, "test", "test1", (char*)"test2", 1, 0, &code, &curl, &force_exit, NULL, NULL, NULL, NULL, NULL), !CURL_SUCCESS);
+    
+    RdkUpgradeContext_t context = {};
+    context.server_type = HTTP_XCONF_DIRECT;
+    context.artifactLocationUrl = "test";
+    context.dwlloc = "test1";
+    context.pPostFields = (char*)"test2";
+    context.force_exit = &force_exit;
+    
+    EXPECT_EQ(retryDownload(&context, 1, 0, &code, &curl), !CURL_SUCCESS);
     global_mockdownloadfileops_ptr = NULL;
 }
 
@@ -316,7 +341,15 @@ TEST(MainHelperFunctionTest, retryDownloadtest4){
     int code = DWNL_BLOCK;
     int force_exit = 0;
     void *curl = NULL;
-    EXPECT_EQ(retryDownload(HTTP_XCONF_DIRECT, "test", "test1", (char*)"test2", 1, 0, &code, &curl, &force_exit, NULL, NULL, NULL, NULL, NULL), !CURL_SUCCESS);
+    
+    RdkUpgradeContext_t context = {};
+    context.server_type = HTTP_XCONF_DIRECT;
+    context.artifactLocationUrl = "test";
+    context.dwlloc = "test1";
+    context.pPostFields = (char*)"test2";
+    context.force_exit = &force_exit;
+    
+    EXPECT_EQ(retryDownload(&context, 1, 0, &code, &curl), !CURL_SUCCESS);
     global_mockdownloadfileops_ptr = NULL;
 }
 
@@ -327,7 +360,15 @@ TEST(MainHelperFunctionTest, retryDownloadtest5){
     int code = HTTP_SUCCESS;
     int force_exit = 0;
     void *curl = NULL;
-    EXPECT_EQ(retryDownload(HTTP_SSR_DIRECT, "test", "test1", (char*)"test2", 1, 0, &code, &curl, &force_exit, NULL, NULL, NULL, NULL, NULL), !CURL_SUCCESS);
+    
+    RdkUpgradeContext_t context = {};
+    context.server_type = HTTP_SSR_DIRECT;
+    context.artifactLocationUrl = "test";
+    context.dwlloc = "test1";
+    context.pPostFields = (char*)"test2";
+    context.force_exit = &force_exit;
+    
+    EXPECT_EQ(retryDownload(&context, 1, 0, &code, &curl), !CURL_SUCCESS);
     global_mockdownloadfileops_ptr = NULL;
 
 }
@@ -339,7 +380,15 @@ TEST(MainHelperFunctionTest, retryDownloadtest6){
     int code = HTTP_SUCCESS;
     int force_exit = 0;
     void *curl = NULL;
-    EXPECT_EQ(retryDownload(HTTP_SSR_CODEBIG, "test", "test1", (char*)"test2", 1, 0, &code, &curl, &force_exit, NULL, NULL, NULL, NULL, NULL), CURL_SUCCESS);
+    
+    RdkUpgradeContext_t context = {};
+    context.server_type = HTTP_SSR_CODEBIG;
+    context.artifactLocationUrl = "test";
+    context.dwlloc = "test1";
+    context.pPostFields = (char*)"test2";
+    context.force_exit = &force_exit;
+    
+    EXPECT_EQ(retryDownload(&context, 1, 0, &code, &curl), CURL_SUCCESS);
     global_mockdownloadfileops_ptr = NULL;
 
 }
@@ -351,7 +400,15 @@ TEST(MainHelperFunctionTest, retryDownloadtest7){
     int code = HTTP_PAGE_NOT_FOUND;
     int force_exit = 0;
     void *curl = NULL;
-    EXPECT_EQ(retryDownload(HTTP_SSR_CODEBIG, "test", "test1", (char*)"test2", 1, 0, &code, &curl, &force_exit, NULL, NULL, NULL, NULL, NULL), !CURL_SUCCESS);
+    
+    RdkUpgradeContext_t context = {};
+    context.server_type = HTTP_SSR_CODEBIG;
+    context.artifactLocationUrl = "test";
+    context.dwlloc = "test1";
+    context.pPostFields = (char*)"test2";
+    context.force_exit = &force_exit;
+    
+    EXPECT_EQ(retryDownload(&context, 1, 0, &code, &curl), !CURL_SUCCESS);
     global_mockdownloadfileops_ptr = NULL;
 
 }
@@ -363,7 +420,15 @@ TEST(MainHelperFunctionTest, retryDownloadtest8){
     int code = HTTP_SUCCESS;
     int force_exit = 0;
     void *curl = NULL;
-    EXPECT_EQ(retryDownload(HTTP_SSR_CODEBIG, "test", "test1", (char*)"test2", 1, 1, &code, &curl, &force_exit, NULL, NULL, NULL, NULL, NULL), !CURL_SUCCESS);
+    
+    RdkUpgradeContext_t context = {};
+    context.server_type = HTTP_SSR_CODEBIG;
+    context.artifactLocationUrl = "test";
+    context.dwlloc = "test1";
+    context.pPostFields = (char*)"test2";
+    context.force_exit = &force_exit;
+    
+    EXPECT_EQ(retryDownload(&context, 1, 1, &code, &curl), !CURL_SUCCESS);
     global_mockdownloadfileops_ptr = NULL;
 }
 
@@ -842,7 +907,9 @@ TEST(checkTriggerUpgradeTest, TestPdriUpgradeSuccess) {
 }
 
 TEST(MainHelperFunctionTest, fallBackTestNULL){
-     EXPECT_EQ(fallBack(1, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL), -1);   
+     int http_code = 0;
+     void *curl = NULL;
+     EXPECT_EQ(fallBack(NULL, &http_code, &curl), -1);   
 }
 
 TEST(MainHelperFunctionTest, fallBackTestSuccess){
@@ -851,8 +918,17 @@ TEST(MainHelperFunctionTest, fallBackTestSuccess){
     int http_code = 200;
     int force_exit = 0;
     void *curl = NULL;
+    
+    // Create context structure with HTTP_XCONF_DIRECT
+    RdkUpgradeContext_t context = {0};
+    context.upgrade_type = HTTP_XCONF_DIRECT;
+    context.server_type = HTTP_XCONF_DIRECT;
+    context.force_exit = &force_exit;
+    context.artifactLocationUrl = "test";
+    context.dwlloc = "test1";
+    
     EXPECT_CALL(mockfileops, downloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(CURL_SUCCESS));
-    EXPECT_EQ(fallBack(HTTP_XCONF_DIRECT, "test", "test1", (char*)"test2", &http_code, &curl, &force_exit, NULL, NULL, NULL, NULL, NULL), CURL_SUCCESS);
+    EXPECT_EQ(fallBack(&context, &http_code, &curl), CURL_SUCCESS);
     global_mockdownloadfileops_ptr = NULL;
 }
 
@@ -862,8 +938,17 @@ TEST(MainHelperFunctionTest, fallBackTestFailure){
     int http_code = 200;
     int force_exit = 0;
     void *curl = NULL;
+    
+    // Create context structure with HTTP_XCONF_DIRECT
+    RdkUpgradeContext_t context = {0};
+    context.upgrade_type = HTTP_XCONF_DIRECT;
+    context.server_type = HTTP_XCONF_DIRECT;
+    context.force_exit = &force_exit;
+    context.artifactLocationUrl = "test";
+    context.dwlloc = "test1";
+    
     EXPECT_CALL(mockfileops, downloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(!CURL_SUCCESS));
-    EXPECT_EQ(fallBack(HTTP_XCONF_DIRECT, "test", "test1", (char*)"test2", &http_code, &curl, &force_exit, NULL, NULL, NULL, NULL, NULL), !CURL_SUCCESS);
+    EXPECT_EQ(fallBack(&context, &http_code, &curl), !CURL_SUCCESS);
     global_mockdownloadfileops_ptr = NULL;
 }
 
@@ -873,8 +958,17 @@ TEST(MainHelperFunctionTest, fallBackTestSuccessCodebig){
     int http_code = 200;
     int force_exit = 0;
     void *curl = NULL;
+    
+    // Create context structure with HTTP_SSR_CODEBIG
+    RdkUpgradeContext_t context = {0};
+    context.upgrade_type = HTTP_SSR_CODEBIG;
+    context.server_type = HTTP_SSR_CODEBIG;
+    context.force_exit = &force_exit;
+    context.artifactLocationUrl = "test";
+    context.dwlloc = "test1";
+    
     EXPECT_CALL(mockfileops, codebigdownloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(CURL_SUCCESS));
-    EXPECT_EQ(fallBack(HTTP_SSR_CODEBIG, "test", "test1", (char*)"test2", &http_code, &curl, &force_exit, NULL, NULL, NULL, NULL, NULL), CURL_SUCCESS);
+    EXPECT_EQ(fallBack(&context, &http_code, &curl), CURL_SUCCESS);
     global_mockdownloadfileops_ptr = NULL;
 }
 
@@ -884,8 +978,17 @@ TEST(MainHelperFunctionTest, fallBackTestFailureCodebig){
     int http_code = 200;
     int force_exit = 0;
     void *curl = NULL;
+    
+    // Create context structure with HTTP_SSR_CODEBIG
+    RdkUpgradeContext_t context = {0};
+    context.upgrade_type = HTTP_SSR_CODEBIG;
+    context.server_type = HTTP_SSR_CODEBIG;
+    context.force_exit = &force_exit;
+    context.artifactLocationUrl = "test";
+    context.dwlloc = "test1";
+    
     EXPECT_CALL(mockfileops, codebigdownloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(!CURL_SUCCESS));
-    EXPECT_EQ(fallBack(HTTP_SSR_CODEBIG, "test", "test1", (char*)"test2", &http_code, &curl, &force_exit, NULL, NULL, NULL, NULL, NULL), !CURL_SUCCESS);
+    EXPECT_EQ(fallBack(&context, &http_code, &curl), !CURL_SUCCESS);
     global_mockdownloadfileops_ptr = NULL;
 }
 
@@ -1276,8 +1379,8 @@ TEST(MainHelperFunctionTest,copyFileTestFail){
     EXPECT_EQ(copyFile(NULL, NULL), -1);
 }
 TEST(MainHelperFunctionTest,copyFileTestSuccess){
-    char *src = "/tmp/src.txt";
-    char *dst = "/tmp/dst.txt";
+    const char *src = "/tmp/src.txt";
+    const char *dst = "/tmp/dst.txt";
     int ret = 0;
     ret = system("echo \"tesing\" > /tmp/src.txt");
     EXPECT_EQ(copyFile(src, dst), 0);

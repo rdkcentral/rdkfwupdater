@@ -208,7 +208,12 @@ static gboolean save_xconf_to_cache(const char *xconf_response, int http_code) {
     return TRUE;
 }
 
+#ifdef GTEST_ENABLE
+// Exposed for unit testing - normally static
+int fetch_xconf_firmware_info( XCONFRES *pResponse, int server_type, int *pHttp_code )
+#else
 static int fetch_xconf_firmware_info( XCONFRES *pResponse, int server_type, int *pHttp_code )
+#endif
 {
     DownloadData DwnLoc;
     char *pJSONStr = NULL;      // contains the device data string to send to XCONF server
@@ -265,9 +270,11 @@ static int fetch_xconf_firmware_info( XCONFRES *pResponse, int server_type, int 
                     xconf_context.trigger_type = local_trigger_type;
                     xconf_context.rfc_list = &local_rfc_list;  
 
+                    #ifndef GTEST_ENABLE
                     SWLOG_INFO("Simulating a 120 seconds sleep()\n");
                     sleep(120);
                     SWLOG_INFO("Just now completed 120 seconds sleep\n");
+                    #endif
                     SWLOG_INFO("fetch_xconf_firmware_info: Initiating XConf request with server_type=%d\n", server_type);
                     SWLOG_INFO("fetch_xconf_firmware_info: Context setup - device_info=%p, rfc_list=%p\n", 
                                xconf_context.device_info, xconf_context.rfc_list);

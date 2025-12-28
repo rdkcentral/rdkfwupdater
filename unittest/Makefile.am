@@ -90,6 +90,7 @@ rdkFwupdateMgr_handlers_gtest_SOURCES = rdkFwupdateMgr_handlers_gtest.cpp \
     ../src/dbus/rdkFwupdateMgr_handlers.c \
     deviceutils/json_parse.c
 # Note: json_process.c is mocked in rdkFwupdateMgr_mock.cpp to control XConf parsing behavior
+# Note: rdkFwupdateMgr_mock.cpp provides stubs for current_flash, rfc_list, IsFlashInProgress, SWLOG_* functions
 
 # Apply common properties to each program
 rdkfw_device_status_gtest_CPPFLAGS = $(COMMON_CPPFLAGS)
@@ -118,7 +119,7 @@ rdkfwupdatemgr_gtest_LDADD = $(COMMON_LDADD)
 rdkfwupdatemgr_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
 rdkfwupdatemgr_gtest_CFLAGS = $(COMMON_CXXFLAGS)
 
-rdkFwupdateMgr_handlers_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -I../src/dbus $(GLIB_CFLAGS)
+rdkFwupdateMgr_handlers_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -I../src/dbus $(GLIB_CFLAGS) -DHANDLER_TEST_ONLY
 rdkFwupdateMgr_handlers_gtest_LDFLAGS = $(GLIB_LIBS)
 rdkFwupdateMgr_handlers_gtest_LDADD = $(COMMON_LDADD)
 rdkFwupdateMgr_handlers_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)

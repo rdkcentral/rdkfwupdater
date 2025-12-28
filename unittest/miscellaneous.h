@@ -78,4 +78,14 @@ typedef struct imagedetails {
 
 // define the functions to avoid compiler errors
 
+// File utility functions (from system_utils.h in production)
+#ifdef __cplusplus
+extern "C" {
+#endif
+int filePresentCheck(const char *file_name);
+int createFile(const char *file_name);
+#ifdef __cplusplus
+}
+#endif
+
 #endif

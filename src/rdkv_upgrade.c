@@ -11,6 +11,7 @@
 #include "codebigUtils.h"
 #include "mtlsUtils.h"
 #include "downloadUtil.h"
+#include "system_utils.h"
 #endif
 #include "flash.h"
 
@@ -561,9 +562,9 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
                 Upgradet2CountNotify("SYST_INFO_PDRIUpgSuccess", 1);
             }
             
-            // Check download_only flag - if TRUE, skip flashing (for D-Bus DownloadFirmware API)
-            if (context->download_only == TRUE) {
-                SWLOG_INFO("download_only flag is TRUE - skipping flash operation\n");
+            // Check download_only flag - if 1 (true), skip flashing (for D-Bus DownloadFirmware API)
+            if (context->download_only == 1) {
+                SWLOG_INFO("download_only flag is set - skipping flash operation\n");
                 SWLOG_INFO("Download completed successfully without flashing\n");
             }
             else if (upgrade_type == PCI_UPGRADE || upgrade_type == PDRI_UPGRADE) {
@@ -1060,12 +1061,18 @@ int retryDownload(
     int *httpCode,
     void **curl
 ) {
+    int curl_ret_code = -1;
+    int retry_completed = 1;
+    
+    // Validate context pointer first
+    if (context == NULL) {
+        SWLOG_ERROR("%s: Context is NULL\n", __FUNCTION__);
+        return curl_ret_code;
+    }
+    
     int server_type = context->server_type;
     const char* artifactLocationUrl = context->artifactLocationUrl;
     const void* localDownloadLocation = context->dwlloc;
-
-    int curl_ret_code = -1;
-    int retry_completed = 1;
     
     if (artifactLocationUrl == NULL || localDownloadLocation == NULL || httpCode == NULL || curl == NULL) {
         SWLOG_ERROR("%s: Parameter is NULL\n", __FUNCTION__);
@@ -1133,11 +1140,17 @@ int fallBack(
     int *httpCode,
     void **curl
 ) {
+    int curl_ret_code = -1;
+
+    // Check context first before accessing its members
+    if (context == NULL) {
+        SWLOG_ERROR("%s: Context is NULL\n", __FUNCTION__);
+        return curl_ret_code;
+    }
+
     int server_type = context->server_type;
     const char* artifactLocationUrl = context->artifactLocationUrl;
     const void* localDownloadLocation = context->dwlloc;
-
-    int curl_ret_code = -1;
 
     if (artifactLocationUrl == NULL || localDownloadLocation == NULL || httpCode == NULL || curl == NULL) {
         SWLOG_ERROR("%s: Parameter is NULL\n", __FUNCTION__);

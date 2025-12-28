@@ -346,3 +346,66 @@ extern "C" int processJsonResponse(XCONFRES *response, const char *myfwversion, 
     // Return 0 for "update available", -1 for error, 1 for "no update needed"
     return 0;  // Default: update available
 }
+
+// =============================================================================
+// D-Bus Server Stubs (for rdkFwupdateMgr_handlers.c)
+// =============================================================================
+
+extern "C" {
+    // Forward declarations for types
+    typedef struct _CurrentFlashState CurrentFlashState;
+    
+    #ifndef TRUE
+    #define TRUE 1
+    #define FALSE 0
+    #endif
+    
+    #ifndef gboolean
+    typedef int gboolean;
+    #endif
+    
+    // Global flash state (used by cleanup_flash_state_idle in handlers.c)
+    CurrentFlashState *current_flash = NULL;
+    
+    // Global RFC configuration (used by rdkFwupdateMgr_downloadFirmware in handlers.c)
+    Rfc_t rfc_list = {0};
+    
+    // Flash status check function (defined in rdkv_dbus_server.c)
+    gboolean IsFlashInProgress(void) {
+        return (current_flash != NULL) ? TRUE : FALSE;
+    }
+}
+
+// SWLOG stub functions - rdkv_cdl_log_wrapper.h defines these as macros,
+// but rdkFwupdateMgr_handlers.c might call them as functions.
+// We undefine the macros and provide stub functions instead.
+#ifdef SWLOG_DEBUG
+#undef SWLOG_DEBUG
+#endif
+#ifdef SWLOG_INFO
+#undef SWLOG_INFO
+#endif
+#ifdef SWLOG_WARN
+#undef SWLOG_WARN
+#endif
+#ifdef SWLOG_ERROR
+#undef SWLOG_ERROR
+#endif
+
+extern "C" {
+    void SWLOG_DEBUG(const char* format, ...) {
+        // Stub - suppress output in tests
+    }
+    
+    void SWLOG_INFO(const char* format, ...) {
+        // Stub - suppress output in tests
+    }
+    
+    void SWLOG_WARN(const char* format, ...) {
+        // Stub - suppress output in tests
+    }
+    
+    void SWLOG_ERROR(const char* format, ...) {
+        // Stub - suppress output in tests
+    }
+}

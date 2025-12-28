@@ -96,6 +96,26 @@ void checkupdate_response_free(CheckUpdateResponse *response);
  */
 gboolean xconf_cache_exists(void);
 
+#ifdef GTEST_ENABLE
+/*
+ * Fetch Firmware Info from XConf Server (Exposed for Unit Testing)
+ * 
+ * Internal function that queries the XConf server for firmware update information.
+ * Normally static, but exposed under GTEST_ENABLE for comprehensive unit testing.
+ * 
+ * Parameters:
+ *   pResponse   - Output structure to populate with XConf response data
+ *   server_type - Server type (0=direct, 1=codebig)
+ *   pHttp_code  - Output HTTP response code (200=success)
+ * 
+ * Returns:
+ *   0 on success, -1 on failure
+ * 
+ * Note: This is an internal function - use rdkFwupdateMgr_checkForUpdate() for production code.
+ */
+int fetch_xconf_firmware_info(XCONFRES *pResponse, int server_type, int *pHttp_code);
+#endif
+
 /*
  * Download Firmware Result Codes
  * 
