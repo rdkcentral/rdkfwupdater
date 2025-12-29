@@ -51,9 +51,9 @@
 #define PROGRESS_THROTTLE_PERCENT    1.0   // Emit signal only if progress changed by ≥1%
 #define PROGRESS_MONITOR_TIMEOUT_SEC 600   // 10 minutes max without progress
 
-// *** NEW: Forward declarations ***
+// *** Forward declarations ***
 typedef struct _ProgressData ProgressData;
-static gboolean emit_download_progress_idle(gpointer user_data);
+gboolean emit_download_progress_idle(gpointer user_data);
 
 // *** NEW: Progress data for g_idle_add callback ***
 /**
@@ -149,7 +149,7 @@ gboolean xconf_cache_exists(void) {
  * Reads cached XConf JSON response and parses it into XCONFRES structure.
  * Cache miss or parse failure returns FALSE - caller should fetch from XConf server.
  */
-static gboolean load_xconf_from_cache(XCONFRES *pResponse) {
+gboolean load_xconf_from_cache(XCONFRES *pResponse) {
     gchar *cache_content = NULL;
     gsize length;
     GError *error = NULL;
@@ -164,7 +164,8 @@ static gboolean load_xconf_from_cache(XCONFRES *pResponse) {
     }
     
     SWLOG_INFO("[CACHE] Loaded %zu bytes from cache\n", length);
-    
+    SWLOG_INFO("[CACHE] Cache content: %s\n", cache_content);
+
     // Parse cached JSON using existing parser
     int parse_result = getXconfRespData(pResponse, cache_content);
     if (parse_result == 0) {
@@ -525,7 +526,7 @@ static CheckUpdateResponse create_result_response(CheckForUpdateStatus status_co
  * @param user_data ProgressData* (must not be NULL, will be freed)
  * @return FALSE always (remove from idle queue after one run)
  */
-static gboolean emit_download_progress_idle(gpointer user_data) {
+ gboolean emit_download_progress_idle(gpointer user_data) {
     ProgressData* data = (ProgressData*)user_data;
     
     // NULL CHECK: Validate input

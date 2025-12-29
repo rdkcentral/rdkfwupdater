@@ -39,7 +39,7 @@ public:
     virtual ~RdkFwupdateMgrInterface() {}
     
     // XConf communication mocks
-    virtual int getXconfRespData(XCONFRES *pResponse, char *jsonData) = 0;
+    //virtual int getXconfRespData(XCONFRES *pResponse, char *jsonData) = 0;
     virtual size_t GetServURL(char *pServURL, size_t szBufSize) = 0;
     virtual size_t createJsonString(char *pJSONStr, size_t szBufSize) = 0;
     virtual int allocDowndLoadDataMem(DownloadData *pDwnLoc, int size) = 0;
@@ -67,7 +67,7 @@ class RdkFwupdateMgrMock : public RdkFwupdateMgrInterface {
 public:
     virtual ~RdkFwupdateMgrMock() {}
     
-    MOCK_METHOD(int, getXconfRespData, (XCONFRES *pResponse, char *jsonData), ());
+    //MOCK_METHOD(int, getXconfRespData, (XCONFRES *pResponse, char *jsonData), ());
     MOCK_METHOD(size_t, GetServURL, (char *pServURL, size_t szBufSize), ());
     MOCK_METHOD(size_t, createJsonString, (char *pJSONStr, size_t szBufSize), ());
     MOCK_METHOD(int, allocDowndLoadDataMem, (DownloadData *pDwnLoc, int size), ());

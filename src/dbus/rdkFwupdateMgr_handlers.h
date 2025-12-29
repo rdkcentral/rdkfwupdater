@@ -258,5 +258,5 @@ int rdkFwupdateMgr_unregisterProcess(guint64 handler_id);
  *       progress monitoring during firmware downloads.
  */
 gpointer rdkfw_progress_monitor_thread(gpointer user_data);
-
+gboolean load_xconf_from_cache(XCONFRES *pResponse);
 #endif // RDKFWUPDATEMGR_HANDLERS_H

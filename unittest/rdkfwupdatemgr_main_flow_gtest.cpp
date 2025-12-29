@@ -145,7 +145,8 @@ protected:
     }
 
     // Helper: Create test file with content
-    void CreateTestFile(const char *filename, const char *content) {
+    
+    void TestFileCreate(const char *filename, const char *content) {
         FILE *fp = fopen(filename, "w");
         if (fp) {
             fputs(content, fp);
@@ -256,7 +257,7 @@ TEST_F(RdkFwupdateMgrMainFlowTest, CopyFile_Success) {
     const char *dst = "/tmp/test_copyfile_dst.txt";
     const char *content = "Test content for copy\n";
     
-    CreateTestFile(src, content);
+    TestFileCreate(src, content);
     
     // Test copyFile
     int result = copyFile(src, dst);
@@ -307,7 +308,7 @@ TEST_F(RdkFwupdateMgrMainFlowTest, CopyFile_NullParameters) {
 TEST_F(RdkFwupdateMgrMainFlowTest, PrevCurUpdateInfo_CDLFlashedExists_VersionMatches) {
     // Setup: CDL flashed file exists with matching version
     const char *version = "TEST_v1.0.0";
-    CreateTestFile(TEST_CDL_FLASHED_IMAGE, "TEST_v1.0.0-signed.bin\n");
+    TestFileCreate(TEST_CDL_FLASHED_IMAGE, "TEST_v1.0.0-signed.bin\n");
     
     // Mock GetFirmwareVersion to return matching version
     // In real test, mock would return "TEST_v1.0.0"
@@ -323,8 +324,8 @@ TEST_F(RdkFwupdateMgrMainFlowTest, PrevCurUpdateInfo_CDLFlashedExists_VersionMat
 
 TEST_F(RdkFwupdateMgrMainFlowTest, PrevCurUpdateInfo_CDLFlashedExists_VersionMismatch_WithPrevious) {
     // Setup: CDL flashed has wrong version, but previous has correct version
-    CreateTestFile(TEST_CDL_FLASHED_IMAGE, "WRONG_v1.0.0-signed.bin\n");
-    CreateTestFile(TEST_PREVIOUS_FLASHED_IMAGE, "CORRECT_v2.0.0-signed.bin\n");
+    TestFileCreate(TEST_CDL_FLASHED_IMAGE, "WRONG_v1.0.0-signed.bin\n");
+    TestFileCreate(TEST_PREVIOUS_FLASHED_IMAGE, "CORRECT_v2.0.0-signed.bin\n");
     
     // Test
     int result = prevCurUpdateInfo();
@@ -338,7 +339,7 @@ TEST_F(RdkFwupdateMgrMainFlowTest, PrevCurUpdateInfo_CDLFlashedExists_VersionMis
 
 TEST_F(RdkFwupdateMgrMainFlowTest, PrevCurUpdateInfo_CDLFlashedExists_VersionMismatch_NoPrevious) {
     // Setup: CDL flashed has wrong version, no previous file
-    CreateTestFile(TEST_CDL_FLASHED_IMAGE, "WRONG_v1.0.0-signed.bin\n");
+    TestFileCreate(TEST_CDL_FLASHED_IMAGE, "WRONG_v1.0.0-signed.bin\n");
     
     // Test
     int result = prevCurUpdateInfo();
@@ -371,7 +372,7 @@ TEST_F(RdkFwupdateMgrMainFlowTest, PrevCurUpdateInfo_MultipleScenarios) {
     CleanupTestFiles();
     
     // Scenario 2: CDL flashed exists
-    CreateTestFile(TEST_CDL_FLASHED_IMAGE, "TEST-signed.bin\n");
+    TestFileCreate(TEST_CDL_FLASHED_IMAGE, "TEST-signed.bin\n");
     int result2 = prevCurUpdateInfo();
     EXPECT_EQ(result2, 0);
 }
@@ -417,7 +418,7 @@ TEST_F(RdkFwupdateMgrMainFlowTest, InitialValidation_PrepareToRebootFileExists) 
     // Test when fw_preparing_to_reboot file exists
     // Should return INITIAL_VALIDATION_DWNL_COMPLETED
     
-    CreateTestFile(TEST_FW_PREPARING_REBOOT, "1");
+    TestFileCreate(TEST_FW_PREPARING_REBOOT, "1");
     
     // Note: Real test requires mocking filePresentCheck() for this specific file
     

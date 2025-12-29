@@ -37,7 +37,7 @@ extern "C" {
 // =============================================================================
 // XConf communication functions
 // =============================================================================
-
+/*
 extern "C" int getXconfRespData(XCONFRES *pResponse, char *jsonData) {
     if (!g_RdkFwupdateMgrMock) {
         cerr << "getXconfRespData: g_RdkFwupdateMgrMock is NULL" << endl;
@@ -45,7 +45,7 @@ extern "C" int getXconfRespData(XCONFRES *pResponse, char *jsonData) {
     }
     return g_RdkFwupdateMgrMock->getXconfRespData(pResponse, jsonData);
 }
-
+*/
 extern "C" size_t GetServURL(char *pServURL, size_t szBufSize) {
     if (!g_RdkFwupdateMgrMock) {
         cerr << "GetServURL: g_RdkFwupdateMgrMock is NULL" << endl;
@@ -331,7 +331,7 @@ extern "C" void eventManager(int event_type, const char *event_data) {
     // Stub - event manager
     printf("EventManager: type=%d, data=%s\n", event_type, event_data ? event_data : "NULL");
 }
-
+/*
 extern "C" int processJsonResponse(XCONFRES *response, const char *myfwversion, const char *model, const char *maint) {
     // Stub - return success (firmware available)
     // In real code, this compares versions and validates the response
@@ -341,7 +341,7 @@ extern "C" int processJsonResponse(XCONFRES *response, const char *myfwversion, 
     // Return 0 for "update available", -1 for error, 1 for "no update needed"
     return 0;  // Default: update available
 }
-
+*/
 // =============================================================================
 // D-Bus Server Stubs (for rdkFwupdateMgr_handlers.c)
 // =============================================================================
