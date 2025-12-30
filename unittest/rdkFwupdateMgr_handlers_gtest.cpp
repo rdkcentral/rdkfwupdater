@@ -78,7 +78,6 @@ extern "C" {
 
 // External declarations for functions under test
 extern gboolean xconf_cache_exists(void);
-// Note: load_xconf_from_cache and save_xconf_to_cache are static, tested indirectly
 
 // External variables from rdkFwupdateMgr_handlers.c
 extern DeviceProperty_t device_info;
@@ -238,7 +237,6 @@ protected:
      * @return true if successful, false otherwise
      */
     bool CreateTestFile(const char *filename, const char *content) {
-        printf("At Line 259 ++++++++++++++++++++++++++++\n");
 	if (!filename || !content) {
         printf("ERROR: CreateTestFile - NULL filename or content\n");
         return false;
@@ -1234,3 +1232,170 @@ TEST_F(RdkFwupdateMgrHandlersTest, LoadXconfFromCache_ReadPermissionDenied_Retur
     EXPECT_FALSE(result) << "Should return FALSE if cache file cannot be read";
     chmod(TEST_XCONF_CACHE_FILE, 0644); // Restore permissions for cleanup
 }
+
+/**
+ * @test load_xconf_from_cache returns false when cache file is empty
+ * @brief Verifies that empty cache files are handled gracefully
+ */
+TEST_F(RdkFwupdateMgrHandlersTest, LoadXconfFromCache_EmptyCache_ReturnsFalse) {
+    /* Arrange: Create empty cache file */
+    CreateTestFile(TEST_XCONF_CACHE_FILE, "");
+    CreateTestFile(TEST_XCONF_HTTP_CODE_FILE, "200");
+    
+    XCONFRES response = {0};
+    
+    /* Act: Attempt to load from empty cache */
+    gboolean result = load_xconf_from_cache(&response);
+    
+    /* Assert: Should return FALSE for empty file */
+    EXPECT_FALSE(result) << "Should return FALSE when cache file is empty";
+    EXPECT_STREQ(response.cloudFWVersion, "") << "Response should remain empty";
+}
+
+/**
+ * @test save_xconf_to_cache creates cache file with valid XConf response
+ * @brief Verifies successful cache file creation with proper content
+ */
+TEST_F(RdkFwupdateMgrHandlersTest, SaveXconfToCache_ValidData_CreatesFile) {
+    /* Arrange: Ensure cache doesn't exist */
+    remove(TEST_XCONF_CACHE_FILE);
+    remove(TEST_XCONF_HTTP_CODE_FILE);
+
+    const char* xconf_response = MOCK_XCONF_RESPONSE_UPDATE_AVAILABLE;
+    int http_code = 200;
+
+    /* Act: Save valid XConf response to cache */
+    gboolean result = save_xconf_to_cache(xconf_response, http_code);
+
+    /* Assert: Cache files should be created */
+    EXPECT_TRUE(result) << "save_xconf_to_cache should return TRUE on success";
+    EXPECT_TRUE(g_file_test(TEST_XCONF_CACHE_FILE, G_FILE_TEST_EXISTS))
+        << "XConf cache file should exist";
+    EXPECT_TRUE(g_file_test(TEST_XCONF_HTTP_CODE_FILE, G_FILE_TEST_EXISTS))
+        << "HTTP code cache file should exist";
+
+    /* Verify content is correct */
+    gchar *cached_content = NULL;
+    gsize length;
+    gboolean read_result = g_file_get_contents(TEST_XCONF_CACHE_FILE, &cached_content, &length, NULL);
+    ASSERT_TRUE(read_result) << "Should be able to read cache file";
+    EXPECT_STREQ(cached_content, xconf_response) << "Cache content should match input";
+    g_free(cached_content);
+
+    /* Verify HTTP code file */
+    gchar *http_code_content = NULL;
+    read_result = g_file_get_contents(TEST_XCONF_HTTP_CODE_FILE, &http_code_content, &length, NULL);
+    ASSERT_TRUE(read_result) << "Should be able to read HTTP code file";
+    EXPECT_STREQ(http_code_content, "200") << "HTTP code should be saved correctly";
+    g_free(http_code_content);
+}
+
+
+/**
+ * @test save_xconf_to_cache returns false when given NULL response data
+ * @brief Verifies NULL input validation in cache save function
+ */
+TEST_F(RdkFwupdateMgrHandlersTest, SaveXconfToCache_NullData_ReturnsFalse) {
+    /* Arrange: Remove any existing cache */
+    remove(TEST_XCONF_CACHE_FILE);
+    
+    /* Act: Attempt to save NULL data */
+    gboolean result = save_xconf_to_cache(NULL, 200);
+    
+    /* Assert: Should return FALSE and not create cache file */
+    EXPECT_FALSE(result) << "Should return FALSE when response is NULL";
+    EXPECT_FALSE(g_file_test(TEST_XCONF_CACHE_FILE, G_FILE_TEST_EXISTS)) 
+        << "Should not create cache file with NULL data";
+}
+
+/**
+ * @test save_xconf_to_cache handles empty response string gracefully
+ * @brief Verifies behavior when given empty string (not NULL)
+ */
+TEST_F(RdkFwupdateMgrHandlersTest, SaveXconfToCache_EmptyResponse_HandlesGracefully) {
+    /* Arrange: Remove any existing cache */
+    remove(TEST_XCONF_CACHE_FILE);
+
+    /* Act: Attempt to save empty string */
+    gboolean result = save_xconf_to_cache("", 200);
+
+    /* Assert: Should return FALSE or handle gracefully */
+    EXPECT_FALSE(result) << "Should return FALSE for empty response string";
+
+    /* If it created a file, it should be empty */
+    if (g_file_test(TEST_XCONF_CACHE_FILE, G_FILE_TEST_EXISTS)) {
+        gchar *content = NULL;
+        gsize length;
+        g_file_get_contents(TEST_XCONF_CACHE_FILE, &content, &length, NULL);
+        EXPECT_EQ(length, 0) << "If file created, should be empty";
+        g_free(content);
+    }
+}
+
+/**
+ * @test save_xconf_to_cache overwrites existing cache file with new data
+ * @brief Verifies that cache updates work correctly when cache already exists
+ */
+TEST_F(RdkFwupdateMgrHandlersTest, SaveXconfToCache_OverwritesExistingCache) {
+    /* Arrange: Create initial cache with old data */
+    const char* old_response = "{\"firmwareVersion\":\"OLD_v1.0.0\"}";
+    CreateTestFile(TEST_XCONF_CACHE_FILE, old_response);
+    CreateTestFile(TEST_XCONF_HTTP_CODE_FILE, "200");
+
+    /* Verify old data exists */
+    gchar *old_content = NULL;
+    g_file_get_contents(TEST_XCONF_CACHE_FILE, &old_content, NULL, NULL);
+    ASSERT_STREQ(old_content, old_response) << "Old cache should exist initially";
+    g_free(old_content);
+
+    /* Act: Save new data to cache */
+    const char* new_response = MOCK_XCONF_RESPONSE_UPDATE_AVAILABLE;
+    gboolean result = save_xconf_to_cache(new_response, 200);
+
+    /* Assert: Cache should be updated with new data */
+    EXPECT_TRUE(result) << "Should successfully overwrite existing cache";
+
+    gchar *new_content = NULL;
+    g_file_get_contents(TEST_XCONF_CACHE_FILE, &new_content, NULL, NULL);
+    EXPECT_STREQ(new_content, new_response) << "Cache should contain new data";
+    EXPECT_STRNE(new_content, old_response) << "Old data should be replaced";
+    g_free(new_content);
+}
+
+
+
+/**
+ * @test save_xconf_to_cache correctly saves different HTTP status codes
+ * @brief Verifies HTTP code file contains the correct status code
+ */
+TEST_F(RdkFwupdateMgrHandlersTest, SaveXconfToCache_DifferentHttpCodes_SavedCorrectly) {
+    const char* xconf_response = MOCK_XCONF_RESPONSE_UPDATE_AVAILABLE;
+
+    /* Test Case 1: HTTP 200 */
+    remove(TEST_XCONF_HTTP_CODE_FILE);
+    gboolean result = save_xconf_to_cache(xconf_response, 200);
+    EXPECT_TRUE(result);
+
+    gchar *http_code_content = NULL;
+    g_file_get_contents(TEST_XCONF_HTTP_CODE_FILE, &http_code_content, NULL, NULL);
+    EXPECT_STREQ(http_code_content, "200") << "HTTP 200 should be saved correctly";
+    g_free(http_code_content);
+
+    /* Test Case 2: HTTP 304 (Not Modified) */
+    result = save_xconf_to_cache(xconf_response, 304);
+    EXPECT_TRUE(result);
+
+    g_file_get_contents(TEST_XCONF_HTTP_CODE_FILE, &http_code_content, NULL, NULL);
+    EXPECT_STREQ(http_code_content, "304") << "HTTP 304 should be saved correctly";
+    g_free(http_code_content);
+
+    /* Test Case 3: HTTP 500 (Server Error) */
+    result = save_xconf_to_cache(xconf_response, 500);
+    EXPECT_TRUE(result);
+
+    g_file_get_contents(TEST_XCONF_HTTP_CODE_FILE, &http_code_content, NULL, NULL);
+    EXPECT_STREQ(http_code_content, "500") << "HTTP 500 should be saved correctly";
+    g_free(http_code_content);
+}
+
+

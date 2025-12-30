@@ -259,4 +259,7 @@ int rdkFwupdateMgr_unregisterProcess(guint64 handler_id);
  */
 gpointer rdkfw_progress_monitor_thread(gpointer user_data);
 gboolean load_xconf_from_cache(XCONFRES *pResponse);
+#ifdef GTEST_ENABLE
+gboolean save_xconf_to_cache(const char *xconf_response, int http_code);
+#endif
 #endif // RDKFWUPDATEMGR_HANDLERS_H

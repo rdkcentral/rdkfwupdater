@@ -180,9 +180,26 @@ gboolean load_xconf_from_cache(XCONFRES *pResponse) {
     return result;
 }
 
-static gboolean save_xconf_to_cache(const char *xconf_response, int http_code) {
-    GError *error = NULL;
+#ifdef GTEST_ENABLE
+gboolean save_xconf_to_cache(const char *xconf_response, int http_code)
+#else
+static gboolean save_xconf_to_cache(const char *xconf_response, int http_code)
+#endif
+{
     
+    GError *error = NULL;
+   
+    /* Validate input parameters - reject NULL or empty strings */
+    if (!xconf_response) {
+        SWLOG_ERROR("[CACHE] Cannot save NULL response to cache\n");
+        return FALSE;
+    }
+    
+    if (strlen(xconf_response) == 0) {
+        SWLOG_ERROR("[CACHE] Cannot save empty response to cache\n");
+        return FALSE;
+    }
+
     SWLOG_INFO("[CACHE] Saving XConf response to cache files\n");
     
     // Save main XConf response
