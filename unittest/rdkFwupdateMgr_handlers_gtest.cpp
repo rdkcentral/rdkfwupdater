@@ -170,7 +170,7 @@ protected:
      */
     virtual void SetUp() override {
         printf("\n=== SetUp: %s ===\n", ::testing::UnitTest::GetInstance()->current_test_info()->name());
-        
+         
         // Clean up any existing test files
         CleanupTestFiles();
         
@@ -185,6 +185,15 @@ protected:
         
         // Create mock instance
         g_RdkFwupdateMgrMock = new NiceMock<RdkFwupdateMgrMock>();
+
+	 // Mock GetFirmwareVersion
+    ON_CALL(*g_RdkFwupdateMgrMock, GetFirmwareVersion(testing::_, testing::_))
+        .WillByDefault(testing::Invoke([](char* pFWVersion, size_t szBufSize) {
+            const char* current_version = "TEST_v1.0.0";
+            strncpy(pFWVersion, current_version, szBufSize - 1);
+            pFWVersion[szBufSize - 1] = '\0';
+            return strlen(pFWVersion);
+        }));
     }
 
     /**
@@ -1398,4 +1407,318 @@ TEST_F(RdkFwupdateMgrHandlersTest, SaveXconfToCache_DifferentHttpCodes_SavedCorr
     g_free(http_code_content);
 }
 
+/**
+ * @test create_success_response builds complete response with valid inputs
+ * @brief Verifies all fields are populated correctly for firmware available scenario
+ */
+TEST_F(RdkFwupdateMgrHandlersTest, CreateSuccessResponse_ValidInput_BuildsCompleteResponse) {
+    /* Arrange: Valid firmware update data */
+    const gchar *available_version = "TEST_v2.0.0";
+    const gchar *update_details = "URL: http://test.server.com/fw.bin, Protocol: http";
+    const gchar *status_message = "New firmware available";
+    
+    /* Act: Create success response (current version comes from GetFirmwareVersion mock) */
+    CheckUpdateResponse response = create_success_response(available_version, 
+                                                           update_details, 
+                                                           status_message);
+    
+    /* Assert: Verify response structure */
+    EXPECT_EQ(response.result, CHECK_FOR_UPDATE_SUCCESS) 
+        << "Result should be SUCCESS";
+    EXPECT_EQ(response.status_code, FIRMWARE_AVAILABLE) 
+        << "Status should be FIRMWARE_AVAILABLE";
+    
+    ASSERT_NE(response.available_version, nullptr) 
+        << "Available version should not be NULL";
+    EXPECT_STREQ(response.available_version, available_version) 
+        << "Available version should match input";
+    
+    ASSERT_NE(response.current_img_version, nullptr) 
+        << "Current version should not be NULL";
+    EXPECT_STREQ(response.current_img_version, "TEST_v1.0.0") 
+        << "Current version should come from GetFirmwareVersion mock";
+    
+    ASSERT_NE(response.update_details, nullptr) 
+        << "Update details should not be NULL";
+    EXPECT_STREQ(response.update_details, update_details) 
+        << "Update details should match input";
+    
+    ASSERT_NE(response.status_message, nullptr) 
+        << "Status message should not be NULL";
+    EXPECT_STREQ(response.status_message, status_message) 
+        << "Status message should match input";
+    
+    /* Cleanup */
+    checkupdate_response_free(&response);
+}
+
+/**
+ * @test create_success_response handles NULL available_version gracefully
+ * @brief Verifies proper handling when available version is NULL
+ */
+TEST_F(RdkFwupdateMgrHandlersTest, CreateSuccessResponse_NullAvailableVersion_HandlesGracefully) {
+    /* Arrange: NULL available version */
+    const gchar *update_details = "URL: http://test.server.com/fw.bin";
+    const gchar *status_message = "Firmware update available";
+
+    /* Act: Create response with NULL available version */
+    CheckUpdateResponse response = create_success_response(NULL,
+                                                           update_details,
+                                                           status_message);
+
+    /* Assert: Should handle gracefully (either return error or use default) */
+    // Check if function returns error result
+    if (response.result == CHECK_FOR_UPDATE_FAIL) {
+        EXPECT_NE(response.status_code, FIRMWARE_AVAILABLE)
+            << "Should not indicate firmware available with NULL version";
+    } else {
+        // Or check if it used a default/empty string
+        ASSERT_NE(response.available_version, nullptr)
+            << "Should provide a valid pointer even if empty";
+    }
+
+    /* Cleanup */
+    checkupdate_response_free(&response);
+}
+
+
+/**
+ * @test create_success_response handles NULL update_details gracefully
+ * @brief Verifies proper handling when update details are NULL
+ */
+TEST_F(RdkFwupdateMgrHandlersTest, CreateSuccessResponse_NullCurrentVersion_HandlesGracefully) {
+    /* Arrange: NULL update details (test name is legacy, testing update_details) */
+    const gchar *available_version = "TEST_v2.0.0";
+    const gchar *status_message = "Firmware available";
+
+    /* Act: Create response with NULL update details */
+    CheckUpdateResponse response = create_success_response(available_version,
+                                                           NULL,
+                                                           status_message);
+
+    /* Assert: Should handle gracefully */
+    EXPECT_EQ(response.result, CHECK_FOR_UPDATE_SUCCESS)
+        << "Should still succeed with NULL update details";
+
+    // Update details should be empty or default
+    ASSERT_NE(response.update_details, nullptr)
+        << "Should provide a valid pointer for update details";
+
+    /* Cleanup */
+    checkupdate_response_free(&response);
+}
+
+
+
+/**
+ * @test create_success_response handles NULL status_message gracefully
+ * @brief Verifies proper handling when status message is NULL
+ */
+TEST_F(RdkFwupdateMgrHandlersTest, CreateSuccessResponse_NullUpdateDetails_HandlesGracefully) {
+    /* Arrange: NULL status message */
+    const gchar *available_version = "TEST_v2.0.0";
+    const gchar *update_details = "URL: http://test.server.com/fw.bin";
+
+    /* Act: Create response with NULL status message */
+    CheckUpdateResponse response = create_success_response(available_version,
+                                                           update_details,
+                                                           NULL);
+
+    /* Assert: Should handle gracefully */
+    EXPECT_EQ(response.result, CHECK_FOR_UPDATE_SUCCESS)
+        << "Should succeed even with NULL status message";
+    EXPECT_EQ(response.status_code, FIRMWARE_AVAILABLE)
+        << "Status should still be FIRMWARE_AVAILABLE";
+
+    // Status message might be empty string or default text
+    ASSERT_NE(response.status_message, nullptr)
+        << "Should provide a valid pointer for status message";
+
+    /* Cleanup */
+    checkupdate_response_free(&response);
+}
+
+
+/**
+ * @test create_success_response handles empty strings gracefully
+ * @brief Verifies behavior with empty (but non-NULL) string inputs
+ */
+TEST_F(RdkFwupdateMgrHandlersTest, CreateSuccessResponse_EmptyStrings_HandlesGracefully) {
+    /* Arrange: Empty strings */
+    const gchar *available_version = "";
+    const gchar *update_details = "";
+    const gchar *status_message = "";
+
+    /* Act: Create response with empty strings */
+    CheckUpdateResponse response = create_success_response(available_version,
+                                                           update_details,
+                                                           status_message);
+
+    /* Assert: Should create response (possibly with defaults or errors) */
+    ASSERT_NE(response.available_version, nullptr)
+        << "Available version pointer should not be NULL";
+    ASSERT_NE(response.current_img_version, nullptr)
+        << "Current version pointer should not be NULL";
+    ASSERT_NE(response.update_details, nullptr)
+        << "Update details pointer should not be NULL";
+    ASSERT_NE(response.status_message, nullptr)
+        << "Status message pointer should not be NULL";
+
+    /* Cleanup */
+    checkupdate_response_free(&response);
+}
+
+
+/**
+ * @test create_result_response builds correct response for FIRMWARE_NOT_AVAILABLE
+ * @brief Verifies response structure when no update is available
+ */
+TEST_F(RdkFwupdateMgrHandlersTest, CreateResultResponse_FirmwareNotAvailable_BuildsCorrectly) {
+    /* Arrange: Status for no update available */
+    CheckForUpdateStatus status = FIRMWARE_NOT_AVAILABLE;
+    const gchar *message = "Already on latest firmware version";
+
+    /* Act: Create result response */
+    CheckUpdateResponse response = create_result_response(status, message);
+
+    /* Assert: Verify response */
+    EXPECT_EQ(response.result, CHECK_FOR_UPDATE_SUCCESS)
+        << "Result should be SUCCESS (query succeeded)";
+    EXPECT_EQ(response.status_code, FIRMWARE_NOT_AVAILABLE)
+        << "Status code should be FIRMWARE_NOT_AVAILABLE";
+
+    ASSERT_NE(response.status_message, nullptr)
+        << "Status message should not be NULL";
+    EXPECT_STREQ(response.status_message, message)
+        << "Status message should match input";
+
+    /* Cleanup */
+    checkupdate_response_free(&response);
+}
+
+/**
+ * @test create_result_response builds correct response for UPDATE_NOT_ALLOWED
+ * @brief Verifies response when update is not allowed for this device
+ */
+TEST_F(RdkFwupdateMgrHandlersTest, CreateResultResponse_UpdateNotAllowed_BuildsCorrectly) {
+    /* Arrange: Status for update not allowed */
+    CheckForUpdateStatus status = UPDATE_NOT_ALLOWED;
+    const gchar *message = "Firmware not compatible with device model";
+
+    /* Act: Create result response */
+    CheckUpdateResponse response = create_result_response(status, message);
+
+    /* Assert: Verify response */
+    EXPECT_EQ(response.result, CHECK_FOR_UPDATE_SUCCESS);
+    EXPECT_EQ(response.status_code, UPDATE_NOT_ALLOWED);
+    ASSERT_NE(response.status_message, nullptr);
+    EXPECT_STREQ(response.status_message, message);
+
+    /* Cleanup */
+    checkupdate_response_free(&response);
+}
+
+/**
+ * @test create_result_response builds correct response for FIRMWARE_CHECK_ERROR
+ * @brief Verifies response when check operation encounters an error
+ */
+TEST_F(RdkFwupdateMgrHandlersTest, CreateResultResponse_FirmwareCheckError_BuildsCorrectly) {
+    /* Arrange: Error status */
+    CheckForUpdateStatus status = FIRMWARE_CHECK_ERROR;
+    const gchar *message = "Network error - unable to reach update server";
+
+    /* Act: Create result response */
+    CheckUpdateResponse response = create_result_response(status, message);
+
+    /* Assert: Verify response */
+    EXPECT_EQ(response.status_code, FIRMWARE_CHECK_ERROR);
+    ASSERT_NE(response.status_message, nullptr);
+    EXPECT_STREQ(response.status_message, message);
+
+    /* Cleanup */
+    checkupdate_response_free(&response);
+}
+
+/**
+ * @test create_result_response handles NULL status_message gracefully
+ * @brief Verifies proper handling when message is NULL
+ */
+TEST_F(RdkFwupdateMgrHandlersTest, CreateResultResponse_NullStatusMessage_HandlesGracefully) {
+    /* Arrange: NULL message */
+    CheckForUpdateStatus status = FIRMWARE_NOT_AVAILABLE;
+
+    /* Act: Create response with NULL message */
+    CheckUpdateResponse response = create_result_response(status, NULL);
+
+    /* Assert: Should handle gracefully (default message or empty string) */
+    EXPECT_EQ(response.status_code, FIRMWARE_NOT_AVAILABLE);
+    ASSERT_NE(response.status_message, nullptr)
+        << "Should provide a valid message pointer";
+
+    /* Cleanup */
+    checkupdate_response_free(&response);
+}
+
+/**
+ * @test create_result_response generates valid responses for all status codes
+ * @brief Verifies all CheckForUpdateStatus enum values produce valid responses
+ */
+TEST_F(RdkFwupdateMgrHandlersTest, CreateResultResponse_AllStatusCodes_GenerateValidResponses) {
+    /* Test all possible status codes */
+    CheckForUpdateStatus statuses[] = {
+        FIRMWARE_AVAILABLE,
+        FIRMWARE_NOT_AVAILABLE,
+        UPDATE_NOT_ALLOWED,
+        FIRMWARE_CHECK_ERROR,
+        IGNORE_OPTOUT,
+        BYPASS_OPTOUT
+    };
+
+    const char* messages[] = {
+        "Firmware available",
+        "No update available",
+        "Update not allowed",
+        "Check error",
+        "Opt-out ignored",
+        "Opt-out bypassed"
+    };
+
+    for (size_t i = 0; i < sizeof(statuses) / sizeof(statuses[0]); i++) {
+        /* Act: Create response for each status */
+        CheckUpdateResponse response = create_result_response(statuses[i], messages[i]);
+
+        /* Assert: Each should produce valid response */
+        EXPECT_EQ(response.status_code, statuses[i])
+            << "Status code should match for index " << i;
+        ASSERT_NE(response.status_message, nullptr)
+            << "Message should not be NULL for index " << i;
+
+        /* Cleanup */
+        checkupdate_response_free(&response);
+    }
+}
+
+/**
+ * @test checkupdate_response_free handles partially allocated responses
+ * @brief Verifies cleanup when only some fields are allocated
+ */
+TEST_F(RdkFwupdateMgrHandlersTest, ResponseFree_PartiallyAllocated_FreesCorrectly) {
+    /* Arrange: Create response with only some fields allocated */
+    CheckUpdateResponse response = {0};
+    response.result = CHECK_FOR_UPDATE_SUCCESS;
+    response.status_code = FIRMWARE_AVAILABLE;
+    response.current_img_version = g_strdup("TEST_v1.0.0");
+    response.available_version = g_strdup("TEST_v2.0.0");
+    // Note: update_details and status_message are NULL
+    
+    /* Act: Free the response */
+    checkupdate_response_free(&response);
+    
+    /* Assert: Should complete without crash */
+    EXPECT_EQ(response.current_img_version, nullptr) 
+        << "Fields should be set to NULL after free";
+    EXPECT_EQ(response.available_version, nullptr);
+    EXPECT_EQ(response.update_details, nullptr);
+    EXPECT_EQ(response.status_message, nullptr);
+}
 

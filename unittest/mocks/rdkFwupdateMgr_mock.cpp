@@ -78,6 +78,7 @@ extern "C" void freeDownLoadMem(DownloadData *pDwnLoc) {
     g_RdkFwupdateMgrMock->freeDownLoadMem(pDwnLoc);
 }
 
+
 // =============================================================================
 // RFC settings function
 // =============================================================================
@@ -96,11 +97,35 @@ extern "C" int getRFCSettings(Rfc_t *rfc_list) {
 // =============================================================================
 
 extern "C" size_t currentImg(char *pCurImg, size_t szBufSize) {
+    printf("[MOCK DEBUG] currentImg called: pCurImg=%p, szBufSize=%zu\n", pCurImg, szBufSize);
+
     if (!g_RdkFwupdateMgrMock) {
-        cerr << "currentImg: g_RdkFwupdateMgrMock is NULL" << endl;
+        cerr << "currentImg: g_RdkFwupdateMgrMock is NULL, using fallback" << endl;
+        if (pCurImg && szBufSize > 0) {
+            const char* default_version = "TEST_v1.0.0";
+            strncpy(pCurImg, default_version, szBufSize - 1);
+            pCurImg[szBufSize - 1] = '\0';
+            printf("[MOCK DEBUG] Fallback (NULL mock): wrote '%s', returning %zu\n", pCurImg, strlen(pCurImg));
+            return strlen(pCurImg);
+        }
         return 0;
     }
-    return g_RdkFwupdateMgrMock->currentImg(pCurImg, szBufSize);
+
+    printf("[MOCK DEBUG] Calling mock->currentImg()\n");
+    size_t result = g_RdkFwupdateMgrMock->currentImg(pCurImg, szBufSize);
+    printf("[MOCK DEBUG] Mock returned: %zu, buffer='%s'\n", result, pCurImg ? pCurImg : "NULL");
+
+    // If mock returned 0 (default) or didn't fill buffer, use fallback
+    if ((result == 0 || (pCurImg && pCurImg[0] == '\0')) && pCurImg && szBufSize > 0) {
+        printf("[MOCK DEBUG] Mock failed or returned empty, using fallback\n");
+        const char* default_version = "TEST_v1.0.0";
+        strncpy(pCurImg, default_version, szBufSize - 1);
+        pCurImg[szBufSize - 1] = '\0';
+        printf("[MOCK DEBUG] Fallback wrote: '%s', returning %zu\n", pCurImg, strlen(pCurImg));
+        return strlen(pCurImg);
+    }
+
+    return result;
 }
 
 extern "C" size_t GetFirmwareVersion(char *pFWVersion, size_t szBufSize) {

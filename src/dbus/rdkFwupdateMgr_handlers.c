@@ -414,9 +414,16 @@ void checkupdate_response_free(CheckUpdateResponse *response) {
  * @param status_message Human-readable status string
  * @return CheckUpdateResponse structure with allocated strings (must be freed by caller)
  */
+#ifdef GTEST_ENABLE
+CheckUpdateResponse create_success_response(const gchar *available_version,
+                                           const gchar *update_details,
+                                           const gchar *status_message)
+#else
 static CheckUpdateResponse create_success_response(const gchar *available_version,
                                                    const gchar *update_details,
-                                                   const gchar *status_message) {
+                                                   const gchar *status_message) 
+#endif
+{
     CheckUpdateResponse response = {0};
     char current_img_buffer[64] = {0};
     
@@ -460,8 +467,14 @@ static CheckUpdateResponse create_success_response(const gchar *available_versio
  * @param status_message Optional custom status message (can be NULL for default)
  * @return CheckUpdateResponse structure with allocated strings (must be freed by caller)
  */
+#ifdef GTEST_ENABLE
+CheckUpdateResponse create_result_response(CheckForUpdateStatus status_code,
+                                                  const gchar *status_message)
+#else 
 static CheckUpdateResponse create_result_response(CheckForUpdateStatus status_code,
-                                                  const gchar *status_message) {
+                                                  const gchar *status_message) 
+#endif
+{
     CheckUpdateResponse response = {0};
     char current_img_buffer[256] = {0};
     
