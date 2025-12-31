@@ -377,67 +377,9 @@ TEST_F(RdkFwupdateMgrMainFlowTest, PrevCurUpdateInfo_MultipleScenarios) {
     EXPECT_EQ(result2, 0);
 }
 
-// =============================================================================
-// TEST SUITE 5: initialValidation() - Gap Filling Tests
-// =============================================================================
-
-TEST_F(RdkFwupdateMgrMainFlowTest, InitialValidation_AutoExcluded_NonProdBuild) {
-    // Test AutoExcluded RFC on non-PROD build
-    // This should EXCLUDE device from firmware update
-    
-    // Note: This test requires mocking:
-    // - read_RFCProperty() to return "true" for AutoExcluded
-    // - GetBuildType() to return non-PROD (e.g., eDEV, eQA)
-    
-    // In real implementation, when AutoExcluded=true and build!=PROD:
-    // initialValidation() should return INITIAL_VALIDATION_FAIL
-    
-    // This is a gap that was not covered in basic_rdkv_main_gtest.cpp
-    SUCCEED() << "Test requires mock infrastructure - placeholder for AutoExcluded branch";
-}
-
-TEST_F(RdkFwupdateMgrMainFlowTest, InitialValidation_AutoExcluded_ProdBuild) {
-    // Test AutoExcluded RFC on PROD build
-    // Even with AutoExcluded=true, PROD build should proceed
-    
-    // Note: This requires mocking GetBuildType() to return ePROD
-    
-    SUCCEED() << "Test requires mock infrastructure - placeholder for PROD build branch";
-}
-
-TEST_F(RdkFwupdateMgrMainFlowTest, InitialValidation_RFCReadFailure) {
-    // Test when read_RFCProperty fails
-    // Should still return SUCCESS and proceed
-    
-    // Note: This requires mocking read_RFCProperty() to return -1
-    
-    SUCCEED() << "Test requires mock infrastructure - placeholder for RFC read failure";
-}
-
-TEST_F(RdkFwupdateMgrMainFlowTest, InitialValidation_PrepareToRebootFileExists) {
-    // Test when fw_preparing_to_reboot file exists
-    // Should return INITIAL_VALIDATION_DWNL_COMPLETED
-    
-    TestFileCreate(TEST_FW_PREPARING_REBOOT, "1");
-    
-    // Note: Real test requires mocking filePresentCheck() for this specific file
-    
-    CleanupTestFiles();
-    SUCCEED() << "Test requires mock to redirect file path - placeholder";
-}
-
-TEST_F(RdkFwupdateMgrMainFlowTest, InitialValidation_PIDFileCreation) {
-    // Test DIFD.pid file creation on success
-    
-    // Note: This requires mocking:
-    // - CurrentRunningInst() to return false (no other instance)
-    // - filePresentCheck() for fw_preparing_to_reboot to return -1
-    
-    SUCCEED() << "Test requires mock infrastructure - placeholder for PID file creation";
-}
 
 // =============================================================================
-// TEST SUITE 6: main() - State Machine and Argument Parsing
+// TEST SUITE 5: main() - State Machine and Argument Parsing
 // =============================================================================
 
 // Note: Testing main() is challenging because:
@@ -675,7 +617,7 @@ TEST_F(RdkFwupdateMgrMainFlowTest, Main_DisableStatsUpdate_DefaultValue) {
 }
 
 // =============================================================================
-// TEST SUITE 7: updateUpgradeFlag() - Additional Coverage
+// TEST SUITE 6: updateUpgradeFlag()
 // =============================================================================
 
 TEST_F(RdkFwupdateMgrMainFlowTest, UpdateUpgradeFlag_MediaClientDevice_Create) {

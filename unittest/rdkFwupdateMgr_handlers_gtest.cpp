@@ -1,60 +1,19 @@
-/**
- * @file rdkFwupdateMgr_handlers_gtest.cpp
- * @brief Comprehensive unit tests for rdkFwupdateMgr_handlers.c
- * 
- * @details
- * This test suite provides extensive coverage of the D-Bus firmware update handler
- * business logic layer. It focuses on testing the core functionality while avoiding
- * deep testing of GLib/D-Bus infrastructure (which belongs to rdkv_dbus_server.c).
- * 
- * **Test Coverage (Target: 80-85% line coverage):**
- * 
- * 1. **Cache Operations** (xconf_cache_exists, load/save_xconf_from_cache)
- *    - Cache file existence checks
- *    - Cache loading (success, failure, corrupt data)
- *    - Cache saving (success, partial failure)
- *    - Error recovery and graceful degradation
- * 
- * 2. **XConf Communication** (fetch_xconf_firmware_info)
- *    - HTTP success scenarios (200 OK)
- *    - HTTP failure scenarios (404, 500, timeout)
- *    - Network error handling
- *    - JSON parsing errors
- *    - Retry logic and backoff
- *    - Cache integration after fetch
- * 
- * 3. **Response Builders** (create_success_response, create_result_response)
- *    - Success response structure
- *    - Error response structure
- *    - Memory management
- *    - Field population and validation
- * 
- * 4. **Main Handler** (rdkFwupdateMgr_checkForUpdate)
- *    - Cache-first logic (use cache before network)
- *    - Network fallback when cache invalid/missing
- *    - Version comparison (newer, same, older)
- *    - Error handling and recovery
- *    - Edge cases (NULL params, empty versions, etc.)
- * 
- * **Excluded from Testing:**
- * - rdkFwupdateMgr_downloadFirmware() - As per requirements
- * - GLib internal functions (g_file_*, g_error_*, etc.) - Infrastructure layer
- * - D-Bus signal emission - Tested in rdkv_dbus_server tests
- * 
- * **Mocking Strategy:**
- * - XConf communication: Fully mocked (doHttpFileDownload, getXconfRespData)
- * - Device info: Mocked (currentImg, GetFirmwareVersion)
- * - RFC settings: Mocked (getRFCSettings)
- * - File I/O: Real filesystem operations in /tmp (easier to debug, no GLib mocking)
- * 
- * **Test Organization:**
- * - 43 tests across 4 test suites
- * - Clear naming convention: <FunctionName>_<Scenario>_<ExpectedResult>
- * - Comprehensive positive and negative path coverage
- * - Extensive inline documentation for maintainability
- * 
- * @author RDK Firmware Update Team
- * @date 2024-12-04
+/*
+ * Copyright 2024 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #include <gtest/gtest.h>
