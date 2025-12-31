@@ -14,13 +14,6 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
-git clone https://github.com/rdkcentral/common_utilities.git
-ls
-cd common_utilities
-make && make install
-cd ../
-cd ./unittest/
-
 automake --add-missing
 autoreconf --install
 
