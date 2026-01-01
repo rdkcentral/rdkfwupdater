@@ -1,31 +1,8 @@
 # Copyright 2025 RDK Management
 # 
 # Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.def dbus_call_method(method_name, *args):
-    """
-    Generic D-Bus method call using gdbus.
-    
-    The daemon registers on the SYSTEM bus with:
-    - Service name: org.rdkfwupdater.Service
-    - Object path: /org/rdkfwupdater
-    - Interface: org.rdkfwupdater.Interface
-    
-    Args:
-        method_name: Name of the D-Bus method
-        *args: Arguments to pass to the method
-        
-    Returns:
-        Output from the D-Bus call (parsed if possible)
-    """
-    try:
-        # Build gdbus command for SYSTEM bus
-        cmd = [
-            'gdbus', 'call',
-            '--system',  # Daemon uses system bus (G_BUS_TYPE_SYSTEM)
-            '--dest', DBUS_SERVICE_NAME,
-            '--object-path', DBUS_OBJECT_PATH,
-            '--method', f'{DBUS_INTERFACE}.{method_name}'
-        ]copy of the License at
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
 # http://www.apache.org/licenses/LICENSE-2.0
 #
@@ -55,9 +32,9 @@ import signal
 # D-Bus Configuration
 # =============================================================================
 
-# D-Bus service configuration (must match daemon's values in rdkv_dbus_server.h)
+# D-Bus service configuration (must match daemon's actual registration)
 DBUS_SERVICE_NAME = "org.rdkfwupdater.Service"      # BUS_NAME
-DBUS_OBJECT_PATH = "/org/rdkfwupdater"              # OBJECT_PATH
+DBUS_OBJECT_PATH = "/org/rdkfwupdater/Service"      # OBJECT_PATH (actual daemon path)
 DBUS_INTERFACE = "org.rdkfwupdater.Interface"       # Interface name
 
 DAEMON_BINARY = "/usr/local/bin/rdkFwupdateMgr"
@@ -277,11 +254,20 @@ def dbus_register_process(process_name, lib_version):
         try:
             # Parse handler ID from output
             # Expected format: (uint64 12345,)
-            handler_id = int(output.strip('(),').split()[0])
+            # Remove parentheses, split by space, get second element (the number)
+            parts = output.strip('(),').split()
+            if len(parts) >= 2:
+                handler_id = int(parts[1].rstrip(','))
+            else:
+                # Fallback: try to extract any number
+                import re
+                match = re.search(r'\d+', output)
+                handler_id = int(match.group()) if match else 0
+            
             print(f"← Received handler ID: {handler_id}")
             return handler_id
-        except:
-            print(f"← Failed to parse handler ID from: {output}")
+        except Exception as e:
+            print(f"← Failed to parse handler ID from: {output} (error: {e})")
             return 0
     
     return 0
@@ -295,7 +281,7 @@ def dbus_unregister_process(handler_id):
         handler_id: Handler ID to unregister
         
     Returns:
-        int: Result code (0 = success)
+        bool or int: Result (True/False or 0 for success)
     """
     print(f"\n→ D-Bus: UnregisterProcess({handler_id})")
     
@@ -303,9 +289,18 @@ def dbus_unregister_process(handler_id):
     
     if output:
         try:
-            result = int(output.strip('(),'))
-            print(f"← Result: {result}")
-            return result
+            # Handle boolean response: (true,) or (false,)
+            if 'true' in output.lower():
+                print(f"← Result: True (success)")
+                return True
+            elif 'false' in output.lower():
+                print(f"← Result: False (failure)")
+                return False
+            else:
+                # Try parsing as integer
+                result = int(output.strip('(),'))
+                print(f"← Result: {result}")
+                return result
         except:
             return -1
     
