@@ -30,7 +30,7 @@ if [ ! -d "common_utilities" ]; then
 fi
 ls
 cd common_utilities
-git checkout topic/RDK-59276-modularization
+#git checkout topic/RDK-59276-modularization
 # Build common utilities
 autoreconf -i
 ./configure --prefix=${INSTALL_DIR} CFLAGS=" -DRDK_LOGGER"
