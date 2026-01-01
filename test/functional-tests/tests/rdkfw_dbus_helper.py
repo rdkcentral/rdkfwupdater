@@ -1,8 +1,31 @@
 # Copyright 2025 RDK Management
 # 
 # Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
+# you may not use this file except in compliance with the License.def dbus_call_method(method_name, *args):
+    """
+    Generic D-Bus method call using gdbus.
+    
+    The daemon registers on the SYSTEM bus with:
+    - Service name: org.rdkfwupdater.Service
+    - Object path: /org/rdkfwupdater
+    - Interface: org.rdkfwupdater.Interface
+    
+    Args:
+        method_name: Name of the D-Bus method
+        *args: Arguments to pass to the method
+        
+    Returns:
+        Output from the D-Bus call (parsed if possible)
+    """
+    try:
+        # Build gdbus command for SYSTEM bus
+        cmd = [
+            'gdbus', 'call',
+            '--system',  # Daemon uses system bus (G_BUS_TYPE_SYSTEM)
+            '--dest', DBUS_SERVICE_NAME,
+            '--object-path', DBUS_OBJECT_PATH,
+            '--method', f'{DBUS_INTERFACE}.{method_name}'
+        ]copy of the License at
 #
 # http://www.apache.org/licenses/LICENSE-2.0
 #
@@ -32,9 +55,10 @@ import signal
 # D-Bus Configuration
 # =============================================================================
 
-DBUS_SERVICE_NAME = "com.comcast.rdkfwupdater"
-DBUS_OBJECT_PATH = "/com/comcast/rdkfwupdater"
-DBUS_INTERFACE = "com.comcast.rdkfwupdater"
+# D-Bus service configuration (must match daemon's values in rdkv_dbus_server.h)
+DBUS_SERVICE_NAME = "org.rdkfwupdater.Service"      # BUS_NAME
+DBUS_OBJECT_PATH = "/org/rdkfwupdater"              # OBJECT_PATH
+DBUS_INTERFACE = "org.rdkfwupdater.Interface"       # Interface name
 
 DAEMON_BINARY = "/usr/local/bin/rdkFwupdateMgr"
 DAEMON_PID_FILE = "/tmp/rdkFwupdateMgr.pid"
@@ -47,6 +71,18 @@ DAEMON_PID_FILE = "/tmp/rdkFwupdateMgr.pid"
 def start_daemon():
     """
     Start the rdkFwupdateMgr daemon.
+    
+    The daemon requires two command-line arguments:
+    - argv[1]: Failure retry count (e.g., "0" for tests)
+    - argv[2]: Trigger type (1-6):
+        1 = Bootup (used for systemd daemon startup)
+        2 = Scheduled (cron)
+        3 = TR-69/SNMP triggered
+        4 = App triggered
+        5 = Delayed download
+        6 = State Red
+    
+    For testing, we use trigger_type=1 (Bootup) to match systemd behavior.
     
     Returns:
         bool: True if daemon started successfully, False otherwise
@@ -62,9 +98,10 @@ def start_daemon():
     stop_daemon()
     
     try:
-        # Start daemon in background
+        # Start daemon in background with required arguments
+        # Use trigger_type=1 (Bootup) to match systemd daemon startup
         process = subprocess.Popen(
-            [DAEMON_BINARY],
+            [DAEMON_BINARY, "0", "1"],  # retry_count=0, trigger_type=1 (Bootup)
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             start_new_session=True
@@ -170,10 +207,11 @@ def dbus_call_method(method_name, *args):
         Output from the D-Bus call (parsed if possible)
     """
     try:
-        # Build gdbus command
+        # Build gdbus command for system bus
+        # Daemon registers on G_BUS_TYPE_SYSTEM (see rdkv_dbus_server.c)
         cmd = [
             'gdbus', 'call',
-            '--session',  # or --system depending on your bus
+            '--system',  # System bus (not session)
             '--dest', DBUS_SERVICE_NAME,
             '--object-path', DBUS_OBJECT_PATH,
             '--method', f'{DBUS_INTERFACE}.{method_name}'
