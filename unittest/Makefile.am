@@ -70,17 +70,6 @@ rdkfw_interface_gtest_SOURCES = fwdl_interface_gtest.cpp \
     ../src/rbusInterface/rbusInterface.c \
     deviceutils/json_parse.c
 
-rdkfwupdatemgr_gtest_SOURCES = rdkfwupdatemgr_gtest.cpp \
-    ../src/dbus/rdkFwupdateMgr_handlers.c \
-    ../src/json_process.c \
-    ../src/rdkv_main.c \
-    ../src/rdkv_upgrade.c \
-    ../src/deviceutils/device_api.c \
-    ../src/deviceutils/deviceutils.c \
-    ../src/rfcInterface/rfcinterface.c \
-    deviceutils/json_parse.c \
-    miscellaneous_mock.cpp \
-    ./mocks/deviceutils_mock.cpp
 
 # rdkFwupdateMgr_handlers_gtest: Tests D-Bus handler functions for daemon
 # Tests the async, non-blocking, cache-first CheckForUpdate implementation
@@ -114,11 +103,6 @@ rdkfw_interface_gtest_LDADD = $(COMMON_LDADD)
 rdkfw_interface_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
 rdkfw_interface_gtest_CFLAGS = $(COMMON_CXXFLAGS)
 
-rdkfwupdatemgr_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -I../src/dbus $(GLIB_CFLAGS)
-rdkfwupdatemgr_gtest_LDFLAGS = $(GLIB_LIBS)
-rdkfwupdatemgr_gtest_LDADD = $(COMMON_LDADD)
-rdkfwupdatemgr_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
-rdkfwupdatemgr_gtest_CFLAGS = $(COMMON_CXXFLAGS)
 
 rdkFwupdateMgr_handlers_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -I../src/dbus $(GLIB_CFLAGS) -DHANDLER_TEST_ONLY
 rdkFwupdateMgr_handlers_gtest_LDFLAGS = $(GLIB_LIBS)

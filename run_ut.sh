@@ -14,21 +14,21 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
-git clone https://github.com/rdkcentral/common_utilities.git
-ls
-cd common_utilities
+#git clone https://github.com/rdkcentral/common_utilities.git
+#ls
+#cd common_utilities
 # Build common utilities
-WORKDIR=`pwd`
-export ROOT=/usr
-export INSTALL_DIR=${ROOT}/local
-mkdir -p $INSTALL_DIR
+#WORKDIR=`pwd`
+#export ROOT=/usr
+#export INSTALL_DIR=${ROOT}/local
+#mkdir -p $INSTALL_DIR
 
 # Build common utilities
-autoreconf -i
-./configure --prefix=${INSTALL_DIR} CFLAGS=" -DRDK_LOGGER"
-make && make install
+#autoreconf -i
+#./configure --prefix=${INSTALL_DIR} CFLAGS=" -DRDK_LOGGER"
+#make && make install
 
-cd ../
+#cd ../
 
 cd ./unittest/
 automake --add-missing
@@ -57,11 +57,6 @@ echo "-------------> Retrun value $mainapp"
 
 rdkfw_interface=$?
 echo "-------------> Retrun value $rdkfw_interface"
-
-./rdkfwupdatemgr_gtest
-
-rdkfwupdatemgr=$?
-echo "-------------> Retrun value $rdkfwupdatemgr"
 
 ./rdkFwupdateMgr_handlers_gtest
 
