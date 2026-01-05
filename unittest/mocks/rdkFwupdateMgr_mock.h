@@ -25,7 +25,7 @@
 extern "C" {
 #include "json_process.h"
 #include "rdkFwupdateMgr_handlers.h"
-#include "downloadUtil.h"
+//#include "downloadUtil.h"
 #include "rfcinterface.h"
 #include "rdkv_upgrade.h"
 }
