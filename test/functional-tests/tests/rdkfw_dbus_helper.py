@@ -19,6 +19,7 @@
 D-Bus Helper Functions for rdkFwupdateMgr Integration Tests
 
 Provides Python wrappers for calling D-Bus methods on the rdkFwupdateMgr daemon.
+Uses native Python D-Bus bindings when available, falls back to subprocess if not.
 """
 
 import subprocess
@@ -26,6 +27,73 @@ import json
 import time
 import os
 import signal
+
+# Try to import native D-Bus Python bindings (preferred method)
+try:
+    import dbus
+    from dbus.mainloop.glib import DBusGMainLoop
+    DBUS_PYTHON_AVAILABLE = True
+    print("✓ Using native Python D-Bus bindings (python3-dbus)")
+except ImportError:
+    DBUS_PYTHON_AVAILABLE = False
+    print("⚠ python3-dbus not available, using subprocess fallback")
+    print("  Install with: apt-get install python3-dbus python3-gi")
+
+
+# =============================================================================
+# D-Bus Connection Management (Native Python)
+# =============================================================================
+
+def get_system_bus_native():
+    """
+    Get D-Bus system bus connection using native Python bindings.
+    
+    Returns:
+        dbus.SystemBus: System bus connection or None if unavailable
+    """
+    if not DBUS_PYTHON_AVAILABLE:
+        return None
+    
+    try:
+        # Initialize D-Bus main loop (required for proper operation)
+        DBusGMainLoop(set_as_default=True)
+        
+        # Connect to system bus
+        bus = dbus.SystemBus()
+        return bus
+    except dbus.exceptions.DBusException as e:
+        print(f"ERROR: Cannot connect to D-Bus system bus: {e}")
+        return None
+    except Exception as e:
+        print(f"ERROR: {e}")
+        return None
+
+
+def get_service_proxy_native():
+    """
+    Get proxy object for rdkfwupdater service using native Python bindings.
+    
+    Returns:
+        dbus.proxies.Interface: Service interface or None
+    """
+    try:
+        bus = get_system_bus_native()
+        if not bus:
+            return None
+        
+        # Get proxy object for the service
+        proxy = bus.get_object(DBUS_SERVICE_NAME, DBUS_OBJECT_PATH)
+        
+        # Get interface
+        interface = dbus.Interface(proxy, DBUS_INTERFACE)
+        
+        return interface
+    except dbus.exceptions.DBusException as e:
+        print(f"ERROR: Cannot get service proxy: {e}")
+        return None
+    except Exception as e:
+        print(f"ERROR: {e}")
+        return None
 
 
 # =============================================================================
@@ -169,7 +237,151 @@ def is_daemon_running():
 
 
 # =============================================================================
-# D-Bus Method Call Helpers
+# D-Bus Method Calls (Native Python - Preferred)
+# =============================================================================
+
+def dbus_register_process_native(process_name, lib_version):
+    """
+    Call RegisterProcess using native Python D-Bus bindings.
+    
+    Args:
+        process_name: Name of the process registering
+        lib_version: Version of the library
+        
+    Returns:
+        int: Handler ID (0 on failure)
+    """
+    print(f"\n→ D-Bus: RegisterProcess('{process_name}', '{lib_version}') [native]")
+    
+    try:
+        interface = get_service_proxy_native()
+        if not interface:
+            print("← Failed to get service interface")
+            return 0
+        
+        # Call method - D-Bus automatically converts Python types
+        handler_id = interface.RegisterProcess(process_name, lib_version)
+        
+        # Convert from dbus.UInt64 to Python int
+        handler_id = int(handler_id)
+        
+        print(f"← Received handler ID: {handler_id}")
+        return handler_id
+        
+    except dbus.exceptions.DBusException as e:
+        print(f"← D-Bus error: {e}")
+        return 0
+    except Exception as e:
+        print(f"← Error: {e}")
+        return 0
+
+
+def dbus_unregister_process_native(handler_id):
+    """
+    Call UnregisterProcess using native Python D-Bus bindings.
+    
+    Args:
+        handler_id: Handler ID to unregister
+        
+    Returns:
+        bool or int: True/False or 0 for success
+    """
+    print(f"\n→ D-Bus: UnregisterProcess({handler_id}) [native]")
+    
+    try:
+        interface = get_service_proxy_native()
+        if not interface:
+            return False
+        
+        # Call method - try string first (most likely), fallback to uint64
+        try:
+            result = interface.UnregisterProcess(str(handler_id))
+        except dbus.exceptions.DBusException as e:
+            if "signature" in str(e).lower():
+                # If string didn't work, try uint64
+                result = interface.UnregisterProcess(dbus.UInt64(handler_id))
+            else:
+                raise
+        
+        # Convert from dbus.Boolean to Python bool
+        result = bool(result)
+        
+        print(f"← Result: {result}")
+        return result
+        
+    except dbus.exceptions.DBusException as e:
+        print(f"← D-Bus error: {e}")
+        return False
+    except Exception as e:
+        print(f"← Error: {e}")
+        return False
+
+
+def dbus_check_for_update_native(handler_id):
+    """
+    Call CheckForUpdate using native Python D-Bus bindings.
+    
+    Args:
+        handler_id: Handler ID of the client
+        
+    Returns:
+        dict: Response dictionary with result_code, versions, etc.
+    """
+    print(f"\n→ D-Bus: CheckForUpdate({handler_id}) [native]")
+    
+    try:
+        interface = get_service_proxy_native()
+        if not interface:
+            return {
+                'result_code': 4,
+                'current_img_version': "",
+                'available_version': "",
+                'update_details': "",
+                'status_message': "D-Bus connection failed"
+            }
+        
+        # Call method - CheckForUpdate expects handler_id as STRING, not uint64
+        # This is why subprocess version worked (it sends as string)
+        result = interface.CheckForUpdate(str(handler_id))
+        
+        # Parse response tuple
+        # Expected: (result_code, current_version, available_version, url, message, extended)
+        response = {
+            'result_code': int(result[0]) if len(result) > 0 else 4,
+            'current_img_version': str(result[1]) if len(result) > 1 else "",
+            'available_version': str(result[2]) if len(result) > 2 else "",
+            'update_details': str(result[3]) if len(result) > 3 else "",
+            'status_message': str(result[4]) if len(result) > 4 else ""
+        }
+        
+        print(f"← Response: result={response['result_code']}, "
+              f"current={response['current_img_version']}, "
+              f"available={response['available_version']}")
+        
+        return response
+        
+    except dbus.exceptions.DBusException as e:
+        print(f"← D-Bus error: {e}")
+        return {
+            'result_code': 4,
+            'current_img_version': "",
+            'available_version': "",
+            'update_details': "",
+            'status_message': f"D-Bus error: {e}"
+        }
+    except Exception as e:
+        print(f"← Error: {e}")
+        return {
+            'result_code': 4,
+            'current_img_version': "",
+            'available_version': "",
+            'update_details': "",
+            'status_message': f"Error: {e}"
+        }
+
+
+# =============================================================================
+# D-Bus Method Call Helpers (Subprocess - Fallback)
 # =============================================================================
 
 def dbus_call_method(method_name, *args):
@@ -235,6 +447,7 @@ def dbus_call_method(method_name, *args):
 def dbus_register_process(process_name, lib_version):
     """
     Call RegisterProcess D-Bus method.
+    Uses native Python bindings if available, otherwise subprocess.
     
     Args:
         process_name: Name of the process registering
@@ -243,10 +456,15 @@ def dbus_register_process(process_name, lib_version):
     Returns:
         int: Handler ID (0 on failure)
     """
-    print(f"\n→ D-Bus: RegisterProcess('{process_name}', '{lib_version}')")
-    
     if process_name is None:
         process_name = ""
+    
+    # Use native Python D-Bus if available (preferred)
+    if DBUS_PYTHON_AVAILABLE:
+        return dbus_register_process_native(process_name, lib_version)
+    
+    # Fall back to subprocess method
+    print(f"\n→ D-Bus: RegisterProcess('{process_name}', '{lib_version}') [subprocess]")
     
     output = dbus_call_method('RegisterProcess', process_name, lib_version)
     
@@ -276,6 +494,7 @@ def dbus_register_process(process_name, lib_version):
 def dbus_unregister_process(handler_id):
     """
     Call UnregisterProcess D-Bus method.
+    Uses native Python bindings if available, otherwise subprocess.
     
     Args:
         handler_id: Handler ID to unregister
@@ -283,7 +502,12 @@ def dbus_unregister_process(handler_id):
     Returns:
         bool or int: Result (True/False or 0 for success)
     """
-    print(f"\n→ D-Bus: UnregisterProcess({handler_id})")
+    # Use native Python D-Bus if available (preferred)
+    if DBUS_PYTHON_AVAILABLE:
+        return dbus_unregister_process_native(handler_id)
+    
+    # Fall back to subprocess method
+    print(f"\n→ D-Bus: UnregisterProcess({handler_id}) [subprocess]")
     
     output = dbus_call_method('UnregisterProcess', handler_id)
     
@@ -310,6 +534,7 @@ def dbus_unregister_process(handler_id):
 def dbus_check_for_update(handler_id):
     """
     Call CheckForUpdate D-Bus method.
+    Uses native Python bindings if available, otherwise subprocess.
     
     Args:
         handler_id: Handler ID of the client
@@ -322,7 +547,12 @@ def dbus_check_for_update(handler_id):
             - update_details: Update download URL
             - status_message: Status/error message
     """
-    print(f"\n→ D-Bus: CheckForUpdate({handler_id})")
+    # Use native Python D-Bus if available (preferred)
+    if DBUS_PYTHON_AVAILABLE:
+        return dbus_check_for_update_native(handler_id)
+    
+    # Fall back to subprocess method
+    print(f"\n→ D-Bus: CheckForUpdate({handler_id}) [subprocess]")
     
     output = dbus_call_method('CheckForUpdate', handler_id)
     

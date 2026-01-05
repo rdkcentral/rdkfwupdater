@@ -68,7 +68,7 @@ echo "-------------> Retrun value $rdkFwupdateMgr_handlers"
 rdkfwupdatemgr_main_flow=$?
 echo "-------------> Return value $rdkfwupdatemgr_main_flow"
 
-if [ "$devicestatus" = "0" ] && [ "$deviceutils" = "0" ] && [ "$mainapp" = "0" ] && [ "$rdkfw_interface" = "0" ] && [ "$rdkfwupdatemgr" = "0" ] && [ "$rdkFwupdateMgr_handlers" = "0" ] && [ "$rdkfwupdatemgr_main_flow" = "0" ]; then
+if [ "$devicestatus" = "0" ] && [ "$deviceutils" = "0" ] && [ "$mainapp" = "0" ] && [ "$rdkfw_interface" = "0" ]&& [ "$rdkFwupdateMgr_handlers" = "0" ] && [ "$rdkfwupdatemgr_main_flow" = "0" ]; then
     cd ../src/
 
     lcov --capture --directory . --output-file coverage.info
