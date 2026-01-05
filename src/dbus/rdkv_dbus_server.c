@@ -360,17 +360,27 @@ static guint64 add_process_to_tracking(const gchar *process_name,
  * @brief Remove a process from the tracking system.
  *
  * Called when client invokes UnregisterProcess. Frees associated ProcessInfo.
+ * Validates that the requesting client is the owner of the handler_id.
  *
  * @param handler_id Handler ID to remove
- * @return TRUE if found and removed, FALSE if not found
+ * @param sender_id D-Bus sender ID of the requesting client
+ * @return TRUE if found and removed, FALSE if not found or access denied
  */
-static gboolean remove_process_from_tracking(guint64 handler_id)
+static gboolean remove_process_from_tracking(guint64 handler_id, const gchar *sender_id)
 {
 	ProcessInfo *info = g_hash_table_lookup(registered_processes, GINT_TO_POINTER(handler_id));
 	if (!info) {
 		SWLOG_INFO("[PROCESS_TRACKING] Handler %"G_GUINT64_FORMAT" not found\n", handler_id);
 		return FALSE;
 	}
+	
+	// SECURITY: Validate that the requesting client owns this handler_id
+	if (g_strcmp0(info->sender_id, sender_id) != 0) {
+		SWLOG_ERROR("[PROCESS_TRACKING] Access denied: Handler %"G_GUINT64_FORMAT" owned by '%s', but '%s' attempted to unregister\n",
+			handler_id, info->sender_id, sender_id);
+		return FALSE;
+	}
+	
 	SWLOG_INFO("[PROCESS_TRACKING] Removing: %s (handler: %"G_GUINT64_FORMAT")\n", info->process_name, handler_id);
 	g_hash_table_remove(registered_processes, GINT_TO_POINTER(handler_id));
 	SWLOG_INFO("[PROCESS_TRACKING] Total registered: %d\n", g_hash_table_size(registered_processes));
@@ -1992,13 +2002,23 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			return;
 		}
 
-		// Look up process info to get process name for logging
+		// Look up process info to validate ownership and get process name for logging
 		ProcessInfo *process_info = g_hash_table_lookup(registered_processes, GINT_TO_POINTER(handler));
 		const gchar *process_name = process_info ? process_info->process_name : "UNKNOWN";
 		
-		// Remove from tracking system
+		// Validate ownership before attempting removal
+		if (process_info && g_strcmp0(process_info->sender_id, rdkv_req_caller_id) != 0) {
+			SWLOG_ERROR("[UNREGISTER] Access denied: Handler %"G_GUINT64_FORMAT" (process: %s) owned by '%s', but '%s' attempted to unregister\n",
+				handler, process_name, process_info->sender_id, rdkv_req_caller_id);
+			g_dbus_method_invocation_return_error(resp_ctx, 
+				G_DBUS_ERROR, G_DBUS_ERROR_ACCESS_DENIED, 
+				"Unregistration denied: Handler owned by different client");
+			return;
+		}
+		
+		// Remove from tracking system (this will double-check ownership)
 		SWLOG_INFO("[UNREGISTER] Attempting to remove process '%s' from tracking...\n", process_name);
-		if (remove_process_from_tracking(handler)) {
+		if (remove_process_from_tracking(handler, rdkv_req_caller_id)) {
 			SWLOG_INFO("[UNREGISTER] SUCCESS: Process '%s' unregistered successfully!\n", process_name);
 			SWLOG_INFO("[UNREGISTER]   - Removed Handler ID: %"G_GUINT64_FORMAT" (process: %s)\n", handler, process_name);
 			SWLOG_INFO("[UNREGISTER]   - Remaining registered processes: %d\n", g_hash_table_size(registered_processes));
@@ -2007,8 +2027,8 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 					g_variant_new("(b)", TRUE));
 			SWLOG_INFO("[UNREGISTER] Response sent: SUCCESS (true)\n");
 		} else {
-			SWLOG_ERROR("[UNREGISTER] FAILED: Process '%s' not found or already unregistered\n", process_name);
-			SWLOG_ERROR("[UNREGISTER]   - Handler ID: %"G_GUINT64_FORMAT" (process: %s) not found\n", handler, process_name);
+			SWLOG_ERROR("[UNREGISTER] FAILED: Process '%s' not found or access denied\n", process_name);
+			SWLOG_ERROR("[UNREGISTER]   - Handler ID: %"G_GUINT64_FORMAT" (process: %s) not found or unauthorized\n", handler, process_name);
 			SWLOG_INFO("[UNREGISTER]   - Current registered processes: %d\n", g_hash_table_size(registered_processes));
 			
 			g_dbus_method_invocation_return_value(resp_ctx,
