@@ -392,12 +392,18 @@ static int fetch_xconf_firmware_info( XCONFRES *pResponse, int server_type, int 
  */
 void checkupdate_response_free(CheckUpdateResponse *response) {
     if (response) {
-        g_free(response->available_version);
-        g_free(response->update_details);
-        g_free(response->status_message);
-        response->available_version = NULL;
-        response->update_details = NULL;
-        response->status_message = NULL;
+        if (response->available_version != NULL) {
+            g_free(response->available_version);
+            response->available_version = NULL;
+        }
+        if (response->update_details != NULL) {
+            g_free(response->update_details);
+            response->update_details = NULL;
+        }
+        if (response->status_message != NULL) {
+            g_free(response->status_message);
+            response->status_message = NULL;
+        }
     }
 }
 
