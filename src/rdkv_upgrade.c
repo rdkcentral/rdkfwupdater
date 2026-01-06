@@ -278,8 +278,16 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
     // Comprehensive logging: entry and pointers
     SWLOG_INFO("[UPGRADE_REQ] Enter %s: context=%p, curl=%p, pHttp_code=%p\n", __FUNCTION__, (void*)context, (void*)curl, (void*)pHttp_code);
 
-    if (context == NULL || pHttp_code == NULL) {
-        SWLOG_ERROR("[UPGRADE_REQ] CRITICAL: context=%p or pHttp_code=%p is NULL\n", (void*)context, (void*)pHttp_code);
+    if (context == NULL) {
+        SWLOG_ERROR("[UPGRADE_REQ] CRITICAL: context parameter is NULL\n");
+        return ret_curl_code;
+    }
+    if (curl == NULL) {
+        SWLOG_ERROR("[UPGRADE_REQ] CRITICAL: curl parameter is NULL\n");
+        return ret_curl_code;
+    }
+    if (pHttp_code == NULL) {
+        SWLOG_ERROR("[UPGRADE_REQ] CRITICAL: pHttp_code parameter is NULL\n");
         return ret_curl_code;
     }
 
@@ -611,6 +619,23 @@ int codebigdownloadFile(
     int *httpCode,
     void **curl
 ) {
+    int curl_ret_code = -1;
+
+    // Null check for all parameters
+    if (context == NULL) {
+        SWLOG_ERROR("%s: context parameter is NULL\n", __FUNCTION__);
+        return curl_ret_code;
+    }
+    if (httpCode == NULL) {
+        SWLOG_ERROR("%s: httpCode parameter is NULL\n", __FUNCTION__);
+        return curl_ret_code;
+    }
+    if (curl == NULL) {
+        SWLOG_ERROR("%s: curl parameter is NULL\n", __FUNCTION__);
+        return curl_ret_code;
+    }
+
+
     int server_type = context->server_type;
     const char* artifactLocationUrl = context->artifactLocationUrl;
     const void* localDownloadLocation = context->dwlloc;
@@ -621,11 +646,10 @@ int codebigdownloadFile(
     int signFailed = 1;           // 0 for success, 1 indicates failed
     FileDwnl_t file_dwnl;
     char oAuthHeader[BIG_BUF_LEN]  = "Authorization: OAuth realm=\"\", ";
-    int curl_ret_code = -1;
     char headerInfoFile[136];
 
-    if (artifactLocationUrl == NULL || localDownloadLocation == NULL || httpCode == NULL || curl == NULL) {
-        SWLOG_ERROR("%s: Parameter is NULL\n", __FUNCTION__);
+    if (artifactLocationUrl == NULL || localDownloadLocation == NULL) {
+        SWLOG_ERROR("%s: artifactLocationUrl or localDownloadLocation is NULL\n", __FUNCTION__);
         return curl_ret_code;
     }
     *httpCode = 0;
@@ -763,6 +787,22 @@ int downloadFile(
     int *httpCode,
     void **curl
 ) {
+    int curl_ret_code = -1;
+
+    // Null check for all parameters
+    if (context == NULL) {
+        SWLOG_ERROR("%s: context parameter is NULL\n", __FUNCTION__);
+        return curl_ret_code;
+    }
+    if (httpCode == NULL) {
+        SWLOG_ERROR("%s: httpCode parameter is NULL\n", __FUNCTION__);
+        return curl_ret_code;
+    }
+    if (curl == NULL) {
+        SWLOG_ERROR("%s: curl parameter is NULL\n", __FUNCTION__);
+        return curl_ret_code;
+    }
+
     int server_type = context->server_type;
     const char* artifactLocationUrl = context->artifactLocationUrl;
     const void* localDownloadLocation = context->dwlloc;
@@ -807,9 +847,8 @@ int downloadFile(
     }
     SWLOG_INFO("[DOWNLOAD_FILE] lastrun='%s', disableStatsUpdate=%p\n", lastrun ? lastrun : "(null)", (void*)disableStatsUpdate);
 
-    if (artifactLocationUrl == NULL || localDownloadLocation == NULL || httpCode == NULL || curl == NULL) {
-        SWLOG_ERROR("[DOWNLOAD_FILE] CRITICAL: One or more parameters are NULL: artifactLocationUrl=%p, localDownloadLocation=%p, httpCode=%p, curl=%p\n",
-                   (void*)artifactLocationUrl, (void*)localDownloadLocation, (void*)httpCode, (void*)curl);
+    if (artifactLocationUrl == NULL || localDownloadLocation == NULL) {
+        SWLOG_ERROR("[DOWNLOAD_FILE] CRITICAL: artifactLocationUrl or localDownloadLocation is NULL\n");
         return curl_ret_code;
     }
     app_mode = getAppMode();
@@ -876,10 +915,8 @@ int downloadFile(
         SWLOG_INFO("%s :Trying to communicate with SSR via TLS server\n", __FUNCTION__);
         Upgradet2CountNotify("SYST_INFO_TLS_xconf", 1);
     }
-        SWLOG_INFO("%s :At line 801\n", __FUNCTION__);
 
     if ((1 == (isThrottleEnabled(device_info->dev_name, immed_reboot_flag, app_mode)))) {
-        SWLOG_INFO("%s :At line 804\n", __FUNCTION__);
         /* Coverity fix: NO_EFFECT - rfc_throttle is a char array, not a pointer.
          * Removed redundant "!= NULL" check. Only check for non-empty string.
          * Ensure rfc_list is valid before dereferencing. */
