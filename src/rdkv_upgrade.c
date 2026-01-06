@@ -1101,9 +1101,17 @@ int retryDownload(
     int curl_ret_code = -1;
     int retry_completed = 1;
     
-    // Validate context pointer first
+    // Null check for all parameters
     if (context == NULL) {
-        SWLOG_ERROR("%s: Context is NULL\n", __FUNCTION__);
+        SWLOG_ERROR("%s: context parameter is NULL\n", __FUNCTION__);
+        return curl_ret_code;
+    }
+    if (httpCode == NULL) {
+        SWLOG_ERROR("%s: httpCode parameter is NULL\n", __FUNCTION__);
+        return curl_ret_code;
+    }
+    if (curl == NULL) {
+        SWLOG_ERROR("%s: curl parameter is NULL\n", __FUNCTION__);
         return curl_ret_code;
     }
     
@@ -1111,8 +1119,8 @@ int retryDownload(
     const char* artifactLocationUrl = context->artifactLocationUrl;
     const void* localDownloadLocation = context->dwlloc;
     
-    if (artifactLocationUrl == NULL || localDownloadLocation == NULL || httpCode == NULL || curl == NULL) {
-        SWLOG_ERROR("%s: Parameter is NULL\n", __FUNCTION__);
+    if (artifactLocationUrl == NULL || localDownloadLocation == NULL) {
+        SWLOG_ERROR("%s: artifactLocationUrl or localDownloadLocation is NULL\n", __FUNCTION__);
         return curl_ret_code;
     }
     if (server_type == HTTP_SSR_DIRECT || server_type == HTTP_XCONF_DIRECT) {
@@ -1179,9 +1187,17 @@ int fallBack(
 ) {
     int curl_ret_code = -1;
 
-    // Check context first before accessing its members
+    // Null check for all parameters
     if (context == NULL) {
-        SWLOG_ERROR("%s: Context is NULL\n", __FUNCTION__);
+        SWLOG_ERROR("%s: context parameter is NULL\n", __FUNCTION__);
+        return curl_ret_code;
+    }
+    if (httpCode == NULL) {
+        SWLOG_ERROR("%s: httpCode parameter is NULL\n", __FUNCTION__);
+        return curl_ret_code;
+    }
+    if (curl == NULL) {
+        SWLOG_ERROR("%s: curl parameter is NULL\n", __FUNCTION__);
         return curl_ret_code;
     }
 
@@ -1189,8 +1205,8 @@ int fallBack(
     const char* artifactLocationUrl = context->artifactLocationUrl;
     const void* localDownloadLocation = context->dwlloc;
 
-    if (artifactLocationUrl == NULL || localDownloadLocation == NULL || httpCode == NULL || curl == NULL) {
-        SWLOG_ERROR("%s: Parameter is NULL\n", __FUNCTION__);
+    if (artifactLocationUrl == NULL || localDownloadLocation == NULL) {
+        SWLOG_ERROR("%s: artifactLocationUrl or localDownloadLocation is NULL\n", __FUNCTION__);
         return curl_ret_code;
     }
 
