@@ -75,7 +75,8 @@ typedef struct {
     GDBusConnection* connection;        // D-Bus connection (borrowed, do NOT free)
     gchar* handler_id;                  // Handler ID string (owned, must free)
     gchar* firmware_name;               // Firmware name (owned, must free)
-    gboolean* stop_flag;                // Atomic flag to signal thread shutdown
+    //gboolean* stop_flag;                // Atomic flag to signal thread shutdown
+    gint *stop_flag;                // Atomic flag to signal thread shutdown
     GMutex* mutex;                      // Protects last_dlnow from race conditions
     guint64 last_dlnow;                 // Last reported bytes (for throttling)
     time_t last_activity_time;          // Last time progress changed (for timeout detection)
@@ -3065,7 +3066,8 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     SWLOG_INFO("[DOWNLOAD_WORKER] Enabling real-time progress updates to D-Bus clients\n");
     
     GThread* monitor_thread = NULL;
-    gboolean stop_monitor = FALSE;
+    //gboolean stop_monitor = FALSE;
+    gint stop_monitor = 0;
     GMutex* monitor_mutex = NULL;
     ProgressMonitorContext* monitor_ctx = NULL;
     

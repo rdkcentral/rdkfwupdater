@@ -155,6 +155,12 @@ gboolean load_xconf_from_cache(XCONFRES *pResponse) {
     GError *error = NULL;
     gboolean result = FALSE;
     
+    // Validate input parameter
+    if (pResponse == NULL) {
+        SWLOG_ERROR("[CACHE] pResponse parameter is NULL\n");
+        return FALSE;
+    }
+    
     SWLOG_INFO("[CACHE] Loading XConf data from cache: %s\n", XCONF_CACHE_FILE);
     
     if (!g_file_get_contents(XCONF_CACHE_FILE, &cache_content, &length, &error)) {
@@ -240,6 +246,17 @@ static int fetch_xconf_firmware_info( XCONFRES *pResponse, int server_type, int 
     int ret = -1;
     void *curl = NULL;          // CURL handle
 
+    // Validate input parameters
+    if (pResponse == NULL) {
+        SWLOG_ERROR("fetch_xconf_firmware_info: pResponse parameter is NULL\n");
+        return -1;
+    }
+    
+    if (pHttp_code == NULL) {
+        SWLOG_ERROR("fetch_xconf_firmware_info: pHttp_code parameter is NULL\n");
+        return -1;
+    }
+
     DwnLoc.pvOut = NULL;
     DwnLoc.datasize = 0;
     DwnLoc.memsize = 0;
@@ -257,6 +274,10 @@ static int fetch_xconf_firmware_info( XCONFRES *pResponse, int server_type, int 
                 {
                     SWLOG_INFO("fetch_xconf_firmware_info: Server URL length: %d, preparing device JSON data...\n", (int)len);
                     len = createJsonString( pJSONStr, JSON_STR_LEN );
+		    if (len >= JSON_STR_LEN) {
+			    SWLOG_ERROR("JSON buffer overflow:  %d >= %d", len, JSON_STR_LEN);
+			    return ret;
+		    }
                     SWLOG_INFO("fetch_xconf_firmware_info: Device JSON data prepared (%d bytes)\n", (int)len);
                     SWLOG_INFO("fetch_xconf_firmware_info: JSON POST data:\n%s\n", pJSONStr);
 
@@ -439,7 +460,10 @@ static CheckUpdateResponse create_success_response(const gchar *available_versio
     SWLOG_INFO("[rdkFwupdateMgr]   - currentImg status: %s\n", img_status ? "SUCCESS" : "FAILED");
     SWLOG_INFO("[rdkFwupdateMgr]   - current_img_buffer: '%s'\n", current_img_buffer);
 
-    gboolean is_update_available = img_status && available_version && (g_strcmp0(current_img_buffer, available_version) != 0);
+    // Null check for available_version before comparison (short-circuit evaluation ensures safety)
+    gboolean is_update_available = img_status && 
+                                   available_version != NULL && 
+                                   (g_strcmp0(current_img_buffer, available_version) != 0);
     
     response.result = CHECK_FOR_UPDATE_SUCCESS;  // API call succeeded
     
@@ -1299,7 +1323,17 @@ DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName
         if (monitor_thread == NULL) {
             SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: Failed to spawn monitor thread: %s\n",
                        thread_error ? thread_error->message : "Unknown error");
-            
+            SWLOG_ERROR("Thread creation failed");
+    if (monitor_ctx) {
+        g_free(monitor_ctx->handler_id);
+        g_free(monitor_ctx->firmware_name);
+        if (monitor_ctx->mutex) {
+            g_mutex_clear(monitor_ctx->mutex);
+            g_free(monitor_ctx->mutex);
+        }
+        g_free(monitor_ctx);
+        monitor_ctx = NULL;
+    } 
             // Cleanup on thread creation failure
             if (thread_error != NULL) {
                 g_error_free(thread_error);
@@ -1950,10 +1984,12 @@ gpointer rdkfw_flash_worker_thread(gpointer user_data)
         // FAILURE
 flash_error:
         SWLOG_ERROR("[FLASH_WORKER] FLASH FAILED: %d\n", flash_result);
-        if (flash_result == -2 || flash_result == -28) {
-            SWLOG_ERROR("[FLASH_WORKER] S11: Insufficient storage\n");
+        if (flash_result == -28) {
+            SWLOG_ERROR("[FLASH_WORKER] : Insufficient storage (ENOSPC)\n");
+        } else if (flash_result == -2) {
+            SWLOG_ERROR("[FLASH_WORKER] : File not found or missing resource (ENOENT)\n");
         } else {
-            SWLOG_ERROR("[FLASH_WORKER] S9: Flash write error\n");
+            SWLOG_ERROR("[FLASH_WORKER] : Flash write error\n");
         }
         
        FlashProgressUpdate *progress = NULL;
@@ -1961,9 +1997,10 @@ flash_error:
         progress = (FlashProgressUpdate *)calloc(1, sizeof(FlashProgressUpdate));
         if (!progress) {
         SWLOG_ERROR("[FLASH_WORKER] Failed to allocate FlashProgressUpdate\n");
-        goto flash_error;
+        //goto flash_error;  // Don't retry to allocate memory once calloc failed. otherwise it might  cause infinite loop 
         }
-        /* Populate fields */
+	else {
+        /* Populate fields */ // these will get allocated only if progress is not NULL
         progress->connection = ctx->connection;
         progress->handler_id = g_strdup(ctx->handler_id);
         progress->firmware_name = g_strdup(ctx->firmware_name);
@@ -1972,7 +2009,7 @@ flash_error:
         progress->error_message = g_strdup_printf("Flash failed: error code %d", flash_result);
         g_idle_add(emit_flash_progress_idle, progress);
         usleep(500000);
-
+	}
 
        // progress = g_new0(FlashProgressUpdate, 1);
         //progress->connection = ctx->connection;
