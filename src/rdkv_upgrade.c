@@ -824,7 +824,7 @@ int downloadFile(
     MtlsAuth_t sec;
     int state_red = -1;
     unsigned int max_dwnl_speed = 0;
-    int curl_ret_code = -1;
+    //int curl_ret_code = -1;
     FileDwnl_t file_dwnl;
     int chunk_dwnl = 0;
     int mtls_enable = 1; //Setting mtls by default enable
