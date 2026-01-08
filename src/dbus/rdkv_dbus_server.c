@@ -91,8 +91,19 @@ gboolean cleanup_flash_state_idle(gpointer user_data);
 gpointer rdkfw_flash_worker_thread(gpointer user_data);
 
 /* Concurrency control flags - enforce single operation at a time */
+/**
+ * THREAD SAFETY NOTE:
+ * These flags are accessed only from the GLib main thread context:
+ * - All D-Bus method handlers run on the main thread
+ * - GLib serializes all D-Bus method invocations
+ * - Background worker threads do NOT access these variables
+ *
+ * If architecture changes to allow concurrent D-Bus calls,
+ * these MUST be protected with a GMutex.
+ */
 static gboolean IsCheckUpdateInProgress = FALSE;
 static gboolean IsDownloadInProgress = FALSE;
+static CurrentDownloadState *current_download = NULL;
 gboolean IsFlashInProgress =  FALSE;  // Non-static: accessed by worker thread cleanup
 
 /* Queue management - hold waiting clients when operation in progress */
@@ -134,7 +145,7 @@ GHashTable *active_download_tasks = NULL;  // Map: firmwareName (gchar*) → Dow
  * 
  * NULL when no download is active.
  */
-static CurrentDownloadState *current_download = NULL;
+//static CurrentDownloadState *current_download = NULL;
 
 /* UpdateFirmware flash state - Non-static for worker thread access */
 CurrentFlashState *current_flash = NULL;
@@ -1278,11 +1289,23 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			
 			// Emit signal with COMPLETED status
 			ProgressUpdate *update = g_new0(ProgressUpdate, 1);
+			if (!update) {
+				SWLOG_ERROR("[DOWNLOADFIRMWARE] Failed to allocate ProgressUpdate\n");
+				return;
+			}
 			if (update) {
 				update->progress = 100;
 				update->status = FW_DWNL_COMPLETED;
 				update->handler_id = g_strdup(handler_id_str);
 				update->firmware_name = g_strdup(firmware_name);
+				// Validate allocations succeeded
+				if (!update->handler_id || !update->firmware_name) {
+					SWLOG_ERROR("[DOWNLOADFIRMWARE] Failed to build Download Complete Response\n");
+					g_free(update->handler_id);
+					g_free(update->firmware_name);
+					g_free(update);
+					return;
+				}
 				update->connection = rdkv_conn_dbus;
 				g_idle_add(rdkfw_emit_download_progress, update);
 			}
@@ -1332,11 +1355,21 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			
 			// Emit current progress signal to this client
 			ProgressUpdate *update = g_new0(ProgressUpdate, 1);
+			if (!update) {
+				SWLOG_ERROR("[DOWNLOADFIRMWARE] Failed to allocate ProgressUpdate\n");
+			}
 			if (update) {
 				update->progress = current_download->current_progress;
 				update->status = FW_DWNL_INPROGRESS;
 				update->handler_id = g_strdup(handler_id_str);
 				update->firmware_name = g_strdup(firmware_name);
+				if (!update->handler_id || !update->firmware_name) {
+					SWLOG_ERROR("[DOWNLOADFIRMWARE] Failed to duplicate strings\n");
+					g_free(update->handler_id);
+					g_free(update->firmware_name);
+					g_free(update);
+					return;
+				}
 				update->connection = rdkv_conn_dbus;
 				g_idle_add(rdkfw_emit_download_progress, update);
 			}
@@ -2881,6 +2914,13 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
         error_update->status = FW_DWNL_ERROR;
         error_update->handler_id = ctx->handler_id ? g_strdup(ctx->handler_id) : NULL;
         error_update->firmware_name = g_strdup("(invalid)");
+	if (!error_update->handler_id || !error_update->firmware_name) {
+		SWLOG_ERROR("[DOWNLOAD_WORKER] Failed to duplicate strings\n");
+		g_free(error_update->handler_id);
+		g_free(error_update->firmware_name);
+		g_free(error_update);
+		return;
+	}
         error_update->connection = ctx->connection;
         g_idle_add(rdkfw_emit_download_progress, error_update);
         
