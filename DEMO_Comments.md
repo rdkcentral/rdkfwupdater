@@ -36,7 +36,7 @@ g_mutex_unlock(&check_update_mutex);
 
 
 
-### 2. **Buffer Overflow Due to Potentially Unchecked `snprintf`**
+### 2. **Unchecked snprintf return value leading to silent truncation**
 **Location of code:**
 ```c
 int path_len = snprintf(download_path, sizeof(download_path), "%s/%s", difw_path, ctx->firmware_name);
