@@ -38,6 +38,7 @@
 #include "rdkv_upgrade.h"  // For RdkUpgradeContext_t and rdkv_upgrade_request()
 #include "rdk_fwdl_utils.h"  // For getDeviceProperties() and DeviceProperty_t
 #include "rfcinterface.h"  // For getRFCSettings() and Rfc_t
+#include "xconf_comm_status.h"  // Thread-safe XConf status management
 
 #define DWNL_PATH_FILE_LENGTH DWNL_PATH_FILE_LEN + 32
 #define MAX_URL_LEN         512
@@ -93,15 +94,23 @@ gpointer rdkfw_flash_worker_thread(gpointer user_data);
 /* Concurrency control flags - enforce single operation at a time */
 /**
  * THREAD SAFETY NOTE:
- * These flags are accessed only from the GLib main thread context:
- * - All D-Bus method handlers run on the main thread
- * - GLib serializes all D-Bus method invocations
- * - Background worker threads do NOT access these variables
+ * - IsCheckUpdateInProgress: NOW THREAD-SAFE via xconf_comm_status module
+ *   (mutex-protected, use getXConfCommStatus()/setXConfCommStatus()/trySetXConfCommStatus())
+ * 
+ * - IsDownloadInProgress: Main thread only
+ *   All D-Bus method handlers run on the main thread
+ *   GLib serializes all D-Bus method invocations
+ *   Background worker threads do NOT access this variable
+ *
+ * - IsFlashInProgress: Multi-thread access
+ *   Accessed by both main thread and worker thread cleanup
+ *   (TODO: Should be protected with mutex or atomic operations)
  *
  * If architecture changes to allow concurrent D-Bus calls,
- * these MUST be protected with a GMutex.
+ * IsDownloadInProgress and IsFlashInProgress MUST be protected with GMutex.
  */
-static gboolean IsCheckUpdateInProgress = FALSE;
+// NOTE: IsCheckUpdateInProgress is now managed by xconf_comm_status module
+// Use: getXConfCommStatus(), setXConfCommStatus(), trySetXConfCommStatus()
 static gboolean IsDownloadInProgress = FALSE;
 static CurrentDownloadState *current_download = NULL;
 gboolean IsFlashInProgress =  FALSE;  // Non-static: accessed by worker thread cleanup
@@ -257,6 +266,7 @@ static gchar* get_difw_path(void)
     if (!path || !*path) {
         // fallback if not set
         g_free(path);
+	path =NULL;
         return g_strdup("/opt/CDL");
     }
 
@@ -474,6 +484,13 @@ void init_task_system()
 	SWLOG_INFO("[TASK-SYSTEM] Initialized download tracking system\n");
 	
 	init_process_tracking();
+	
+	// Initialize thread-safe XConf status tracking
+	if (initXConfCommStatus()) {
+		SWLOG_INFO("[TASK-SYSTEM] Initialized XConf status tracking (thread-safe)\n");
+	} else {
+		SWLOG_WARN("[TASK-SYSTEM] XConf status tracking already initialized\n");
+	}
 }
 
 /**
@@ -556,7 +573,7 @@ static void free_task_context(TaskContext *ctx)
  *
  * Called after XConf query completes. Iterates through waiting_checkUpdate_ids list,
  * sends D-Bus method responses with cached result data, emits CheckForUpdateComplete
- * signals, and cleans up task contexts. Resets IsCheckUpdateInProgress flag.
+ * signals, and cleans up task contexts. Resets XConf status flag.
  *
  * @param ctx Task context (currently unused, kept for API consistency)
  */
@@ -657,7 +674,7 @@ void complete_CheckUpdate_waiting_tasks(TaskContext *ctx)
 	// Clear waiting_CheckUpdatr_ids list
 	g_slist_free(waiting_checkUpdate_ids);
 	waiting_checkUpdate_ids = NULL;
-	IsCheckUpdateInProgress = FALSE;
+	setXConfCommStatus(FALSE);
 	SWLOG_INFO("All CheckUpdate waiting tasks completed !!\n");
 }
 
@@ -749,7 +766,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		SWLOG_INFO("[CHECK_UPDATE] D-Bus Method: CheckForUpdate\n");
 		SWLOG_INFO("[CHECK_UPDATE] Daemon State:\n");
 		SWLOG_INFO("[CHECK_UPDATE]   Registered Processes: %d\n", g_hash_table_size(registered_processes));
-		SWLOG_INFO("[CHECK_UPDATE]   XConf Fetch In Progress: %s\n", IsCheckUpdateInProgress ? "YES" : "NO");
+		SWLOG_INFO("[CHECK_UPDATE]   XConf Fetch In Progress: %s\n", getXConfCommStatus() ? "YES" : "NO");
 		SWLOG_INFO("[CHECK_UPDATE]   Active Tasks (hash table): %d\n", g_hash_table_size(active_tasks));
 		SWLOG_INFO("[CHECK_UPDATE]   Waiting Queue (list): %d task(s)\n", g_slist_length(waiting_checkUpdate_ids));
 		
@@ -938,9 +955,9 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		// 6. CHECK IF FETCH ALREADY IN PROGRESS
 		SWLOG_INFO("\n Fetch Status Check\n");
 		SWLOG_INFO("  IsCheckUpdateInProgress = %s\n", 
-		           IsCheckUpdateInProgress ? "TRUE (fetch running)" : "FALSE (idle)");
+		           getXConfCommStatus() ? "TRUE (fetch running)" : "FALSE (idle)");
 		
-		if (IsCheckUpdateInProgress) {
+		if (getXConfCommStatus()) {
 			SWLOG_INFO("[CHECK_UPDATE] PIGGYBACK SCENARIO - Reuse Running Fetch\n");
 			SWLOG_INFO("[CHECK_UPDATE] Another XConf fetch is already running\n");
 			SWLOG_INFO("[CHECK_UPDATE] Task-%d will PIGGYBACK on the existing fetch\n", task_id);
@@ -961,7 +978,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		SWLOG_INFO("[CHECK_UPDATE] NEW BACKGROUND FETCH - Launching GTask Worker Thread\n");
 		SWLOG_INFO("[CHECK_UPDATE] Background Fetch Initialization\n");
 		SWLOG_INFO("[CHECK_UPDATE] Setting IsCheckUpdateInProgress = TRUE\n");
-		IsCheckUpdateInProgress = TRUE;
+		setXConfCommStatus(TRUE);
 		SWLOG_INFO("[CHECK_UPDATE] Prevents duplicate concurrent fetches\n");
 		SWLOG_INFO("[CHECK_UPDATE] Future requests will piggyback on this fetch\n");
 		
@@ -973,7 +990,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		if (!handler_process_name) {
 			SWLOG_ERROR("[CHECK_UPDATE] CRITICAL: handler_process_name is NULL!\n");
 			SWLOG_ERROR("[CHECK_UPDATE] Cannot create async context - aborting fetch\n");
-			IsCheckUpdateInProgress = FALSE;
+			setXConfCommStatus(FALSE);
 			return;
 		}
 		
@@ -983,7 +1000,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		if (!async_ctx) {
 			SWLOG_ERROR("[CHECK_UPDATE] CRITICAL: Failed to allocate AsyncXconfFetchContext!\n");
 			SWLOG_ERROR("[CHECK_UPDATE] aborting fetch\n");
-			IsCheckUpdateInProgress = FALSE;
+			setXConfCommStatus(FALSE);
 			return;
 		}
 		
@@ -996,7 +1013,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			SWLOG_ERROR("[CHECK_UPDATE] CRITICAL: g_strdup(handler_process_name) returned NULL!\n");
 			SWLOG_ERROR("[CHECK_UPDATE] Out of memory - cleaning up and aborting\n");
 			g_free(async_ctx);
-			IsCheckUpdateInProgress = FALSE;
+			setXConfCommStatus(FALSE);
 			return;
 		}
 		
@@ -1009,7 +1026,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			SWLOG_ERROR("[CHECK_UPDATE] Cannot proceed without D-Bus connection\n");
 			g_free(async_ctx->handler_id);
 			g_free(async_ctx);
-			IsCheckUpdateInProgress = FALSE;
+			setXConfCommStatus(FALSE);
 			return;
 		}
 		
@@ -1030,7 +1047,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			SWLOG_ERROR("[CHECK_UPDATE] Failed to create GTask - cleaning up\n");
 			g_free(async_ctx->handler_id);
 			g_free(async_ctx);
-			IsCheckUpdateInProgress = FALSE;
+			setXConfCommStatus(FALSE);
 			return;
 		}
 		
@@ -2175,6 +2192,11 @@ int setup_dbus_server()
 void cleanup_dbus()
 {
 	SWLOG_INFO("[CLEANUP] Starting D-Bus cleanup...\n");
+	
+	// Cleanup thread-safe XConf status tracking first (before task cleanup)
+	cleanupXConfCommStatus();
+	SWLOG_INFO("[CLEANUP] Cleaned up XConf status tracking\n");
+	
 	if (active_tasks) {
 		SWLOG_INFO("[CLEANUP] Cleaning up %d active tasks...\n", g_hash_table_size(active_tasks));
 		GHashTableIter iter;
@@ -2350,13 +2372,13 @@ static void rdkfw_xconf_fetch_worker(GTask *task, gpointer source_object, gpoint
  * This function runs on the MAIN LOOP thread after async_xconf_fetch_task() completes
  * in the worker thread. It retrieves the XConf query results, broadcasts a
  * CheckForUpdateComplete signal to all waiting clients, cleans up task tracking state,
- * and resets the IsCheckUpdateInProgress flag.
+ * and resets the XConf status flag via thread-safe API.
  *
  * Execution flow:
  * 1. Retrieve result from worker thread via g_task_propagate_pointer()
  * 2. Broadcast CheckForUpdateComplete D-Bus signal to all listeners
  * 3. Iterate through waiting_checkUpdate_ids and clean up all task contexts
- * 4. Reset IsCheckUpdateInProgress flag to allow new CheckForUpdate requests
+ * 4. Reset XConf status flag to allow new CheckForUpdate requests (via thread-safe API)
  * 5. Free async context and associated resources
  *
  * @param source_object Source object (unused)
@@ -2381,7 +2403,7 @@ static void rdkfw_xconf_fetch_done(GObject *source_object, GAsyncResult *res, gp
         SWLOG_ERROR("[COMPLETE] CRITICAL: user_data (ctx) is NULL!\n");
         SWLOG_ERROR("[COMPLETE] Cannot cleanup context - potential memory leak\n");
         SWLOG_ERROR("[COMPLETE] Attempting to reset state anyway...\n");
-        IsCheckUpdateInProgress = FALSE;
+        setXConfCommStatus(FALSE);
         if (waiting_checkUpdate_ids) {
             g_slist_free(waiting_checkUpdate_ids);
             waiting_checkUpdate_ids = NULL;
@@ -2410,7 +2432,7 @@ static void rdkfw_xconf_fetch_done(GObject *source_object, GAsyncResult *res, gp
     if (!task) {
         SWLOG_ERROR("[COMPLETE] CRITICAL: Failed to cast res to GTask!\n");
         SWLOG_ERROR("[COMPLETE] Cleaning up and aborting...\n");
-        IsCheckUpdateInProgress = FALSE;
+        setXConfCommStatus(FALSE);
         if (waiting_checkUpdate_ids) {
             g_slist_free(waiting_checkUpdate_ids);
             waiting_checkUpdate_ids = NULL;
@@ -2430,7 +2452,7 @@ static void rdkfw_xconf_fetch_done(GObject *source_object, GAsyncResult *res, gp
         
         // Still need to cleanup and reset state
         SWLOG_INFO("[COMPLETE] Cleaning up state after error...\n");
-        IsCheckUpdateInProgress = FALSE;
+        setXConfCommStatus(FALSE);
         if (waiting_checkUpdate_ids) {
             g_slist_free(waiting_checkUpdate_ids);
             waiting_checkUpdate_ids = NULL;
@@ -2444,7 +2466,8 @@ static void rdkfw_xconf_fetch_done(GObject *source_object, GAsyncResult *res, gp
     
     SWLOG_INFO("[COMPLETE] Result received from worker thread successfully\n");
     SWLOG_INFO("[COMPLETE] Current system state:\n");
-    SWLOG_INFO("[COMPLETE]   - IsCheckUpdateInProgress: TRUE (will be reset)\n");
+    SWLOG_INFO("[COMPLETE]   - IsCheckUpdateInProgress: %s (will be reset)\n", 
+               getXConfCommStatusString());
     SWLOG_INFO("[COMPLETE]   - Waiting tasks queue size: %d\n", 
                g_slist_length(waiting_checkUpdate_ids));
     SWLOG_INFO("[COMPLETE]   - Active tasks count: %d\n", 
@@ -2507,7 +2530,7 @@ static void rdkfw_xconf_fetch_done(GObject *source_object, GAsyncResult *res, gp
         SWLOG_ERROR("[COMPLETE] This should never happen - investigating...\n");
         
         // Still cleanup state
-        IsCheckUpdateInProgress = FALSE;
+        setXConfCommStatus(FALSE);
         if (waiting_checkUpdate_ids) {
             g_slist_free(waiting_checkUpdate_ids);
             waiting_checkUpdate_ids = NULL;
@@ -2586,9 +2609,9 @@ static void rdkfw_xconf_fetch_done(GObject *source_object, GAsyncResult *res, gp
     
     // 5. RESET PROGRESS FLAG
     SWLOG_INFO("[COMPLETE] Step 5: Resetting progress flag\n");
-    SWLOG_INFO("[COMPLETE]   Before: IsCheckUpdateInProgress = TRUE\n");
-    IsCheckUpdateInProgress = FALSE;
-    SWLOG_INFO("[COMPLETE]   After:  IsCheckUpdateInProgress = FALSE\n");
+    SWLOG_INFO("[COMPLETE]   Before: IsCheckUpdateInProgress = %s\n", getXConfCommStatusString());
+    setXConfCommStatus(FALSE);
+    SWLOG_INFO("[COMPLETE]   After:  IsCheckUpdateInProgress = %s\n", getXConfCommStatusString());
     SWLOG_INFO("[COMPLETE]   New CheckForUpdate requests can now start background fetch\n");
     
     // 6. CLEANUP CONTEXT
@@ -2949,7 +2972,6 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     char download_path[DWNL_PATH_FILE_LENGTH];
     gchar *difw_path = get_difw_path();
     int path_len = snprintf(download_path, sizeof(download_path), "%s/%s", difw_path, ctx->firmware_name);
-//int path_len = snprintf(download_path, sizeof(download_path), "/tmp/%s", ctx->firmware_name);
     SWLOG_INFO("DWNL path with img name=%s\n", download_path); 
     if (path_len < 0 || path_len >= sizeof(download_path)) {
         SWLOG_ERROR("[DOWNLOAD_WORKER] ERROR: Download path too long or snprintf failed!\n");
