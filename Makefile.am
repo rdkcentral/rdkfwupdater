@@ -175,7 +175,9 @@ rdkFwupdateMgr_SOURCES = \
     ${top_srcdir}/src/device_status_helper.c \
     ${top_srcdir}/src/rbusInterface/rbusInterface.c \
     ${top_srcdir}/src/dbus/rdkv_dbus_server.c \
-    ${top_srcdir}/src/dbus/rdkFwupdateMgr_handlers.c
+    ${top_srcdir}/src/dbus/rdkFwupdateMgr_handlers.c \
+    ${top_srcdir}/src/dbus/xconf_comm_status.c
+
 # Link against the RDK upgrade shared library AND new interface libraries
 rdkFwupdateMgr_LDADD = librdksw_jsonparse.la librdksw_upgrade.la librdksw_rfcIntf.la librdksw_iarmIntf.la librdksw_flash.la librdksw_fwutils.la $(cjson_LIBS) $(curl_LIBS) -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread -lrbus $(GLIB_LIBS)
 
@@ -186,7 +188,8 @@ rdkFwupdateMgr_include_HEADERS = \
     ${top_srcdir}/src/include/iarmInterface.h \
     ${top_srcdir}/src/include/device_status_helper.h \
     ${top_srcdir}/src/dbus/rdkv_dbus_server.h \
-    ${top_srcdir}/src/dbus/rdkFwupdateMgr_handlers.h
+    ${top_srcdir}/src/dbus/rdkFwupdateMgr_handlers.h \
+    ${top_srcdir}/src/dbus/xconf_comm_status.h
 
 rdkFwupdateMgr_CFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/dbus $(GLIB_CFLAGS)
 rdkFwupdateMgr_CPPFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/dbus $(GLIB_CFLAGS)
