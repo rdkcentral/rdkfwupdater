@@ -141,7 +141,7 @@ void setXConfCommStatus(gboolean status)
     }
     
     g_mutex_lock(&check_update_mutex);
-    gboolean old_status = IsCheckUpdateInProgress;
+   // gboolean old_status = IsCheckUpdateInProgress;
     IsCheckUpdateInProgress = status;
     g_mutex_unlock(&check_update_mutex);
     
