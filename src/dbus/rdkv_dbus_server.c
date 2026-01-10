@@ -3072,7 +3072,7 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     upgrade_ctx.server_type = HTTP_SSR_DIRECT;
     SWLOG_INFO("[DOWNLOAD_WORKER]   server_type = HTTP_SSR_DIRECT\n");
     
-    snprintf(imageHTTPURL, sizeof(imageHTTPURL), "%s/%s", ctx->download_url, ctx->firmware_name);
+    int url_len = snprintf(imageHTTPURL, sizeof(imageHTTPURL), "%s/%s", ctx->download_url, ctx->firmware_name);
     if (url_len < 0 || url_len >= sizeof(imageHTTPURL)) {
 	    SWLOG_ERROR("[DOWNLOAD_WORKER] ERROR: URL too long or snprintf failed (len=%d, max=%zu)\n",
 			    url_len, sizeof(imageHTTPURL));
