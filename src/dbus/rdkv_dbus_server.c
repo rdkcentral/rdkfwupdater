@@ -577,6 +577,7 @@ static void free_task_context(TaskContext *ctx)
  *
  * @param ctx Task context (currently unused, kept for API consistency)
  */
+#if 0
 void complete_CheckUpdate_waiting_tasks(TaskContext *ctx) 
 {
 	SWLOG_INFO("Completing %d waiting CheckUpdate tasks\n", g_slist_length(waiting_checkUpdate_ids));
@@ -677,6 +678,8 @@ void complete_CheckUpdate_waiting_tasks(TaskContext *ctx)
 	setXConfCommStatus(FALSE);
 	SWLOG_INFO("All CheckUpdate waiting tasks completed !!\n");
 }
+
+#endif
 
 /**
  * @brief Complete all waiting DownloadFirmware tasks and send responses.

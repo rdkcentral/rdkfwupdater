@@ -109,7 +109,6 @@ gboolean getXConfCommStatus(void)
     gboolean status = IsCheckUpdateInProgress;
     g_mutex_unlock(&check_update_mutex);
     
-    SWLOG_DEBUG("[XCONF_STATUS] Get status: %s\n", status ? "IN_PROGRESS" : "IDLE");
     return status;
 }
 
@@ -146,9 +145,6 @@ void setXConfCommStatus(gboolean status)
     IsCheckUpdateInProgress = status;
     g_mutex_unlock(&check_update_mutex);
     
-    SWLOG_INFO("[XCONF_STATUS] Status changed: %s -> %s\n",
-               old_status ? "IN_PROGRESS" : "IDLE",
-               status ? "IN_PROGRESS" : "IDLE");
 }
 
 /**
