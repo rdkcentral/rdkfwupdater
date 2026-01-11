@@ -143,7 +143,7 @@ typedef struct {
     GDBusConnection* connection;        // D-Bus connection (borrowed, do NOT free)
     gchar* handler_id;                  // Handler ID string (owned, must free)
     gchar* firmware_name;               // Firmware name (owned, must free)
-    gboolean* stop_flag;                // Atomic flag to signal thread shutdown
+    gint* stop_flag;                    // Atomic flag to signal thread shutdown (gint for g_atomic_int_get/set)
     GMutex* mutex;                      // Protects last_dlnow from race conditions
     guint64 last_dlnow;                 // Last reported bytes (for throttling)
     time_t last_activity_time;          // Last time progress changed (for timeout detection)
@@ -1335,7 +1335,7 @@ DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName
     
     // *** NEW: Spawn progress monitor thread if download_state provided ***
     GThread* monitor_thread = NULL;
-    gboolean stop_monitor = FALSE;
+    gint stop_monitor = 0;  // Changed from gboolean to gint for g_atomic_int_get/set type safety
     GMutex* monitor_mutex = NULL;
     ProgressMonitorContext* monitor_ctx = NULL;
     
@@ -1461,8 +1461,8 @@ DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName
     if (monitor_thread != NULL) {
         SWLOG_INFO("[DOWNLOAD_HANDLER] Stopping progress monitor thread...\n");
         
-        // Signal thread to stop atomically
-        g_atomic_int_set(&stop_monitor, TRUE);
+        // Signal thread to stop atomically (use 1 for true with gint type)
+        g_atomic_int_set(&stop_monitor, 1);
         
         /* Coverity fix: RESOURCE_LEAK - g_thread_join() frees the thread handle.
          * Do NOT set monitor_thread = NULL afterward as Coverity flags it as a leak.
