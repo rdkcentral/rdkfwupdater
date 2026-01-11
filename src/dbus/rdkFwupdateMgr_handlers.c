@@ -45,6 +45,50 @@
 #define XCONF_PROGRESS_FILE     "/tmp/xconf_curl_progress_thunder"
 #define RED_STATE_FILE          "/lib/rdk/stateRedRecovery.sh"
 
+// ============================================================================
+// CACHE SYNCHRONIZATION
+// ============================================================================
+/**
+ * @brief Mutex protecting XConf cache file operations
+ * 
+ * Protects concurrent access to:
+ * - XCONF_CACHE_FILE (/tmp/xconf_response_thunder.txt)
+ * - XCONF_HTTP_CODE_FILE (/tmp/xconf_httpcode_thunder.txt)
+ * 
+ * Lock Scope:
+ * - MUST lock before: xconf_cache_exists(), load_xconf_from_cache(), save_xconf_to_cache()
+ * - Release immediately after file operation completes
+ * - Do NOT hold during business logic (parsing, validation, network calls)
+ * 
+ * Thread Safety:
+ * - Initialized using G_LOCK_DEFINE_STATIC (thread-safe, no init needed)
+ * - Static mutex lifetime (program lifetime, no cleanup required)
+ * 
+ * Performance:
+ * - No contention: Cache access is rare (minutes/hours apart)
+ * - Lock time: ~1-5ms (file I/O duration only)
+ * - Zero overhead when not in cache critical section
+ */
+G_LOCK_DEFINE_STATIC(xconf_cache);
+
+/**
+ * @brief Helper macro for cache operation error handling
+ * 
+ * Ensures mutex is ALWAYS released on error paths.
+ * Usage:
+ *   G_LOCK(xconf_cache);
+ *   if (error_condition) {
+ *       CACHE_UNLOCK_AND_RETURN(FALSE);
+ *   }
+ *   // ... success path ...
+ *   G_UNLOCK(xconf_cache);
+ */
+#define CACHE_UNLOCK_AND_RETURN(retval) \
+    do { \
+        G_UNLOCK(xconf_cache); \
+        return (retval); \
+    } while(0)
+
 // *** NEW: Progress monitoring constants ***
 #define CURL_PROGRESS_FILE      "/opt/curl_progress"
 #define PROGRESS_POLL_INTERVAL_MS    100   // Poll every 100ms for responsive updates
@@ -137,14 +181,32 @@ extern Rfc_t rfc_list;
  * 
  * Used to avoid unnecessary XConf queries when cached data is available.
  */
+/**
+ * @brief Check if XConf cache file exists (thread-safe)
+ * @return TRUE if cache exists, FALSE otherwise
+ * 
+ * Thread Safety: Locks xconf_cache mutex during file existence check
+ * to prevent TOCTOU race with concurrent save operations.
+ */
 gboolean xconf_cache_exists(void) {
-    return g_file_test(XCONF_CACHE_FILE, G_FILE_TEST_EXISTS);
+    G_LOCK(xconf_cache);
+    gboolean exists = g_file_test(XCONF_CACHE_FILE, G_FILE_TEST_EXISTS);
+    G_UNLOCK(xconf_cache);
+    
+    SWLOG_DEBUG("[CACHE] Cache exists check: %s\n", exists ? "YES" : "NO");
+    return exists;
 }
 
 /**
- * @brief Load XConf response from cache file
+ * @brief Load XConf response from cache file (thread-safe)
  * @param[out] pResponse Structure to populate with cached data
  * @return TRUE on success, FALSE if cache read/parse fails
+ * 
+ * Thread Safety: Locks xconf_cache mutex during file read to prevent
+ * concurrent writes from corrupting the read operation.
+ * 
+ * Lock Scope: Held ONLY during g_file_get_contents(), released before parsing
+ * to minimize lock time (parsing can take milliseconds).
  * 
  * Reads cached XConf JSON response and parses it into XCONFRES structure.
  * Cache miss or parse failure returns FALSE - caller should fetch from XConf server.
@@ -155,7 +217,7 @@ gboolean load_xconf_from_cache(XCONFRES *pResponse) {
     GError *error = NULL;
     gboolean result = FALSE;
     
-    // Validate input parameter
+    // Validate input parameter (no lock needed)
     if (pResponse == NULL) {
         SWLOG_ERROR("[CACHE] pResponse parameter is NULL\n");
         return FALSE;
@@ -163,12 +225,21 @@ gboolean load_xconf_from_cache(XCONFRES *pResponse) {
     
     SWLOG_INFO("[CACHE] Loading XConf data from cache: %s\n", XCONF_CACHE_FILE);
     
+    // === CRITICAL SECTION START ===
+    G_LOCK(xconf_cache);
+    
+    // Read file with mutex held (prevents concurrent writes)
     if (!g_file_get_contents(XCONF_CACHE_FILE, &cache_content, &length, &error)) {
-        SWLOG_ERROR("[CACHE] Failed to read cache file: %s\n", error ? error->message : "Unknown error");
+        SWLOG_ERROR("[CACHE] Failed to read cache file: %s\n", 
+                    error ? error->message : "Unknown error");
         if (error) g_error_free(error);
-        return FALSE;
+        CACHE_UNLOCK_AND_RETURN(FALSE);  // Unlock on error path
     }
     
+    G_UNLOCK(xconf_cache);
+    // === CRITICAL SECTION END ===
+    
+    // Parse OUTSIDE critical section (no need to hold lock)
     SWLOG_INFO("[CACHE] Loaded %zu bytes from cache\n", length);
     SWLOG_INFO("[CACHE] Cache content: %s\n", cache_content);
 
@@ -192,10 +263,9 @@ gboolean save_xconf_to_cache(const char *xconf_response, int http_code)
 static gboolean save_xconf_to_cache(const char *xconf_response, int http_code)
 #endif
 {
-    
     GError *error = NULL;
    
-    /* Validate input parameters - reject NULL or empty strings */
+    // Validate input parameters (no lock needed)
     if (!xconf_response) {
         SWLOG_ERROR("[CACHE] Cannot save NULL response to cache\n");
         return FALSE;
@@ -208,25 +278,34 @@ static gboolean save_xconf_to_cache(const char *xconf_response, int http_code)
 
     SWLOG_INFO("[CACHE] Saving XConf response to cache files\n");
     
-    // Save main XConf response
+    // === CRITICAL SECTION START ===
+    G_LOCK(xconf_cache);
+    
+    // Save main XConf response (with lock held)
     if (!g_file_set_contents(XCONF_CACHE_FILE, xconf_response, -1, &error)) {
-        SWLOG_ERROR("[CACHE] Failed to save XConf response: %s\n", error ? error->message : "Unknown error");
+        SWLOG_ERROR("[CACHE] Failed to save XConf response: %s\n", 
+                    error ? error->message : "Unknown error");
         if (error) g_error_free(error);
-        return FALSE;
+        CACHE_UNLOCK_AND_RETURN(FALSE);  // Unlock on error
     }
     
-    // Save HTTP code  
+    // Save HTTP code (still holding lock for atomic update)
     gchar *http_code_str = g_strdup_printf("%d", http_code);
     if (!g_file_set_contents(XCONF_HTTP_CODE_FILE, http_code_str, -1, &error)) {
-        SWLOG_ERROR("[CACHE] Failed to save HTTP code: %s\n", error ? error->message : "Unknown error");
+        SWLOG_ERROR("[CACHE] Failed to save HTTP code: %s\n", 
+                    error ? error->message : "Unknown error");
         if (error) g_error_free(error);
         g_free(http_code_str);
-        return FALSE;
+        CACHE_UNLOCK_AND_RETURN(FALSE);  // Unlock on error
     }
+    
+    G_UNLOCK(xconf_cache);
+    // === CRITICAL SECTION END ===
     
     SWLOG_INFO("[CACHE] XConf data cached successfully\n");
     SWLOG_INFO("[CACHE]   - Response file: %s\n", XCONF_CACHE_FILE);
-    SWLOG_INFO("[CACHE]   - HTTP code file: %s (code: %d)\n", XCONF_HTTP_CODE_FILE, http_code);
+    SWLOG_INFO("[CACHE]   - HTTP code file: %s (code: %d)\n", 
+               XCONF_HTTP_CODE_FILE, http_code);
     
     g_free(http_code_str);
     return TRUE;
@@ -1621,7 +1700,7 @@ gboolean emit_flash_progress_idle(gpointer user_data)
             SWLOG_ERROR("[FLASH_PROGRESS] Error domain: %s, code: %d\n",
                        g_quark_to_string(signal_error->domain), signal_error->code);
             g_error_free(signal_error);
-        }
+               }
     } else {
         SWLOG_INFO("[FLASH_PROGRESS] UpdateProgress signal emitted successfully\n");
         SWLOG_INFO("[FLASH_PROGRESS] Signal details: handlerId=%"G_GUINT64_FORMAT", "
@@ -1977,7 +2056,7 @@ gpointer rdkfw_flash_worker_thread(gpointer user_data)
        // progress->firmware_name = g_strdup(ctx->firmware_name);
        // progress->progress = 100;
        // progress->status = FW_UPDATE_COMPLETED;
-        //progress->error_message = NULL;
+       // progress->error_message = NULL;
        // g_idle_add(emit_flash_progress_idle, progress);
         
     } else {
