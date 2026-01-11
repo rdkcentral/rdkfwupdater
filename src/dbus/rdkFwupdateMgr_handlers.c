@@ -1264,8 +1264,17 @@ DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName
         }
         
         SWLOG_INFO("[DOWNLOAD_HANDLER] Loaded XConf metadata:\n");
-        SWLOG_INFO("[DOWNLOAD_HANDLER]   Version: %s\n", xconf_response.cloudFWVersion);
-        SWLOG_INFO("[DOWNLOAD_HANDLER]   URL: %s\n", xconf_response.cloudFWFile);
+        SWLOG_INFO("[DOWNLOAD_HANDLER]   Version: %s\n", 
+                   xconf_response.cloudFWVersion ? xconf_response.cloudFWVersion : "(null)");
+        SWLOG_INFO("[DOWNLOAD_HANDLER]   URL: %s\n", 
+                   xconf_response.cloudFWFile ? xconf_response.cloudFWFile : "(null)");
+        
+        // Validate that cloudFWFile contains a valid URL
+        if (xconf_response.cloudFWFile == NULL || strlen(xconf_response.cloudFWFile) == 0) {
+            SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: XConf cache has no firmware URL\n");
+            result.error_message = g_strdup("Invalid XConf data: missing firmware URL");
+            return result;
+        }
         
         effective_url = g_strdup(xconf_response.cloudFWFile);
         
