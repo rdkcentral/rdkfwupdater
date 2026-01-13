@@ -18,8 +18,9 @@
 AUTOMAKE_OPTIONS = subdir-objects
 
 # Define the program name and the source files
-bin_PROGRAMS = rdkfw_device_status_gtest rdkfw_deviceutils_gtest rdkfw_main_gtest rdkfw_interface_gtest rdkfwupdatemgr_main_flow_gtest rdkFwupdateMgr_handlers_gtest
+bin_PROGRAMS = rdkfw_device_status_gtest rdkfw_deviceutils_gtest rdkfw_main_gtest rdkfw_interface_gtest rdkfwupdatemgr_main_flow_gtest rdkFwupdateMgr_handlers_gtest dbus_handlers_gtest
 
+#bin_PROGRAMS = rdkfw_device_status_gtest rdkfw_deviceutils_gtest rdkfw_main_gtest rdkfw_interface_gtest  dbus_handlers_gtest
 # Define the include directories
 # NOTE: We explicitly use -I. to prioritize local test headers over system headers
 # This prevents conflicts with external library headers in /usr/local/include/
@@ -134,3 +135,27 @@ rdkfwupdatemgr_main_flow_gtest_LDFLAGS = $(GLIB_LIBS)
 rdkfwupdatemgr_main_flow_gtest_LDADD = $(COMMON_LDADD)
 rdkfwupdatemgr_main_flow_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
 rdkfwupdatemgr_main_flow_gtest_CFLAGS = $(COMMON_CXXFLAGS)
+
+# dbus_handlers_gtest: Comprehensive tests for D-Bus handler functions
+# Tests both rdkFwupdateMgr_handlers.c and rdkv_dbus_server.c
+# Covers CheckForUpdate, DownloadFirmware, cache operations, progress monitoring
+# Uses comprehensive mocking via dbus_handlers_gmock.cpp
+dbus_handlers_gtest_SOURCES = dbus_handlers.cpp \
+     test_dbus_fake.cpp \
+    ./mocks/dbus_handlers_gmock.cpp \
+    ../src/dbus/rdkFwupdateMgr_handlers.c \
+    ../src/json_process.c \
+    ../src/deviceutils/device_api.c \
+    ../src/deviceutils/deviceutils.c \
+    deviceutils/json_parse.c
+
+dbus_handlers_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -I../src/dbus -I../src/deviceutils $(GLIB_CFLAGS) -DDBUS_HANDLERS_TEST
+#dbus_handlers_gtest_LDFLAGS = $(GLIB_LIBS)
+# NOTE: dbus_handlers_gtest uses ONLY glib-2.0 (not gio-2.0) for link-time symbol interposition
+# This allows our fake g_dbus_connection_emit_signal() to override the real GLib version
+# Other test binaries still use full $(GLIB_LIBS) for safety
+dbus_handlers_gtest_LDFLAGS = $(shell pkg-config --libs glib-2.0)
+dbus_handlers_gtest_LDADD = $(COMMON_LDADD)
+dbus_handlers_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
+dbus_handlers_gtest_CFLAGS = $(COMMON_CXXFLAGS)
+

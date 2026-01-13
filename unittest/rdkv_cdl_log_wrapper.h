@@ -28,6 +28,9 @@
 
 #define SWLOG_INFO(format, ...)        printf(format, ##__VA_ARGS__)
 #define SWLOG_ERROR(format, ...)        printf(format, ##__VA_ARGS__)
+#define SWLOG_DEBUG(format, ...)        printf(format, ##__VA_ARGS__)
+#define SWLOG_WARN(format, ...)         printf(format, ##__VA_ARGS__)
+#define SWLOG_FATAL(format, ...)        printf(format, ##__VA_ARGS__)
 
 #define CURL_TLS_TIMEOUT 7200L
 #define CURL_PROGRESS_FILE "/opt/curl_progress"
