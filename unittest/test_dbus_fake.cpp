@@ -132,6 +132,17 @@ int fake_dbus_get_signal_count() {
 }
 
 /**
+ * @brief Get last emitted status as integer
+ */
+gint32 fake_dbus_get_last_status_int() {
+    // Try to parse status string as integer
+    if (!FakeDBus::g_last_status.empty()) {
+        return atoi(FakeDBus::g_last_status.c_str());
+    }
+    return 0;
+}
+
+/**
  * @brief Configure fake to simulate failure
  */
 void fake_dbus_set_should_fail(bool should_fail, int error_code, const char* error_msg) {
@@ -193,33 +204,66 @@ gboolean g_dbus_connection_emit_signal(
         return FALSE;
     }
     
-    // Parse signal parameters (DownloadProgress signature: "(tsuss)")
+    // Parse signal parameters - support multiple signal formats
+    // DownloadProgress: "(tsuss)" - (handler_id, firmware_name, progress_u32, status_str, message)
+    // UpdateProgress:   "(tsiis)" - (handler_id, firmware_name, progress_i32, status_i32, message)
     if (parameters != NULL) {
-        guint64 handler_id = 0;
-        const gchar* status = NULL;
-        guint32 progress = 0;
-        const gchar* message = NULL;
-        const gchar* firmware = NULL;
+        const gchar* format = g_variant_get_type_string(parameters);
         
-        // Extract parameters
-        g_variant_get(parameters, "(tsuss)", 
-                     &handler_id, &status, &progress, &message, &firmware);
-        
-        // Store in fake D-Bus state
-        FakeDBus::g_last_handler_id = handler_id;
-        FakeDBus::g_last_status = status ? status : "";
-        FakeDBus::g_last_progress_percent = progress;
-        FakeDBus::g_last_message = message ? message : "";
-        FakeDBus::g_last_firmware_name = firmware ? firmware : "";
-        
-        // Add to history
-        FakeDBus::EmittedSignal sig;
-        sig.handler_id = handler_id;
-        sig.firmware_name = firmware ? firmware : "";
-        sig.progress_percent = progress;
-        sig.status = status ? status : "";
-        sig.message = message ? message : "";
-        FakeDBus::g_signal_history.push_back(sig);
+        if (g_strcmp0(format, "(tsuss)") == 0) {
+            // DownloadProgress signal
+            guint64 handler_id = 0;
+            const gchar* firmware_name = NULL;
+            guint32 progress = 0;
+            const gchar* status = NULL;
+            const gchar* message = NULL;
+            
+            g_variant_get(parameters, "(tsuss)", 
+                         &handler_id, &firmware_name, &progress, &status, &message);
+            
+            // Store in fake D-Bus state
+            FakeDBus::g_last_handler_id = handler_id;
+            FakeDBus::g_last_firmware_name = firmware_name ? firmware_name : "";
+            FakeDBus::g_last_progress_percent = progress;
+            FakeDBus::g_last_status = status ? status : "";
+            FakeDBus::g_last_message = message ? message : "";
+            
+            // Add to history
+            FakeDBus::EmittedSignal sig;
+            sig.handler_id = handler_id;
+            sig.firmware_name = firmware_name ? firmware_name : "";
+            sig.progress_percent = progress;
+            sig.status = status ? status : "";
+            sig.message = message ? message : "";
+            FakeDBus::g_signal_history.push_back(sig);
+            
+        } else if (g_strcmp0(format, "(tsiis)") == 0) {
+            // UpdateProgress signal (flash progress)
+            guint64 handler_id = 0;
+            const gchar* firmware_name = NULL;
+            gint32 progress = 0;
+            gint32 status_code = 0;
+            const gchar* message = NULL;
+            
+            g_variant_get(parameters, "(tsiis)", 
+                         &handler_id, &firmware_name, &progress, &status_code, &message);
+            
+            // Store in fake D-Bus state (convert status_code to string for consistency)
+            FakeDBus::g_last_handler_id = handler_id;
+            FakeDBus::g_last_firmware_name = firmware_name ? firmware_name : "";
+            FakeDBus::g_last_progress_percent = (guint32)progress;
+            FakeDBus::g_last_status = std::to_string(status_code);  // Store as string
+            FakeDBus::g_last_message = message ? message : "";
+            
+            // Add to history
+            FakeDBus::EmittedSignal sig;
+            sig.handler_id = handler_id;
+            sig.firmware_name = firmware_name ? firmware_name : "";
+            sig.progress_percent = (guint32)progress;
+            sig.status = std::to_string(status_code);
+            sig.message = message ? message : "";
+            FakeDBus::g_signal_history.push_back(sig);
+        }
     }
     
     return TRUE;  // Signal "emitted" successfully

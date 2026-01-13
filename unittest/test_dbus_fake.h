@@ -69,10 +69,15 @@ guint64 fake_dbus_get_last_handler_id(void);
 int fake_dbus_get_signal_count(void);
 
 /**
- * @brief Configure fake D-Bus to simulate failures
- * 
- * @param should_fail If true, next emit_signal call will fail
- * @param error_code GError code to set
+ * @brief Get the last emitted status as integer (for UpdateProgress signal)
+ * @return Status code (for UpdateProgress/flash signals)
+ */
+gint32 fake_dbus_get_last_status_int(void);
+
+/**
+ * @brief Configure the fake to fail on next emission
+ * @param should_fail Set to true to simulate emission failure
+ * @param error_code Error code to return
  * @param error_msg Error message string
  */
 void fake_dbus_set_should_fail(bool should_fail, int error_code, const char* error_msg);
