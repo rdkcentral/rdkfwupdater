@@ -82,6 +82,32 @@ gint32 fake_dbus_get_last_status_int(void);
  */
 void fake_dbus_set_should_fail(bool should_fail, int error_code, const char* error_msg);
 
+// ============================================================================
+// FAKE FILE I/O AND SYSTEM CALLS (for thread testing)
+// ============================================================================
+
+/**
+ * @brief Reset file I/O fake state
+ */
+void fake_fileio_reset(void);
+
+/**
+ * @brief Set fake progress file content
+ * @param content File content to return when fopen("/opt/curl_progress") is called
+ *                Use NULL to simulate file not found
+ */
+void fake_fileio_set_progress_file(const char* content);
+
+/**
+ * @brief Get number of times fopen was called (for verification)
+ */
+int fake_fileio_get_fopen_count(void);
+
+/**
+ * @brief Get number of times g_usleep was called (for verification)
+ */
+int fake_fileio_get_usleep_count(void);
+
 #ifdef __cplusplus
 }
 

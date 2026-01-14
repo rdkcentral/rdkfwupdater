@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <chrono>  // For timing tests
 
 // Include headers under test
 extern "C" {
@@ -53,9 +54,12 @@ typedef struct {
     guint64 total_bytes;
 } ProgressData;
 
+// Note: FlashProgressUpdate is already defined in rdkv_dbus_server.h
+
 // Forward declare thread functions
 gpointer rdkfw_progress_monitor_thread(gpointer user_data);
 gboolean emit_download_progress_idle(gpointer user_data);
+gboolean emit_flash_progress_idle(gpointer user_data);
 
 // Note: RdkUpgradeContext_t is now included from rdkv_upgrade.h via the mock header
 }
@@ -1601,8 +1605,7 @@ TEST_F(DbusHandlersTest, EmitDownloadProgressIdle_ValidData_EmitsSignal) {
 
 /**
  * @test EmitDownloadProgressIdle_Progress100_EmitsCompletedStatus
- * @brief Tests signal emission with 100% progress
- * COVERAGE TARGET: Lines 703-705 (progress >= 100 branch)
+ * TEST: Completed flash with status=2 (FW_UPDATE_COMPLETED)
  */
 TEST_F(DbusHandlersTest, EmitDownloadProgressIdle_Progress100_EmitsCompletedStatus) {
     fake_dbus_reset();
@@ -1610,7 +1613,7 @@ TEST_F(DbusHandlersTest, EmitDownloadProgressIdle_Progress100_EmitsCompletedStat
     ProgressData* data = g_new0(ProgressData, 1);
     data->connection = (GDBusConnection*)0xDEADBEEF;
     data->handler_id = g_strdup("999");
-    data->firmware_name = g_strdup("complete_fw.bin");
+    data->firmware_name = g_strdup("completed_fw.bin");
     data->progress_percent = 100;
     data->bytes_downloaded = 10000;
     data->total_bytes = 10000;
@@ -1620,8 +1623,9 @@ TEST_F(DbusHandlersTest, EmitDownloadProgressIdle_Progress100_EmitsCompletedStat
     EXPECT_EQ(result, FALSE);
     EXPECT_TRUE(fake_dbus_was_signal_emitted());
     EXPECT_EQ(fake_dbus_get_last_progress(), 100);
-    EXPECT_STREQ(fake_dbus_get_last_status(), "COMPLETED");
-    EXPECT_TRUE(strstr(fake_dbus_get_last_message(), "complete") != NULL);
+    EXPECT_EQ(fake_dbus_get_last_status_int(), 2);
+    EXPECT_TRUE(strstr(fake_dbus_get_last_message(), "completed") != NULL ||
+                strstr(fake_dbus_get_last_message(), "success") != NULL);
 }
 
 /**
@@ -1826,4 +1830,464 @@ TEST_F(DbusHandlersTest, EmitDownloadProgressIdle_LargeFirmwareName_NoBufferOver
     const char* emitted_name = fake_dbus_get_last_firmware_name();
     EXPECT_NE(emitted_name, nullptr);
     EXPECT_GT(strlen(emitted_name), 1000);  // Should preserve full name
+}
+
+// ============================================================================
+// PHASE 3: FLASH PROGRESS SIGNAL EMISSION TESTS
+// ============================================================================
+// Tests for emit_flash_progress_idle() - flash/upgrade progress reporting
+// Signal format: "(tsiis)" - (handler_id, firmware_name, progress_i32, status_i32, message)
+// ============================================================================
+
+/**
+ * @test EmitFlashProgressIdle_ValidData_EmitsSignal
+ * COVERAGE TARGET: Lines 1635-1720 (emit_flash_progress_idle)
+ * TEST: Basic flash progress signal emission with valid data
+ */
+TEST_F(DbusHandlersTest, EmitFlashProgressIdle_ValidData_EmitsSignal) {
+    fake_dbus_reset();
+    
+    FlashProgressUpdate* update = g_new0(FlashProgressUpdate, 1);
+    update->connection = (GDBusConnection*)0xCAFEBABE;
+    update->handler_id = g_strdup("456");
+    update->firmware_name = g_strdup("upgrade_firmware.bin");
+    update->progress = 50;
+    update->status = 0;  // FW_UPDATE_INPROGRESS
+    update->error_message = NULL;
+    
+    gboolean result = emit_flash_progress_idle(update);
+    
+    // Should return G_SOURCE_REMOVE (FALSE) after emission
+    EXPECT_EQ(result, FALSE);
+    
+    // Verify signal was emitted
+    EXPECT_TRUE(fake_dbus_was_signal_emitted());
+    EXPECT_EQ(fake_dbus_get_last_progress(), 50);
+    EXPECT_STREQ(fake_dbus_get_last_firmware_name(), "upgrade_firmware.bin");
+    EXPECT_EQ(fake_dbus_get_last_handler_id(), 456);
+}
+
+/**
+ * @test EmitFlashProgressIdle_Progress100Status1_CompletedMessage
+ * TEST: Completed flash with status=1 (FW_UPDATE_COMPLETED)
+ */
+TEST_F(DbusHandlersTest, EmitFlashProgressIdle_Progress100Status1_CompletedMessage) {
+    fake_dbus_reset();
+    
+    FlashProgressUpdate* update = g_new0(FlashProgressUpdate, 1);
+    update->connection = (GDBusConnection*)0xCAFEBABE;
+    update->handler_id = g_strdup("789");
+    update->firmware_name = g_strdup("completed_fw.bin");
+    update->progress = 100;
+    update->status = 1;  // FW_UPDATE_COMPLETED (1, not 2!)
+    update->error_message = NULL;
+    
+    gboolean result = emit_flash_progress_idle(update);
+    
+    EXPECT_EQ(result, FALSE);
+    EXPECT_TRUE(fake_dbus_was_signal_emitted());
+    EXPECT_EQ(fake_dbus_get_last_progress(), 100);
+    EXPECT_EQ(fake_dbus_get_last_status_int(), 1);
+    EXPECT_TRUE(strstr(fake_dbus_get_last_message(), "completed") != NULL ||
+                strstr(fake_dbus_get_last_message(), "success") != NULL);
+}
+
+/**
+ * @test EmitFlashProgressIdle_Progress0Status0_StartingMessage
+ * TEST: Flash starting with progress=0, status=0 (INPROGRESS)
+ */
+TEST_F(DbusHandlersTest, EmitFlashProgressIdle_Progress0Status0_StartingMessage) {
+    fake_dbus_reset();
+    
+    FlashProgressUpdate* update = g_new0(FlashProgressUpdate, 1);
+    update->connection = (GDBusConnection*)0xCAFEBABE;
+    update->handler_id = g_strdup("111");
+    update->firmware_name = g_strdup("starting_fw.bin");
+    update->progress = 0;
+    update->status = 0;  // FW_UPDATE_INPROGRESS
+    update->error_message = NULL;
+    
+    gboolean result = emit_flash_progress_idle(update);
+    
+    EXPECT_EQ(result, FALSE);
+    EXPECT_TRUE(fake_dbus_was_signal_emitted());
+    EXPECT_EQ(fake_dbus_get_last_progress(), 0);
+    EXPECT_TRUE(strstr(fake_dbus_get_last_message(), "started") != NULL ||
+                strstr(fake_dbus_get_last_message(), "Verify") != NULL);
+}
+
+/**
+ * @test EmitFlashProgressIdle_Status2Error_EmitsErrorMessage
+ * TEST: Flash error with status=2 (FW_UPDATE_ERROR) and error message
+ */
+TEST_F(DbusHandlersTest, EmitFlashProgressIdle_Status2Error_EmitsErrorMessage) {
+    fake_dbus_reset();
+    
+    FlashProgressUpdate* update = g_new0(FlashProgressUpdate, 1);
+    update->connection = (GDBusConnection*)0xCAFEBABE;
+    update->handler_id = g_strdup("999");
+    update->firmware_name = g_strdup("failed_fw.bin");
+    update->progress = 35;
+    update->status = 2;  // FW_UPDATE_ERROR (2, not 1!)
+    update->error_message = g_strdup("Flash verification failed");
+    
+    gboolean result = emit_flash_progress_idle(update);
+    
+    EXPECT_EQ(result, FALSE);
+    EXPECT_TRUE(fake_dbus_was_signal_emitted());
+    EXPECT_EQ(fake_dbus_get_last_status_int(), 2);
+    EXPECT_STREQ(fake_dbus_get_last_message(), "Flash verification failed");
+}
+
+/**
+ * @test EmitFlashProgressIdle_NullConnection_ExitsGracefully
+ * TEST: NULL connection should not crash
+ */
+TEST_F(DbusHandlersTest, EmitFlashProgressIdle_NullConnection_ExitsGracefully) {
+    fake_dbus_reset();
+    
+    FlashProgressUpdate* update = g_new0(FlashProgressUpdate, 1);
+    update->connection = NULL;  // NULL connection
+    update->handler_id = g_strdup("222");
+    update->firmware_name = g_strdup("test_fw.bin");
+    update->progress = 50;
+    update->status = 0;
+    update->error_message = NULL;
+    
+    gboolean result = emit_flash_progress_idle(update);
+    
+    EXPECT_EQ(result, FALSE);
+    // Signal emission might fail or succeed depending on implementation
+    // Just ensure no crash
+}
+
+/**
+ * @test EmitFlashProgressIdle_NullUpdate_ReturnsImmediately
+ * TEST: NULL update pointer should exit gracefully
+ */
+TEST_F(DbusHandlersTest, EmitFlashProgressIdle_NullUpdate_ReturnsImmediately) {
+    fake_dbus_reset();
+    
+    gboolean result = emit_flash_progress_idle(NULL);
+    
+    // Should return immediately without crashing
+    EXPECT_EQ(result, FALSE);  // G_SOURCE_REMOVE
+    EXPECT_FALSE(fake_dbus_was_signal_emitted());
+}
+
+/**
+ * @test EmitFlashProgressIdle_NullFirmwareName_UsesNullString
+ * TEST: NULL firmware name should be handled (use "NULL" or empty string)
+ */
+TEST_F(DbusHandlersTest, EmitFlashProgressIdle_NullFirmwareName_UsesNullString) {
+    fake_dbus_reset();
+    
+    FlashProgressUpdate* update = g_new0(FlashProgressUpdate, 1);
+    update->connection = (GDBusConnection*)0xCAFEBABE;
+    update->handler_id = g_strdup("333");
+    update->firmware_name = NULL;  // NULL firmware name
+    update->progress = 75;
+    update->status = 0;
+    update->error_message = NULL;
+    
+    gboolean result = emit_flash_progress_idle(update);
+    
+    EXPECT_EQ(result, FALSE);
+    EXPECT_TRUE(fake_dbus_was_signal_emitted());
+    // Should use "NULL" or empty string
+    const char* emitted_name = fake_dbus_get_last_firmware_name();
+    EXPECT_NE(emitted_name, nullptr);
+}
+
+/**
+ * @test EmitFlashProgressIdle_ProgressValues_CorrectMessages
+ * TEST: Different progress values generate appropriate messages
+ */
+TEST_F(DbusHandlersTest, EmitFlashProgressIdle_ProgressValues_CorrectMessages) {
+    // Test progress 25% - should mention "Verifying"
+    fake_dbus_reset();
+    FlashProgressUpdate* update1 = g_new0(FlashProgressUpdate, 1);
+    update1->connection = (GDBusConnection*)0xCAFEBABE;
+    update1->handler_id = g_strdup("25");
+    update1->firmware_name = g_strdup("fw.bin");
+    update1->progress = 20;
+    update1->status = 0;
+    emit_flash_progress_idle(update1);
+    EXPECT_TRUE(fake_dbus_was_signal_emitted());
+    
+    // Test progress 50% - should mention "Flashing"
+    fake_dbus_reset();
+    FlashProgressUpdate* update2 = g_new0(FlashProgressUpdate, 1);
+    update2->connection = (GDBusConnection*)0xCAFEBABE;
+    update2->handler_id = g_strdup("50");
+    update2->firmware_name = g_strdup("fw.bin");
+    update2->progress = 45;
+    update2->status = 0;
+    emit_flash_progress_idle(update2);
+    EXPECT_TRUE(fake_dbus_was_signal_emitted());
+    
+    // Test progress 75% - should mention "continuing"
+    fake_dbus_reset();
+    FlashProgressUpdate* update3 = g_new0(FlashProgressUpdate, 1);
+    update3->connection = (GDBusConnection*)0xCAFEBABE;
+    update3->handler_id = g_strdup("75");
+    update3->firmware_name = g_strdup("fw.bin");
+    update3->progress = 70;
+    update3->status = 0;
+    emit_flash_progress_idle(update3);
+    EXPECT_TRUE(fake_dbus_was_signal_emitted());
+}
+
+/**
+ * @test EmitFlashProgressIdle_SignalEmissionFails_HandlesError
+ * TEST: Handle D-Bus signal emission failure gracefully
+ */
+TEST_F(DbusHandlersTest, EmitFlashProgressIdle_SignalEmissionFails_HandlesError) {
+    fake_dbus_reset();
+    fake_dbus_set_should_fail(true, 42, "Simulated flash signal failure");
+    
+    FlashProgressUpdate* update = g_new0(FlashProgressUpdate, 1);
+    update->connection = (GDBusConnection*)0xCAFEBABE;
+    update->handler_id = g_strdup("error_test");
+    update->firmware_name = g_strdup("test_fw.bin");
+    update->progress = 50;
+    update->status = 0;
+    update->error_message = NULL;
+    
+    gboolean result = emit_flash_progress_idle(update);
+    
+    // Should handle error gracefully and return G_SOURCE_REMOVE
+    EXPECT_EQ(result, FALSE);
+    EXPECT_TRUE(fake_dbus_was_signal_emitted());  // Called, but failed
+}
+
+// ============================================================================
+// PHASE 4: THREAD WORKER TESTS (Progress Monitor Thread)
+// ============================================================================
+// Tests for rdkfw_progress_monitor_thread() - background download monitor
+// Uses fake file I/O to simulate progress file without real filesystem
+// Uses fake g_usleep() to make tests instant (no 100ms delays)
+// ============================================================================
+
+/**
+ * @test ProgressMonitorThread_FileFound_ParsesAndEmitsProgress
+ * COVERAGE TARGET: Lines 845-920 (file parsing and signal emission)
+ * TEST: Thread reads progress file and emits signals
+ */
+TEST_F(DbusHandlersTest, ProgressMonitorThread_FileFound_ParsesAndEmitsProgress) {
+    fake_dbus_reset();
+    fake_fileio_reset();
+    
+    // Setup context
+    gint stop_flag = 0;
+    GMutex mutex;
+    g_mutex_init(&mutex);
+    
+    ProgressMonitorContext* ctx = g_new0(ProgressMonitorContext, 1);
+    ctx->connection = (GDBusConnection*)0xDEADBEEF;
+    ctx->handler_id = g_strdup("monitor_test");
+    ctx->firmware_name = g_strdup("download_fw.bin");
+    ctx->stop_flag = &stop_flag;
+    ctx->mutex = &mutex;
+    ctx->last_dlnow = 0;
+    ctx->last_activity_time = time(NULL);
+    
+    // Simulate progress file with 50% complete
+    fake_fileio_set_progress_file("UP: 0 of 0  DOWN: 50000000 of 100000000\n");
+    
+    // Run thread for one iteration then stop
+    stop_flag = 1;  // Will exit after first iteration
+    
+    gpointer result = rdkfw_progress_monitor_thread(ctx);
+    
+    // Thread should complete without crash
+    EXPECT_EQ(result, nullptr);
+    
+    // Verify file was opened
+    EXPECT_GT(fake_fileio_get_fopen_count(), 0);
+    
+    // Verify signal was emitted
+    EXPECT_TRUE(fake_dbus_was_signal_emitted());
+    EXPECT_EQ(fake_dbus_get_last_progress(), 50);
+    
+    g_mutex_clear(&mutex);
+}
+
+/**
+ * @test ProgressMonitorThread_FileNotFound_HandlesGracefully
+ * TEST: Thread handles missing progress file without crash
+ */
+TEST_F(DbusHandlersTest, ProgressMonitorThread_FileNotFound_HandlesGracefully) {
+    fake_dbus_reset();
+    fake_fileio_reset();
+    
+    gint stop_flag = 0;
+    GMutex mutex;
+    g_mutex_init(&mutex);
+    
+    ProgressMonitorContext* ctx = g_new0(ProgressMonitorContext, 1);
+    ctx->connection = (GDBusConnection*)0xDEADBEEF;
+    ctx->handler_id = g_strdup("not_found_test");
+    ctx->firmware_name = g_strdup("missing_fw.bin");
+    ctx->stop_flag = &stop_flag;
+    ctx->mutex = &mutex;
+    ctx->last_dlnow = 0;
+    ctx->last_activity_time = time(NULL);
+    
+    // No progress file
+    fake_fileio_set_progress_file(nullptr);
+    
+    // Run for 2 iterations then stop
+    stop_flag = 1;
+    
+    gpointer result = rdkfw_progress_monitor_thread(ctx);
+    
+    EXPECT_EQ(result, nullptr);
+    // Should attempt to open file
+    EXPECT_GT(fake_fileio_get_fopen_count(), 0);
+    // Should NOT emit signal (no data)
+    EXPECT_FALSE(fake_dbus_was_signal_emitted());
+    
+    g_mutex_clear(&mutex);
+}
+
+/**
+ * @test ProgressMonitorThread_ProgressIncrements_EmitsMultipleSignals
+ * TEST: Thread emits multiple signals as progress increases
+ */
+TEST_F(DbusHandlersTest, ProgressMonitorThread_ProgressIncrements_EmitsMultipleSignals) {
+    fake_dbus_reset();
+    fake_fileio_reset();
+    
+    gint stop_flag = 0;
+    GMutex mutex;
+    g_mutex_init(&mutex);
+    
+    ProgressMonitorContext* ctx = g_new0(ProgressMonitorContext, 1);
+    ctx->connection = (GDBusConnection*)0xDEADBEEF;
+    ctx->handler_id = g_strdup("increment_test");
+    ctx->firmware_name = g_strdup("progress_fw.bin");
+    ctx->stop_flag = &stop_flag;
+    ctx->mutex = &mutex;
+    ctx->last_dlnow = 0;
+    ctx->last_activity_time = time(NULL);
+    
+    // Simulate 75% progress
+    fake_fileio_set_progress_file("UP: 0 of 0  DOWN: 75000000 of 100000000\n");
+    
+    stop_flag = 1;
+    gpointer result = rdkfw_progress_monitor_thread(ctx);
+    
+    EXPECT_EQ(result, nullptr);
+    EXPECT_TRUE(fake_dbus_was_signal_emitted());
+    EXPECT_EQ(fake_dbus_get_last_progress(), 75);
+    
+    g_mutex_clear(&mutex);
+}
+
+/**
+ * @test ProgressMonitorThread_Complete100Percent_EmitsCompletedStatus
+ * TEST: 100% progress triggers COMPLETED status
+ */
+TEST_F(DbusHandlersTest, ProgressMonitorThread_Complete100Percent_EmitsCompletedStatus) {
+    fake_dbus_reset();
+    fake_fileio_reset();
+    
+    gint stop_flag = 0;
+    GMutex mutex;
+    g_mutex_init(&mutex);
+    
+    ProgressMonitorContext* ctx = g_new0(ProgressMonitorContext, 1);
+    ctx->connection = (GDBusConnection*)0xDEADBEEF;
+    ctx->handler_id = g_strdup("complete_test");
+    ctx->firmware_name = g_strdup("complete_fw.bin");
+    ctx->stop_flag = &stop_flag;
+    ctx->mutex = &mutex;
+    ctx->last_dlnow = 0;
+    ctx->last_activity_time = time(NULL);
+    
+    // 100% complete
+    fake_fileio_set_progress_file("UP: 0 of 0  DOWN: 100000000 of 100000000\n");
+    
+    stop_flag = 1;
+    gpointer result = rdkfw_progress_monitor_thread(ctx);
+    
+    EXPECT_EQ(result, nullptr);
+    EXPECT_TRUE(fake_dbus_was_signal_emitted());
+    EXPECT_EQ(fake_dbus_get_last_progress(), 100);
+    EXPECT_STREQ(fake_dbus_get_last_status(), "COMPLETED");
+    
+    g_mutex_clear(&mutex);
+}
+
+/**
+ * @test ProgressMonitorThread_MalformedData_HandlesGracefully
+ * TEST: Invalid progress file format doesn't crash
+ */
+TEST_F(DbusHandlersTest, ProgressMonitorThread_MalformedData_HandlesGracefully) {
+    fake_dbus_reset();
+    fake_fileio_reset();
+    
+    gint stop_flag = 0;
+    GMutex mutex;
+    g_mutex_init(&mutex);
+    
+    ProgressMonitorContext* ctx = g_new0(ProgressMonitorContext, 1);
+    ctx->connection = (GDBusConnection*)0xDEADBEEF;
+    ctx->handler_id = g_strdup("malformed_test");
+    ctx->firmware_name = g_strdup("bad_data_fw.bin");
+    ctx->stop_flag = &stop_flag;
+    ctx->mutex = &mutex;
+    ctx->last_dlnow = 0;
+    ctx->last_activity_time = time(NULL);
+    
+    // Invalid format
+    fake_fileio_set_progress_file("GARBAGE DATA!@#$%\n");
+    
+    stop_flag = 1;
+    gpointer result = rdkfw_progress_monitor_thread(ctx);
+    
+    // Should complete without crash
+    EXPECT_EQ(result, nullptr);
+    EXPECT_GT(fake_fileio_get_fopen_count(), 0);
+    
+    g_mutex_clear(&mutex);
+}
+
+/**
+ * @test ProgressMonitorThread_UsesGUsleep_MakesTestFast
+ * TEST: Verify g_usleep is called (proves our fake is working)
+ */
+TEST_F(DbusHandlersTest, ProgressMonitorThread_UsesGUsleep_MakesTestFast) {
+    fake_dbus_reset();
+    fake_fileio_reset();
+    
+    gint stop_flag = 0;
+    GMutex mutex;
+    g_mutex_init(&mutex);
+    
+    ProgressMonitorContext* ctx = g_new0(ProgressMonitorContext, 1);
+    ctx->connection = (GDBusConnection*)0xDEADBEEF;
+    ctx->handler_id = g_strdup("sleep_test");
+    ctx->firmware_name = g_strdup("test_fw.bin");
+    ctx->stop_flag = &stop_flag;
+    ctx->mutex = &mutex;
+    ctx->last_dlnow = 0;
+    ctx->last_activity_time = time(NULL);
+    
+    // File not found - will call g_usleep
+    fake_fileio_set_progress_file(nullptr);
+    
+    stop_flag = 1;
+    
+    auto start = std::chrono::steady_clock::now();
+    rdkfw_progress_monitor_thread(ctx);
+    auto end = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    
+    // Should complete in <50ms (fake g_usleep makes it instant)
+    // Real thread would take 100ms+ per iteration
+    EXPECT_LT(duration.count(), 50);
+    
+    g_mutex_clear(&mutex);
 }

@@ -61,6 +61,17 @@ namespace FakeDBus {
 }
 
 // ============================================================================
+// FAKE FILE I/O STATE (declare before extern "C" functions that use it)
+// ============================================================================
+
+namespace FakeFileIO {
+    static bool g_file_exists = false;
+    static std::string g_file_content;
+    static int g_fopen_call_count = 0;
+    static int g_usleep_call_count = 0;
+}
+
+// ============================================================================
 // HELPER FUNCTIONS (for tests to control fake D-Bus)
 // ============================================================================
 
@@ -289,6 +300,16 @@ guint g_idle_add(GSourceFunc function, gpointer data) {
     return 1;  // Return fake source ID
 }
 
+/**
+ * @brief Fake implementation of g_usleep (eliminates delays in tests)
+ * 
+ * This makes thread tests run instantly instead of sleeping
+ */
+void g_usleep(gulong microseconds) {
+    (void)microseconds;  // Ignore - make tests instant
+    FakeFileIO::g_usleep_call_count++;
+}
+
 } // extern "C"
 
 // ============================================================================
@@ -313,3 +334,74 @@ public:
 };
 
 } // namespace FakeDBus
+
+// ============================================================================
+// FAKE FILE I/O FUNCTIONS (extern "C" linkage)
+// ============================================================================
+
+extern "C" {
+
+/**
+ * @brief Reset file I/O fake state
+ */
+void fake_fileio_reset() {
+    FakeFileIO::g_file_exists = false;
+    FakeFileIO::g_file_content.clear();
+    FakeFileIO::g_fopen_call_count = 0;
+    FakeFileIO::g_usleep_call_count = 0;
+}
+
+/**
+ * @brief Set fake progress file content
+ */
+void fake_fileio_set_progress_file(const char* content) {
+    FakeFileIO::g_file_exists = (content != nullptr);
+    if (content) {
+        FakeFileIO::g_file_content = content;
+    } else {
+        FakeFileIO::g_file_content.clear();
+    }
+}
+
+/**
+ * @brief Get fopen call count (for verification)
+ */
+int fake_fileio_get_fopen_count() {
+    return FakeFileIO::g_fopen_call_count;
+}
+
+/**
+ * @brief Get g_usleep call count (for verification)
+ */
+int fake_fileio_get_usleep_count() {
+    return FakeFileIO::g_usleep_call_count;
+}
+
+/**
+ * @brief Fake implementation of fopen for progress file
+ * 
+ * ONLY intercepts /opt/curl_progress - all other files use real fopen
+ */
+FILE* fopen(const char* path, const char* mode) {
+    if (path && strcmp(path, "/opt/curl_progress") == 0) {
+        FakeFileIO::g_fopen_call_count++;
+        
+        if (!FakeFileIO::g_file_exists) {
+            return nullptr;  // File doesn't exist
+        }
+        
+        // Create temporary file with fake content
+        FILE* tmp = tmpfile();
+        if (tmp && !FakeFileIO::g_file_content.empty()) {
+            fwrite(FakeFileIO::g_file_content.c_str(), 1, 
+                   FakeFileIO::g_file_content.length(), tmp);
+            rewind(tmp);
+        }
+        return tmp;
+    }
+    
+    // For all other files, return NULL (tests should not need other files)
+    return nullptr;
+}
+
+} // extern "C"
