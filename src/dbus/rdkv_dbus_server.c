@@ -1111,8 +1111,8 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			           g_slist_length(current_download->waiting_handler_ids));
 			g_dbus_method_invocation_return_value(resp_ctx,
 					g_variant_new("(sss)",
-                                        "RDKFW_DWNL_FAILED",
-                                        "DWNL_ERROR",
+                                        "RDKFW_DWNL_FAILED", //result code 
+                                        "DWNL_ERROR",         // status code
                                         "There is an Ongoing Firmware Download"));
                         return;
 
@@ -1248,7 +1248,30 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			g_free(type_of_firmware);
 			return;
 		}
-		
+
+		//4.1 Validate firmware type is valid 
+		if (!type_of_firmware ||
+				(strcmp(type_of_firmware, "PCI") != 0 &&
+				 strcmp(type_of_firmware, "PDRI") != 0 &&
+				 strcmp(type_of_firmware, "PERIPHERAL") != 0)) {
+
+			SWLOG_ERROR("[DOWNLOADFIRMWARE] REJECTED: Invalid firmware type (NULL or unsupported)\n");
+
+			g_dbus_method_invocation_return_value(
+					resp_ctx,
+					g_variant_new("(sss)",
+						"RDKFW_DWNL_FAILED",
+						"DWNL_ERROR",
+						"Invalid firmware type"));
+
+			g_free(handler_id_str);
+			g_free(firmware_name);
+			g_free(download_url);
+			g_free(type_of_firmware);
+			return;
+		}
+
+	        	
 		// 5. Validate download URL (if custom URL provided, it must be non-empty)
 		if (download_url && strlen(download_url) > 0) {
 			// Custom URL provided - validate it's a valid URL format

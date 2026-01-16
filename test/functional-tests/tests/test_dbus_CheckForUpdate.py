@@ -2,7 +2,7 @@ import dbus
 import subprocess
 import time
 import pytest
-
+import os
 # D-Bus service configuration (must match daemon's actual registration)
 DBUS_SERVICE_NAME = "org.rdkfwupdater.Service"      # BUS_NAME
 DBUS_OBJECT_PATH = "/org/rdkfwupdater/Service"      # OBJECT_PATH (actual daemon path)
@@ -10,6 +10,9 @@ DBUS_INTERFACE = "org.rdkfwupdater.Interface"       # Interface name
 
 DAEMON_BINARY = "/usr/local/bin/rdkFwupdateMgr"
 DAEMON_PID_FILE = "/tmp/rdkFwupdateMgr.pid"
+
+XCONF_CACHE_FILE = "/tmp/xconf_response_thunder.txt"
+XCONF_HTTP_CODE_FILE = "/tmp/xconf_httpcode_thunder.txt"
 
 #define BUS_NAME "org.rdkfwupdater.Service"          // D-Bus service name
 #define OBJECT_PATH "/org/rdkfwupdater/Service"      // D-Bus object path
@@ -42,6 +45,47 @@ def safe_dbus_call(api_method, *args):
         error_msg = f"{type(e).__name__}: {str(e)}"
         e = None  # Help GC
         return (False, error_msg)
+
+
+def remove_cache_files():
+    for f in (XCONF_CACHE_FILE, XCONF_HTTP_CODE_FILE):
+        try:
+            os.remove(f)
+        except FileNotFoundError:
+            pass
+
+
+def cache_exists():
+    return os.path.exists(XCONF_CACHE_FILE) and os.path.exists(XCONF_HTTP_CODE_FILE)
+
+
+def grep_log_file(logfile_path, search_pattern):
+    """
+    Search for a pattern in a log file.
+    
+    Args:
+        logfile_path: Path to log file
+        search_pattern: String to search for (case-insensitive substring match)
+    
+    Returns:
+        bool: True if pattern found, False otherwise
+    """
+    try:
+        if not os.path.exists(logfile_path):
+            print(f"WARNING: Log file does not exist: {logfile_path}")
+            return False
+            
+        with open(logfile_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+            found = search_pattern.lower() in content.lower()
+            if found:
+                print(f"Found pattern '{search_pattern}' in {logfile_path}")
+            else:
+                print(f"Pattern '{search_pattern}' NOT found in {logfile_path}")
+            return found
+    except Exception as e:
+        print(f"ERROR reading log file {logfile_path}: {e}")
+        return False
 
 
 def start_daemon():
@@ -295,5 +339,90 @@ def test_check_for_update_fails_after_unregistration():
         print(f"   Status Code: {status_code} (FIRMWARE_CHECK_ERROR)")
         print(f"   Message: '{status_message}'")
 
+    finally:
+        stop_daemon(proc)
+
+def test_cache_miss_first_boot_calls_xconf_and_creates_cache():
+    """
+    Scenario 1: First boot cold start (cache miss)
+
+    Preconditions:
+      - No cache files exist
+    Expected:
+      - CheckForUpdate succeeds
+      - Fresh XConf call is made
+      - Cache files created
+      - Correct log messages appear
+    """
+
+    # 1) ensure no cache exists
+    remove_cache_files()
+    assert not cache_exists()
+    
+    # 2) call CheckForUpdate through D-Bus wrapper
+    proc = start_daemon()
+    
+    try:
+        api = iface()
+        # Register process first
+        result = api.RegisterProcess("ProcA", "1.0")
+        handler_id = result if isinstance(result, tuple) else int(result)
+        assert handler_id > 0, f"Registration should return valid handler_id, got {handler_id}"
+        print(f"Registered with handler_id: {handler_id}")
+
+        # Call CheckForUpdate with the registered handler_id
+        response = api.CheckForUpdate(str(handler_id))
+
+        # 3) Verify response structure: (result, current_version, available_version, update_details, status_message, status_code)
+        assert response is not None, "CheckForUpdate should return a response"
+        assert isinstance(response, (tuple, list)), f"Expected tuple, got {type(response)}"
+        assert len(response) == 6, f"Expected 6 elements, got {len(response)}: {response}"
+        
+        # Extract fields
+        result = int(response[0])                    # API call result (0=success, 1=fail)
+        current_version = str(response[1])           # Current firmware version
+        available_version = str(response[2])         # Available firmware version
+        update_details = str(response[3])            # Update details
+        status_message = str(response[4])            # Status/error message
+        status_code = int(response[5])               # Status code (0-5)
+        
+        # Verify CheckForUpdate succeeded
+        assert result == 0, f"Expected result=0 (CHECK_FOR_UPDATE_SUCCESS), got: {result}"
+        print(f"CheckForUpdate response: result={result}, status_code={status_code}, message='{status_message}'")
+
+        # Note: The daemon has a 120-second sleep before making XConf call
+        # Status code 3 (FIRMWARE_CHECK_ERROR) with "in progress" message means XConf call is happening
+        print(f"Status code {status_code} indicates XConf query state")
+        
+        # 4) Wait for cache to be created (XConf call is asynchronous/delayed)
+        # The daemon sleeps for 120 seconds before XConf call in fetch_xconf_firmware_info()
+        print("Waiting for XConf query to complete and cache to be created...")
+        max_wait_seconds = 180  # Wait up to 3 minutes (120s sleep + 60s for XConf call)
+        wait_interval = 5       # Check every 5 seconds
+        elapsed = 0
+        
+        while elapsed < max_wait_seconds:
+            if cache_exists():
+                print(f"Cache created after {elapsed} seconds")
+                break
+            time.sleep(wait_interval)
+            elapsed += wait_interval
+            if elapsed % 30 == 0:  # Log every 30 seconds
+                print(f"Still waiting for cache... ({elapsed}s elapsed)")
+        
+        # Now verify cache exists
+        assert cache_exists(), f"Cache files should be created after XConf query (waited {elapsed}s)"
+
+        # 5) logs must say cache miss and creation
+        assert grep_log_file("/opt/logs/swupdate.txt.0",
+                             "Cache miss! Making live XConf call"), \
+                             "Expected 'Cache miss!' log entry"
+
+        assert grep_log_file("/opt/logs/swupdate.txt.0",
+                             "XConf data cached successfully"), \
+                             "Expected 'XConf data cached successfully' log entry"
+        
+        print("TEST PASSED: Cache miss scenario - XConf called and cache created")
+        
     finally:
         stop_daemon(proc)

@@ -218,7 +218,7 @@ def test_different_clients_different_processes_allowed():
         result1 = api.RegisterProcess("VideoApp", "1.0")
         handler_id1 = int(result1[0]) if isinstance(result1, tuple) else int(result1)
         assert handler_id1 > 0
-        print(f"✓ Client 1 registered 'VideoApp' with handler_id: {handler_id1}")
+        print(f"Client 1 registered 'VideoApp' with handler_id: {handler_id1}")
 
         # Second client (subprocess) registers "AudioApp"  
         import os
@@ -240,8 +240,8 @@ def test_different_clients_different_processes_allowed():
         assert handler_id2 != handler_id1, \
             f"Expected different handler_ids, but both got {handler_id1}"
         
-        print(f"✓ Client 2 registered 'AudioApp' with handler_id: {handler_id2}")
-        print("✓ Different clients with different process names both succeeded")
+        print(f"Client 2 registered 'AudioApp' with handler_id: {handler_id2}")
+        print("Different clients with different process names both succeeded")
 
     finally:
         stop_daemon(proc)
