@@ -3266,8 +3266,11 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
         
         SWLOG_INFO("[DOWNLOAD_WORKER]  Progress monitor thread stopped cleanly\n");
         
-        // Note: monitor_mutex and monitor_ctx are cleaned up by the thread itself
-        // Do NOT free them here to avoid double-free
+        // CRITICAL FIX: monitor_ctx is cleaned up by the thread itself in its cleanup section
+        // We MUST set it to NULL here to prevent double-free in error paths below
+        monitor_ctx = NULL;
+        
+        // Note: monitor_mutex is also freed by the thread, no action needed here
     } else {
         SWLOG_DEBUG("[DOWNLOAD_WORKER] No monitor thread to stop (was not started)\n");
         /* Coverity fix: RESOURCE_LEAK - If monitor_thread is NULL but monitor_ctx was allocated
@@ -3310,6 +3313,9 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
             g_thread_join(monitor_thread);
             /* coverity[leaked_storage] - False positive: thread already freed by g_thread_join() */
             monitor_thread = NULL;  // Suppress Coverity "going out of scope" warning
+            
+            // CRITICAL FIX: Thread freed monitor_ctx in its cleanup, prevent double-free
+            monitor_ctx = NULL;
         } else if (monitor_ctx != NULL) {
             SWLOG_DEBUG("[DOWNLOAD_WORKER] Cleaning up monitor_ctx (thread was not started)\n");
             if (monitor_ctx->handler_id) g_free(monitor_ctx->handler_id);
@@ -3319,6 +3325,7 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
                 g_free(monitor_ctx->mutex);
             }
             g_free(monitor_ctx);
+            monitor_ctx = NULL;
         }
         
         // Emit error signal
@@ -3349,6 +3356,9 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
             g_thread_join(monitor_thread);
             /* coverity[leaked_storage] - False positive: thread already freed by g_thread_join() */
             monitor_thread = NULL;  // Suppress Coverity "going out of scope" warning
+            
+            // CRITICAL FIX: Thread freed monitor_ctx in its cleanup, prevent double-free
+            monitor_ctx = NULL;
         } else if (monitor_ctx != NULL) {
             SWLOG_DEBUG("[DOWNLOAD_WORKER] Cleaning up monitor_ctx (thread was not started)\n");
             if (monitor_ctx->handler_id) g_free(monitor_ctx->handler_id);
@@ -3358,6 +3368,7 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
                 g_free(monitor_ctx->mutex);
             }
             g_free(monitor_ctx);
+            monitor_ctx = NULL;
         }
         
         // Emit error signal
