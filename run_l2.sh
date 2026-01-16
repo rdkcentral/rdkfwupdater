@@ -73,7 +73,11 @@ pytest --json-report --json-report-file $RESULT_DIR/rdkfwupdater_image_tests.jso
 echo ""
 echo "[2/2] Running D-Bus handler and cache tests..."
 pytest -v -s --json-report --json-report-file $RESULT_DIR/rdkfwupdater_dbus_tests.json \
-       test/functional-tests/tests/test_dbus_RegisterProcess.py
+       test/functional-tests/tests/test_dbus_RegisterProcess.py \
+       test/functional-tests/tests/test_dbus_UnegisterProcess.py \
+       test/functional-tests/tests/test_dbus_CheckForUpdate.py \
+       test/functional-tests/tests/test_dbus_CheckForUpdate_enhanced.py \
+       test/functional-tests/tests/test_dbus_DownloadFirmware.py
 
 echo ""
 echo "=========================================="
