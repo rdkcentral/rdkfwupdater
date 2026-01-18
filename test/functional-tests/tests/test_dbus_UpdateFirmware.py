@@ -840,3 +840,249 @@ def test_update_progress_signals_basic():
         stop_daemon(proc)
 
 
+def test_update_unregistered_handler():
+    """
+    Test 11: UpdateFirmware with unregistered handler
+    
+    SCENARIO: Call UpdateFirmware without RegisterProcess
+    SETUP: Start daemon but don't register
+    EXECUTE: UpdateFirmware with handler_id that was never registered
+    VERIFY: Returns RDKFW_UPDATE_FAILED with "Handler not registered"
+    """
+    proc = start_daemon()
+    initial_rdkfw_setup()
+    write_device_prop()
+    cleanup_daemon_files()
+    
+    firmware_name = "test.bin"
+    firmware_path = create_mock_firmware_file(firmware_name)
+    create_mock_flash_script(return_code=0)
+    
+    try:
+        api = iface()
+        
+        # Call UpdateFirmware with fake/unregistered handler ID (e.g., "999")
+        result = api.UpdateFirmware(
+            "999",              # Unregistered handler_id
+            firmware_name,
+            FIRMWARE_DIR,       # LocationOfFirmware
+            "PCI",              # TypeOfFirmware
+            "false"
+        )
+        
+        update_result = str(result[0] if isinstance(result, tuple) else result[0])
+        assert update_result == RDKFW_UPDATE_FAILED, \
+            f"Should reject unregistered handler, got {update_result}"
+        print("[PASS] Unregistered handler rejected")
+        
+        # Check error message
+        error_msg = str(result[2] if isinstance(result, tuple) and len(result) > 2 else "")
+        assert "registered" in error_msg.lower() or "handler" in error_msg.lower(), \
+            f"Expected registration error, got: {error_msg}"
+        print(f"[PASS] Error message: {error_msg}")
+        
+    finally:
+        remove_file(firmware_path)
+        restore_flash_script()
+        cleanup_daemon_files()
+        stop_daemon(proc)
+
+
+def test_update_empty_handler_id():
+    """
+    Test 12: UpdateFirmware with empty handler ID
+    
+    SCENARIO: Call UpdateFirmware with empty/NULL handler_id
+    SETUP: Register process but pass empty handler_id
+    EXECUTE: UpdateFirmware("", "fw.bin", "PCI", "/opt/CDL", "false")
+    VERIFY: Returns RDKFW_UPDATE_FAILED with "Invalid handler ID"
+    """
+    proc = start_daemon()
+    initial_rdkfw_setup()
+    write_device_prop()
+    cleanup_daemon_files()
+    
+    firmware_name = "test.bin"
+    firmware_path = create_mock_firmware_file(firmware_name)
+    create_mock_flash_script(return_code=0)
+    
+    try:
+        api = iface()
+        
+        # Register (but don't use the handler_id)
+        result = api.RegisterProcess("TestApp", "1.0")
+        handler_id = str(result[0] if isinstance(result, tuple) else result)
+        assert int(handler_id) > 0, "Registration failed"
+        
+        # Call UpdateFirmware with EMPTY handler_id
+        result = api.UpdateFirmware(
+            "",                 # Empty handler_id
+            firmware_name,
+            FIRMWARE_DIR,       # LocationOfFirmware
+            "PCI",              # TypeOfFirmware
+            "false"
+        )
+        
+        update_result = str(result[0] if isinstance(result, tuple) else result[0])
+        assert update_result == RDKFW_UPDATE_FAILED, \
+            f"Should reject empty handler ID, got {update_result}"
+        print("[PASS] Empty handler ID rejected")
+        
+        # Check error message
+        error_msg = str(result[2] if isinstance(result, tuple) and len(result) > 2 else "")
+        assert "handler" in error_msg.lower() or "invalid" in error_msg.lower(), \
+            f"Expected handler error, got: {error_msg}"
+        print(f"[PASS] Error message: {error_msg}")
+        
+    finally:
+        remove_file(firmware_path)
+        restore_flash_script()
+        cleanup_daemon_files()
+        stop_daemon(proc)
+
+
+def test_update_empty_firmware_name():
+    """
+    Test 13: UpdateFirmware with empty firmware name
+    
+    SCENARIO: Call UpdateFirmware with empty/NULL firmware name
+    SETUP: Valid handler but empty firmware name
+    EXECUTE: UpdateFirmware(handler_id, "", "PCI", "/opt/CDL", "false")
+    VERIFY: Returns RDKFW_UPDATE_FAILED with "Invalid firmware name"
+    """
+    proc = start_daemon()
+    initial_rdkfw_setup()
+    write_device_prop()
+    cleanup_daemon_files()
+    
+    create_mock_flash_script(return_code=0)
+    
+    try:
+        api = iface()
+        result = api.RegisterProcess("TestApp", "1.0")
+        handler_id = str(result[0] if isinstance(result, tuple) else result)
+        assert int(handler_id) > 0, "Registration failed"
+        
+        # Call UpdateFirmware with EMPTY firmware name
+        result = api.UpdateFirmware(
+            handler_id,
+            "",                 # Empty firmware name
+            FIRMWARE_DIR,       # LocationOfFirmware
+            "PCI",              # TypeOfFirmware
+            "false"
+        )
+        
+        update_result = str(result[0] if isinstance(result, tuple) else result[0])
+        assert update_result == RDKFW_UPDATE_FAILED, \
+            f"Should reject empty firmware name, got {update_result}"
+        print("[PASS] Empty firmware name rejected")
+        
+        # Check error message
+        error_msg = str(result[2] if isinstance(result, tuple) and len(result) > 2 else "")
+        assert "firmware" in error_msg.lower() or "invalid" in error_msg.lower() or "empty" in error_msg.lower(), \
+            f"Expected firmware name error, got: {error_msg}"
+        print(f"[PASS] Error message: {error_msg}")
+        
+    finally:
+        restore_flash_script()
+        cleanup_daemon_files()
+        stop_daemon(proc)
+
+
+def test_update_sequential_flash_operations():
+    """
+    Test 14: Sequential flash operations (A → complete → B)
+    
+    SCENARIO: Flash firmware A, wait for completion, then flash firmware B
+    SETUP: Two firmware files and mock flash script
+    EXECUTE: 
+        STEP 1: Flash firmware A, wait for 100%
+        STEP 2: Flash firmware B (should work)
+    VERIFY: 
+        - First flash completes successfully
+        - IsFlashInProgress resets to FALSE
+        - Second flash starts successfully (state cleanup works)
+    """
+    proc = start_daemon()
+    initial_rdkfw_setup()
+    write_device_prop()
+    cleanup_daemon_files()
+    
+    firmware_a = "firmware_a.bin"
+    firmware_b = "firmware_b.bin"
+    path_a = create_mock_firmware_file(firmware_a)
+    path_b = create_mock_firmware_file(firmware_b)
+    
+    # Mock script with short delay
+    create_mock_flash_script(return_code=0)
+    
+    monitor = UpdateProgressMonitor()
+    monitor.start()
+    
+    try:
+        api = iface()
+        result = api.RegisterProcess("TestApp", "1.0")
+        handler_id = str(result[0] if isinstance(result, tuple) else result)
+        assert int(handler_id) > 0, "Registration failed"
+        
+        # ========== FLASH #1: Firmware A ==========
+        print("\n[STEP 1] Starting flash of firmware A...")
+        result1 = api.UpdateFirmware(
+            handler_id,
+            firmware_a,
+            FIRMWARE_DIR,       # LocationOfFirmware
+            "PCI",              # TypeOfFirmware
+            "false"
+        )
+        
+        update_result1 = str(result1[0] if isinstance(result1, tuple) else result1[0])
+        assert update_result1 == RDKFW_UPDATE_SUCCESS, \
+            f"First flash should be accepted, got {update_result1}"
+        print("[PASS] First flash accepted")
+        
+        # Wait for first flash to complete (100% signal)
+        completion_signal = monitor.wait_for_progress(100, timeout=30)
+        assert completion_signal is not None, "First flash did not complete"
+        assert completion_signal['status'] == FW_UPDATE_COMPLETED, \
+            f"Expected COMPLETED status, got {completion_signal['status']}"
+        print("[PASS] First flash completed successfully")
+        
+        # Give daemon time to reset IsFlashInProgress flag
+        time.sleep(2)
+        
+        # Reset monitor for second flash
+        monitor.signals.clear()
+        
+        # ========== FLASH #2: Firmware B ==========
+        print("\n[STEP 2] Starting flash of firmware B...")
+        result2 = api.UpdateFirmware(
+            handler_id,
+            firmware_b,
+            FIRMWARE_DIR,       # LocationOfFirmware
+            "PCI",              # TypeOfFirmware
+            "false"
+        )
+        
+        update_result2 = str(result2[0] if isinstance(result2, tuple) else result2[0])
+        assert update_result2 == RDKFW_UPDATE_SUCCESS, \
+            f"Second flash should be accepted (state cleanup worked), got {update_result2}"
+        print("[PASS] Second flash accepted (IsFlashInProgress was reset)")
+        
+        # Wait for second flash to complete
+        completion_signal2 = monitor.wait_for_progress(100, timeout=30)
+        assert completion_signal2 is not None, "Second flash did not complete"
+        assert completion_signal2['status'] == FW_UPDATE_COMPLETED, \
+            f"Expected COMPLETED status, got {completion_signal2['status']}"
+        print("[PASS] Second flash completed successfully")
+        
+        print("\n[PASS] Sequential flash operations work correctly (state management verified)")
+        
+    finally:
+        monitor.stop()
+        remove_file(path_a)
+        remove_file(path_b)
+        restore_flash_script()
+        cleanup_daemon_files()
+        stop_daemon(proc)
+
+
