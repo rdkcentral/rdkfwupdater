@@ -1450,7 +1450,7 @@ DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName
             // Continue without progress monitoring (non-fatal)
             SWLOG_INFO("[DOWNLOAD_HANDLER] Continuing without progress monitoring\n");
         } else {
-            SWLOG_INFO("[DOWNLOAD_HANDLER] ✓ Progress monitor thread started successfully\n");
+            SWLOG_INFO("[DOWNLOAD_HANDLER] Progress monitor thread started successfully\n");
         }
     } else {
         SWLOG_INFO("[DOWNLOAD_HANDLER] No progress monitoring requested (download_state=NULL)\n");
@@ -1466,7 +1466,7 @@ DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName
     SWLOG_INFO("[DOWNLOAD_HANDLER] rdkv_upgrade_request() returned: curl=%d, http=%d\n", 
                curl_ret_code, http_code);
     
-    // *** NEW: Stop progress monitor thread ***
+    // Stop progress monitor thread ***
     if (monitor_thread != NULL) {
         SWLOG_INFO("[DOWNLOAD_HANDLER] Stopping progress monitor thread...\n");
         
