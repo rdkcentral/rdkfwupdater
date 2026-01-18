@@ -1,12 +1,4 @@
 #!/usr/bin/env python3
-"""
-Fixed Parameter Validation Tests for DownloadFirmware
-These tests validate input parameters and error handling
-
-NOTE: These tests work with the default build (rdkcertselector enabled).
-They validate D-Bus API behavior and error handling, matching the approach
-used in the binary tests (test_imagedwnl.py).
-"""
 
 import dbus
 import subprocess
@@ -1042,7 +1034,6 @@ def test_progress_file_creation():
         2. File contains progress percentage
         3. Progress updates over time
 
-    UIs display this to users - must work
     """
     proc = start_daemon()
     initial_rdkfw_setup()
