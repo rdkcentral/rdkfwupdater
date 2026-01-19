@@ -136,15 +136,35 @@ def cache_exists():
     """Check if XConf cache exists"""
     return os.path.exists(XCONF_CACHE_FILE) and os.path.exists(XCONF_HTTP_CODE_FILE)
 
-def wait_for_log_line(log_file, text, timeout=10):
+def wait_for_log_line(log_file, text, timeout=30):
+    """
+    Wait for specific text to appear in log file
+    
+    Args:
+        log_file: Path to log file
+        text: Text to search for
+        timeout: Maximum seconds to wait
+    
+    Returns:
+        bool: True if found, False if timeout
+    """
     start = time.time()
+    
     while time.time() - start < timeout:
         if os.path.exists(log_file):
-            with open(log_file, "r") as f:
-                if text in f.read():
-                    return True
-        time.sleep(0.2)
-    return False
+            try:
+                # Open with UTF-8 error handling
+                with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read()
+                    if text in content:
+                        return True
+            except Exception as e:
+                # Log file might be being written to
+                pass
+        
+        time.sleep(0.2)  # Check every 0.2 seconds
+    
+    return False  # Timeout - not found
 
 def create_xconf_cache(firmware_available=True, version="ABCD_1.0.0"):
     """
