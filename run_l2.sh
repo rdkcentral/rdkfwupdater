@@ -55,6 +55,34 @@ rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLSpLimit.TopSpeed
 rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Identity.DbgServices.Enable boolean true
 cp test/functional-tests/tests/rc-proxy-params.json /tmp/rc-proxy-params.json
 
+# ========================================
+# Start D-Bus System Daemon (Required for D-Bus tests)
+# ========================================
+echo ""
+echo "Starting D-Bus system daemon..."
+
+# Check if D-Bus is already running
+if ! pgrep -x "dbus-daemon" > /dev/null; then
+    # Ensure D-Bus runtime directory exists
+    mkdir -p /run/dbus
+    
+    # Start D-Bus system daemon
+    dbus-daemon --system --fork
+    
+    # Wait for D-Bus to be ready
+    sleep 2
+    
+    # Verify D-Bus started successfully
+    if pgrep -x "dbus-daemon" > /dev/null; then
+        echo " D-Bus daemon started successfully"
+    else
+        echo "ERROR: Failed to start D-Bus daemon"
+        echo "  D-Bus tests will fail!"
+    fi
+else
+    echo "D-Bus daemon already running"
+fi
+
 echo ""
 echo "=========================================="
 echo "Running L2 Integration Tests"
