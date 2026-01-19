@@ -69,6 +69,12 @@ cp test/functional-tests/tests/rc-proxy-params.json /tmp/rc-proxy-params.json
 # ========================================
 # Start D-Bus System Daemon (Required for D-Bus tests)
 # ========================================
+
+mkdir -p /etc/dbus-1/system.d
+cp test/functional-tests/tests/org.rdkfwupdater.Service.conf /etc/dbus-1/system.d/
+pkill -HUP dbus-daemon 2>/dev/null || true
+sleep 1
+
 echo ""
 echo "Starting D-Bus system daemon..."
 
