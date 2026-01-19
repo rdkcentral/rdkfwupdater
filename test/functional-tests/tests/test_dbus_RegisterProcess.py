@@ -10,11 +10,6 @@ DBUS_INTERFACE = "org.rdkfwupdater.Interface"       # Interface name
 DAEMON_BINARY = "/usr/local/bin/rdkFwupdateMgr"
 DAEMON_PID_FILE = "/tmp/rdkFwupdateMgr.pid"
 
-#define BUS_NAME "org.rdkfwupdater.Service"          // D-Bus service name
-#define OBJECT_PATH "/org/rdkfwupdater/Service"      // D-Bus object path
-#define INTERFACE_NAME "org.rdkfwupdater.Interface"  // D-Bus interface name
-
-
 def start_daemon():
     """
     Start the daemon with required arguments.
@@ -32,7 +27,7 @@ def start_daemon():
     
     # Start daemon with required arguments: retry_count=0, trigger_type=1 (Bootup)
     proc = subprocess.Popen([DAEMON_BINARY, "0", "1"])
-    time.sleep(15)  # Give it time to initialize and register on D-Bus
+    time.sleep(3)  # Give it time to initialize and register on D-Bus
     return proc
 
 
@@ -76,7 +71,7 @@ def test_same_client_different_process_is_rejected():
         id1 = api.RegisterProcess("ProcA", "1.0")
         handler_id1 = id1
         assert handler_id1 > 0
-        print(f"✓ First registration (ProcA) succeeded with handler_id: {handler_id1}")
+        print(f"First registration (ProcA) succeeded with handler_id: {handler_id1}")
         
         # Second registration with different process name should fail
         try:
@@ -86,13 +81,13 @@ def test_same_client_different_process_is_rejected():
             handler_id2 = id2 if isinstance(id2, tuple) else int(id2)
             assert handler_id2 == 0, \
                 f"Expected rejection (0), but got handler_id: {handler_id2}"
-            print("✓ Second registration (ProcB) correctly rejected with handler_id=0")
+            print("Second registration (ProcB) correctly rejected with handler_id=0")
             
         except dbus.exceptions.DBusException as e:
             # This is the expected behavior - daemon returns error
             assert "Registration rejected" in str(e) or "AccessDenied" in str(e), \
                 f"Expected rejection error, got: {e}"
-            print(f"✓ Second registration (ProcB) correctly rejected with error: {e.get_dbus_name()}")
+            print(f"Second registration (ProcB) correctly rejected with error: {e.get_dbus_name()}")
 
     finally:
         stop_daemon(proc)
@@ -101,7 +96,7 @@ def test_same_process_registered_by_another_client_is_rejected():
     """
     Test that different client cannot register same process name.
     
-    Note: In Python, SystemBus() connections share the same D-Bus sender_id,
+    In Python, SystemBus() connections share the same D-Bus sender_id,
     so we need to use subprocess to simulate a truly different client.
     
     For now, this test documents the expected behavior but may not
@@ -115,10 +110,10 @@ def test_same_process_registered_by_another_client_is_rejected():
         id1 = api.RegisterProcess("ProcA", "1.0")
         handler_id1 = id1
         assert handler_id1 > 0
-        print(f"✓ First client registered 'ProcA' with handler_id: {handler_id1}")
+        print(f"First client registered 'ProcA' with handler_id: {handler_id1}")
 
         # Attempt to create a "different" client
-        # NOTE: In Python's dbus module, this still shares the same connection
+        # In Python's dbus module, this still shares the same connection
         # and sender_id, so the daemon sees it as the SAME client!
         bus2 = dbus.SystemBus()
         proxy2 = bus2.get_object(DBUS_SERVICE_NAME, DBUS_OBJECT_PATH)
@@ -130,14 +125,14 @@ def test_same_process_registered_by_another_client_is_rejected():
         # Because Python shares the same D-Bus connection, the daemon
         # sees this as idempotent re-registration (same client, same process)
         # So it returns the SAME handler_id
-        print(f"✓ Second 'client' got handler_id: {handler_id2}")
+        print(f"Second 'client' got handler_id: {handler_id2}")
         
         # Since we can't truly test different clients in Python without
         # subprocess, we'll just verify idempotent behavior here
         assert handler_id2 == handler_id1, \
             "Python dbus module shares connection, so this is idempotent registration"
         
-        print("ℹ️  Note: Python dbus module shares connections, so both 'clients'")
+        print("Python dbus module shares connections, so both 'clients'")
         print("   are actually the same client (same sender_id) to the daemon.")
         print("   True multi-client testing requires subprocess or different processes.")
 
@@ -174,7 +169,7 @@ def test_different_client_same_process_rejected_using_subprocess():
         result1 = api.RegisterProcess("SharedProc", "1.0")
         handler_id1 = result1 if isinstance(result1, tuple) else int(result1)
         assert handler_id1 > 0
-        print(f"✓ Client 1 (this process) registered 'SharedProc' with handler_id: {handler_id1}")
+        print(f"Client 1 (this process) registered 'SharedProc' with handler_id: {handler_id1}")
 
         # Second client (subprocess) tries to register same "SharedProc"
         import os
@@ -192,12 +187,12 @@ def test_different_client_same_process_rejected_using_subprocess():
             handler_id2 = int(result.stdout.strip())
             assert handler_id2 == 0, \
                 f"Expected client 2 to be rejected (handler_id=0), but got {handler_id2}"
-            print(f"✓ Client 2 (subprocess) correctly rejected with handler_id=0")
+            print(f"Client 2 (subprocess) correctly rejected with handler_id=0")
         else:
             # Subprocess failed - check for rejection error
             assert "rejected" in result.stderr.lower() or "already registered" in result.stderr.lower(), \
                 f"Expected rejection error, got: {result.stderr}"
-            print(f"✓ Client 2 (subprocess) correctly rejected with error")
+            print(f"Client 2 (subprocess) correctly rejected with error")
             print(f"  Error: {result.stderr.strip()}")
 
     finally:
