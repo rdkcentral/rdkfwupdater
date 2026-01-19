@@ -374,7 +374,7 @@ void checkAndEnterStateRed(int curlret, const char *disableStatsUpdate) {
             || (curlret == 91)|| (curlret == 495)) {
         SWLOG_INFO("RED checkAndEnterStateRed: Curl SSL/TLS error %d. Set State Red Recovery Flag and Exit!!!", curlret);
         t2CountNotify("CDLrdkportal_split", curlret);
-        t2_event_d("RED_STATE_REASON", curlret);
+        t2CountNotify("RED_STATE_REASON", curlret);
         //CID:280507-Unchecked return value
 	if(remove(DIRECT_BLOCK_FILENAME) != 0){
 		perror("Error deleting DIRECT_BLOCK_FAILURE");
