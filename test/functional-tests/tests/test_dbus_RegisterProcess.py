@@ -32,7 +32,7 @@ def start_daemon():
     
     # Start daemon with required arguments: retry_count=0, trigger_type=1 (Bootup)
     proc = subprocess.Popen([DAEMON_BINARY, "0", "1"])
-    time.sleep(3)  # Give it time to initialize and register on D-Bus
+    time.sleep(15)  # Give it time to initialize and register on D-Bus
     return proc
 
 
