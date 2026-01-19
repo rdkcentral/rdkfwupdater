@@ -34,7 +34,6 @@ RDKFW_DWNL_SUCCESS = 0 #Firmware download initiated successfully.
 RDKFW_DWNL_FAILED = 1  #Firmware download initiation failed.
 
 def write_device_prop():
-    """Same as binary test"""
     file_path = "/etc/device.properties"
     data = """DEVICE_NAME=DEV_CONTAINER
 DEVICE_TYPE=mediaclient
@@ -109,10 +108,8 @@ def wait_for_log_line(log_file, text, timeout=10):
 def test_download_with_null_firmware_name():
     """
     SCENARIO: firmwareName is empty string
-    EXPECTED: Return DOWNLOAD_ERROR (4) or D-Bus error
+    EXPECTED: Return RDKFW_DWNL_FAILED or D-Bus error
     VALIDATES: Input validation prevents NULL firmware name
-    
-    CORRECT SIGNATURE: DownloadFirmware(firmwareName, downloadUrl, firmwareType, localFilePath)
     """
     proc = start_daemon()
     initial_rdkfw_setup()
@@ -148,9 +145,8 @@ def test_download_with_null_firmware_name():
 def test_download_with_invalid_firmware_type():
     """
     SCENARIO: typeOfFirmware is invalid (not PCI/PDRI/PERIPHERAL)
-    EXPECTED: Return DOWNLOAD_ERROR (4) or D-Bus error
+    EXPECTED: Return RDKFW_DWNL_FAILED or D-Bus error
     VALIDATES: Firmware type validation
-    
     """
     proc = start_daemon()
     initial_rdkfw_setup()
@@ -190,9 +186,6 @@ def test_download_with_unregistered_handler():
     SCENARIO: DownloadFirmware called WITHOUT RegisterProcess first
     EXPECTED: D-Bus error or daemon rejection
     VALIDATES: Process must be registered before downloading
-    
-    NOTE: This tests calling DownloadFirmware before RegisterProcess.
-    The daemon should track registered clients and reject unregistered requests.
     """
     proc = start_daemon()
     initial_rdkfw_setup()
@@ -227,9 +220,6 @@ def test_download_with_custom_url():
     SCENARIO: downloadUrl parameter is non-empty (custom URL provided)
     EXPECTED: Uses provided URL, ignores XConf cache
     VALIDATES: Custom URL takes precedence over cache
-    
-    SETUP: Create XConf cache with wrong URL, provide correct URL to DownloadFirmware
-    VERIFY: Download succeeds using custom URL (not cache)
     """
     proc = start_daemon()
     initial_rdkfw_setup()
@@ -285,9 +275,6 @@ def test_download_with_invalid_custom_url():
     SCENARIO: downloadUrl parameter has malformed URL
     EXPECTED: Return DOWNLOAD_ERROR or network error
     VALIDATES: Invalid URL format is rejected
-    
-    SETUP: Provide malformed URL (missing //, wrong protocol, etc.)
-    VERIFY: Download fails with appropriate error
     """
     proc = start_daemon()
     initial_rdkfw_setup()
@@ -340,10 +327,7 @@ def test_download_with_invalid_custom_url():
 
 def test_dwnl_firmware_basic():
     """
-    Adapted from: test_dwnl_firmware_test (binary test 1)
-    
     SCENARIO: Basic firmware download with direct URL
-    SETUP: Same as binary - device.properties, pdri_image_file
     EXECUTE: DownloadFirmware with direct URL to mock server
     VERIFY: File downloaded to /opt/CDL
     """
@@ -352,7 +336,6 @@ def test_dwnl_firmware_basic():
     write_device_prop()
     cleanup_daemon_files()
     
-    # Same setup as binary test
     remove_file("/tmp/pdri_image_file")
     remove_file("/tmp/.xconfssrdownloadurl")
     pdri_file = Path("/tmp/pdri_image_file")
@@ -365,7 +348,6 @@ def test_dwnl_firmware_basic():
         handler_id = result[0] if isinstance(result, tuple) else int(result)
         assert handler_id > 0, "Registration failed"
         
-        # Direct URL to mock server - simple!
         result = api.DownloadFirmware(
             str(handler_id),
             "ABCD_PDRI_img.bin",
@@ -390,22 +372,10 @@ def test_dwnl_firmware_basic():
 
 def test_http_404_error():
     """
-    Adapted from: test_http_404 (binary test 5)
-
     SCENARIO: Direct URL to mock server 404 endpoint
     SETUP: Clear previous cache
     EXECUTE: DownloadFirmware with 404 URL
     VERIFY: D-Bus API accepts request and handles error gracefully
-    
-    NOTE: Like the binary test (test_imagedwnl.py::test_http_404), this validates
-    the D-Bus API flow with a 404 URL. With rdkcertselector enabled (default build),
-    the cert init may fail before reaching HTTP layer, but the test still validates:
-    - D-Bus API correctness
-    - Request acceptance
-    - Error handling
-    - No file created on error
-    
-    This matches the binary test approach - validate API behavior, not HTTP specifics.
     """
     proc = start_daemon()
     initial_rdkfw_setup()
@@ -488,7 +458,6 @@ def test_empty_url_no_cache():
         except dbus.exceptions.DBusException as e:
             print(f"[PASS] D-Bus error for empty URL: {e.get_dbus_name()}")
 
-        # Either result code or D-Bus exception is acceptable
 
     finally:
         cleanup_daemon_files()
@@ -496,15 +465,10 @@ def test_empty_url_no_cache():
 
 def test_download_delay():
     """
-    Adapted from: test_delay_dwnl (binary test 8)
-
     SCENARIO: XConf cache has download delay
     SETUP: Create cache with delay (simulates CheckForUpdate response)
     EXECUTE: DownloadFirmware with URL from cache
     VERIFY: Delay happens before download
-    
-    NOTE: The daemon reads the delay from cache (if it exists) and applies it,
-    but the client must still provide the download URL explicitly.
     """
     proc = start_daemon()
     initial_rdkfw_setup()
@@ -555,7 +519,6 @@ def test_download_delay():
         assert elapsed >= 60, f"Download should be delayed by 1 minute, took only {elapsed:.0f}s"
         print(f"[PASS] Download delayed ({elapsed:.0f}s)")
 
-        # Check status for delay (optional)
         if os.path.exists(STATUS_FILE):
             with open(STATUS_FILE, 'r') as f:
                 status = f.read()
@@ -579,17 +542,6 @@ def test_empty_url_rejected_even_with_cache():
         1. Daemon REJECTS the request (validates download_url parameter)
         2. Returns RDKFW_DWNL_FAILED or D-Bus error
         3. Does NOT fall back to cache (input validation happens first)
-    
-    RATIONALE:
-    The daemon's D-Bus handler validates that download_url is non-empty BEFORE
-    any cache lookup or processing. This is intentional input validation.
-    Empty download_url is considered invalid input and rejected immediately.
-    
-    Clients should always provide a valid URL to DownloadFirmware.
-    If they want to use cached XConf data, they should:
-    1. Call CheckForUpdate to populate cache
-    2. Read the cache themselves
-    3. Pass the URL from cache to DownloadFirmware
     """
     proc = start_daemon()
     initial_rdkfw_setup()
@@ -656,9 +608,7 @@ def test_empty_url_rejected_even_with_cache():
 
 def test_connection_timeout_with_retry():
     """
-    Test 1: Connection timeout with retry logic
-    
-    Adapted from: test_dwnl_firmware_retry_test (binary test 11)
+    Connection timeout with retry logic
     
     SCENARIO: Unresolvable hostname causes connection timeout
     SETUP: Direct URL to unresolvable host
@@ -669,7 +619,6 @@ def test_connection_timeout_with_retry():
         3. No file created
         4. Retry attempts visible in logs/status
     
-    Binary equivalent validates retry with Codebig fallback
     """
     proc = start_daemon()
     initial_rdkfw_setup()
@@ -731,7 +680,7 @@ def test_connection_timeout_with_retry():
 
 def test_file_already_exists():
     """
-    Test 3: File already exists optimization
+    File already exists optimization
     
     Adapted from: test_waiting_for_reboot (binary test 3)
     
@@ -743,7 +692,7 @@ def test_file_already_exists():
         2. Returns ALREADY_EXISTS (optimization) OR re-downloads (verification)
         3. No crash or error
     
-    Prevents re-downloading same firmware (bandwidth optimization)
+    Prevents re-downloading same firmware
     """
     proc = start_daemon()
     initial_rdkfw_setup()
@@ -801,35 +750,6 @@ def test_file_already_exists():
 
 
 def test_pdri_firmware_type():
-    """
-    Test 7: PDRI firmware type handling
-    
-    Validates PDRI-specific download flow via D-Bus API
-    
-    SCENARIO: Download PDRI firmware with type="PDRI"
-    SETUP: 
-        - Create /tmp/pdri_image_file with firmware name (required for checkPDRIUpgrade())
-        - Valid PDRI firmware URL to mock server
-    EXECUTE: DownloadFirmware with type="PDRI"
-    VERIFY:
-        1. PDRI type accepted (D-Bus API validation)
-        2. Request returns RDKFW_DWNL_SUCCESS
-        3. checkPDRIUpgrade() validation passes (pdri_image_file exists)
-        4. NO flashing occurred (download_only=1 for D-Bus)
-    
-    NOTE: Like test_peripheral_firmware_type, this validates D-Bus API behavior
-    with the default build (rdkcertselector enabled). File creation is checked
-    but not required for test pass, since cert selector may block actual download
-    in test environment. The primary validation is that "PDRI" is accepted as a
-    valid firmware type.
-    
-    PDRI-SPECIFIC BEHAVIOR (per rdkv_upgrade.c):
-    - Checks /tmp/pdri_image_file exists and matches firmware name
-    - Logs "PDRI Download in Progress"
-    - Telemetry: "SYST_INFO_PDRIUpgSuccess" on success
-    - Events: IMAGE_FWDNLD_* (same as PCI)
-    - D-Bus sets disableStatsUpdate="yes" (may skip some status updates)
-    """
     proc = start_daemon()
     initial_rdkfw_setup()
     write_device_prop()
@@ -854,7 +774,7 @@ def test_pdri_firmware_type():
             handler_id,
             "ABCD_PDRI_test.bin",
             "https://mockxconf:50052/firmwareupdate/getfirmwaredata",  # Base URL
-            "PDRI"  # ← PDRI type triggers PDRI-specific flow
+            "PDRI"  #PDRI type triggers PDRI-specific flow
         )
 
         # Verify D-Bus response
@@ -940,28 +860,6 @@ def test_pdri_firmware_type():
 
 
 def test_peripheral_firmware_type():
-    """
-    Test 8: PERIPHERAL firmware type handling
-
-    Adapted from: test_peripheral_imagedwnl (binary tests 15-18)
-
-    SCENARIO: Download PERIPHERAL firmware with type="PERIPHERAL"
-    SETUP: Valid PERIPHERAL firmware URL
-    EXECUTE: DownloadFirmware with type="PERIPHERAL"
-    VERIFY:
-        1. PERIPHERAL type accepted (D-Bus API validation)
-        2. Request is accepted with RDKFW_DWNL_SUCCESS
-        3. Worker thread spawned (async processing)
-    
-    NOTE: Like test_http_404_error, this validates D-Bus API behavior with the
-    default build (rdkcertselector enabled). The test focuses on API acceptance
-    and error handling, not HTTP-level success. With cert selector, MTLS cert
-    issues may prevent actual download, but that's expected behavior for this
-    test environment. The test validates that "PERIPHERAL" is recognized as a
-    valid firmware type.
-    
-    Third firmware type - must be supported alongside PCI and PDRI.
-    """
     proc = start_daemon()
     initial_rdkfw_setup()
     write_device_prop()
@@ -1024,7 +922,7 @@ def test_peripheral_firmware_type():
 
 def test_progress_file_creation():
     """
-    Test 10: Progress file creation during download
+    Progress file creation during download
 
     SCENARIO: Download creates progress file for monitoring
     SETUP: Start download

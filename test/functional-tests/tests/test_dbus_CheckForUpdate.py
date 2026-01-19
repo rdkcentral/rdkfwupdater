@@ -21,7 +21,7 @@ XCONF_HTTP_CODE_FILE = "/tmp/xconf_httpcode_thunder.txt"
 SWUPDATE_CONF_FILE = "/opt/swupdate.conf"
 SWUPDATE_LOG_FILE_0 = "/opt/logs/swupdate.txt.0"
 
-# Mock XConf URLs (from rdkfw_test_helper.py)
+# Mock XConf URLs
 XCONF_NORMAL_URL = "https://mockxconf:50052/firmwareupdate/getfirmwaredata"
 XCONF_404_URL = "https://mockxconf:50052/firmwareupdate404/getfirmwaredata"
 XCONF_INVALID_JSON_URL = "https://mockxconf:50052/firmwareupdate/getinvalidfirmwaredata"
@@ -86,7 +86,6 @@ def wait_for_cache_creation(timeout=30):
 
 
 def write_device_prop():
-    """Same as other tests"""
     file_path = "/etc/device.properties"
     data = """DEVICE_NAME=DEV_CONTAINER
 DEVICE_TYPE=mediaclient
@@ -106,7 +105,7 @@ PDRI_ENABLED=true
 
 
 def start_daemon():
-    """Start D-Bus daemon - same as other tests"""
+    """Start D-Bus daemon """
     subprocess.run(['pkill', '-9', '-f', 'rdkFwupdateMgr'], capture_output=True)
     time.sleep(0.5)
     proc = subprocess.Popen([DAEMON_BINARY, "0", "1"])
@@ -115,13 +114,13 @@ def start_daemon():
 
 
 def stop_daemon(proc):
-    """Stop daemon - same as other tests"""
+    """Stop daemon"""
     proc.terminate()
     proc.wait()
 
 
 def iface():
-    """Get D-Bus interface - same as other tests"""
+    """Get D-Bus interface"""
     bus = dbus.SystemBus()
     proxy = bus.get_object(DBUS_SERVICE_NAME, DBUS_OBJECT_PATH)
     return dbus.Interface(proxy, DBUS_INTERFACE)
@@ -239,7 +238,7 @@ def test_checkupdate_unregistered_handler():
 
 def test_checkupdate_after_registration():
     """
-    Test 2: CheckForUpdate after successful registration
+    CheckForUpdate after successful registration
     
     SCENARIO: Register first, then check for updates
     SETUP: RegisterProcess
@@ -284,10 +283,10 @@ def test_checkupdate_after_registration():
 
 def test_checkupdate_after_unregistration():
     """
-    Test 3: CheckForUpdate after UnregisterProcess
+    CheckForUpdate after UnregisterProcess
     
     SCENARIO: Register, unregister, then try to check updates
-    SETUP: RegisterProcess → UnregisterProcess
+    SETUP: RegisterProcess - UnregisterProcess
     EXECUTE: CheckForUpdate with unregistered handler_id
     VERIFY: Returns FIRMWARE_CHECK_ERROR (3)
     """
@@ -330,7 +329,7 @@ def test_checkupdate_after_unregistration():
 
 def test_checkupdate_cache_miss():
     """
-    Test 4: CheckForUpdate with cache miss (first boot)
+    CheckForUpdate with cache miss (first boot)
     
     SCENARIO: No XConf cache exists
     SETUP: Delete cache files
@@ -391,7 +390,7 @@ def test_checkupdate_cache_miss():
 
 def test_checkupdate_cache_hit():
     """
-    Test 5: CheckForUpdate with cache hit
+    CheckForUpdate with cache hit
     
     SCENARIO: XConf cache already exists
     SETUP: Create XConf cache
@@ -442,25 +441,13 @@ def test_checkupdate_cache_hit():
 
 def test_checkupdate_malformed_cache():
     """
-    Test 6: CheckForUpdate with malformed cache JSON
+    CheckForUpdate with malformed cache JSON
     
     SCENARIO: Cache file has invalid JSON (malformed syntax)
     SETUP: Create cache with "{ invalid json ]"
     EXECUTE: CheckForUpdate
     VERIFY: Daemon handles error gracefully (doesn't crash or hang)
     
-    NOTE: This test will FAIL if the daemon:
-    - Hangs/times out while parsing malformed JSON
-    - Crashes on invalid JSON syntax
-    - Does not validate cache file before parsing
-    
-    EXPECTED BEHAVIOR:
-    - Daemon should detect malformed JSON
-    - Return error status OR trigger fresh XConf query
-    - Respond within timeout (not hang)
-    
-    CURRENT STATUS: This test may expose a daemon bug if JSON parsing
-    is not properly error-handled.
     """
     proc = start_daemon()
     initial_rdkfw_setup()
@@ -502,7 +489,7 @@ def test_checkupdate_malformed_cache():
 
 def test_checkupdate_multi_client_access():
     """
-    Test 7: Multiple clients can query same handler
+    Multiple clients can query same handler
     
     SCENARIO: Client 1 registers, Client 2 checks updates
     SETUP: Client 1 registers process
@@ -542,7 +529,7 @@ def test_checkupdate_multi_client_access():
 
 def test_checkupdate_firmware_available():
     """
-    Test 9: CheckForUpdate with firmware available
+    CheckForUpdate with firmware available
     
     SCENARIO: Cache has newer firmware version
     SETUP: Create cache with version > current
@@ -596,7 +583,7 @@ def test_checkupdate_firmware_available():
 
 def test_checkupdate_response_structure():
     """
-    Test 10: Verify CheckForUpdate response structure
+    Verify CheckForUpdate response structure
     
     SCENARIO: Validate response tuple format
     SETUP: Standard setup with cache
@@ -653,7 +640,7 @@ def test_checkupdate_response_structure():
 
 def test_xconf_http_404_error():
     """
-    Test 1: XConf returns HTTP 404
+    XConf returns HTTP 404
     
     SCENARIO: XConf server returns 404 Not Found
     SETUP: Configure XConf URL to 404 endpoint
@@ -662,8 +649,6 @@ def test_xconf_http_404_error():
         - Handles 404 gracefully
         - Returns FIRMWARE_CHECK_ERROR or appropriate status
         - Logs show 404 error
-    
-    Based on: test_http_404() from test_imagedwnl.py
     """
     proc = start_daemon()
     initial_rdkfw_setup()
@@ -820,7 +805,7 @@ def test_xconf_model_validation():
 
 def test_xconf_successful_query_creates_cache():
     """
-    Test 7: Successful XConf query creates cache files
+    Successful XConf query creates cache files
     
     SCENARIO: XConf query succeeds, cache is created
     SETUP: Normal XConf URL, no existing cache
@@ -890,7 +875,7 @@ def test_xconf_successful_query_creates_cache():
 
 def test_xconf_cache_miss_triggers_query():
     """
-    Test 8: Cache miss triggers XConf query
+    Cache miss triggers XConf query
     
     SCENARIO: No cache exists, CheckForUpdate triggers query
     SETUP: Delete cache, normal XConf URL
@@ -945,7 +930,7 @@ def test_xconf_cache_miss_triggers_query():
 
 def test_xconf_subsequent_call_uses_cache():
     """
-    Test 9: Second CheckForUpdate uses cache
+    Second CheckForUpdate uses cache
     
     SCENARIO: First call creates cache, second uses it
     SETUP: Two CheckForUpdate calls
@@ -1006,7 +991,7 @@ def test_xconf_subsequent_call_uses_cache():
 
 def test_xconf_response_firmware_available():
     """
-    Test 10: XConf response indicates firmware available
+    XConf response indicates firmware available
     
     SCENARIO: XConf returns newer firmware version
     SETUP: Normal XConf URL (returns firmware)
@@ -1039,9 +1024,6 @@ def test_xconf_response_firmware_available():
         assert parsed['result'] == CHECK_FOR_UPDATE_SUCCESS, \
             "API call should succeed"
         
-        # Wait for cache
-        #if wait_for_cache_creation(timeout=180):
-          #  print("[PASS] XConf response received")
             
         # Call again to get cached result
         time.sleep(2)

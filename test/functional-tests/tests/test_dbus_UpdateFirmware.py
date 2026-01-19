@@ -1,14 +1,4 @@
 #!/usr/bin/env python3
-"""
-RDK Firmware Update Manager - UpdateFirmware D-Bus Integration Tests
-
-Tests cover:
-- Success scenarios (PCI, PDRI, PERIPHERAL)
-- Parameter validation
-- Concurrency control
-- Error handling
-- Integration with DownloadFirmware
-"""
 
 import dbus
 import subprocess
@@ -50,7 +40,6 @@ FW_UPDATE_ERROR = 2
 
 
 def write_device_prop():
-    """Same as DownloadFirmware tests"""
     file_path = "/etc/device.properties"
     data = """DEVICE_NAME=DEV_CONTAINER
 DEVICE_TYPE=mediaclient
@@ -70,7 +59,6 @@ PDRI_ENABLED=true
 
 
 def start_daemon():
-    """Start D-Bus daemon - same as DownloadFirmware"""
     subprocess.run(['pkill', '-9', '-f', 'rdkFwupdateMgr'], capture_output=True)
     time.sleep(0.5)
     proc = subprocess.Popen([DAEMON_BINARY, "0", "1"])
@@ -79,20 +67,17 @@ def start_daemon():
 
 
 def stop_daemon(proc):
-    """Stop daemon - same as DownloadFirmware"""
     proc.terminate()
     proc.wait()
 
 
 def iface():
-    """Get D-Bus interface - same as DownloadFirmware"""
     bus = dbus.SystemBus()
     proxy = bus.get_object(DBUS_SERVICE_NAME, DBUS_OBJECT_PATH)
     return dbus.Interface(proxy, DBUS_INTERFACE)
 
 
 def cleanup_daemon_files():
-    """Clean daemon-specific files - same as DownloadFirmware"""
     remove_file(STATUS_FILE)
     remove_file(PROGRESS_FILE)
     remove_file(XCONF_CACHE_FILE)
@@ -100,7 +85,6 @@ def cleanup_daemon_files():
 
 
 def wait_for_file(filepath, timeout=15.0):
-    """Wait for file to exist - same as DownloadFirmware"""
     start = time.time()
     while time.time() - start < timeout:
         if os.path.exists(filepath):
@@ -111,7 +95,6 @@ def wait_for_file(filepath, timeout=15.0):
 
 
 def create_mock_firmware_file(filename, size_kb=100):
-    """Create a mock firmware file for testing"""
     filepath = os.path.join(FIRMWARE_DIR, filename)
     os.makedirs(FIRMWARE_DIR, exist_ok=True)
     
@@ -251,7 +234,7 @@ class UpdateProgressMonitor:
 
 def test_update_pci_firmware_success():
     """
-    Test 1: Basic PCI firmware flash success
+    Basic PCI firmware flash success
     
     SCENARIO: Flash PCI firmware successfully
     SETUP: 
@@ -326,7 +309,7 @@ def test_update_pci_firmware_success():
 
 def test_update_pdri_firmware_success():
     """
-    Test 2: PDRI firmware flash success
+    PDRI firmware flash success
     
     SCENARIO: Flash PDRI firmware
     SETUP: Mock PDRI firmware
@@ -383,7 +366,7 @@ def test_update_pdri_firmware_success():
 
 def test_update_peripheral_firmware_success():
     """
-    Test 3: PERIPHERAL firmware flash success
+    PERIPHERAL firmware flash success
     
     SCENARIO: Flash PERIPHERAL firmware
     SETUP: Mock PERIPHERAL firmware
@@ -438,7 +421,7 @@ def test_update_peripheral_firmware_success():
 
 def test_update_firmware_file_not_found():
     """
-    Test 4: Firmware file not found
+    Firmware file not found
     
     SCENARIO: Firmware file doesn't exist in directory
     SETUP: Directory exists but file doesn't
@@ -483,7 +466,7 @@ def test_update_firmware_file_not_found():
 
 def test_update_directory_not_exist():
     """
-    Test 5: Directory doesn't exist
+    Directory doesn't exist
     
     SCENARIO: Firmware directory doesn't exist
     SETUP: Provide non-existent directory
@@ -528,7 +511,7 @@ def test_update_directory_not_exist():
 
 def test_update_while_download_in_progress():
     """
-    Test 6: Flash while download in progress
+    Flash while download in progress
     
     SCENARIO: UpdateFirmware called while DownloadFirmware is running
     SETUP: Start DownloadFirmware (sets IsDownloadInProgress=TRUE)
@@ -587,7 +570,7 @@ def test_update_while_download_in_progress():
 
 def test_update_while_flash_in_progress():
     """
-    Test 7: Flash while another flash in progress
+    Flash while another flash in progress
     
     SCENARIO: UpdateFirmware called while another flash is running
     SETUP: Start UpdateFirmware #1 (sets IsFlashInProgress=TRUE)
@@ -659,7 +642,7 @@ def test_update_while_flash_in_progress():
 
 def test_update_flash_script_failure():
     """
-    Test 8: Flash script returns error
+    Flash script returns error
     
     SCENARIO: imageFlasher.sh returns non-zero
     SETUP: Mock script returns -1 (error)
@@ -718,7 +701,7 @@ def test_update_flash_script_failure():
 
 def test_update_immediate_reboot_flag():
     """
-    Test 9: Immediate reboot flag handling
+    Immediate reboot flag handling
     
     SCENARIO: Flash with rebootImmediately="true"
     SETUP: Mock firmware and script
@@ -784,14 +767,13 @@ def test_update_immediate_reboot_flag():
 
 def test_update_progress_signals_basic():
     """
-    Test 10: Progress signals are emitted
+    Progress signals are emitted
     
     SCENARIO: Verify UpdateProgress signals are emitted
     SETUP: Flash firmware successfully
     EXECUTE: UpdateFirmware
     VERIFY: At least receives 0% and 100% signals
     
-    NOTE: This is a basic test - just confirms signals work
     """
     proc = start_daemon()
     initial_rdkfw_setup()
@@ -842,7 +824,7 @@ def test_update_progress_signals_basic():
 
 def test_update_unregistered_handler():
     """
-    Test 11: UpdateFirmware with unregistered handler
+    UpdateFirmware with unregistered handler
     
     SCENARIO: Call UpdateFirmware without RegisterProcess
     SETUP: Start daemon but don't register
@@ -861,7 +843,6 @@ def test_update_unregistered_handler():
     try:
         api = iface()
         
-        # Call UpdateFirmware with fake/unregistered handler ID (e.g., "999")
         result = api.UpdateFirmware(
             "999",              # Unregistered handler_id
             firmware_name,
@@ -890,7 +871,7 @@ def test_update_unregistered_handler():
 
 def test_update_empty_handler_id():
     """
-    Test 12: UpdateFirmware with empty handler ID
+    UpdateFirmware with empty handler ID
     
     SCENARIO: Call UpdateFirmware with empty/NULL handler_id
     SETUP: Register process but pass empty handler_id
@@ -943,7 +924,7 @@ def test_update_empty_handler_id():
 
 def test_update_empty_firmware_name():
     """
-    Test 13: UpdateFirmware with empty firmware name
+    UpdateFirmware with empty firmware name
     
     SCENARIO: Call UpdateFirmware with empty/NULL firmware name
     SETUP: Valid handler but empty firmware name
@@ -991,7 +972,7 @@ def test_update_empty_firmware_name():
 
 def test_update_sequential_flash_operations():
     """
-    Test 14: Sequential flash operations (A → complete → B)
+    Sequential flash operations
     
     SCENARIO: Flash firmware A, wait for completion, then flash firmware B
     SETUP: Two firmware files and mock flash script
