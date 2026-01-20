@@ -508,65 +508,6 @@ def test_update_directory_not_exist():
         cleanup_daemon_files()
         stop_daemon(proc)
 
-'''
-def test_update_while_download_in_progress():
-    Flash while download in progress
-    
-    SCENARIO: UpdateFirmware called while DownloadFirmware is running
-    SETUP: Start DownloadFirmware (sets IsDownloadInProgress=TRUE)
-    EXECUTE: UpdateFirmware
-    VERIFY: Returns RDKFW_UPDATE_FAILED with "On going Firmware Download"
-    """
-    proc = start_daemon()
-    initial_rdkfw_setup()
-    write_device_prop()
-    cleanup_daemon_files()
-    
-    firmware_name = "test.bin"
-    firmware_path = create_mock_firmware_file(firmware_name)
-    
-    try:
-        api = iface()
-        result = api.RegisterProcess("TestApp", "1.0")
-        handler_id = str(result[0] if isinstance(result, tuple) else result)
-        assert int(handler_id) > 0, "Registration failed"
-        
-        # Start a download (doesn't complete immediately)
-        download_result = api.DownloadFirmware(
-            handler_id,
-            "download_file.bin",
-            "https://mockxconf:50052/firmwareupdate/getfirmwaredata/file.bin",
-            "PCI"
-        )
-        
-        # Immediately try to flash (download still in progress)
-        time.sleep(1)  # Give download time to start
-        
-        result = api.UpdateFirmware(
-            handler_id,
-            firmware_name,
-            FIRMWARE_DIR,
-            "PCI",
-            "false"
-        )
-        
-        update_result = str(result[0] if isinstance(result, tuple) else result[0])
-        assert update_result == RDKFW_UPDATE_FAILED, \
-            f"Should reject flash during download, got {update_result}"
-        print("[PASS] Flash blocked during download")
-        
-        # Check error message
-        error_msg = str(result[2] if isinstance(result, tuple) and len(result) > 2 else "")
-        assert "download" in error_msg.lower(), \
-            f"Error should mention ongoing download: {error_msg}"
-        print(f"[PASS] Error message: {error_msg}")
-        
-    finally:
-        remove_file(firmware_path)
-        cleanup_daemon_files()
-        stop_daemon(proc)
-
-'''
 
 def test_update_while_download_in_progress():
     """
