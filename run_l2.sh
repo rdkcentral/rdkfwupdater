@@ -108,11 +108,11 @@ echo ""
 
 # Run all existing tests
 echo "[1/2] Running existing image download tests..."
-#pytest --json-report --json-report-file $RESULT_DIR/rdkfwupdater_image_tests.json \
-#       test/functional-tests/tests/test_imagedwnl.py \
-#       test/functional-tests/tests/test_imagedwnl_error.py \
-#       test/functional-tests/tests/test_certbundle_dwnl.py \
-#       test/functional-tests/tests/test_peripheral_imagedwnl.py
+pytest --json-report --json-report-file $RESULT_DIR/rdkfwupdater_image_tests.json \
+       test/functional-tests/tests/test_imagedwnl.py \
+       test/functional-tests/tests/test_imagedwnl_error.py \
+       test/functional-tests/tests/test_certbundle_dwnl.py \
+       test/functional-tests/tests/test_peripheral_imagedwnl.py
 
 # Run new D-Bus handler and cache tests
 echo ""
