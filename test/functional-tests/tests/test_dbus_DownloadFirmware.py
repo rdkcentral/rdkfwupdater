@@ -554,7 +554,8 @@ def test_empty_url_rejected_even_with_cache():
     pdri_file = Path("/tmp/pdri_image_file")
     pdri_file.touch(exist_ok=True)
     write_on_file("/tmp/pdri_image_file", "ABCD_PDRI_img")
-    
+   
+    remove_file("/opt/CDL/ABCD_PDRI_img.bin")  #just to make sure previous test's traces aren't found
     try:
         api = iface()
         result = api.RegisterProcess("TestApp", "1.0")
