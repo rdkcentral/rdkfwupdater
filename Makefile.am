@@ -26,7 +26,7 @@ AM_LDFLAGS += -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lp
 AM_CFLAGS += $(GLIB_CFLAGS)
 AM_LDFLAGS += $(GLIB_LIBS)
 # Build the RDK upgrade shared library
-lib_LTLIBRARIES = librdksw_upgrade.la librdksw_rfcIntf.la librdksw_iarmIntf.la librdksw_jsonparse.la librdksw_flash.la librdksw_fwutils.la
+lib_LTLIBRARIES = librdksw_upgrade.la librdksw_rfcIntf.la librdksw_iarmIntf.la librdksw_jsonparse.la librdksw_flash.la librdksw_fwutils.la librdkFwupdateMgr.la
 
 librdksw_upgrade_la_SOURCES = \
     ${top_srcdir}/src/rdkv_upgrade.c\
@@ -117,6 +117,23 @@ librdksw_flash_la_LIBADD = $(AM_LDFLAGS)
 librdksw_fwutils_la_LDFLAGS = -shared
 librdksw_fwutils_la_LIBADD = $(AM_LDFLAGS)
 
+# Client Library Configuration - librdkFwupdateMgr.la
+librdkFwupdateMgr_la_SOURCES = \
+    ${top_srcdir}/librdkFwupdateMgr/src/handle_mgr.c
+
+librdkFwupdateMgr_la_CFLAGS = -fPIC \
+    -I${top_srcdir}/librdkFwupdateMgr/include \
+    -I${top_srcdir}/librdkFwupdateMgr/src \
+    $(GLIB_CFLAGS) -Wall -Wextra -Werror
+
+librdkFwupdateMgr_la_CPPFLAGS = -fPIC \
+    -I${top_srcdir}/librdkFwupdateMgr/include \
+    -I${top_srcdir}/librdkFwupdateMgr/src \
+    $(GLIB_CFLAGS)
+
+librdkFwupdateMgr_la_LDFLAGS = -shared -version-info 1:0:0
+librdkFwupdateMgr_la_LIBADD = $(GLIB_LIBS) -lpthread
+
 # Library headers to install
 librdksw_upgrade_include_HEADERS = \
     ${top_srcdir}/src/include/rdkv_upgrade.h
@@ -132,12 +149,17 @@ librdksw_fwutils_include_HEADERS = \
     ${top_srcdir}/src/deviceutils/deviceutils.h \
     ${top_srcdir}/src/deviceutils/device_api.h
 
+# Client Library Public Header
+librdkFwupdateMgr_include_HEADERS = \
+    ${top_srcdir}/librdkFwupdateMgr/include/rdkFwupdateMgr_client.h
+
 librdksw_upgrade_includedir = ${includedir}
 librdksw_rfcIntf_includedir = ${includedir}
 librdksw_iarmIntf_includedir = ${includedir}
 librdksw_jsonparse_includedir = ${includedir}
 librdksw_flash_includedir = ${includedir}
 librdksw_fwutils_includedir = ${includedir}
+librdkFwupdateMgr_includedir = ${includedir}
 
 bin_PROGRAMS= rdkvfwupgrader
 
