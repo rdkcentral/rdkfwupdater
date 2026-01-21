@@ -791,11 +791,9 @@ def test_pdri_firmware_type():
         # The key validation is D-Bus API acceptance above
         if wait_for_file("/opt/CDL/ABCD_PDRI_test.bin", timeout=15):
             print("[PASS] PDRI firmware file created: /opt/CDL/ABCD_PDRI_test.bin")
-            file_created = True
         else:
             print("[INFO] File not created within timeout (may be expected with cert selector)")
             print("[INFO] D-Bus API correctly accepted PDRI type - primary test objective met")
-            file_created = False
 
         # Verify status file updated (if not skipped by disableStatsUpdate)
         if os.path.exists(STATUS_FILE):
