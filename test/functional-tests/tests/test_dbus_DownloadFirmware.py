@@ -844,7 +844,7 @@ def test_pdri_firmware_type():
                         with open(flash_file, 'r') as f:
                             content = f.read()
                             print(f"[DEBUG] Content of {flash_file}: {content[:200]}")
-                    except:
+                    except Exception:
                         print(f"[DEBUG] {flash_file} exists but cannot read (may be empty)")
         
         assert not found_flash_files, \
