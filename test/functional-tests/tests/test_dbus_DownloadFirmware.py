@@ -640,7 +640,7 @@ def test_connection_timeout_with_retry():
         # Unresolvable hostname - will timeout
         unresolvable_url = "https://unmockxconf:50052/featureControl/firmware.bin"
         
-        result = api.DownloadFirmware(
+        api.DownloadFirmware(
             handler_id,
             "ABCD_PDRI_img.bin",
             unresolvable_url,
