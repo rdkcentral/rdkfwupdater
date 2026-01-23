@@ -130,7 +130,7 @@ FirmwareInterfaceHandle registerProcess(
         return NULL;
     }
     
-    fprintf(stderr, "[librdkFwupdateMgr] registerProcess successful: %s v%s (handle ID: %lu)\n",
+    fprintf(stderr, "[librdkFwupdateMgr] registerProcess successful: %s v%s (handle ID: %" G_GUINT64_FORMAT ")\n",
             processName, libVersion, daemonHandleId);
     
     /* Return as opaque pointer */
@@ -159,7 +159,7 @@ void unregisterProcess(FirmwareInterfaceHandle handle)
     
     uint64_t daemonHandleId = internal->daemon_handle_id;
     
-    fprintf(stderr, "[librdkFwupdateMgr] unregisterProcess: handle ID %lu\n", daemonHandleId);
+    fprintf(stderr, "[librdkFwupdateMgr] unregisterProcess: handle ID %" G_GUINT64_FORMAT "\n", daemonHandleId);
     
     /* Remove from registry first */
     registry_remove(internal);
@@ -176,7 +176,7 @@ void unregisterProcess(FirmwareInterfaceHandle handle)
     /* Destroy handle */
     handle_destroy(internal);
     
-    fprintf(stderr, "[librdkFwupdateMgr] unregisterProcess successful (handle ID: %lu)\n", 
+    fprintf(stderr, "[librdkFwupdateMgr] unregisterProcess successful (handle ID: %" G_GUINT64_FORMAT ")\n", 
             daemonHandleId);
 }
 

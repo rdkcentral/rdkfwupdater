@@ -108,7 +108,7 @@ uint64_t dbus_call_register_process(
     g_variant_get(result, "(t)", &handleId);
     g_variant_unref(result);
     
-    fprintf(stderr, "[librdkFwupdateMgr] RegisterProcess successful, handle ID: %lu\n", 
+    fprintf(stderr, "[librdkFwupdateMgr] RegisterProcess successful, handle ID: %" G_GUINT64_FORMAT "\n", 
             handleId);
     return handleId;
 }
@@ -131,7 +131,7 @@ gboolean dbus_call_unregister_process(uint64_t handleId, GError **error)
         return FALSE;
     }
     
-    fprintf(stderr, "[librdkFwupdateMgr] Calling UnregisterProcess: handle ID %lu\n", 
+    fprintf(stderr, "[librdkFwupdateMgr] Calling UnregisterProcess: handle ID %" G_GUINT64_FORMAT "\n", 
             handleId);
     
     /* Call daemon method: UnregisterProcess(uint64) -> boolean */
@@ -159,7 +159,7 @@ gboolean dbus_call_unregister_process(uint64_t handleId, GError **error)
     g_variant_get(result, "(b)", &success);
     g_variant_unref(result);
     
-    fprintf(stderr, "[librdkFwupdateMgr] UnregisterProcess %s, handle ID: %lu\n",
+    fprintf(stderr, "[librdkFwupdateMgr] UnregisterProcess %s, handle ID: %" G_GUINT64_FORMAT "\n",
             success ? "successful" : "failed", handleId);
     return success;
 }
