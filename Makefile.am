@@ -119,7 +119,10 @@ librdksw_fwutils_la_LIBADD = $(AM_LDFLAGS)
 
 # Client Library Configuration - librdkFwupdateMgr.la
 librdkFwupdateMgr_la_SOURCES = \
-    ${top_srcdir}/librdkFwupdateMgr/src/handle_mgr.c
+    ${top_srcdir}/librdkFwupdateMgr/src/handle_mgr.c \
+    ${top_srcdir}/librdkFwupdateMgr/src/handle_registry.c \
+    ${top_srcdir}/librdkFwupdateMgr/src/dbus_client.c \
+    ${top_srcdir}/librdkFwupdateMgr/src/api_impl.c
 
 librdkFwupdateMgr_la_CFLAGS = -fPIC \
     -I${top_srcdir}/librdkFwupdateMgr/include \
