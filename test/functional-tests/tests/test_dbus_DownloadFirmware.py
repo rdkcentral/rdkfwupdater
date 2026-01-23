@@ -503,7 +503,7 @@ def test_download_delay():
         start_time = time.time()
 
         # Provide URL explicitly (daemon reads delay from cache, but URL still required)
-        result = api.DownloadFirmware(
+        api.DownloadFirmware(
             str(handler_id),
             "ABCD_PDRI_firmware_test.bin",
             download_url,  # URL must be provided (not empty)
@@ -640,7 +640,7 @@ def test_connection_timeout_with_retry():
         # Unresolvable hostname - will timeout
         unresolvable_url = "https://unmockxconf:50052/featureControl/firmware.bin"
         
-        result = api.DownloadFirmware(
+        api.DownloadFirmware(
             handler_id,
             "ABCD_PDRI_img.bin",
             unresolvable_url,
@@ -791,11 +791,9 @@ def test_pdri_firmware_type():
         # The key validation is D-Bus API acceptance above
         if wait_for_file("/opt/CDL/ABCD_PDRI_test.bin", timeout=15):
             print("[PASS] PDRI firmware file created: /opt/CDL/ABCD_PDRI_test.bin")
-            file_created = True
         else:
             print("[INFO] File not created within timeout (may be expected with cert selector)")
             print("[INFO] D-Bus API correctly accepted PDRI type - primary test objective met")
-            file_created = False
 
         # Verify status file updated (if not skipped by disableStatsUpdate)
         if os.path.exists(STATUS_FILE):
@@ -846,7 +844,7 @@ def test_pdri_firmware_type():
                         with open(flash_file, 'r') as f:
                             content = f.read()
                             print(f"[DEBUG] Content of {flash_file}: {content[:200]}")
-                    except:
+                    except Exception:
                         print(f"[DEBUG] {flash_file} exists but cannot read (may be empty)")
         
         assert not found_flash_files, \
@@ -968,7 +966,7 @@ def test_progress_file_creation():
                     progress_content = f.read()
                     if progress_content.strip():
                         print(f"[INFO] Progress content: {progress_content[:100]}")
-            except:
+            except Exception:
                 pass
         else:
             # Progress file might be created briefly and removed after completion
