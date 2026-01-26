@@ -236,7 +236,7 @@ typedef struct {
     gchar *firmware_name;               // Firmware filename (e.g., "image_v2.bin") (owned)
     gchar *firmware_type;               // Firmware type: "PCI", "PDRI", "PERIPHERAL" (owned)
     gchar *firmware_fullpath;           // Full path to firmware file (e.g., "/opt/CDL/firmware.bin") (owned)
-    gchar *server_url;                  // Server URL for telemetry (owned e.g "https://dac15cdlserver.ae.ccp.xcal.tv/Images/SKXI11ADS_MIDDLEWARE_DEV_develop_20251209085722_DEM.bin")
+    gchar *server_url;                  // Server URL for telemetry (owned )
     
     // Flash parameters
     gboolean immediate_reboot;          // TRUE = reboot after flash, FALSE = defer reboot
