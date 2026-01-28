@@ -1068,16 +1068,20 @@ int main(int argc, char *argv[]) {
 
     rdkv_newaction.sa_sigaction = handle_signal;
     rdkv_newaction.sa_flags = SA_ONSTACK | SA_SIGINFO;
-    //log_init();
-     rdk_logger_ext_config_t config = {
-        .pModuleName = "LOG.RDK.FWUPG",     /* Module name */
+    
+#ifdef USE_EXTENDED_LOGGER_INIT
+    rdk_logger_ext_config_t config = {
+        .pModuleName = "LOG.RDK.FWUPG",           /* Module name */
         .loglevel = RDK_LOG_INFO,                 /* Default log level */
         .output = RDKLOG_OUTPUT_CONSOLE,          /* Output to console (stdout/stderr) */
         .format = RDKLOG_FORMAT_WITH_TS,          /* Timestamped format */
         .pFilePolicy = NULL                       /* Not using file output, so NULL */
     };
-
     rdk_logger_ext_init(&config);
+#else
+    log_init();
+#endif
+    
     ret_sig = sigaction(SIGUSR1, &rdkv_newaction, NULL);
     if (ret_sig == -1) {
         SWLOG_ERROR( "SIGUSR1 handler install fail\n");

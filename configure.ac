@@ -151,6 +151,20 @@ AC_ARG_ENABLE([dbus-daemon],
 AM_CONDITIONAL([ENABLE_DBUS_DAEMON], [test x$ENABLE_DBUS_DAEMON = xtrue])
 AC_SUBST(DBUS_DAEMON_FLAG)
 
+AC_ARG_ENABLE([extended-logger],
+        AS_HELP_STRING([--enable-extended-logger],[Enable extended RDK logger initialization (default is no)]),
+        [
+          case "${enableval}" in
+           yes) ENABLE_EXTENDED_LOGGER=true
+                EXTENDED_LOGGER_FLAG=" -DUSE_EXTENDED_LOGGER_INIT ";;
+           no)  ENABLE_EXTENDED_LOGGER=false ;;
+          *) AC_MSG_ERROR([bad value ${enableval} for --enable-extended-logger]) ;;
+           esac
+           ],
+        [echo "Extended logger is disabled"])
+AM_CONDITIONAL([ENABLE_EXTENDED_LOGGER], [test x$ENABLE_EXTENDED_LOGGER = xtrue])
+AC_SUBST(EXTENDED_LOGGER_FLAG)
+
 PKG_CHECK_MODULES([cjson], [libcjson])
 PKG_CHECK_MODULES([curl], [libcurl])
 
