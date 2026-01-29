@@ -284,7 +284,8 @@ TEST(MainHelperFunctionTest, retryDownloadtest1){
     EXPECT_CALL(mockfileops, downloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(CURL_SUCCESS));
     int code = HTTP_SUCCESS;
     int force_exit = 0;
-    void *curl = NULL;
+    int dummy_curl = 0;
+    void *curl = &dummy_curl;  // Must point to valid memory, not NULL
     
     RdkUpgradeContext_t context = {};
     context.server_type = HTTP_SSR_DIRECT;
