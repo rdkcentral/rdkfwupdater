@@ -44,7 +44,9 @@
 #include <sys/stat.h>
 #include <pthread.h>
 #include <signal.h>
+#ifdef USE_EXTENDED_LOGGER_INIT
 #include "rdk_logger.h"  /* For rdk_logger_ext_init and types */
+#endif
 #include "rdkv_cdl.h"
 #include "rdkv_upgrade.h"
 #ifndef GTEST_ENABLE
