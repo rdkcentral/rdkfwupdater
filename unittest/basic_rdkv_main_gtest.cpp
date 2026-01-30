@@ -303,7 +303,8 @@ TEST(MainHelperFunctionTest, retryDownloadtest2){
     EXPECT_CALL(mockfileops, downloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(CURL_SUCCESS));
     int code = HTTP_CHUNK_SUCCESS;
     int force_exit = 0;
-    void *curl = NULL;
+    int dummy_curl = 0;
+    void *curl = &dummy_curl;
     
     RdkUpgradeContext_t context = {};
     context.server_type = HTTP_XCONF_DIRECT;
@@ -322,7 +323,8 @@ TEST(MainHelperFunctionTest, retryDownloadtest3){
     EXPECT_CALL(mockfileops, downloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(!CURL_SUCCESS));
     int code = HTTP_PAGE_NOT_FOUND;
     int force_exit = 0;
-    void *curl = NULL;
+    int dummy_curl = 0;
+    void *curl = &dummy_curl;
     
     RdkUpgradeContext_t context = {};
     context.server_type = HTTP_XCONF_DIRECT;
@@ -341,7 +343,8 @@ TEST(MainHelperFunctionTest, retryDownloadtest4){
     EXPECT_CALL(mockfileops, downloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(!CURL_SUCCESS));
     int code = DWNL_BLOCK;
     int force_exit = 0;
-    void *curl = NULL;
+    int dummy_curl = 0;
+    void *curl = &dummy_curl;
     
     RdkUpgradeContext_t context = {};
     context.server_type = HTTP_XCONF_DIRECT;
@@ -360,7 +363,8 @@ TEST(MainHelperFunctionTest, retryDownloadtest5){
     EXPECT_CALL(mockfileops, downloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(!CURL_SUCCESS));
     int code = HTTP_SUCCESS;
     int force_exit = 0;
-    void *curl = NULL;
+    int dummy_curl = 0;
+    void *curl = &dummy_curl;
     
     RdkUpgradeContext_t context = {};
     context.server_type = HTTP_SSR_DIRECT;
@@ -380,7 +384,8 @@ TEST(MainHelperFunctionTest, retryDownloadtest6){
     EXPECT_CALL(mockfileops, codebigdownloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(CURL_SUCCESS));
     int code = HTTP_SUCCESS;
     int force_exit = 0;
-    void *curl = NULL;
+    int dummy_curl = 0;
+    void *curl = &dummy_curl;
     
     RdkUpgradeContext_t context = {};
     context.server_type = HTTP_SSR_CODEBIG;
@@ -400,7 +405,8 @@ TEST(MainHelperFunctionTest, retryDownloadtest7){
     EXPECT_CALL(mockfileops, codebigdownloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(!CURL_SUCCESS));
     int code = HTTP_PAGE_NOT_FOUND;
     int force_exit = 0;
-    void *curl = NULL;
+    int dummy_curl = 0;
+    void *curl = &dummy_curl;
     
     RdkUpgradeContext_t context = {};
     context.server_type = HTTP_SSR_CODEBIG;
@@ -420,7 +426,8 @@ TEST(MainHelperFunctionTest, retryDownloadtest8){
     EXPECT_CALL(mockfileops, codebigdownloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(!CURL_SUCCESS));
     int code = HTTP_SUCCESS;
     int force_exit = 0;
-    void *curl = NULL;
+    int dummy_curl = 0;
+    void *curl = &dummy_curl;
     
     RdkUpgradeContext_t context = {};
     context.server_type = HTTP_SSR_CODEBIG;
@@ -918,7 +925,8 @@ TEST(MainHelperFunctionTest, fallBackTestSuccess){
     global_mockdownloadfileops_ptr = &mockfileops;
     int http_code = 200;
     int force_exit = 0;
-    void *curl = NULL;
+    int dummy_curl = 0;
+    void *curl = &dummy_curl;
     
     // Create context structure with HTTP_XCONF_DIRECT
     RdkUpgradeContext_t context = {0};
@@ -938,7 +946,8 @@ TEST(MainHelperFunctionTest, fallBackTestFailure){
     global_mockdownloadfileops_ptr = &mockfileops;
     int http_code = 200;
     int force_exit = 0;
-    void *curl = NULL;
+    int dummy_curl = 0;
+    void *curl = &dummy_curl;
     
     // Create context structure with HTTP_XCONF_DIRECT
     RdkUpgradeContext_t context = {0};
@@ -958,7 +967,8 @@ TEST(MainHelperFunctionTest, fallBackTestSuccessCodebig){
     global_mockdownloadfileops_ptr = &mockfileops;
     int http_code = 200;
     int force_exit = 0;
-    void *curl = NULL;
+    int dummy_curl = 0;
+    void *curl = &dummy_curl;
     
     // Create context structure with HTTP_SSR_CODEBIG
     RdkUpgradeContext_t context = {0};
@@ -978,7 +988,8 @@ TEST(MainHelperFunctionTest, fallBackTestFailureCodebig){
     global_mockdownloadfileops_ptr = &mockfileops;
     int http_code = 200;
     int force_exit = 0;
-    void *curl = NULL;
+    int dummy_curl = 0;
+    void *curl = &dummy_curl;
     
     // Create context structure with HTTP_SSR_CODEBIG
     RdkUpgradeContext_t context = {0};
