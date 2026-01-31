@@ -19,5 +19,5 @@ cd ${WORKDIR}
 
 #Build rdkfwupdater
 autoreconf -i
-./configure --prefix=${INSTALL_DIR} CFLAGS="-DRDK_LOGGER"
+./configure --prefix=${INSTALL_DIR} CFLAGS="-DRDK_LOGGER" --enable-extended-logger
 make && make install

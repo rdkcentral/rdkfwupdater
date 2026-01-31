@@ -163,7 +163,7 @@ rdkvfwupgrader_include_HEADERS = \
     ${top_srcdir}/src/include/iarmInterface.h \
     ${top_srcdir}/src/include/device_status_helper.h
 
-rdkvfwupgrader_CFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
+rdkvfwupgrader_CFLAGS = $(AM_CFLAGS) -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
 rdkvfwupgrader_CPPFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
 
 
@@ -192,7 +192,7 @@ rdkFwupdateMgr_include_HEADERS = \
     ${top_srcdir}/src/dbus/rdkFwupdateMgr_handlers.h \
     ${top_srcdir}/src/dbus/xconf_comm_status.h
 
-rdkFwupdateMgr_CFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/dbus $(GLIB_CFLAGS)
+rdkFwupdateMgr_CFLAGS = $(AM_CFLAGS) -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/dbus $(GLIB_CFLAGS)
 rdkFwupdateMgr_CPPFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/dbus $(GLIB_CFLAGS)
 
 rdkFwupdateMgr_includedir = ${includedir}

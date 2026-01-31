@@ -739,7 +739,7 @@ bool lastDwnlImg(char *img_name, size_t img_name_size)
     tbuff[0] = 0;
 
     if (img_name_size > sizeof(last_dwnl_img_name)) {
-        SWLOG_INFO("%s: Input buffer size is greater than %d\n", __FUNCTION__, sizeof(last_dwnl_img_name));
+        SWLOG_INFO("%s: Input buffer size is greater than %zu\n", __FUNCTION__, sizeof(last_dwnl_img_name));
         return status;
     }
     if (last_dwnl_img_name[0] == 0) {
@@ -776,7 +776,7 @@ bool currentImg(char *img_name, size_t img_name_size)
     tbuff[0] = 0;
 
     if (img_name_size > sizeof(cur_img_name)) {
-        SWLOG_INFO("%s: Input buffer size is greater than %d\n", __FUNCTION__, sizeof(cur_img_name));
+        SWLOG_INFO("%s: Input buffer size is greater than %zu\n", __FUNCTION__, sizeof(cur_img_name));
         return status;
     }
     if (cur_img_name[0] == 0) {
@@ -812,7 +812,7 @@ bool prevFlashedFile(char *img_name, size_t img_name_size)
     tbuff[0] = 0;
 
     if (img_name_size > sizeof(prev_img_name)) {
-        SWLOG_INFO("%s: Input buffer size is greater than %d\n", __FUNCTION__, sizeof(prev_img_name));
+        SWLOG_INFO("%s: Input buffer size is greater than %zu\n", __FUNCTION__, sizeof(prev_img_name));
         return status;
     }
     if (prev_img_name[0] == 0) {

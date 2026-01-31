@@ -36,7 +36,8 @@ cd ${WORKDIR}
 
 #Build rdkfwupdater
 autoreconf -i
-./configure --prefix=${INSTALL_DIR} --enable-rdkcertselector=yes --enable-mountutils=yes --enable-rfcapi=yes CFLAGS="-DRDK_LOGGER "
+./configure --prefix=${INSTALL_DIR} --enable-rdkcertselector=yes --enable-mountutils=yes --enable-rfcapi=yes --enable-extended-logger CFLAGS="-DRDK_LOGGER "
+make clean
 make && make install
 
 # Verify daemon binary was installed

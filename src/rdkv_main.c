@@ -53,6 +53,9 @@
 #include <string.h>
 #include <strings.h>
 
+#ifdef USE_EXTENDED_LOGGER_INIT
+#include "rdk_logger.h"  /* For rdk_logger_ext_init and types */
+#endif
 #define JSON_STR_LEN        1000
 
 #define DOWNLOADED_PERIPHERAL_VERSION "/tmp/downloaded_peripheral_versions.txt"

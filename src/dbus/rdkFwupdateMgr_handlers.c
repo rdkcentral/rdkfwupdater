@@ -372,7 +372,7 @@ static int fetch_xconf_firmware_info( XCONFRES *pResponse, int server_type, int 
                     SWLOG_INFO("fetch_xconf_firmware_info: Server URL length: %d, preparing device JSON data...\n", (int)len);
                     len = createJsonString( pJSONStr, JSON_STR_LEN );
 		    if (len >= JSON_STR_LEN) {
-			    SWLOG_ERROR("JSON buffer overflow:  %d >= %d", len, JSON_STR_LEN);
+			    SWLOG_ERROR("JSON buffer overflow:  %zu >= %d", len, JSON_STR_LEN);
 			    return ret;
 		    }
                     SWLOG_INFO("fetch_xconf_firmware_info: Device JSON data prepared (%d bytes)\n", (int)len);
