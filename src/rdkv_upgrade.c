@@ -300,8 +300,9 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
         SWLOG_ERROR("[UPGRADE_REQ] CRITICAL: context parameter is NULL\n");
         return ret_curl_code;
     }
-    if (curl == NULL || *curl == NULL) {
-        SWLOG_ERROR("[UPGRADE_REQ] CRITICAL: curl parameter is NULL\n");
+    // Only check if curl pointer itself is NULL, not what it points to (*curl can be NULL initially)
+    if (curl == NULL) {
+        SWLOG_ERROR("[UPGRADE_REQ] CRITICAL: curl parameter (pointer) is NULL\n");
         return ret_curl_code;
     }
     if (pHttp_code == NULL) {
@@ -648,8 +649,9 @@ int codebigdownloadFile(
         SWLOG_ERROR("%s: httpCode parameter is NULL\n", __FUNCTION__);
         return curl_ret_code;
     }
-    if (curl == NULL || *curl == NULL) {
-        SWLOG_ERROR("%s: curl parameter is NULL\n", __FUNCTION__);
+    // Only check if curl pointer itself is NULL, not what it points to (*curl can be NULL initially)
+    if (curl == NULL) {
+        SWLOG_ERROR("%s: curl parameter (pointer) is NULL\n", __FUNCTION__);
         return curl_ret_code;
     }
 
@@ -816,8 +818,9 @@ int downloadFile(
         SWLOG_ERROR("%s: httpCode parameter is NULL\n", __FUNCTION__);
         return curl_ret_code;
     }
-    if (curl == NULL || *curl == NULL) {
-        SWLOG_ERROR("%s: curl parameter is NULL\n", __FUNCTION__);
+    // Only check if curl pointer itself is NULL, not what it points to (*curl can be NULL initially)
+    if (curl == NULL) {
+        SWLOG_ERROR("%s: curl parameter (pointer) is NULL\n", __FUNCTION__);
         return curl_ret_code;
     }
 
@@ -1128,8 +1131,9 @@ int retryDownload(
         SWLOG_ERROR("%s: httpCode parameter is NULL\n", __FUNCTION__);
         return curl_ret_code;
     }
-    if (curl == NULL || *curl == NULL) {
-        SWLOG_ERROR("%s: curl parameter is NULL\n", __FUNCTION__);
+    // Only check if curl pointer itself is NULL, not what it points to (*curl can be NULL and will be reinitialized)
+    if (curl == NULL) {
+        SWLOG_ERROR("%s: curl parameter (pointer) is NULL\n", __FUNCTION__);
         return curl_ret_code;
     }
     
@@ -1214,8 +1218,9 @@ int fallBack(
         SWLOG_ERROR("%s: httpCode parameter is NULL\n", __FUNCTION__);
         return curl_ret_code;
     }
-    if (curl == NULL || *curl == NULL) {
-        SWLOG_ERROR("%s: curl parameter is NULL\n", __FUNCTION__);
+    // Only check if curl pointer itself is NULL, not what it points to (*curl can be NULL and will be reinitialized)
+    if (curl == NULL) {
+        SWLOG_ERROR("%s: curl parameter (pointer) is NULL\n", __FUNCTION__);
         return curl_ret_code;
     }
 
