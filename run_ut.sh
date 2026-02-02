@@ -14,7 +14,9 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
+
 cd ./unittest/
+
 automake --add-missing
 autoreconf --install
 
