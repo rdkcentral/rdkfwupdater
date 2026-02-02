@@ -641,7 +641,7 @@ int codebigdownloadFile(
     int curl_ret_code = -1;
 
     // Null check for all parameters
-    if (context == NULL) {
+    if (context == NULL || *curl == NULL) {
         SWLOG_ERROR("%s: context parameter is NULL\n", __FUNCTION__);
         return curl_ret_code;
     }
