@@ -24,16 +24,6 @@ export ROOT=/usr
 export INSTALL_DIR=${ROOT}/local
 mkdir -p $INSTALL_DIR
 
-#cd /opt/
-#git clone https://github.com/rdkcentral/rdk_logger.git
-#cd rdk_logger
-#autoreconf -i
-#./configure
-#make & make install
-#rm -rf /opt/rdk_logger
-
-#cd ${WORKDIR}
-
 #Build rdkfwupdater
 autoreconf -i
 ./configure --prefix=${INSTALL_DIR} --enable-rdkcertselector=yes --enable-mountutils=yes --enable-rfcapi=yes  CFLAGS="-DRDK_LOGGER "
