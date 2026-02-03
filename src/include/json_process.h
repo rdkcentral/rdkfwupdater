@@ -35,6 +35,7 @@ typedef struct xconf_response {
 	char cloudImmediateRebootFlag[12];
 	char peripheralFirmwares[256];
 	char dlCertBundle[64];
+	char dlAppBundle[64];
 	char cloudPDRIVersion[64];
     char rdmCatalogueVersion[512];
 } XCONFRES;

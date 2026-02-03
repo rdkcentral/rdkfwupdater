@@ -1011,6 +1011,7 @@ int main(int argc, char *argv[]) {
     *response.cloudImmediateRebootFlag = 0;
     *response.peripheralFirmwares = 0;
     *response.dlCertBundle = 0;
+    *response.dlAppBundle = 0;
     *response.cloudPDRIVersion = 0;
     SWLOG_INFO("Starting c method rdkvfwupgrader\n");
     t2CountNotify("SYST_INFO_C_CDL", 1);
