@@ -1,5 +1,5 @@
 # Copyright 2023 Comcast Cable Communications Management, LLC
-# 
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -33,7 +33,7 @@ make && make install
 #./cov_build.sh
 
 # Compile Test binary for mfrutils
-cc -o /usr/bin/mfr_util test/functional-tests/tests/mfrutils.c 
+cc -o /usr/bin/mfr_util test/functional-tests/tests/mfrutils.c
 
 rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLSpLimit.Enable boolean true
 rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLSpLimit.TopSpeed int 1280000

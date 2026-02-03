@@ -42,11 +42,15 @@ int v_secure_pclose(FILE *fp);
 #include <dirent.h>
 
 #ifndef GTEST_ENABLE
-	#define BUNDLE_METADATA_NVM_PATH    "/media/apps/etc/certs"
-	#define BUNDLE_METADATA_RFS_PATH    "/etc/certs"
+	#define BUNDLE_METADATA_NVM_CERT_PATH    "/media/apps/etc/certs"
+	#define BUNDLE_METADATA_RFS_CERT_PATH    "/etc/certs"
+  #define BUNDLE_METADATA_NVM_APPS_PATH    "/media/apps/etc/apps"
+  #define BUNDLE_METADATA_RFS_APPS_PATH    "/etc/apps"
 #else
-	#define BUNDLE_METADATA_NVM_PATH    "/tmp/certs"
-	#define BUNDLE_METADATA_RFS_PATH    "/tmp/rfc/certs"
+	#define BUNDLE_METADATA_NVM_CERT_PATH    "/tmp/certs"
+	#define BUNDLE_METADATA_RFS_CERT_PATH    "/tmp/rfc/certs"
+#define BUNDLE_METADATA_NVM_APPS_PATH    "/media/apps/etc/apps"
+#define BUNDLE_METADATA_RFS_APPS_PATH    "/etc/apps"
 #endif
 
 #define WPEFRAMEWORKSECURITYUTILITY     "/usr/bin/WPEFrameworkSecurityUtility"
@@ -375,8 +379,24 @@ int getJRPCTokenData( char *token, char *pJsonStr, unsigned int token_size )
         Input : void
         RETURN - List of installed Bundle in NVM and RFS directory
 */
-metaDataFileList_st *getInstalledBundleFileList()
+metaDataFileList_st *getInstalledBundleFileList(const char *bundleType)
 {
+    const char *BUNDLE_METADATA_NVM_PATH = NULL;
+    const char *BUNDLE_METADATA_RFS_PATH = NULL;
+	
+    if (strcmp(bundleType, "dlCertBundle") == 0) {
+        SWLOG_INFO("Setting bundle path for installed Cert packages\n");
+        BUNDLE_METADATA_NVM_PATH = BUNDLE_METADATA_NVM_CERT_PATH;
+        BUNDLE_METADATA_RFS_PATH = BUNDLE_METADATA_RFS_CERT_PATH;
+    } else if (strcmp(bundleType, "dlAppBundle") == 0) {
+        SWLOG_INFO("Setting bundle path for installed App packages\n");
+        BUNDLE_METADATA_NVM_PATH = BUNDLE_METADATA_NVM_APPS_PATH;
+        BUNDLE_METADATA_RFS_PATH = BUNDLE_METADATA_RFS_APPS_PATH;
+    } else {
+        SWLOG_ERROR("Unknown bundleType: %s\n", bundleType);
+        return NULL;
+    }
+
     metaDataFileList_st *metadataNVMls = NULL, *metadataRFSls = NULL, *metaDataList = NULL;
 
     metadataNVMls = getMetaDataFile(BUNDLE_METADATA_NVM_PATH);
@@ -414,11 +434,11 @@ metaDataFileList_st *getInstalledBundleFileList()
 }
 
 /* function getMetaDataFile - gets the files list in the directory
-        Usage: metaDataFileList_st *getMetaDataFile(char *dir)
+        Usage: metaDataFileList_st *getMetaDataFile(const char *dir)
         dir : directory of NVM or RFS Path
         RETURN - List of installed Bundle in NVM or RFS directory
 */
-metaDataFileList_st *getMetaDataFile(char *dir)
+metaDataFileList_st *getMetaDataFile(const char *dir)
 {
     metaDataFileList_st *newnode = NULL, *prevnode = NULL, *headNode = NULL;
     struct dirent *pDirent = NULL;

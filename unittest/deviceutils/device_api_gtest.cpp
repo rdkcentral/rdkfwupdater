@@ -196,14 +196,14 @@ TEST(TestGetPDRIFileName, Test_pdri_Nullcheck)
 }
 TEST_F(DeviceApiTestFixture,TestName_bundle_Nullcheck)
 {
-    EXPECT_EQ(GetInstalledBundles(NULL, 0), 0);
+    EXPECT_EQ(GetInstalledBundles(NULL, 0, "dlCertBundle"), 0);
 }
 TEST_F(DeviceApiTestFixture,TestName_bundle_Success)
 {
     int ret;
     char pBundles[32] = {0};
     ret = system("mkdir /tmp/certs;cp ca-store-update-bundle_package.json /tmp/certs/ ");
-    EXPECT_NE(GetInstalledBundles(pBundles, sizeof(pBundles)), 0);
+    EXPECT_NE(GetInstalledBundles(pBundles, sizeof(pBundles), "dlCertBundle"), 0);
     ret = system("rm -rf /tmp/certs/ ");
     printf("BUNDLE = %s\n",pBundles);
 }
@@ -212,7 +212,7 @@ TEST_F(DeviceApiTestFixture,TestName_bundle_rfcpath)
     int ret;
     char pBundles[32] = {0};
     ret = system("mkdir /tmp/rfc;mkdir /tmp/rfc/certs; cp ca-store-update-bundle_package.json /tmp/rfc/certs/ ");
-    EXPECT_NE(GetInstalledBundles(pBundles, sizeof(pBundles)), 0);
+    EXPECT_NE(GetInstalledBundles(pBundles, sizeof(pBundles), "dlCertBundle"), 0);
     ret = system("rm -rf /tmp/rfc/certs/ ");
     ret = system("rm -rf /tmp/rfc/ ");
     printf("BUNDLE = %s\n",pBundles);
@@ -220,7 +220,7 @@ TEST_F(DeviceApiTestFixture,TestName_bundle_rfcpath)
 TEST_F(DeviceApiTestFixture,TestName_bundle_Fail)
 {
     char pBundles[32] = {0};
-    EXPECT_EQ(GetInstalledBundles(pBundles, sizeof(pBundles)), 0);
+    EXPECT_EQ(GetInstalledBundles(pBundles, sizeof(pBundles), "dlCertBundle"), 0);
 }
 
 /* COMMENTED OUT: GetUTCTime and GetCapabilities are now in common_utilities
