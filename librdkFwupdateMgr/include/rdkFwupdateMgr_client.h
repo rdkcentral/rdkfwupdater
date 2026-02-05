@@ -1,11 +1,3 @@
-/**
- * @file rdkFwupdateMgr_client.h
- * @brief RDK Firmware Update Manager Client Library
- * 
- * Public API for client applications to communicate with the RDK Firmware
- * Update Manager daemon via D-Bus.
- */
-
 #ifndef RDKFWUPDATEMGR_CLIENT_H
 #define RDKFWUPDATEMGR_CLIENT_H
 
@@ -17,252 +9,389 @@ extern "C" {
 #endif
 
 /* ========================================================================
- * OPAQUE HANDLE TYPE
+ * HANDLE TYPE
  * ======================================================================== */
 
 /**
- * @brief Opaque handle for registered firmware update client
+ * FirmwareInterfaceHandle
  * 
- * Returned by registerProcess(). Must be passed to all subsequent API calls.
- * Do not dereference or free directly - use unregisterProcess() to cleanup.
+ * This is a string ID that the daemon gives you when you register.
+ * Think of it like a session ID or ticket number (e.g., "12345").
+ * 
+ * You get this from registerProcess() and use it for all other API calls.
+ * The library owns this string - don't free() it yourself.
+ * It becomes invalid after you call unregisterProcess().
  */
-typedef void* FirmwareInterfaceHandle;
+typedef char* FirmwareInterfaceHandle;
+
 
 /* ========================================================================
- * ENUMERATIONS
+ * STATUS ENUMS
  * ======================================================================== */
 
 /**
- * @brief Result codes for checkForUpdate() API
+ * CheckForUpdateStatus
+ * 
+ * What happened when we checked for updates?
  */
 typedef enum {
-    CHECK_FOR_UPDATE_SUCCESS = 0,
-    CHECK_FOR_UPDATE_FAIL = 1
-} CheckForUpdateResult;
-
-/**
- * @brief Firmware availability status
- */
-typedef enum {
-    FIRMWARE_AVAILABLE = 0,
-    FIRMWARE_NOT_AVAILABLE = 1,
-    UPDATE_NOT_ALLOWED = 2,
-    FIRMWARE_CHECK_ERROR = 3,
-    IGNORE_OPTOUT = 4,
-    BYPASS_OPTOUT = 5
+    FIRMWARE_AVAILABLE = 0,       /* New firmware is available to download */
+    FIRMWARE_NOT_AVAILABLE = 1,   /* You're already on the latest version */
+    UPDATE_NOT_ALLOWED = 2,       /* Firmware not compatible with this device model */
+    FIRMWARE_CHECK_ERROR = 3,     /* Something went wrong checking for updates */
+    IGNORE_OPTOUT = 4,            /* Download not allowed (opt-out related) */
+    BYPASS_OPTOUT = 5             /* Download not allowed (opt-out bypass related) */
+    /* Note: IGNORE_OPTOUT vs BYPASS_OPTOUT distinction is being clarified */  
 } CheckForUpdateStatus;
 
 /**
- * @brief Result codes for subscribeToUpdateEvents() API
+ * DownloadStatus
+ * 
+ * Where are we in the download?
  */
 typedef enum {
-    SUBSCRIBE_SUCCESS = 0,
-    SUBSCRIBE_FAILED = 1
-} SubscribeResult;
-
-/**
- * @brief Result codes for downloadFirmware() API
- */
-typedef enum {
-    RDKFW_DWNL_SUCCESS = 0,
-    RDKFW_DWNL_FAILED = 1
-} DownloadResult;
-
-/**
- * @brief Download progress status
- */
-typedef enum {
-    DWNL_NOT_STARTED = 0,
-    DWNL_IN_PROGRESS = 1,
-    DWNL_COMPLETED = 2,
-    DWNL_ERROR = 3
+    DWNL_IN_PROGRESS = 0,         /* Download is happening now */
+    DWNL_COMPLETED = 1,           /* Download finished successfully */
+    DWNL_ERROR = 2                /* Download failed */
 } DownloadStatus;
 
 /**
- * @brief Result codes for updateFirmware() API
+ * UpdateStatus
+ * 
+ * Where are we in flashing the firmware?
  */
 typedef enum {
-    RDKFW_UPDATE_SUCCESS = 0,
-    RDKFW_UPDATE_FAILED = 1
-} UpdateResult;
-
-/**
- * @brief Firmware update progress status
- */
-typedef enum {
-    UPDATE_NOT_STARTED = 0,
-    UPDATE_IN_PROGRESS = 1,
-    UPDATE_COMPLETED = 2,
-    UPDATE_ERROR = 3
+    UPDATE_IN_PROGRESS = 0,       /* Firmware is being flashed now */
+    UPDATE_COMPLETED = 1,         /* Firmware flash finished successfully */
+    UPDATE_ERROR = 2              /* Firmware flash failed */
 } UpdateStatus;
+
 
 /* ========================================================================
  * DATA STRUCTURES
  * ======================================================================== */
 
 /**
- * @brief Firmware information data
+ * FwInfoData
  * 
- * Passed to UpdateEventCallback. Valid only during callback invocation.
+ * Information about firmware that's available (or not).
+ * You get this in your UpdateEventCallback after calling checkForUpdate().
  */
 typedef struct {
-    const char *version;
-    const char *updateDetails;
-    CheckForUpdateStatus status;
+    const char *version;           /* Version string like "2.0.1" */
+    const char *updateDetails;     /* details of the update available*/
+    CheckForUpdateStatus status;   /* Did we find an update or not? */
 } FwInfoData;
 
 /**
- * @brief Firmware download request
+ * FwDwnlReq
  * 
- * Client allocates and populates before calling downloadFirmware().
- * Client owns all memory.
+ * What firmware do you want to download?
+ * Fill this out before calling downloadFirmware().
  */
 typedef struct {
-    const char *firmwareName;      /* Required */
-    const char *downloadUrl;       /* Optional - NULL = use XCONF URL */
-    const char *typeOfFirmware;    /* Required: "PCI", "PDRI", "PERIPHERAL" */
+    const char *firmwareName;      /* Filename like "firmware_v2.bin" */
+    const char *downloadUrl;       /* Where to download from (NULL = let daemon decide) */
+    const char *TypeOfFirmware;    /* "PCI", "PDRI", or "PERIPHERAL" */
 } FwDwnlReq;
 
 /**
- * @brief Firmware update request
+ * FwUpdateReq
  * 
- * Client allocates and populates before calling updateFirmware().
- * Client owns all memory.
+ * Instructions for flashing firmware.
+ * Fill this out before calling updateFirmware().
  */
 typedef struct {
-    const char *firmwareName;         /* Required */
-    const char *typeOfFirmware;       /* Required: "PCI", "PDRI", "PERIPHERAL" */
-    const char *locationOfFirmware;   /* Optional - NULL = use default path */
-    bool rebootImmediately;           /* true = reboot after update */
+    const char *firmwareName;         /* Filename like "firmware_v2.bin" */
+    const char *TypeOfFirmware;       /* "PCI", "PDRI", or "PERIPHERAL" */
+    const char *LocationOfFirmware;   /* Where file is (NULL = use /etc/device.properties default) */
+    bool rebootImmediately;           /* true = reboot right after flash, false = you'll reboot manually */
 } FwUpdateReq;
 
+
 /* ========================================================================
- * CALLBACK TYPES
+ * API RESULT CODES
  * ======================================================================== */
 
 /**
- * @brief Callback for firmware update events
- * 
- * @param fwInfoData Firmware information (valid only during callback)
- * @param userData Client-provided context pointer
- * 
- * @warning Must not block. Must not call library APIs.
+ * Did the API call succeed or fail?
+ * Note: This just means the call started successfully.
+ * Actual results come through callbacks.
  */
-typedef void (*UpdateEventCallback)(const FwInfoData *fwInfoData, void *userData);
+typedef enum {
+    CHECK_FOR_UPDATE_SUCCESS = 0,
+    CHECK_FOR_UPDATE_FAIL = 1
+} CheckForUpdateResult;
+
+typedef enum {
+    RDKFW_DWNL_SUCCESS = 0,
+    RDKFW_DWNL_FAILED = 1
+} DownloadResult;
+
+typedef enum {
+    RDKFW_UPDATE_SUCCESS = 0,
+    RDKFW_UPDATE_FAILED = 1
+} UpdateResult;
+
+
+/* ========================================================================
+ * CALLBACKS
+ * ======================================================================== */
 
 /**
- * @brief Callback for download progress notifications
+ * UpdateEventCallback
  * 
- * @param progressPercent Download progress (0-100)
- * @param status Current download status
- * @param userData Client-provided context pointer
+ * Your function that gets called when checkForUpdate() finishes.
+ * The library calls this from a background thread when it knows if firmware is available.
  * 
- * @warning Must not block. Must not call library APIs.
+ * Parameters:
+ *   fwinfodata - Pointer to update info (version, details, status)
+ * 
+ * Important notes:
+ *   - The pointer and strings inside are only valid during this callback
+ *   - If you need the data later, copy it with strdup()
+ *   - Don't call other library functions from inside this callback
+ *   - This runs in a background thread, not your main thread
+ * 
+ * Example:
+ *   void my_callback(const FwInfoData *info) {
+ *       if (info->status == FIRMWARE_AVAILABLE) {
+ *           printf("New version: %s\n", info->version);
+ *       }
+ *   }
+ * 
+ * Note: Currently using pass-by-pointer (more efficient than spec's pass-by-value).
+ *       This may change if spec is updated.
  */
-typedef void (*DownloadCallback)(int progressPercent, DownloadStatus status, void *userData);
+typedef void (*UpdateEventCallback)(const FwInfoData *fwinfodata);
 
 /**
- * @brief Callback for update progress notifications
+ * DownloadCallback
  * 
- * @param progressPercent Update progress (0-100)
- * @param status Current update status
- * @param userData Client-provided context pointer
+ * Your function that gets called repeatedly while firmware downloads.
+ * The library calls this from a background thread to report progress.
  * 
- * @warning Must not block. Must not call library APIs.
+ * Parameters:
+ *   progress_per - Percentage complete (0 to 100)
+ *   fwdwnlstatus - What's happening (IN_PROGRESS, COMPLETED, or ERROR)
+ * 
+ * Important notes:
+ *   - This gets called multiple times (0%, 25%, 50%, 75%, 100%)
+ *   - Don't call other library functions from inside this callback
+ *   - This runs in a background thread, not your main thread
+ * 
+ * Example:
+ *   void download_progress(int percent, DownloadStatus status) {
+ *       printf("Downloaded: %d%%\n", percent);
+ *       if (status == DWNL_COMPLETED) {
+ *           printf("Download done!\n");
+ *       }
+ *   }
  */
-typedef void (*UpdateCallback)(int progressPercent, UpdateStatus status, void *userData);
+typedef void (*DownloadCallback)(int progress_per, DownloadStatus fwdwnlstatus);
+
+/**
+ * UpdateCallback
+ * 
+ * Your function that gets called repeatedly while firmware flashes.
+ * The library calls this from a background thread to report progress.
+ * 
+ * Parameters:
+ *   progress_per - Percentage complete (0 to 100)
+ *   fwupdatestatus - What's happening (IN_PROGRESS, COMPLETED, or ERROR)
+ * 
+ * Important notes:
+ *   - This gets called multiple times (0%, 25%, 50%, 75%, 100%)
+ *   - Don't call other library functions from inside this callback
+ *   - This runs in a background thread, not your main thread
+ * 
+ * Example:
+ *   void update_progress(int percent, UpdateStatus status) {
+ *       printf("Flashing: %d%%\n", percent);
+ *       if (status == UPDATE_COMPLETED) {
+ *           printf("Flash complete!\n");
+ *       }
+ *   }
+ */
+typedef void (*UpdateCallback)(int progress_per, UpdateStatus fwupdatestatus);
+
 
 /* ========================================================================
  * PUBLIC API FUNCTIONS
  * ======================================================================== */
 
 /**
- * @brief Register a process with the firmware update daemon
+ * registerProcess
  * 
- * @param processName Client process name (e.g., "MyApp")
- * @param libVersion Client library version (e.g., "1.0.0")
- * @return Opaque handle on success, NULL on failure
+ * Connect to the firmware daemon. This is the first thing you call.
  * 
- * @note Thread-safe
+ * Parameters:
+ *   processName - Your app's name (like "VideoPlayer" or "MyApp")
+ *   libVersion - Your app's version (like "1.0" or "2.3.1")
+ * 
+ * Returns:
+ *   A string ID from the daemon (like "12345") if successful
+ *   NULL if it fails (daemon not running, D-Bus error, etc.)
+ * 
+ * Important notes:
+ *   - The returned string belongs to the library - don't free() it
+ *   - Save this ID and use it for all other API calls
+ *   - The ID becomes invalid after you call unregisterProcess()
+ * 
+ * Example:
+ *   FirmwareInterfaceHandle handle = registerProcess("MyApp", "1.0");
+ *   if (!handle) {
+ *       printf("Failed to connect to daemon\n");
+ *       return -1;
+ *   }
+ *   printf("Connected, got ID: %s\n", handle);
  */
 FirmwareInterfaceHandle registerProcess(const char *processName, const char *libVersion);
 
 /**
- * @brief Unregister a process from the firmware update daemon
+ * unregisterProcess
  * 
- * @param handle Handle returned by registerProcess()
+ * Disconnect from the firmware daemon. Call this before your app exits.
  * 
- * @note Thread-safe. Handle becomes invalid after this call.
+ * Parameters:
+ *   handler - The ID you got from registerProcess()
+ * 
+ * Important notes:
+ *   - Always call this before exiting your app
+ *   - After this, your handle becomes invalid (don't use it anymore)
+ *   - Safe to call with NULL (does nothing)
+ * 
+ * Example:
+ *   unregisterProcess(handle);
+ *   handle = NULL;  // Good practice
  */
-void unregisterProcess(FirmwareInterfaceHandle handle);
+void unregisterProcess(FirmwareInterfaceHandle handler);
 
 /**
- * @brief Check if firmware update is available
+ * checkForUpdate
  * 
- * @param handle Handle returned by registerProcess()
- * @param callback Callback to invoke with result
- * @param userData Opaque pointer passed to callback (may be NULL)
- * @return CHECK_FOR_UPDATE_SUCCESS or CHECK_FOR_UPDATE_FAIL
+ * Ask the daemon "Is there new firmware available?"
+ * This is async - it returns immediately and calls your callback later.
  * 
- * @note Thread-safe. Callback invoked from library thread.
+ * Parameters:
+ *   handle - Your ID from registerProcess()
+ *   callback - Your function that handles the result
+ * 
+ * Returns:
+ *   CHECK_FOR_UPDATE_SUCCESS - Request started OK
+ *   CHECK_FOR_UPDATE_FAIL - Couldn't start (bad handle, NULL callback, etc.)
+ * 
+ * Important notes:
+ *   - This returns right away (doesn't wait for answer)
+ *   - Your callback gets called later in a background thread
+ *   - The return code just means we started the check successfully
+ *   - Actual firmware info comes through your callback
+ * 
+ * Example:
+ *   void my_callback(const FwInfoData *info) {
+ *       if (info->status == FIRMWARE_AVAILABLE) {
+ *           printf("Update available: %s\n", info->version);
+ *       } else {
+ *           printf("No update available\n");
+ *       }
+ *   }
+ *   
+ *   CheckForUpdateResult result = checkForUpdate(handle, my_callback);
+ *   if (result == CHECK_FOR_UPDATE_FAIL) {
+ *       printf("Couldn't start update check\n");
+ *   }
  */
 CheckForUpdateResult checkForUpdate(
     FirmwareInterfaceHandle handle,
-    UpdateEventCallback callback,
-    void *userData
+    UpdateEventCallback callback
 );
 
 /**
- * @brief Subscribe to firmware update event notifications
+ * downloadFirmware
  * 
- * @param handle Handle returned by registerProcess()
- * @param callback Callback to invoke on update events
- * @param userData Opaque pointer passed to callback (may be NULL)
- * @return SUBSCRIBE_SUCCESS or SUBSCRIBE_FAILED
+ * Download new firmware from the server.
+ * This is async - it returns immediately and calls your callback as download progresses.
  * 
- * @note Thread-safe. Callback invoked from library thread.
- */
-SubscribeResult subscribeToUpdateEvents(
-    FirmwareInterfaceHandle handle,
-    UpdateEventCallback callback,
-    void *userData
-);
-
-/**
- * @brief Initiate firmware download
+ * Parameters:
+ *   handle - Your ID from registerProcess()
+ *   fwdwnlreq - Details about what to download (name, URL, type)
+ *   callback - Your function that tracks download progress
  * 
- * @param handle Handle returned by registerProcess()
- * @param request Download request parameters
- * @param callback Callback for progress notifications
- * @param userData Opaque pointer passed to callback (may be NULL)
- * @return RDKFW_DWNL_SUCCESS or RDKFW_DWNL_FAILED
+ * Returns:
+ *   RDKFW_DWNL_SUCCESS - Download started OK
+ *   RDKFW_DWNL_FAILED - Couldn't start (bad handle, NULL callback, invalid request, etc.)
  * 
- * @note Thread-safe. Client may free request after call returns.
+ * Important notes:
+ *   - This returns right away (doesn't wait for download)
+ *   - Your callback gets called multiple times (0%, 50%, 100%, etc.)
+ *   - Set downloadUrl to NULL to let daemon use its default URL
+ * 
+ * Example:
+ *   void download_progress(int percent, DownloadStatus status) {
+ *       printf("Downloaded: %d%%\n", percent);
+ *   }
+ *   
+ *   FwDwnlReq request = {
+ *       .firmwareName = "firmware_v2.bin",
+ *       .downloadUrl = NULL,  // Use daemon's default
+ *       .TypeOfFirmware = "PCI"
+ *   };
+ *   
+ *   DownloadResult result = downloadFirmware(handle, request, download_progress);
+ *   if (result == RDKFW_DWNL_FAILED) {
+ *       printf("Couldn't start download\n");
+ *   }
  */
 DownloadResult downloadFirmware(
     FirmwareInterfaceHandle handle,
-    const FwDwnlReq *request,
-    DownloadCallback callback,
-    void *userData
+    FwDwnlReq fwdwnlreq,
+    DownloadCallback callback
 );
 
 /**
- * @brief Initiate firmware update (flash)
+ * updateFirmware
  * 
- * @param handle Handle returned by registerProcess()
- * @param request Update request parameters
- * @param callback Callback for progress notifications
- * @param userData Opaque pointer passed to callback (may be NULL)
- * @return RDKFW_UPDATE_SUCCESS or RDKFW_UPDATE_FAILED
+ * Flash the downloaded firmware to the device.
+ * This is async - it returns immediately and calls your callback as flash progresses.
+ * WARNING: This modifies your device's firmware. Make sure you downloaded the right file!
  * 
- * @note Thread-safe. Client may free request after call returns.
- * @warning Device may reboot if request.rebootImmediately is true.
+ * Parameters:
+ *   handle - Your ID from registerProcess()
+ *   fwupdatereq - Details about what to flash (name, type, location, reboot flag)
+ *   callback - Your function that tracks flash progress
+ * 
+ * Returns:
+ *   RDKFW_UPDATE_SUCCESS - Flash started OK
+ *   RDKFW_UPDATE_FAILED - Couldn't start (bad handle, NULL callback, invalid request, etc.)
+ * 
+ * Important notes:
+ *   - This returns right away (doesn't wait for flash to complete)
+ *   - Your callback gets called multiple times (0%, 50%, 100%, etc.)
+ *   - Set LocationOfFirmware to NULL to use daemon's default path
+ *   - If rebootImmediately is true, device reboots when flash completes
+ *   - This operation is irreversible - double-check your firmware file!
+ * 
+ * Example:
+ *   void update_progress(int percent, UpdateStatus status) {
+ *       printf("Flashing: %d%%\n", percent);
+ *   }
+ *   
+ *   FwUpdateReq request = {
+ *       .firmwareName = "firmware_v2.bin",
+ *       .TypeOfFirmware = "PCI",
+ *       .LocationOfFirmware = NULL,  // Use daemon's default
+ *       .rebootImmediately = false   // Don't reboot yet
+ *   };
+ *   
+ *   UpdateResult result = updateFirmware(handle, request, update_progress);
+ *   if (result == RDKFW_UPDATE_FAILED) {
+ *       printf("Couldn't start firmware flash\n");
+ *   }
  */
 UpdateResult updateFirmware(
     FirmwareInterfaceHandle handle,
-    const FwUpdateReq *request,
-    UpdateCallback callback,
-    void *userData
+    FwUpdateReq fwupdatereq,
+    UpdateCallback callback
 );
 
 #ifdef __cplusplus
