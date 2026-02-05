@@ -862,8 +862,8 @@ def test_pdri_firmware_type():
                         with open(flash_file, 'r') as f:
                             content = f.read()
                             print(f"[DEBUG] Content of {flash_file}: {content[:200]}")
-                    except:
-                        print(f"[DEBUG] {flash_file} exists but cannot read (may be empty)")
+                    except Exception as exc:
+                        print(f"[DEBUG] {flash_file} exists but cannot read (may be empty). Error: {exc}")
         
         assert not found_flash_files, \
             f"Flash should NOT occur for D-Bus DownloadFirmware (download_only=1). Found: {found_flash_files}"
