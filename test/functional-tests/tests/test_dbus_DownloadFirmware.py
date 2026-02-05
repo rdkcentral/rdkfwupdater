@@ -984,7 +984,7 @@ def test_progress_file_creation():
                     progress_content = f.read()
                     if progress_content.strip():
                         print(f"[INFO] Progress content: {progress_content[:100]}")
-            except:
+            except Exception:
                 pass
         else:
             # Progress file might be created briefly and removed after completion
