@@ -24,7 +24,6 @@ import os
 import signal
 from pathlib import Path
 from threading import Thread, Event
-import json
 import pytest
 
 from rdkfw_test_helper import *
