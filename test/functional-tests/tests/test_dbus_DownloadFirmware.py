@@ -519,7 +519,7 @@ def test_download_delay():
         start_time = time.time()
 
         # Provide URL explicitly (daemon reads delay from cache, but URL still required)
-        result = api.DownloadFirmware(
+        api.DownloadFirmware(
             str(handler_id),
             "ABCD_PDRI_firmware_test.bin",
             download_url,  # URL must be provided (not empty)
