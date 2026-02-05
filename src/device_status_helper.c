@@ -73,8 +73,8 @@ bool CurrentRunningInst(const char *file)
                 while(getdelim(&arg, &size, 0,fp) != -1){
                     if (arg != NULL) {
                         SWLOG_INFO("proc entry process name:%s\n",arg);
-		        /* Checking process name is same as rdkvfwupgrader or deviceInitiatedFWDnld*/
-		        if ((strstr(arg, "rdkvfwupgrader")) || (strstr(arg,"deviceInitiatedFWDnld"))) {
+		        /* Checking process name is same as rdkvfwupgrader, rdkFwupdateMgr(deamon), or deviceInitiatedFWDnld*/
+		        if (strstr(arg, "rdkvfwupgrader") || strstr(arg, "rdkFwupdateMgr") || strstr(arg, "deviceInitiatedFWDnld")) {
 		            SWLOG_INFO("proc entry cmdline and process name matched.\nDevice initiated CDL is in progress..\n");
 		            SWLOG_INFO("Exiting without triggering device initiated firmware download.\n");
                             t2CountNotify("SYST_INFO_FWUpgrade_Exit", 1);

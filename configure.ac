@@ -137,8 +137,27 @@ AC_ARG_ENABLE([iarmevent],
 AM_CONDITIONAL([IS_IARMEVENT_ENABLED], [test x$IS_IARMEVENT_ENABLED = xtrue])
 AC_SUBST(IARM_EVENT_FLAG)
 
+AC_ARG_ENABLE([dbus-daemon],
+        AS_HELP_STRING([--enable-dbus-daemon],[Enable D-Bus daemon rdkFwupdateMgr (default is no)]),
+        [
+          case "${enableval}" in
+           yes) ENABLE_DBUS_DAEMON=true
+                DBUS_DAEMON_FLAG=" -DENABLE_DBUS_DAEMON ";;
+           no)  ENABLE_DBUS_DAEMON=false ;;
+          *) AC_MSG_ERROR([bad value ${enableval} for --enable-dbus-daemon]) ;;
+           esac
+           ],
+        [echo "D-Bus daemon is disabled"])
+AM_CONDITIONAL([ENABLE_DBUS_DAEMON], [test x$ENABLE_DBUS_DAEMON = xtrue])
+AC_SUBST(DBUS_DAEMON_FLAG)
+
 PKG_CHECK_MODULES([cjson], [libcjson])
 PKG_CHECK_MODULES([curl], [libcurl])
+
+# Check for GLIB (always required since daemon is always built)
+PKG_CHECK_MODULES([GLIB], [glib-2.0 gio-2.0])
+AC_SUBST([GLIB_CFLAGS])
+AC_SUBST([GLIB_LIBS])
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_HEADER_STDBOOL
@@ -152,4 +171,9 @@ AC_SUBST(TRACE_LIBS)
 AC_CONFIG_FILES(
     Makefile
     )
+# D-Bus support (conditional)
+if test x$ENABLE_DBUS_DAEMON = xtrue; then
+    AC_DEFINE([ENABLE_DBUS], [1], [D-Bus support enabled])
+fi
+AM_CONDITIONAL([ENABLE_DBUS], [test x$ENABLE_DBUS_DAEMON = xtrue])
 AC_OUTPUT

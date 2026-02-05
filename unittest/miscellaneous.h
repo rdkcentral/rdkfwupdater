@@ -20,7 +20,7 @@
 #define _MISCELLANEOUS_H_
 //#include "urlHelper.h"
 //#include "common_device_api.h"
-//#include "rdkv_cdl_log_wrapper.h"
+#include "rdkv_cdl_log_wrapper.h"
 
 #define TLS_LOG_FILE "/opt/logs/tlsError.log"
 #define DEBUG_INI_NAME  "/etc/debug.ini"
@@ -77,5 +77,15 @@ typedef struct imagedetails {
 }ImageDetails_t;
 
 // define the functions to avoid compiler errors
+
+// File utility functions (from system_utils.h in production)
+#ifdef __cplusplus
+extern "C" {
+#endif
+int filePresentCheck(const char *file_name);
+int createFile(const char *file_name);
+#ifdef __cplusplus
+}
+#endif
 
 #endif
