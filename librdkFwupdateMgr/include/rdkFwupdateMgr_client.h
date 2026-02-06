@@ -90,7 +90,7 @@ typedef enum {
 
 /* UpdateDetails field size definitions */
 #define MAX_FW_FILENAME_SIZE 128
-#define MAX_FW_LOCATION_SIZE 512
+#define MAX_FW_URL_SIZE 512
 #define MAX_FW_VERSION_SIZE 64
 #define MAX_REBOOT_IMMEDIATELY_SIZE 12
 #define MAX_DELAY_DOWNLOAD_SIZE 8
@@ -99,7 +99,7 @@ typedef enum {
 
 typedef struct {
     char FwFileName[MAX_FW_FILENAME_SIZE];  /* Firmware file name > **/
-    char FwUrl[MAX_FW_LOCATION_SIZE];       /* Download URL  */
+    char FwUrl[MAX_FW_URL_SIZE];       /* Download URL  */
     char FwVersion[MAX_FW_VERSION_SIZE];    /* Firmware version string */
     char RebootImmediately[MAX_REBOOT_IMMEDIATELY_SIZE]; /*Reboot flag ("true" or "false")*/
     char DelayDownload[MAX_DELAY_DOWNLOAD_SIZE];  /* Delay download flag ("true" or "false") */
@@ -189,15 +189,7 @@ typedef enum {
  *   - Don't call other library functions from inside this callback
  *   - This runs in a background thread, not your main thread
  * 
- * Example:
- *   void my_callback(const FwInfoData *info) {
- *       if (info->status == FIRMWARE_AVAILABLE) {
- *           printf("New version: %s\n", info->version);
- *       }
- *   }
- * 
- * Note: Currently using pass-by-pointer (more efficient than spec's pass-by-value).
- *       This may change if spec is updated.
+ 
  */
 typedef void (*UpdateEventCallback)(const FwInfoData *fwinfodata);
 
@@ -216,13 +208,6 @@ typedef void (*UpdateEventCallback)(const FwInfoData *fwinfodata);
  *   - Don't call other library functions from inside this callback
  *   - This runs in a background thread, not your main thread
  * 
- * Example:
- *   void download_progress(int percent, DownloadStatus status) {
- *       printf("Downloaded: %d%%\n", percent);
- *       if (status == DWNL_COMPLETED) {
- *           printf("Download done!\n");
- *       }
- *   }
  */
 typedef void (*DownloadCallback)(int download_progress, DownloadStatus fwdwnlstatus);
 
@@ -248,13 +233,6 @@ typedef void (*DownloadCallback)(int download_progress, DownloadStatus fwdwnlsta
  * updates once the underlying HAL interface is implemented. Client applications
  * should be prepared for potential signature changes in major version updates.
  *
- * Example:
- *   void update_progress(int percent, UpdateStatus status) {
- *       printf("Flashing: %d%%\n", percent);
- *       if (status == UPDATE_COMPLETED) {
- *           printf("Flash complete!\n");
- *       }
- *   }
  */
 typedef void (*UpdateCallback)(int update_progress, UpdateStatus fwupdatestatus);
 
@@ -281,13 +259,6 @@ typedef void (*UpdateCallback)(int update_progress, UpdateStatus fwupdatestatus)
  *   - Save this ID and use it for all other API calls
  *   - The ID becomes invalid after you call unregisterProcess()
  * 
- * Example:
- *   FirmwareInterfaceHandle handle = registerProcess("MyApp", "1.0");
- *   if (!handle) {
- *       printf("Failed to connect to daemon\n");
- *       return -1;
- *   }
- *   printf("Connected, got ID: %s\n", handle);
  */
 FirmwareInterfaceHandle registerProcess(const char *processName, const char *libVersion);
 
@@ -304,9 +275,6 @@ FirmwareInterfaceHandle registerProcess(const char *processName, const char *lib
  *   - After this, your handle becomes invalid (don't use it anymore)
  *   - Safe to call with NULL (does nothing)
  * 
- * Example:
- *   unregisterProcess(handle);
- *   handle = NULL;  // Good practice
  */
 void unregisterProcess(FirmwareInterfaceHandle handler);
 
@@ -330,24 +298,8 @@ void unregisterProcess(FirmwareInterfaceHandle handler);
  *   - The return code just means we started the check successfully
  *   - Actual firmware info comes through your callback
  * 
- * Example:
- *   void my_callback(const FwInfoData *info) {
- *       if (info->status == FIRMWARE_AVAILABLE) {
- *           printf("Update available: %s\n", info->version);
- *       } else {
- *           printf("No update available\n");
- *       }
- *   }
- *   
- *   CheckForUpdateResult result = checkForUpdate(handle, my_callback);
- *   if (result == CHECK_FOR_UPDATE_FAIL) {
- *       printf("Couldn't start update check\n");
- *   }
  */
-CheckForUpdateResult checkForUpdate(
-    FirmwareInterfaceHandle handle,
-    UpdateEventCallback callback
-);
+CheckForUpdateResult checkForUpdate(FirmwareInterfaceHandle handle,UpdateEventCallback callback);
 
 /**
  * downloadFirmware
@@ -369,27 +321,8 @@ CheckForUpdateResult checkForUpdate(
  *   - Your callback gets called multiple times (0%, 50%, 100%, etc.)
  *   - Set downloadUrl to NULL to let daemon use its default URL
  * 
- * Example:
- *   void download_progress(int percent, DownloadStatus status) {
- *       printf("Downloaded: %d%%\n", percent);
- *   }
- *   
- *   FwDwnlReq request = {
- *       .firmwareName = "firmware_v2.bin",
- *       .downloadUrl = NULL,  // Use daemon's default
- *       .TypeOfFirmware = "PCI"
- *   };
- *   
- *   DownloadResult result = downloadFirmware(handle, request, download_progress);
- *   if (result == RDKFW_DWNL_FAILED) {
- *       printf("Couldn't start download\n");
- *   }
  */
-DownloadResult downloadFirmware(
-    FirmwareInterfaceHandle handle,
-    const FwDwnlReq *fwdwnlreq,
-    DownloadCallback callback
-);
+DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,const FwDwnlReq *fwdwnlreq,DownloadCallback callback);
 
 /**
  * updateFirmware
@@ -414,22 +347,6 @@ DownloadResult downloadFirmware(
  *   - If rebootImmediately is true, device reboots when flash completes
  *   - This operation is irreversible - double-check your firmware file!
  * 
- * Example:
- *   void update_progress(int percent, UpdateStatus status) {
- *       printf("Flashing: %d%%\n", percent);
- *   }
- *   
- *   FwUpdateReq request = {
- *       .firmwareName = "firmware_v2.bin",
- *       .TypeOfFirmware = "PCI",
- *       .LocationOfFirmware = NULL,  // Use daemon's default
- *       .rebootImmediately = false   // Don't reboot yet
- *   };
- *   
- *   UpdateResult result = updateFirmware(handle, request, update_progress);
- *   if (result == RDKFW_UPDATE_FAILED) {
- *       printf("Couldn't start firmware flash\n");
- *   }
  */
 UpdateResult updateFirmware(
     FirmwareInterfaceHandle handle,
