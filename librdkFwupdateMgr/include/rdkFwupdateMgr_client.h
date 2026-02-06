@@ -88,17 +88,20 @@ typedef enum {
 /* ========================================================================
  * DATA STRUCTURES
  * ======================================================================== */
+
+/* UpdateDetails field size definitions */
+#define MAX_FW_FILENAME_SIZE 128
+#define MAX_FW_LOCATION_SIZE 512
+#define MAX_FW_VERSION_SIZE 64
+#define MAX_REBOOT_IMMEDIATELY_SIZE 12
+#define MAX_DELAY_DOWNLOAD_SIZE 8
+
 typedef struct {
-    char *file;
-    char *location;
-    char *ipv6_location;
-    char *version;
-    char *protocol;
-    char *reboot;
-    char *delay;
-    char *pdri;
-    char *peripherals;
-    char *cert_bundle;
+    char FWFilename[MAX_FW_FILENAME_SIZE];
+    char FWlocation[MAX_FW_LOCATION_SIZE];
+    char FWVersion[MAX_FW_VERSION_SIZE];
+    char rebootImmediately[MAX_REBOOT_IMMEDIATELY_SIZE];
+    char delayDownload[MAX_DELAY_DOWNLOAD_SIZE];
 } UpdateDetails;
 /**
  * FwInfoData
@@ -107,7 +110,7 @@ typedef struct {
  * You get this in your UpdateEventCallback after calling checkForUpdate().
  */
 typedef struct {
-    const char *version;           /* Version string like "2.0.1" */
+    char CurrFWVersion[MAX_FW_VERSION_SIZE];           /* Version string like "2.0.1" */
     UpdateDetails *updateDetails;     /* details of the update available*/
     CheckForUpdateStatus status;   /* Did we find an update or not? */
 } FwInfoData;
