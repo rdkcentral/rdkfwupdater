@@ -233,7 +233,14 @@ typedef void (*DownloadCallback)(int progress_per, DownloadStatus fwdwnlstatus);
  *   - This gets called multiple times (0%, 25%, 50%, 75%, 100%)
  *   - Don't call other library functions from inside this callback
  *   - This runs in a background thread, not your main thread
- * 
+ *
+ * API Stability Notice:
+ * The signature and behavior of this callback may change in future versions
+ * when HAL (Hardware Abstraction Layer) APIs become available. The daemon
+ * will provide more granular progress information and device-specific status
+ * updates once the underlying HAL interface is implemented. Client applications
+ * should be prepared for potential signature changes in major version updates.
+ *
  * Example:
  *   void update_progress(int percent, UpdateStatus status) {
  *       printf("Flashing: %d%%\n", percent);
