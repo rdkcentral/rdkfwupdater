@@ -95,14 +95,19 @@ typedef enum {
 #define MAX_FW_VERSION_SIZE 64
 #define MAX_REBOOT_IMMEDIATELY_SIZE 12
 #define MAX_DELAY_DOWNLOAD_SIZE 8
+#define MAX_PDRI_VERSION_LEN 64
+#define MAX_PERIPHERAL_VERSION_LEN 256
 
 typedef struct {
-    char FWFilename[MAX_FW_FILENAME_SIZE];
-    char FWlocation[MAX_FW_LOCATION_SIZE];
-    char FWVersion[MAX_FW_VERSION_SIZE];
-    char rebootImmediately[MAX_REBOOT_IMMEDIATELY_SIZE];
-    char delayDownload[MAX_DELAY_DOWNLOAD_SIZE];
+    char FwFileName[MAX_FW_FILENAME_SIZE];  /* Firmware file name > **/
+    char FwUrl[MAX_FW_LOCATION_SIZE];       /* Download URL  */
+    char FwVersion[MAX_FW_VERSION_SIZE];    /* Firmware version string */
+    char RebootImmediately[MAX_REBOOT_IMMEDIATELY_SIZE]; /*Reboot flag ("true" or "false")*/
+    char DelayDownload[MAX_DELAY_DOWNLOAD_SIZE];  /* Delay download flag ("true" or "false") */
+    char PDRIVersion[MAX_PDRI_VERSION_LEN];       /* PDRI image version.*/
+    char PeripheralFirmwares[MAX_PERIPHERAL_VERSION_LEN]; /* Peripheral image version; may be null if not configured*/
 } UpdateDetails;
+
 /**
  * FwInfoData
  * 
@@ -110,8 +115,8 @@ typedef struct {
  * You get this in your UpdateEventCallback after calling checkForUpdate().
  */
 typedef struct {
-    char CurrFWVersion[MAX_FW_VERSION_SIZE];           /* Version string like "2.0.1" */
-    UpdateDetails *updateDetails;     /* details of the update available*/
+    char CurrFWVersion[MAX_FW_VERSION_SIZE];           /* Version string  */
+    UpdateDetails *UpdateDetails;     /* details of the update available*/
     CheckForUpdateStatus status;   /* Did we find an update or not? */
 } FwInfoData;
 
