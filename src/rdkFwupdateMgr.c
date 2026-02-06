@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Comcast Cable Communications Management, LLC
+ * Copyright 2025 Comcast Cable Communications Management, LLC
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,27 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/**
+ * @file rdkFwupdateMgr.c
+ * @brief Main entry point for RDK Firmware Updater daemon.
+ *
+ * This file contains the daemon's main() function and initialization logic.
+ * The daemon operates as a systemd service that:
+ * - Initializes device information (model, firmware version, etc.)
+ * - Sets up D-Bus service for client communication
+ * - Runs GLib main loop to handle async D-Bus requests
+ * - Manages firmware update operations via XConf server integration
+ *
+ * Execution flow:
+ * 1. STATE_INIT: Initialize logging, device info, IARM, RFC
+ * 2. STATE_INIT_VALIDATION: Validate device state and configuration
+ * 3. STATE_IDLE: Run D-Bus main loop waiting for client requests
+ * 4. Cleanup on shutdown signal or error
+ *
+ * The daemon exposes D-Bus methods (RegisterProcess, CheckForUpdate, etc.)
+ * and handles them asynchronously to avoid blocking the main event loop.
+ */
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -23,7 +44,9 @@
 #include <sys/stat.h>
 #include <pthread.h>
 #include <signal.h>
-
+#ifdef USE_EXTENDED_LOGGER_INIT
+#include "rdk_logger.h"  /* For rdk_logger_ext_init and types */
+#endif
 #include "rdkv_cdl.h"
 #include "rdkv_upgrade.h"
 #ifndef GTEST_ENABLE
@@ -53,9 +76,13 @@
 #include <string.h>
 #include <strings.h>
 
-#ifdef USE_EXTENDED_LOGGER_INIT
-#include "rdk_logger.h"  /* For rdk_logger_ext_init and types */
-#endif
+#include <sys/file.h>
+//#ifdef ENABLE_DBUS
+#include <glib.h>
+#include <gio/gio.h>
+#include "dbus/rdkv_dbus_server.h"
+//#endif
+
 #define JSON_STR_LEN        1000
 
 #define DOWNLOADED_PERIPHERAL_VERSION "/tmp/downloaded_peripheral_versions.txt"
@@ -65,30 +92,60 @@
 #define URL_MAX_LEN1 URL_MAX_LEN + 128
 #define DWNL_PATH_FILE_LEN1 DWNL_PATH_FILE_LEN + 32
 
-// Below are the global variable
-// TODO  Global variables should be avoided to best possible extend and used only as a very last resort !!
-// Device properties is a candidate for getter only utils
-DeviceProperty_t device_info; // Contains all device info
-ImageDetails_t cur_img_detail; // Running Image details
+/**
+ * Global state variables.
+ * 
+ * These are initialized at daemon startup and used throughout the update lifecycle.
+ * device_info: Device model, partner ID, serial number, etc.
+ * cur_img_detail: Current running firmware version and image name
+ * rfc_list: RFC (Remote Feature Control) configuration values
+ */
+DeviceProperty_t device_info;
+ImageDetails_t cur_img_detail;
 Rfc_t rfc_list;
 
-bool isCriticalUpdate = false; //This is true if rebootimead flag is true
+bool isCriticalUpdate = false;
 
-char disableStatsUpdate[4] = { 0 }; // Use for Flag to disable STATUS_FILE updates in case of PDRI upgrade
-int long_term_cert = 0; // If this value is 1 we will select the key file insted of password. 
+char disableStatsUpdate[4] = { 0 };
+int long_term_cert = 0; 
 
-char lastrun[64] = { 0 };  // Store last run time
-char immed_reboot_flag[12] = { 0 }; // Store immediate reboot flag
-int delay_dwnl = 0; // Store delay in integer format
+char lastrun[64] = { 0 };
+char immed_reboot_flag[12] = { 0 };
+int delay_dwnl = 0;
 
-static int proto = 1;       //0 = tftp and 1  = http
+static int proto = 1;
 static int trigger_type = 0;
-static int DwnlState = RDKV_FWDNLD_UNINITIALIZED; //Use For set download state
+static int DwnlState = RDKV_FWDNLD_UNINITIALIZED;
 void *curl = NULL;
 static pthread_mutex_t mutuex_dwnl_state = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t app_mode_status = PTHREAD_MUTEX_INITIALIZER;
-static int app_mode = 1; // 1: fore ground and 0: background
-int force_exit = 0; //This use when rdkvfwupgrader rcv appmode background and thottle speed is set to zero.
+static int app_mode = 1;
+int force_exit = 0;
+
+/**
+ * @brief Daemon state machine enumeration.
+ *
+ * Represents the lifecycle of the daemon:
+ * - STATE_INIT: Initial setup (logging, device info, IARM, RFC)
+ * - STATE_INIT_VALIDATION: Validate device configuration
+ * - STATE_IDLE: D-Bus event loop (waiting for client requests)
+ * - STATE_CHECK_UPDATE: (Future) Explicit check for update
+ * - STATE_DOWNLOAD_UPDATE: (Future) Firmware download
+ * - STATE_UPGRADE: (Future) Firmware flash and reboot
+ *
+ * Current implementation uses STATE_IDLE as main operational state where
+ * D-Bus methods handle update checks asynchronously.
+ */
+typedef enum {
+    STATE_INIT_VALIDATION,
+    STATE_INIT,
+    STATE_IDLE,
+    STATE_CHECK_UPDATE,
+    STATE_DOWNLOAD_UPDATE,
+    STATE_UPGRADE
+} FwUpgraderState;
+FwUpgraderState currentState;
+
 
 void t2CountNotify(char *marker, int val) {
 #ifdef T2_EVENT_ENABLED
@@ -760,6 +817,7 @@ int startFactoryProtectService(void)
  
             PITFALLS - input arguments are not checked for NULL. Call the function correctly!
 */
+/*
 static int MakeXconfComms( XCONFRES *pResponse, int server_type, int *pHttp_code )
 {
     DownloadData DwnLoc;
@@ -836,6 +894,7 @@ static int MakeXconfComms( XCONFRES *pResponse, int server_type, int *pHttp_code
     }
     return ret;
 }
+*/
 /* function copyFile() - copy one file data to another file
         RETURN - 0 on success, -1 on fail
 */
@@ -983,15 +1042,28 @@ int initialValidation(void)
 
 #ifndef GTEST_ENABLE
 
+/**
+ * @brief Main entry point for rdkvfwupgrader daemon.
+ *
+ * Initializes the daemon and runs state machine:
+ * 1. STATE_INIT: Set up logging, signal handlers, D-Bus server, device info
+ * 2. STATE_INIT_VALIDATION: Validate configuration and device state
+ * 3. STATE_IDLE: Run GLib main loop to handle D-Bus requests
+ *
+ * The daemon remains in STATE_IDLE, responding to D-Bus method calls from
+ * client applications for firmware update operations. Exits on shutdown signal
+ * or fatal error.
+ *
+ * @param argc Argument count (unused)
+ * @param argv Argument vector (unused)
+ * @return Exit code (0=success, non-zero=error)
+ */
 int main(int argc, char *argv[]) {
     static XCONFRES response;
     int ret = -1;
     int ret_sig = -1;
     int i;
     int ret_curl_code = 1;
-    int server_type = HTTP_XCONF_DIRECT;
-    int json_res = -1;
-    int http_code;
     struct sigaction rdkv_newaction;
     memset(&rdkv_newaction, '\0', sizeof(struct sigaction));
     int init_validate_status = INITIAL_VALIDATION_FAIL;
@@ -1032,113 +1104,194 @@ int main(int argc, char *argv[]) {
     t2CountNotify("SYST_INFO_C_CDL", 1);
     
     snprintf(disableStatsUpdate, sizeof(disableStatsUpdate), "%s","no");
+    currentState = STATE_INIT;
+    
+    // Main state machine loop
+    while (1) {
+	    switch (currentState) {
+		    case STATE_INIT:
+			    SWLOG_INFO("In STATE_INIT\n");
+			    
+			    // Initialize D-Bus service and task tracking
+                            init_task_system();
+                            if (!setup_dbus_server()) {
+                                    SWLOG_INFO("Failed to setup D-Bus server\n");
+                                    cleanup_dbus();
+                            }
+                            SWLOG_INFO("Creating g_main_loop for dbus\n");
+                            main_loop = g_main_loop_new(NULL, FALSE);
+                            
+			    ret = initialize();
+			    if (1 != ret) {
+				    SWLOG_ERROR( "initialize(): Fail:%d\n", ret);
+				    log_exit();
+				    exit(ret_curl_code);
+			    }
+			    if(argc < 3) {
+				    SWLOG_ERROR( "Provide 2 arguments. Less than 2 arguments received\n");
+				    SWLOG_ERROR("Retry Count (1) argument will not be parsed as we will use hardcoded fallback mechanism added \
+						    triggerType=2 # Set the Image Upgrade trigger Type \
+						    Usage: rdkvfwupgrader <failure retry count> <Image trigger Type> \
+						    failure retry count: This value from DCM settings file, if not  \
+						    Image trigger Type : Bootup(1)/scheduled(2)/tr69 or SNMP triggered upgrade(3)/App triggered upgrade(4)/(5) Delayed Download\n");
+				    if (0 == (strncmp(device_info.maint_status, "true", 4))) {
+					    eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR);
+				    }
+				    log_exit();
+				    exit(ret_curl_code);
+			    }
+			    for( i = 0; i < argc; i++ ) {
+				    SWLOG_INFO("[%d] = %s\n", i, argv[i]);
+			    }
 
-    ret = initialize();
-    if (1 != ret) {
-        SWLOG_ERROR( "initialize(): Fail:%d\n", ret);
-        log_exit();
-        exit(ret_curl_code);
-    }
-    if(argc < 3) {
-        SWLOG_ERROR( "Provide 2 arguments. Less than 2 arguments received\n");
-        SWLOG_ERROR("Retry Count (1) argument will not be parsed as we will use hardcoded fallback mechanism added \
-                     triggerType=2 # Set the Image Upgrade trigger Type \
-                     Usage: rdkvfwupgrader <failure retry count> <Image trigger Type> \
-                     failure retry count: This value from DCM settings file, if not  \
-                     Image trigger Type : Bootup(1)/scheduled(2)/tr69 or SNMP triggered upgrade(3)/App triggered upgrade(4)/(5) Delayed Download\n");
-        if (0 == (strncmp(device_info.maint_status, "true", 4))) {
-            eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR);
-        }
-        log_exit();
-        exit(ret_curl_code);
-    }
-    for( i = 0; i < argc; i++ ) {
-        SWLOG_INFO("[%d] = %s\n", i, argv[i]);
-    }
 
+			    trigger_type = atoi(argv[2]);
+			    if (trigger_type == 1) {
+				    SWLOG_INFO("Image Upgrade During Bootup ..!\n");
+			    }else if (trigger_type == 2) {
+				    SWLOG_INFO("Scheduled Image Upgrade using cron ..!\n");
+				    t2CountNotify("SYST_INFO_SWUpgrdChck", 1);
+			    }else if(trigger_type == 3){
+				    SWLOG_INFO("TR-69/SNMP triggered Image Upgrade ..!\n");
+			    }else if(trigger_type == 4){
+				    SWLOG_INFO("App triggered Image Upgrade ..!\n");
+			    }else if(trigger_type == 5){
+				    SWLOG_INFO("Delayed Trigger Image Upgrade ..!\n");
+			    }else if(trigger_type == 6){
+				    SWLOG_INFO("State Red Image Upgrade ..!\n");
+			    }else{
+				    SWLOG_INFO("Invalid trigger type Image Upgrade ..!\n");
+				    if (0 == (strncmp(device_info.maint_status, "true", 4))) {
+					    eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR);
+				    }
+				    log_exit();
+				    exit(ret_curl_code);
+			    }
+			    SWLOG_ERROR( "initialize(): Success:%d ; Entering into STATE_INTI_VALIDATION\n", ret);
+			    currentState = STATE_INIT_VALIDATION;
+			    break;
+		    case STATE_INIT_VALIDATION:
+			    // Validate device configuration before entering operational state
+			    init_validate_status = initialValidation();
+			    SWLOG_INFO("init_validate_status = %d\n", init_validate_status);
+			    if( init_validate_status == INITIAL_VALIDATION_SUCCESS)
+			    {
+				    SWLOG_INFO("Initial validation success.transiting into STATE_IDLE\n");
+				    currentState = STATE_IDLE;
+				    /*this is for check update and fwupgrade*/
+				    /*
+				       eventManager(FW_STATE_EVENT, FW_STATE_UNINITIALIZED);
+				       if( isInStateRed() ) {
+				       eventManager(RED_STATE_EVENT, RED_RECOVERY_STARTED);
+				       }
+				       eventManager(FW_STATE_EVENT, FW_STATE_REQUESTING);
+				       ret_curl_code = MakeXconfComms( &response, server_type, &http_code );
 
-    trigger_type = atoi(argv[2]);
-    if (trigger_type == 1) {
-        SWLOG_INFO("Image Upgrade During Bootup ..!\n");
-    }else if (trigger_type == 2) {
-        SWLOG_INFO("Scheduled Image Upgrade using cron ..!\n");
-        t2CountNotify("SYST_INFO_SWUpgrdChck", 1);
-    }else if(trigger_type == 3){
-        SWLOG_INFO("TR-69/SNMP triggered Image Upgrade ..!\n");
-    }else if(trigger_type == 4){
-        SWLOG_INFO("App triggered Image Upgrade ..!\n");
-    }else if(trigger_type == 5){
-        SWLOG_INFO("Delayed Trigger Image Upgrade ..!\n");
-    }else if(trigger_type == 6){
-        SWLOG_INFO("State Red Image Upgrade ..!\n");
-    }else{
-        SWLOG_INFO("Invalid trigger type Image Upgrade ..!\n");
-        if (0 == (strncmp(device_info.maint_status, "true", 4))) {
-	    eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR);
-	}
-	log_exit();
-        exit(ret_curl_code);
+				       SWLOG_INFO("XCONF Download completed with curl code:%d\n", ret_curl_code);
+				       if( ret_curl_code == 0 && http_code == 200)
+				       {
+				       SWLOG_INFO("XCONF Download Success\n");
+				       json_res = processJsonResponse(&response, cur_img_detail.cur_img_name, device_info.model, device_info.maint_status);
+				       SWLOG_INFO("processJsonResponse returned %d\n", json_res);
+				       if (0 == (strncmp(response.cloudProto, "tftp", 4))) {
+				       proto = 0;
+				       }
+				       if ((proto == 1) && (json_res == 0)) {
+				       ret_curl_code = checkTriggerUpgrade(&response, device_info.model);
+
+				       char *msg = printCurlError(ret_curl_code);
+				       if (msg != NULL) {
+				       SWLOG_INFO("curl return code =%d and error message=%s\n", ret_curl_code, msg);
+				       t2CountNotify("CurlRet_split", ret_curl_code);
+				       }
+				       SWLOG_INFO("rdkvfwupgrader daemon exit curl code: %d\n", ret_curl_code);
+				       } else if (proto == 0) {    // tftp = 0
+				       SWLOG_INFO("tftp protocol support not present.\n");
+				       }
+				       else {
+				       SWLOG_INFO("Invalid JSON Response.\n");
+				       }
+				       }else {
+				       SWLOG_INFO("XCONF Download Fail\n");
+				       }
+				       */
+			    }
+			    else{
+				    SWLOG_ERROR("Initial validation failed\n");
+				    goto cleanup_and_exit;
+			    }
+			    /*this is for sending the intermediate updates back to apps and */
+			    /*
+				if (init_validate_status == INITIAL_VALIDATION_DWNL_INPROGRESS){
+				if (!(strncmp(device_info.maint_status, "true", 4))) {
+				eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_INPROGRESS); //Sending status to maintenance manager
+				}
+				}else if(init_validate_status == INITIAL_VALIDATION_DWNL_COMPLETED) {
+				SWLOG_INFO("Software Update is completed by AS/EPG, Exiting from firmware download.\n");
+				}else if ((ret_curl_code != 0) || (json_res != 0)) {
+				if (!(strncmp(device_info.maint_status, "true", 4))) {
+				eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR); //Sending status to maintenance manager
+				}
+				if (trigger_type == 6) {
+				unsetStateRed();
+				}
+				}else {
+				if (!(strncmp(device_info.maint_status, "true", 4))) {
+				eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_COMPLETE); //Sending status to maintenance manager
+				}
+				}
+				*/
+				break;
+		    case STATE_IDLE:
+				/**
+				 * Main operational state - D-Bus event loop.
+				 * 
+				 * The daemon remains here indefinitely, waiting for client requests:
+				 * - RegisterProcess: Client registration
+				 * - CheckForUpdate: Firmware update check
+				 * - DownloadFirmware: Firmware download (future)
+				 * - UpdateFirmware: Firmware flash (future)
+				 * - UnregisterProcess: Client cleanup
+				 * 
+				 * g_main_loop_run() blocks here until:
+				 * - Shutdown signal received (SIGTERM, SIGUSR1)
+				 * - Fatal error occurs
+				 * 
+				 * All D-Bus requests are handled asynchronously by GTask workers,
+				 * so the main loop remains responsive even during long operations
+				 * like XConf queries or firmware downloads.
+				 */
+				SWLOG_INFO("\n [STATE_IDLE] rdkvfwupgrader Waiting for D-Bus requests...\n\n");
+				SWLOG_INFO("=======================================================\n");
+				SWLOG_INFO("D-Bus Service: %s\n", BUS_NAME);
+				SWLOG_INFO("Object Path: %s\n", OBJECT_PATH);
+				if (active_tasks != NULL) {
+					SWLOG_INFO("Active Tasks: %d\n", g_hash_table_size(active_tasks));
+				}
+				else {
+					SWLOG_INFO("Active Tasks:0\n");
+				}
+				SWLOG_INFO("=======================================================\n");
+
+				g_main_loop_run(main_loop);
+
+				SWLOG_INFO("Main loop exited - rdkvfwupgrader shutting down\n");
+				goto cleanup_and_exit;
+				break;
+		    default:
+				SWLOG_INFO("Unknown state: %d\n",currentState);
+				currentState = STATE_IDLE;
+				goto cleanup_and_exit;
+	    }
     }
-    init_validate_status = initialValidation();
-    SWLOG_INFO("init_validate_status = %d\n", init_validate_status);
-    if( init_validate_status == INITIAL_VALIDATION_SUCCESS)
-    {
-        eventManager(FW_STATE_EVENT, FW_STATE_UNINITIALIZED);
-	if( isInStateRed() ) {
-          eventManager(RED_STATE_EVENT, RED_RECOVERY_STARTED);
-        }
-	eventManager(FW_STATE_EVENT, FW_STATE_REQUESTING);
-        ret_curl_code = MakeXconfComms( &response, server_type, &http_code );
-
-        SWLOG_INFO("XCONF Download completed with curl code:%d\n", ret_curl_code);
-        if( ret_curl_code == 0 && http_code == 200)
-        {
-            SWLOG_INFO("XCONF Download Success\n");
-            json_res = processJsonResponse(&response, cur_img_detail.cur_img_name, device_info.model, device_info.maint_status);
-            SWLOG_INFO("processJsonResponse returned %d\n", json_res);
-            if (0 == (strncmp(response.cloudProto, "tftp", 4))) {
-                proto = 0;
-            }
-            if ((proto == 1) && (json_res == 0)) {
-                ret_curl_code = checkTriggerUpgrade(&response, device_info.model);
-
-                char *msg = printCurlError(ret_curl_code);
-                if (msg != NULL) {
-                    SWLOG_INFO("curl return code =%d and error message=%s\n", ret_curl_code, msg);
-                    t2CountNotify("CurlRet_split", ret_curl_code);
-                }
-                SWLOG_INFO("rdkvfwupgrader daemon exit curl code: %d\n", ret_curl_code);
-            } else if (proto == 0) {    // tftp = 0
-               SWLOG_INFO("tftp protocol support not present.\n");
-            }
-            else {
-               SWLOG_INFO("Invalid JSON Response.\n");
-            }
-	}else {
-            SWLOG_INFO("XCONF Download Fail\n");
-	}
-    }
-    if (init_validate_status == INITIAL_VALIDATION_DWNL_INPROGRESS){
-        if (!(strncmp(device_info.maint_status, "true", 4))) {
-            eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_INPROGRESS); //Sending status to maintenance manager
-        }
-    }else if(init_validate_status == INITIAL_VALIDATION_DWNL_COMPLETED) {
-	SWLOG_INFO("Software Update is completed by AS/EPG, Exiting from firmware download.\n");
-    }else if ((ret_curl_code != 0) || (json_res != 0)) {
-        if (!(strncmp(device_info.maint_status, "true", 4))) {
-            eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR); //Sending status to maintenance manager
-        }
-	if (trigger_type == 6) {
-            unsetStateRed();
-	}
-    }else {
-        if (!(strncmp(device_info.maint_status, "true", 4))) {
-            eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_COMPLETE); //Sending status to maintenance manager
-        }
-    }
-
+    
+cleanup_and_exit:
+    // Orderly shutdown: cleanup D-Bus resources, uninitialize subsystems
+    cleanup_dbus();
     uninitialize(init_validate_status);
+    log_exit();
     exit(ret_curl_code);
+    return 0;
 }
 
 #endif

@@ -73,8 +73,8 @@ bool CurrentRunningInst(const char *file)
                 while(getdelim(&arg, &size, 0,fp) != -1){
                     if (arg != NULL) {
                         SWLOG_INFO("proc entry process name:%s\n",arg);
-		        /* Checking process name is same as rdkvfwupgrader or deviceInitiatedFWDnld*/
-		        if ((strstr(arg, "rdkvfwupgrader")) || (strstr(arg,"deviceInitiatedFWDnld"))) {
+		        /* Checking process name is same as rdkvfwupgrader, rdkFwupdateMgr(deamon), or deviceInitiatedFWDnld*/
+		        if (strstr(arg, "rdkvfwupgrader") || strstr(arg, "rdkFwupdateMgr") || strstr(arg, "deviceInitiatedFWDnld")) {
 		            SWLOG_INFO("proc entry cmdline and process name matched.\nDevice initiated CDL is in progress..\n");
 		            SWLOG_INFO("Exiting without triggering device initiated firmware download.\n");
                             t2CountNotify("SYST_INFO_FWUpgrade_Exit", 1);
@@ -739,7 +739,7 @@ bool lastDwnlImg(char *img_name, size_t img_name_size)
     tbuff[0] = 0;
 
     if (img_name_size > sizeof(last_dwnl_img_name)) {
-        SWLOG_INFO("%s: Input buffer size is greater than %d\n", __FUNCTION__, sizeof(last_dwnl_img_name));
+        SWLOG_INFO("%s: Input buffer size is greater than %zu\n", __FUNCTION__, sizeof(last_dwnl_img_name));
         return status;
     }
     if (last_dwnl_img_name[0] == 0) {
@@ -776,7 +776,7 @@ bool currentImg(char *img_name, size_t img_name_size)
     tbuff[0] = 0;
 
     if (img_name_size > sizeof(cur_img_name)) {
-        SWLOG_INFO("%s: Input buffer size is greater than %d\n", __FUNCTION__, sizeof(cur_img_name));
+        SWLOG_INFO("%s: Input buffer size is greater than %zu\n", __FUNCTION__, sizeof(cur_img_name));
         return status;
     }
     if (cur_img_name[0] == 0) {
@@ -812,7 +812,7 @@ bool prevFlashedFile(char *img_name, size_t img_name_size)
     tbuff[0] = 0;
 
     if (img_name_size > sizeof(prev_img_name)) {
-        SWLOG_INFO("%s: Input buffer size is greater than %d\n", __FUNCTION__, sizeof(prev_img_name));
+        SWLOG_INFO("%s: Input buffer size is greater than %zu\n", __FUNCTION__, sizeof(prev_img_name));
         return status;
     }
     if (prev_img_name[0] == 0) {
