@@ -58,8 +58,7 @@ typedef enum {
     UPDATE_NOT_ALLOWED = 2,       /* Firmware not compatible with this device model */
     FIRMWARE_CHECK_ERROR = 3,     /* Something went wrong checking for updates */
     IGNORE_OPTOUT = 4,            /* Download not allowed (opt-out related) */
-    BYPASS_OPTOUT = 5             /* Download not allowed (opt-out bypass related) */
-    /* Note: IGNORE_OPTOUT vs BYPASS_OPTOUT distinction is being clarified */  
+    BYPASS_OPTOUT = 5             /* Download not allowed (opt-out bypass related) */ 
 } CheckForUpdateStatus;
 
 /**
@@ -225,7 +224,7 @@ typedef void (*UpdateEventCallback)(const FwInfoData *fwinfodata);
  *       }
  *   }
  */
-typedef void (*DownloadCallback)(int progress_per, DownloadStatus fwdwnlstatus);
+typedef void (*DownloadCallback)(int download_progress, DownloadStatus fwdwnlstatus);
 
 /**
  * UpdateCallback
@@ -257,7 +256,7 @@ typedef void (*DownloadCallback)(int progress_per, DownloadStatus fwdwnlstatus);
  *       }
  *   }
  */
-typedef void (*UpdateCallback)(int progress_per, UpdateStatus fwupdatestatus);
+typedef void (*UpdateCallback)(int update_progress, UpdateStatus fwupdatestatus);
 
 
 /* ========================================================================
