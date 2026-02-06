@@ -260,6 +260,7 @@ typedef void (*UpdateCallback)(int update_progress, UpdateStatus fwupdatestatus)
  *   - The ID becomes invalid after you call unregisterProcess()
  * 
  */
+#define LIB_VERSION "1.0.0"
 FirmwareInterfaceHandle registerProcess(const char *processName, const char *libVersion);
 
 /**
@@ -348,11 +349,7 @@ DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,const FwDwnlReq *
  *   - This operation is irreversible - double-check your firmware file!
  * 
  */
-UpdateResult updateFirmware(
-    FirmwareInterfaceHandle handle,
-    const FwUpdateReq *fwupdatereq,
-    UpdateCallback callback
-);
+UpdateResult updateFirmware(FirmwareInterfaceHandle handle,const FwUpdateReq *fwupdatereq,UpdateCallback callback);
 
 #ifdef __cplusplus
 }
