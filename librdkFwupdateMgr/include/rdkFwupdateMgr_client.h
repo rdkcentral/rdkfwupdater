@@ -88,7 +88,18 @@ typedef enum {
 /* ========================================================================
  * DATA STRUCTURES
  * ======================================================================== */
-
+typedef struct {
+    char *file;
+    char *location;
+    char *ipv6_location;
+    char *version;
+    char *protocol;
+    char *reboot;
+    char *delay;
+    char *pdri;
+    char *peripherals;
+    char *cert_bundle;
+} UpdateDetails;
 /**
  * FwInfoData
  * 
@@ -97,7 +108,7 @@ typedef enum {
  */
 typedef struct {
     const char *version;           /* Version string like "2.0.1" */
-    const char *updateDetails;     /* details of the update available*/
+    UpdateDetails *updateDetails;     /* details of the update available*/
     CheckForUpdateStatus status;   /* Did we find an update or not? */
 } FwInfoData;
 
