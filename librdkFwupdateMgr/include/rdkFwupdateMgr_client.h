@@ -387,7 +387,7 @@ CheckForUpdateResult checkForUpdate(
  */
 DownloadResult downloadFirmware(
     FirmwareInterfaceHandle handle,
-    FwDwnlReq fwdwnlreq,
+    const FwDwnlReq *fwdwnlreq,
     DownloadCallback callback
 );
 
@@ -433,7 +433,7 @@ DownloadResult downloadFirmware(
  */
 UpdateResult updateFirmware(
     FirmwareInterfaceHandle handle,
-    FwUpdateReq fwupdatereq,
+    const FwUpdateReq *fwupdatereq,
     UpdateCallback callback
 );
 
