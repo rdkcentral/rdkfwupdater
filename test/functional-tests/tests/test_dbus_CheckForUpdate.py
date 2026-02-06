@@ -511,7 +511,7 @@ def test_checkupdate_malformed_cache():
         
         # Call CheckForUpdate with timeout (daemon might hang on malformed JSON)
         try:
-            response = api.CheckForUpdate(handler_id)
+            api.CheckForUpdate(handler_id)
         except dbus.exceptions.DBusException:
             pass  # ignore timeout for this test
         assert wait_for_log_line(

@@ -519,12 +519,13 @@ def test_download_delay():
         start_time = time.time()
 
         # Provide URL explicitly (daemon reads delay from cache, but URL still required)
-        result = api.DownloadFirmware(
+        download_result = api.DownloadFirmware(
             str(handler_id),
             "ABCD_PDRI_firmware_test.bin",
             download_url,  # URL must be provided (not empty)
             "PCI"
         )
+        print(f"DownloadFirmware returned: {download_result}")
 
         # Wait for delay + download
         time.sleep(75)
@@ -656,7 +657,7 @@ def test_connection_timeout_with_retry():
         # Unresolvable hostname - will timeout
         unresolvable_url = "https://unmockxconf:50052/featureControl/firmware.bin"
         
-        result = api.DownloadFirmware(
+        api.DownloadFirmware(
             handler_id,
             "ABCD_PDRI_img.bin",
             unresolvable_url,
@@ -862,8 +863,8 @@ def test_pdri_firmware_type():
                         with open(flash_file, 'r') as f:
                             content = f.read()
                             print(f"[DEBUG] Content of {flash_file}: {content[:200]}")
-                    except:
-                        print(f"[DEBUG] {flash_file} exists but cannot read (may be empty)")
+                    except Exception as exc:
+                        print(f"[DEBUG] {flash_file} exists but cannot read (may be empty). Error: {exc}")
         
         assert not found_flash_files, \
             f"Flash should NOT occur for D-Bus DownloadFirmware (download_only=1). Found: {found_flash_files}"
@@ -984,7 +985,7 @@ def test_progress_file_creation():
                     progress_content = f.read()
                     if progress_content.strip():
                         print(f"[INFO] Progress content: {progress_content[:100]}")
-            except:
+            except Exception:
                 pass
         else:
             # Progress file might be created briefly and removed after completion
