@@ -86,6 +86,7 @@ typedef struct rfcdetails {
 #define RFC_FW_REBOOT_NOTIFY "Device.DeviceInfo.X_RDKCENTRAL-COM_xOpsDeviceMgmt.RPC.RebootPendingNotification"
 #define RFC_FW_AUTO_EXCLUDE "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.FWUpdate.AutoExcluded.Enable"
 #define RFC_DEBUGSRV "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Identity.DbgServices.Enable"
+#define RFC_RED_RECV "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.RedRecovery.Status"
 
 #define RFC_XCONF_CHECK_NOW "Device.X_COMCAST-COM_Xcalibur.Client.xconfCheckNow"
 

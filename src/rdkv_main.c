@@ -809,6 +809,7 @@ static int MakeXconfComms( XCONFRES *pResponse, int server_type, int *pHttp_code
                         if( (filePresentCheck( RED_STATE_REBOOT ) == RDK_API_SUCCESS) ) {
                              SWLOG_INFO("%s : RED Recovery completed\n", __FUNCTION__);
                              eventManager(RED_STATE_EVENT, RED_RECOVERY_COMPLETED);
+							 write_RFCProperty("REDRECV", RFC_RED_RECV, "COMPLETED", RFC_STRING);
                              unlink(RED_STATE_REBOOT);
                         }
                     }
@@ -1086,6 +1087,7 @@ int main(int argc, char *argv[]) {
         eventManager(FW_STATE_EVENT, FW_STATE_UNINITIALIZED);
 	if( isInStateRed() ) {
           eventManager(RED_STATE_EVENT, RED_RECOVERY_STARTED);
+	  write_RFCProperty("REDRECV", RFC_RED_RECV, "STARTED", RFC_STRING);
         }
 	eventManager(FW_STATE_EVENT, FW_STATE_REQUESTING);
         ret_curl_code = MakeXconfComms( &response, server_type, &http_code );

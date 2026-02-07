@@ -578,6 +578,7 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
 	    if( isInStateRed() ) {
                  SWLOG_INFO("RED recovery download complete\n");
                  eventManager(RED_STATE_EVENT, RED_RECOVERY_DOWNLOADED);
+		 write_RFCProperty("REDRECV", RFC_RED_RECV, "DOWNLOADED", RFC_STRING);
             }
             SWLOG_INFO("Downloaded %s of size %d\n", dwlpath_filename, getFileSize(dwlpath_filename));
             Upgradet2CountNotify("Filesize_split", getFileSize(dwlpath_filename));
