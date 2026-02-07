@@ -15,6 +15,15 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+
+ENABLE_COV=false
+
+if [ "x$1" = "x--enable-cov" ]; then
+      echo "Enabling coverage options"
+      export LDFLAGS="-lgcov --coverage"
+      ENABLE_COV=true
+fi
+
 cd ./unittest/
 
 automake --add-missing
@@ -59,12 +68,13 @@ echo "-------------> Return value $dbus_handlers_gtest"
 
 if [ "$devicestatus" = "0" ] && [ "$deviceutils" = "0" ] && [ "$mainapp" = "0" ] && [ "$rdkfw_interface" = "0" ]&& [ "$rdkFwupdateMgr_handlers" = "0" ] && [ "$dbus_handlers_gtest" = "0" ] && [ "$rdkfwupdatemgr_main_flow" = "0" ]; then
     cd ../src/
-
-    lcov --capture --directory . --output-file coverage.info
-
-    lcov --remove coverage.info '/usr/*' --output-file coverage.filtered.info
-
-    genhtml coverage.filtered.info --output-directory out
+    #### Generate the coverage report ####
+    if [ "$ENABLE_COV" = true ]; then
+        echo "Generating coverage report"
+        lcov --capture --directory . --output-file coverage.info
+        lcov --remove coverage.info '/usr/*' --output-file coverage.info
+        lcov --list coverage.info
+    fi
 else
     echo "L1 UNIT TEST FAILED. PLEASE CHECK AND FIX"
     exit 1
