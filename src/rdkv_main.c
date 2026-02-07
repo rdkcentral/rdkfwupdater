@@ -817,13 +817,13 @@ static int MakeXconfComms( XCONFRES *pResponse, int server_type, int *pHttp_code
                 {
                     SWLOG_ERROR( "MakeXconfComms: no valid server URL\n" );
                 }
-                free( pServURL );
+                //free( pServURL ); //commented for memleacktool test
             }
             else
             {
                 SWLOG_ERROR("MakeXconfComms: Failed malloc for server URL of %d bytes\n", URL_MAX_LEN );
             }
-            free( pJSONStr );
+            //free( pJSONStr ); //commented for memleacktool test
         }
         else
         {
@@ -831,7 +831,7 @@ static int MakeXconfComms( XCONFRES *pResponse, int server_type, int *pHttp_code
         }
         if( DwnLoc.pvOut != NULL )
         {
-            free( DwnLoc.pvOut );
+            //free( DwnLoc.pvOut ); //commented for memleacktool test
         }
     }
     return ret;

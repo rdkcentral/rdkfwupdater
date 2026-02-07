@@ -24,6 +24,13 @@ export ROOT=/usr
 export INSTALL_DIR=${ROOT}/local
 mkdir -p $INSTALL_DIR
 
+git clone https://github.com/JagadheesanD/memleakutil.git
+cd memleakutil/
+ls -l
+make -f Makefile.raw
+cd ..
+ls -l
+
 #Build rdkfwupdater
 autoreconf -i
 ./configure --prefix=${INSTALL_DIR} --enable-rdkcertselector=yes --enable-mountutils=yes --enable-rfcapi=yes CFLAGS="-DRDK_LOGGER"
