@@ -187,7 +187,7 @@ size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
             RETURN - number of characters copied to the output buffer.
 */
 
-size_t GetInstalledBundles(char *pBundles, size_t szBufSize)
+size_t GetInstalledBundles(char *pBundles, size_t szBufSize, const char *bundleType)
 {
     JSON *pJsonTop;
     JSON *pJson;
@@ -199,7 +199,8 @@ size_t GetInstalledBundles(char *pBundles, size_t szBufSize)
     if (pBundles != NULL)
     {
         *pBundles = 0;
-        installedBundleListNode = getInstalledBundleFileList();
+        SWLOG_INFO("GetInstalledBundles: Invoking getInstalledBundleFileList to get %s bundle list ",bundleType);
+        installedBundleListNode = getInstalledBundleFileList(bundleType);
 
         while (installedBundleListNode != NULL)
         {

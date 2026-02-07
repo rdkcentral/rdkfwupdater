@@ -208,7 +208,7 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
         remainlen = szPostFieldOut - totlen;
         totlen += snprintf( (pTmpPost + totlen), remainlen, "localtime=%s", tmpbuf );
     }
-    len = GetInstalledBundles( tmpbuf, sizeof(tmpbuf) );
+    len = GetInstalledBundles( tmpbuf, sizeof(tmpbuf), "dlCertBundle" );
     if( totlen )
     {
         *(pTmpPost + totlen) = '&';
@@ -216,6 +216,14 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
     }
     remainlen = szPostFieldOut - totlen;
     totlen += snprintf( (pTmpPost + totlen), remainlen, "dlCertBundle=%s", tmpbuf );
+    len = GetInstalledBundles( tmpbuf, sizeof(tmpbuf), "dlAppBundle" );
+    if( totlen )
+    {
+        *(pTmpPost + totlen) = '&';
+        ++totlen;
+    }
+    remainlen = szPostFieldOut - totlen;
+    totlen += snprintf( (pTmpPost + totlen), remainlen, "dlAppBundle=%s", tmpbuf );
     len = GetRdmManifestVersion( tmpbuf, sizeof(tmpbuf) );
     if( totlen )
     {
@@ -272,6 +280,7 @@ int getXconfRespData( XCONFRES *pResponse, char *pJsonStr )
             GetJsonValContaining( pJson, "remCtrl", pResponse->peripheralFirmwares, sizeof(pResponse->peripheralFirmwares) );
             t2ValNotify("SYST_INFO_PRXR_Ver_split", pResponse->peripheralFirmwares);
             GetJsonVal( pJson, "dlCertBundle", pResponse->dlCertBundle, sizeof(pResponse->dlCertBundle) );
+            GetJsonVal( pJson, "dlAppBundle", pResponse->dlAppBundle, sizeof(pResponse->dlAppBundle) );
             strncmp(pResponse->dlCertBundle, "lxyupdate-bundle:", 17)?1:t2ValNotify("lxybundleversion_split", pResponse->dlCertBundle + 17);
             GetJsonVal( pJson, "rdmCatalogueVersion", pResponse->rdmCatalogueVersion, sizeof(pResponse->rdmCatalogueVersion) );
             GetJsonVal( pJson, "ipv6FirmwareLocation", pResponse->ipv6cloudFWLocation, sizeof(pResponse->ipv6cloudFWLocation) );
@@ -334,6 +343,7 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
         SWLOG_INFO("cloudImmediateRebootFlag: %s\n", response->cloudImmediateRebootFlag);
         SWLOG_INFO("peripheralFirmwares: %s\n", response->peripheralFirmwares);
         SWLOG_INFO("dlCertBundle: %s\n", response->dlCertBundle);
+        SWLOG_INFO("dlAppBundle: %s\n", response->dlAppBundle);
         SWLOG_INFO("cloudPDRIVersion: %s\n", response->cloudPDRIVersion);
         SWLOG_INFO("rdmCatalogueVersion: %s\n", response->rdmCatalogueVersion);
 
@@ -350,17 +360,42 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
             fprintf( fp, "%s\n", response->rdmCatalogueVersion );
             fclose( fp );
         }
-        if (response->dlCertBundle[0] != 0) {
+        if (response->dlCertBundle[0] != 0 || response->dlAppBundle[0] != '\0') {
             SWLOG_INFO("Calling rdm Versioned_app download to process bundle update\n");
-	    if (access("/usr/bin/rdm", F_OK) == 0) {
+	    
+	    char dlBundle[1024] = {0};
+            size_t available = sizeof(dlBundle);
+
+            if (response->dlCertBundle[0] != '\0') {
+                int retval = snprintf(dlBundle, available, "dlCertBundle=%s", response->dlCertBundle);
+                if (retval < 0 || retval >= available) {
+                    SWLOG_ERROR("dlCertBundle string too long, truncation occurred\n");
+                    return ret;
+                }
+                available -= retval;
+            }
+
+            if (response->dlAppBundle[0] != '\0') {
+                size_t current_len = strlen(dlBundle);
+                available = sizeof(dlBundle) - current_len;
+
+                int retval;
+                if (dlBundle[0] != '\0') {
+                    retval = snprintf(dlBundle + current_len, available, "|dlAppBundle=%s", response->dlAppBundle);
+                } else {
+                    retval = snprintf(dlBundle + current_len, available, "dlAppBundle=%s", response->dlAppBundle);
+                }
+
+                if (retval < 0 || retval >= available) {
+                    SWLOG_ERROR("dlAppBundle string too long, truncation occurred\n");
+                    return ret;
+                }
+            }
+
+	    if ((access("/usr/bin/rdm", F_OK) == 0) && (strlen(dlBundle) > 0)) {
     	        // file exists
 		SWLOG_INFO("RDM binary is present\n");
-		v_secure_system("rdm -v \"%s\" >> /opt/logs/rdm_status.log 2>&1", response->dlCertBundle);
-		SWLOG_INFO("RDM Versioned app Download started and completed\n");
-	    } else  if (access("/etc/rdm/rdmBundleMgr.sh", F_OK) == 0) {
-    		// Script file exist
-		SWLOG_INFO("RDM binary is not present, using scripts\n");
-		v_secure_system("sh /etc/rdm/rdmBundleMgr.sh '%s' '%s' >> /opt/logs/rdm_status.log 2>&1", response->dlCertBundle, response->cloudFWLocation);
+		v_secure_system("rdm -v \"%s\" >> /opt/logs/rdm_status.log 2>&1", dlBundle);
 		SWLOG_INFO("RDM Versioned app Download started and completed\n");
 	    } else {
                 // file doesn't exist
