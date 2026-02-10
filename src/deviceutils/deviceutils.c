@@ -42,15 +42,15 @@ int v_secure_pclose(FILE *fp);
 #include <dirent.h>
 
 #ifndef GTEST_ENABLE
-	#define BUNDLE_METADATA_NVM_CERT_PATH    "/media/apps/etc/certs"
-	#define BUNDLE_METADATA_RFS_CERT_PATH    "/etc/certs"
-  #define BUNDLE_METADATA_NVM_APPS_PATH    "/media/apps/etc/apps"
-  #define BUNDLE_METADATA_RFS_APPS_PATH    "/etc/apps"
-#else
-	#define BUNDLE_METADATA_NVM_CERT_PATH    "/tmp/certs"
-	#define BUNDLE_METADATA_RFS_CERT_PATH    "/tmp/rfc/certs"
+#define BUNDLE_METADATA_NVM_CERT_PATH    "/media/apps/etc/certs"
+#define BUNDLE_METADATA_RFS_CERT_PATH    "/etc/certs"
 #define BUNDLE_METADATA_NVM_APPS_PATH    "/media/apps/etc/apps"
 #define BUNDLE_METADATA_RFS_APPS_PATH    "/etc/apps"
+#else
+#define BUNDLE_METADATA_NVM_CERT_PATH    "/tmp/certs"
+#define BUNDLE_METADATA_RFS_CERT_PATH    "/tmp/rfc/certs"
+#define BUNDLE_METADATA_NVM_APPS_PATH    "/tmp/apps"
+#define BUNDLE_METADATA_RFS_APPS_PATH    "/tmp/rfc/apps"
 #endif
 
 #define WPEFRAMEWORKSECURITYUTILITY     "/usr/bin/WPEFrameworkSecurityUtility"
@@ -383,7 +383,12 @@ metaDataFileList_st *getInstalledBundleFileList(const char *bundleType)
 {
     const char *BUNDLE_METADATA_NVM_PATH = NULL;
     const char *BUNDLE_METADATA_RFS_PATH = NULL;
-	
+
+    if (bundleType == NULL || bundleType[0] == '\0') {
+	SWLOG_ERROR("getInstalledBundleFileList: bundleType is NULL or empty\n");
+        return NULL;
+    }
+    
     if (strcmp(bundleType, "dlCertBundle") == 0) {
         SWLOG_INFO("Setting bundle path for installed Cert packages\n");
         BUNDLE_METADATA_NVM_PATH = BUNDLE_METADATA_NVM_CERT_PATH;

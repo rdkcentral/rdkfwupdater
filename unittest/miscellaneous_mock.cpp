@@ -19,7 +19,14 @@
 #include <gmock/gmock.h>
 #include "miscellaneous.h"
 #include "rdkv_upgrade.h"  // For RdkUpgradeContext_t
+#include "rfcinterface.h"  // For Rfc_t definition
 
+// Conditionally include headers needed for specific stubs
+#ifdef RDKV_DBUS_STUBS_NEEDED
+#include "rdkv_dbus_server.h"  // For CurrentFlashState and other D-Bus types
+#endif
+
+#include "rdkv_cdl_log_wrapper.h"  // For SWLOG macros
 
 class MockDownloadFile {
 public:
@@ -38,12 +45,12 @@ public:
 MockDownloadFileOps* global_mockdownloadfileops_ptr;
 
 extern "C" {
-    int downloadFile(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode, void **curl, int *force_exit, const char *immed_reboot_flag, const DeviceProperty_t *device_info, const char *lastrun, const Rfc_t *rfc_list, char *disableStatsUpdate) {
-        return global_mockdownloadfileops_ptr->downloadFile(server_type, artifactLocationUrl, localDownloadLocation, pPostFields, httpCode);
+    int downloadFile(const RdkUpgradeContext_t* context, int *httpCode, void **curl) {
+        return global_mockdownloadfileops_ptr->downloadFile(context->server_type, context->artifactLocationUrl, context->dwlloc, context->pPostFields, httpCode);
     }
 
-    int codebigdownloadFile(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode, void **curl, int *force_exit, const char *immed_reboot_flag, const DeviceProperty_t *device_info, const char *lastrun, const Rfc_t *rfc_list, char *disableStatsUpdate) {
-        return global_mockdownloadfileops_ptr->codebigdownloadFile(server_type, artifactLocationUrl, localDownloadLocation, pPostFields, httpCode);
+    int codebigdownloadFile(const RdkUpgradeContext_t* context, int *httpCode, void **curl) {
+        return global_mockdownloadfileops_ptr->codebigdownloadFile(context->server_type, context->artifactLocationUrl, context->dwlloc, context->pPostFields, httpCode);
     }
 }
 
@@ -58,7 +65,7 @@ public:
     MOCK_METHOD(int, getDeviceProperties, (DeviceProperty_t*), ());
     MOCK_METHOD(int, getImageDetails, (ImageDetails_t*), ());
     MOCK_METHOD(int, createDir, (const char*), ());
-    MOCK_METHOD(void, createFile, (const char*), ());  // Uncommented for common_utilities mock
+    MOCK_METHOD(int, createFile, (const char*), ());  // Fixed return type to int
     MOCK_METHOD(void, t2_uninit, (), ());
     MOCK_METHOD(void, log_exit, (), ());
     MOCK_METHOD(int, doHttpFileDownload, (void*, FileDwnl_t*, MtlsAuth_t*, unsigned int, char*, int*), ());
@@ -172,17 +179,17 @@ extern "C" {
         return global_mockexternal_ptr->createDir(dirname);
     }
 
-    void createFile(const char *file_name) {
+    int createFile(const char *file_name) {
         if (global_mockexternal_ptr == nullptr) {
             FILE *file = fopen(file_name, "w");
             if (file == NULL) {
                 printf("Failed to create file\n");
-                return;
+                return -1;
             }
             fclose(file);
-            return; // Return default value if global_mockexternal_ptr is NULL
+            return 0; // Return success if global_mockexternal_ptr is NULL
         }
-        global_mockexternal_ptr->createFile(file_name);
+        return global_mockexternal_ptr->createFile(file_name);
     }
 
     void t2_uninit(void) {
@@ -564,6 +571,52 @@ extern "C" {
         }
         return global_mockexternal_ptr->makeHttpHttps(url);
     }
+
+#ifndef GTEST_BASIC
+    // Mock for rdkv_upgrade_request - used by rdkFwupdateMgr.c main flow tests
+    // Only compile when NOT building GTEST_BASIC (rdkfw_main_gtest uses real rdkv_upgrade.c)
+    int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* pHttp_code) {
+        // Return success by default for tests that don't focus on download/upgrade flow
+        if (pHttp_code) {
+            *pHttp_code = 200; // HTTP OK
+        }
+        return 0; // Success
+    }
+#endif
+
+    // ===========================================================================
+    // EXTERNAL LIBRARY STUBS (IARM, RFC, etc.)
+    // These are stubs for external library functions that are not mocked
+    // ===========================================================================
+
+    // IARM Bus stubs
+    int IARM_Bus_Init(const char *name) { return 0; }
+    int IARM_Bus_Connect(void) { return 0; }
+    int IARM_Bus_Disconnect(void) { return 0; }
+    int IARM_Bus_Term(void) { return 0; }
+    int IARM_Bus_IsConnected(const char *memberName, int *isRegistered) {
+        if (isRegistered) *isRegistered = 1;
+        return 0;
+    }
+    int IARM_Bus_RegisterEventHandler(const char *ownerName, int eventId, void *handler) { return 0; }
+    int IARM_Bus_UnRegisterEventHandler(const char *ownerName, int eventId) { return 0; }
+    int IARM_Bus_BroadcastEvent(const char *ownerName, int eventId, void *data, size_t len) { return 0; }
+
+    // RFC API stubs
+    int getRFCParameter(char* pcCallerID, const char* pcParameterName, char* pValue) {
+        if (pValue) {
+            strcpy(pValue, "false"); // Default RFC value
+        }
+        return 0;
+    }
+
+    int setRFCParameter(char* pcCallerID, const char* pcParameterName, const char* pcParameterType, const char* pcParameterValue) {
+        return 0;
+    }
+
+    const char* getRFCErrorString(int code) {
+        return "RFC_SUCCESS";
+    }
 }
 
 class MockFunctionsInternal {
@@ -581,3 +634,45 @@ public:
     MOCK_METHOD(int, filePresentCheck, (const char* path));
     MOCK_METHOD(int, peripheral_firmware_dndl, (const char* cloudFWLocation, const char* peripheralFirmwares));
 };
+
+// =============================================================================
+// Missing Global Symbols for Handlers Test Linking
+// =============================================================================
+
+// =============================================================================
+// D-Bus and Handler-Specific Stubs (for rdkFwupdateMgr_handlers tests)
+// =============================================================================
+
+extern "C" {
+    // Forward declarations for types (avoid requiring full headers)
+    typedef struct _CurrentFlashState CurrentFlashState;
+    
+    #ifndef TRUE
+    #define TRUE 1
+    #define FALSE 0
+    #endif
+    
+    #ifndef gboolean
+    typedef int gboolean;
+    #endif
+    
+    // Global flash state (declared in rdkv_dbus_server.c, needed by rdkFwupdateMgr_handlers.c)
+    CurrentFlashState *current_flash = NULL;
+    
+    // Global RFC configuration:
+    // Note: rfc_list is defined in rdkv_main.c and rdkFwupdateMgr.c, so we DON'T define it here.
+    // Tests that include those source files will get the definition from production code.
+    // Tests that don't (like rdkFwupdateMgr_handlers_gtest) need to have it declared as extern.
+    // We only define it for handler tests that don't include any main source files
+    #if !defined(GTEST_BASIC) && defined(HANDLER_TEST_ONLY)
+    Rfc_t rfc_list = {0};
+    #endif
+    
+    // Flash status check function (defined in rdkv_dbus_server.c)
+    gboolean IsFlashInProgress(void) {
+        return (current_flash != NULL) ? TRUE : FALSE;
+    }
+}
+
+// Note: SWLOG_* functions are defined as macros in rdkv_cdl_log_wrapper.h
+// so we don't need to provide function implementations

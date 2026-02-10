@@ -31,6 +31,7 @@
 #include "deviceutils.h"
 #include "device_api.h"
 
+#ifndef HANDLER_TEST_ONLY
 // TODO: Convert to array of function pointer calls to reduce size of this function
 size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
 {
@@ -258,13 +259,12 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
     SWLOG_INFO( "createJsonString: totlen = %zu\n%s\n", totlen, pPostFieldOut );
     return totlen;
 }
-
+#endif
 
 int getXconfRespData( XCONFRES *pResponse, char *pJsonStr )
 {
     JSON *pJson = NULL;
     int ret = -1;
-
     if( pResponse != NULL )
     {
         pJson = ParseJsonStr( pJsonStr );
@@ -293,7 +293,6 @@ int getXconfRespData( XCONFRES *pResponse, char *pJsonStr )
     {
         SWLOG_INFO("getXconfRespData: input parameter is NULL\n");
     }
-
     return ret;
 }
 
@@ -373,7 +372,6 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
                     SWLOG_ERROR("dlCertBundle string too long, truncation occurred\n");
                     return ret;
                 }
-                available -= retval;
             }
 
             if (response->dlAppBundle[0] != '\0') {
