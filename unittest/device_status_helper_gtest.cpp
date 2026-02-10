@@ -244,7 +244,16 @@ TEST(TestCurrentRunningInst, TestName_FilePresent)
 {
     int ret;
     ret = system("echo \"24\" > /tmp/runInst.txt");
+    // Test with rdkvfwupgrader process name (original binary)
     ret = system("echo \"rdkvfwupgrader 0 1\" > /tmp/cmdline.txt");
+    EXPECT_EQ(CurrentRunningInst("/tmp/runInst.txt"), true);
+}
+TEST(TestCurrentRunningInst, TestName_FilePresent_DaemonBinary) 
+{
+    int ret;
+    ret = system("echo \"24\" > /tmp/runInst.txt");
+    // Test with rdkFwupdateMgr process name (daemon binary)
+    ret = system("echo \"rdkFwupdateMgr 0 1\" > /tmp/cmdline.txt");
     EXPECT_EQ(CurrentRunningInst("/tmp/runInst.txt"), true);
 }
 TEST(TestCurrentRunningInst, TestName_FilePresentWrongData) 

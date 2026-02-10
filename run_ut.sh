@@ -44,7 +44,20 @@ echo "-------------> Retrun value $mainapp"
 rdkfw_interface=$?
 echo "-------------> Retrun value $rdkfw_interface"
 
-if [ "$devicestatus" = "0" ] && [ "$deviceutils" = "0" ] && [ "$mainapp" = "0" ] && [ "$rdkfw_interface" = "0" ]; then
+./rdkFwupdateMgr_handlers_gtest
+
+rdkFwupdateMgr_handlers=$?
+echo "-------------> Retrun value $rdkFwupdateMgr_handlers"
+
+./rdkfwupdatemgr_main_flow_gtest
+
+rdkfwupdatemgr_main_flow=$?
+echo "-------------> Return value $rdkfwupdatemgr_main_flow"
+
+dbus_handlers_gtest=$?
+echo "-------------> Return value $dbus_handlers_gtest"
+
+if [ "$devicestatus" = "0" ] && [ "$deviceutils" = "0" ] && [ "$mainapp" = "0" ] && [ "$rdkfw_interface" = "0" ]&& [ "$rdkFwupdateMgr_handlers" = "0" ] && [ "$dbus_handlers_gtest" = "0" ] && [ "$rdkfwupdatemgr_main_flow" = "0" ]; then
     cd ../src/
 
     lcov --capture --directory . --output-file coverage.info
