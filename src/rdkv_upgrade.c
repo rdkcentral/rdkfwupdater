@@ -491,15 +491,16 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
                     }else {
                         SWLOG_ERROR("%s : sendXCONFRequest Direct Image upgrade Failed: http_code:%d, attempting codebig\n", __FUNCTION__, *pHttp_code);
                     }
+		    RdkUpgradeContext_t fallback_context = *context;
                     if( server_type == HTTP_SSR_DIRECT )
                     {
-                        server_type = HTTP_SSR_CODEBIG;
+                        fallback_context.server_type = HTTP_SSR_CODEBIG;
                     }
                     else
                     {
-                        server_type = HTTP_XCONF_CODEBIG;
+                        fallback_context.server_type = HTTP_XCONF_CODEBIG;
                     }
-                    ret_curl_code = fallBack(context, pHttp_code, curl);
+                    ret_curl_code = fallBack(&fallback_context, pHttp_code, curl);
                 }
             }
         }
@@ -519,15 +520,16 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
                     }else {
                         SWLOG_ERROR("%s : sendXCONFRequest Codebig download failed: http_code:%d, Switching direct\n", __FUNCTION__, *pHttp_code);
                     }
+		    RdkUpgradeContext_t fallback_context = *context;
                     if( server_type == HTTP_SSR_CODEBIG )
                     {
-                        server_type = HTTP_SSR_DIRECT;
+                        fallback_context.server_type = HTTP_SSR_DIRECT;
                     }
                     else
                     {
-                        server_type = HTTP_XCONF_DIRECT;
+                        fallback_context.server_type = HTTP_XCONF_DIRECT;
                     }
-                    ret_curl_code = fallBack(context, pHttp_code, curl);
+                    ret_curl_code = fallBack(&fallback_context, pHttp_code, curl);
                 }
             }
         }
@@ -743,8 +745,10 @@ int codebigdownloadFile(
         } else {
             setDwnlState(RDKV_FWDNLD_DOWNLOAD_INIT);
         }
-        // Use the passed curl handle instead of creating a new one
-        if (curl != NULL && *curl != NULL) {
+	if (curl != NULL) {
+		*curl = doCurlInit();
+	}
+	if (curl != NULL && *curl != NULL) {
             if (server_type == HTTP_XCONF_CODEBIG) {
                 setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_INPROGRESS);
             } else {
@@ -759,6 +763,7 @@ int codebigdownloadFile(
             doStopDownload(*curl);
             // Don't set curl = NULL here - preserve the handle for reuse
             /* Stop the donwload if Throttle speed rfc is set to zero */
+	    *curl = NULL;
             if (*force_exit == 1 && (curl_ret_code == 23)) {
                 uninitialize(INITIAL_VALIDATION_SUCCESS);
                 exit(1);
@@ -1155,7 +1160,7 @@ int retryDownload(
             SWLOG_INFO("%s: servertype=%d, url=%s, loc=MEMORY, httpcode=%d, retry=%d, delay=%d\n", __FUNCTION__, server_type, artifactLocationUrl, *httpCode, retry_cnt, delay);
         }
         while( retry_completed <= retry_cnt) {
-            sleep(delay);
+            sleep(delay); 
             curl_ret_code = downloadFile(context, httpCode, curl);
             if ((curl_ret_code == CURL_SUCCESS) && (*httpCode == HTTP_SUCCESS || *httpCode == HTTP_CHUNK_SUCCESS)) {
 	        if(server_type == HTTP_SSR_DIRECT)
