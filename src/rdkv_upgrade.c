@@ -761,8 +761,6 @@ int codebigdownloadFile(
                 setDwnlState(RDKV_FWDNLD_DOWNLOAD_EXIT);
             }
             doStopDownload(*curl);
-            // Don't set curl = NULL here - preserve the handle for reuse
-            /* Stop the donwload if Throttle speed rfc is set to zero */
 	    *curl = NULL;
             if (*force_exit == 1 && (curl_ret_code == 23)) {
                 uninitialize(INITIAL_VALIDATION_SUCCESS);
