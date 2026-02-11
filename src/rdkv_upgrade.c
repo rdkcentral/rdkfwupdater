@@ -491,7 +491,7 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
                     }else {
                         SWLOG_ERROR("%s : sendXCONFRequest Direct Image upgrade Failed: http_code:%d, attempting codebig\n", __FUNCTION__, *pHttp_code);
                     }
-		    RdkUpgradeContext_t fallback_context = *context;
+		            RdkUpgradeContext_t fallback_context = *context;
                     if( server_type == HTTP_SSR_DIRECT )
                     {
                         fallback_context.server_type = HTTP_SSR_CODEBIG;
@@ -520,7 +520,7 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
                     }else {
                         SWLOG_ERROR("%s : sendXCONFRequest Codebig download failed: http_code:%d, Switching direct\n", __FUNCTION__, *pHttp_code);
                     }
-		    RdkUpgradeContext_t fallback_context = *context;
+		            RdkUpgradeContext_t fallback_context = *context;
                     if( server_type == HTTP_SSR_CODEBIG )
                     {
                         fallback_context.server_type = HTTP_SSR_DIRECT;
@@ -1274,3 +1274,4 @@ int fallBack(
     }
     return curl_ret_code;
 }
+
