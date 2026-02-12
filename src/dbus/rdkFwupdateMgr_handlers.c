@@ -64,6 +64,56 @@
 #define RED_STATE_FILE          "/lib/rdk/stateRedRecovery.sh"
 
 // ============================================================================
+// GLOBAL IN-MEMORY XCONF CACHE
+// ============================================================================
+/**
+ * @brief Global parsed XConf response cache
+ * 
+ * This structure holds the most recent successfully parsed XConf response
+ * in memory to avoid repeated file I/O and JSON parsing operations.
+ * 
+ * Benefits:
+ * - Fast access to firmware metadata without file I/O
+ * - No repeated JSON parsing overhead
+ * - Direct access to download URLs for DownloadFirmware API
+ * - Thread-safe via g_xconf_data_cache mutex
+ * 
+ * Lifecycle:
+ * - Populated by save_xconf_to_cache() after successful XConf query
+ * - Read by get_cached_xconf_data() with automatic deep copy
+ * - Cleared by clear_cached_xconf_data() on errors or invalidation
+ * - Protected by g_xconf_data_cache mutex for thread safety
+ * 
+ * Memory:
+ * - Static allocation (program lifetime)
+ * - String fields are heap-allocated (g_strdup)
+ * - Must call clear_cached_xconf_data() before overwriting
+ */
+static XCONFRES g_cached_xconf_data = {0};
+static gboolean g_xconf_data_valid = FALSE;
+static int g_cached_http_code = 0;
+
+/**
+ * @brief Mutex protecting global XConf data cache
+ * 
+ * Protects concurrent access to:
+ * - g_cached_xconf_data (parsed XConf response structure)
+ * - g_xconf_data_valid (cache validity flag)
+ * - g_cached_http_code (HTTP status code)
+ * 
+ * Lock Scope:
+ * - MUST lock before: save_cached_xconf_data(), get_cached_xconf_data(), clear_cached_xconf_data()
+ * - Release immediately after data copy completes
+ * - Do NOT hold during network calls or file I/O
+ * 
+ * Thread Safety:
+ * - Protects both read and write operations
+ * - Ensures atomicity of cache updates
+ * - Prevents partial reads during writes
+ */
+G_LOCK_DEFINE_STATIC(xconf_data_cache);
+
+// ============================================================================
 // CACHE SYNCHRONIZATION
 // ============================================================================
 /**
@@ -294,9 +344,9 @@ static gboolean save_xconf_to_cache(const char *xconf_response, int http_code)
         return FALSE;
     }
 
-    SWLOG_INFO("[CACHE] Saving XConf response to cache files\n");
+    SWLOG_INFO("[CACHE] Saving XConf response to cache files and memory\n");
     
-    // === CRITICAL SECTION START ===
+    // === CRITICAL SECTION START (File Cache) ===
     G_LOCK(xconf_cache);
     
     // Save main XConf response (with lock held)
@@ -318,14 +368,34 @@ static gboolean save_xconf_to_cache(const char *xconf_response, int http_code)
     }
     
     G_UNLOCK(xconf_cache);
-    // === CRITICAL SECTION END ===
+    // === CRITICAL SECTION END (File Cache) ===
     
-    SWLOG_INFO("[CACHE] XConf data cached successfully\n");
+    SWLOG_INFO("[CACHE] XConf data cached to files successfully\n");
     SWLOG_INFO("[CACHE]   - Response file: %s\n", XCONF_CACHE_FILE);
     SWLOG_INFO("[CACHE]   - HTTP code file: %s (code: %d)\n", 
                XCONF_HTTP_CODE_FILE, http_code);
     
     g_free(http_code_str);
+    
+    // Parse JSON response and save to global in-memory cache
+    XCONFRES parsed_response = {0};
+    int parse_result = getXconfRespData(&parsed_response, (char *)xconf_response);
+    
+    if (parse_result == 0) {
+        SWLOG_INFO("[CACHE] Parsed XConf response successfully, saving to memory cache\n");
+        
+        // Save parsed data to global in-memory cache
+        if (save_cached_xconf_data(&parsed_response, http_code)) {
+            SWLOG_INFO("[CACHE] In-memory cache updated successfully\n");
+        } else {
+            SWLOG_ERROR("[CACHE] Failed to update in-memory cache (non-fatal)\n");
+        }
+    } else {
+        SWLOG_ERROR("[CACHE] Failed to parse XConf response for memory cache (error: %d)\n", parse_result);
+        SWLOG_ERROR("[CACHE] File cache saved but in-memory cache not updated\n");
+        // Non-fatal: file cache is still valid
+    }
+    
     return TRUE;
 }
 
@@ -406,11 +476,6 @@ static int fetch_xconf_firmware_info( XCONFRES *pResponse, int server_type, int 
                     xconf_context.trigger_type = local_trigger_type;
                     xconf_context.rfc_list = &local_rfc_list;  
 
-                    //#ifndef GTEST_ENABLE
-                    //SWLOG_INFO("Simulating a 120 seconds sleep()\n");
-                    //sleep(120);
-                    //SWLOG_INFO("Just now completed 120 seconds sleep\n");
-                    //#endif
                     SWLOG_INFO("fetch_xconf_firmware_info: Initiating XConf request with server_type=%d\n", server_type);
                     SWLOG_INFO("fetch_xconf_firmware_info: Context setup - device_info=%p, rfc_list=%p\n", 
                                xconf_context.device_info, xconf_context.rfc_list);
@@ -1084,9 +1149,13 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
     int server_type = HTTP_XCONF_DIRECT;
     int ret = -1;
     
-    SWLOG_INFO("[rdkFwupdateMgr] CheckForUpdate: Checking for cached XConf data...\n");
+    if (xconf_cache_exists()) {
+        SWLOG_INFO("[rdkFwupdateMgr] Cache hit! But still...\n");
+    }	
+    //SWLOG_INFO("[rdkFwupdateMgr] CheckForUpdate: Checking for cached XConf data...\n");
     
     // Try cache first to support offline recovery scenarios
+    /*
     if (xconf_cache_exists()) {
         SWLOG_INFO("[rdkFwupdateMgr] Cache hit! Loading XConf data from cache\n");
         if (load_xconf_from_cache(&response)) {
@@ -1097,8 +1166,8 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
             SWLOG_ERROR("[rdkFwupdateMgr] Cache read failed, falling back to live XConf call\n");
             ret = fetch_xconf_firmware_info(&response, server_type, &http_code);
         }
-    } else {
-        SWLOG_INFO("[rdkFwupdateMgr] Cache miss! Making live XConf call\n");
+    } else { */
+        SWLOG_INFO("[rdkFwupdateMgr] Making live XConf call\n");
         ret = fetch_xconf_firmware_info(&response, server_type, &http_code);
         
         if (ret == 0 && http_code == 200) {
@@ -1120,7 +1189,7 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
             SWLOG_INFO("[rdkFwupdateMgr] VALIDATION PASSED - Firmware is valid for this device\n");
             SWLOG_INFO("[rdkFwupdateMgr] ===== VALIDATION & COMPARISON COMPLETE =====\n");
         }
-    }
+    //}
     
     SWLOG_INFO("[rdkFwupdateMgr] XConf call completed with result: ret=%d\n",ret);
     
@@ -1262,22 +1331,47 @@ DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName
             return result;
         }
     } else {
-        // Load URL from XConf cache
+        // Load URL from XConf cache (try in-memory first, then file cache)
         SWLOG_INFO("[DOWNLOAD_HANDLER] No custom URL, loading from XConf cache\n");
-        
-        if (!xconf_cache_exists()) {
-            SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: No XConf cache found\n");
-            SWLOG_ERROR("[DOWNLOAD_HANDLER] Client must call CheckForUpdate first\n");
-            result.error_message = g_strdup("No firmware metadata. Call CheckForUpdate first.");
-            return result;
-        }
         
         XCONFRES xconf_response;
         memset(&xconf_response, 0, sizeof(XCONFRES));
+        int http_code = 0;
+        gboolean cache_loaded = FALSE;
         
-        if (!load_xconf_from_cache(&xconf_response)) {
-            SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: Failed to load XConf cache\n");
-            result.error_message = g_strdup("Failed to load firmware metadata from cache");
+        // Try in-memory cache first (fastest - no file I/O)
+        SWLOG_INFO("[DOWNLOAD_HANDLER] Attempting to load from in-memory cache...\n");
+        if (get_cached_xconf_data(&xconf_response, &http_code)) {
+            SWLOG_INFO("[DOWNLOAD_HANDLER] SUCCESS: Loaded from in-memory cache\n");
+            SWLOG_INFO("[DOWNLOAD_HANDLER]   - Version: %s\n", xconf_response.cloudFWVersion);
+            SWLOG_INFO("[DOWNLOAD_HANDLER]   - Location: %s\n", xconf_response.cloudFWLocation);
+            SWLOG_INFO("[DOWNLOAD_HANDLER]   - HTTP Code: %d\n", http_code);
+            cache_loaded = TRUE;
+        } else {
+            SWLOG_INFO("[DOWNLOAD_HANDLER] In-memory cache miss, trying file cache...\n");
+            
+            // Fallback: Check if file cache exists
+            if (!xconf_cache_exists()) {
+                SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: No XConf cache found (neither memory nor file)\n");
+                SWLOG_ERROR("[DOWNLOAD_HANDLER] Client must call CheckForUpdate first\n");
+                result.error_message = g_strdup("No firmware metadata. Call CheckForUpdate first.");
+                return result;
+            }
+            
+            // Load from file cache
+            if (!load_xconf_from_cache(&xconf_response)) {
+                SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: Failed to load XConf file cache\n");
+                result.error_message = g_strdup("Failed to load firmware metadata from cache");
+                return result;
+            }
+            
+            SWLOG_INFO("[DOWNLOAD_HANDLER] SUCCESS: Loaded from file cache\n");
+            cache_loaded = TRUE;
+        }
+        
+        if (!cache_loaded) {
+            SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: Failed to load XConf cache from any source\n");
+            result.error_message = g_strdup("Failed to load firmware metadata");
             return result;
         }
         
@@ -1285,22 +1379,29 @@ DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName
         SWLOG_INFO("[DOWNLOAD_HANDLER]   Version: %s\n", 
                    xconf_response.cloudFWVersion ? xconf_response.cloudFWVersion : "(null)");
         SWLOG_INFO("[DOWNLOAD_HANDLER]   URL: %s\n", 
-                   xconf_response.cloudFWFile ? xconf_response.cloudFWFile : "(null)");
+                   xconf_response.cloudFWLocation ? xconf_response.cloudFWLocation : "(null)");
         
-        // Validate that cloudFWFile contains a valid URL
-        if (xconf_response.cloudFWFile == NULL || strlen(xconf_response.cloudFWFile) == 0) {
-            SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: XConf cache has no firmware URL\n");
-            result.error_message = g_strdup("Invalid XConf data: missing firmware URL");
+        // Use cloudFWLocation (download URL) instead of cloudFWFile (filename)
+        const char *download_location = xconf_response.cloudFWLocation[0] ? 
+                                        xconf_response.cloudFWLocation : NULL;
+        
+        // Validate that cloudFWLocation contains a valid URL
+        if (download_location == NULL || strlen(download_location) == 0) {
+            SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: XConf cache has no firmware download URL\n");
+            SWLOG_ERROR("[DOWNLOAD_HANDLER]   - cloudFWLocation is empty or NULL\n");
+            result.error_message = g_strdup("Invalid XConf data: missing firmware download URL");
             return result;
         }
         
-        effective_url = g_strdup(xconf_response.cloudFWFile);
+        effective_url = g_strdup(download_location);
         
         if (effective_url == NULL) {
             SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: Failed to duplicate XConf URL\n");
             result.error_message = g_strdup("Memory allocation failed");
             return result;
         }
+        
+        SWLOG_INFO("[DOWNLOAD_HANDLER] Using firmware download URL: %s\n", effective_url);
     }
     
     // Validate effective URL
@@ -2140,4 +2241,241 @@ flash_error:
     
     SWLOG_INFO("[FLASH_WORKER] Thread exiting, result: %d\n", flash_result);
     return NULL;
+}
+
+// ============================================================================
+// GLOBAL IN-MEMORY XCONF CACHE MANAGEMENT FUNCTIONS
+// ============================================================================
+
+/**
+ * @brief Clear the global XConf data cache
+ * 
+ * Frees all dynamically allocated strings in the global cache and marks
+ * it as invalid. Should be called before overwriting with new data or
+ * when cache needs to be invalidated.
+ * 
+ * Thread Safety: Caller MUST hold g_xconf_data_cache lock
+ * 
+ * Note: This is an internal function, always called with lock held
+ */
+static void clear_cached_xconf_data_internal(void)
+{
+    // No lock needed - caller must hold lock
+    
+    // Free all dynamically allocated string fields
+    if (g_cached_xconf_data.cloudFWVersion) {
+        memset(g_cached_xconf_data.cloudFWVersion, 0, sizeof(g_cached_xconf_data.cloudFWVersion));
+    }
+    if (g_cached_xconf_data.cloudFWFile) {
+        memset(g_cached_xconf_data.cloudFWFile, 0, sizeof(g_cached_xconf_data.cloudFWFile));
+    }
+    if (g_cached_xconf_data.cloudFWLocation) {
+        memset(g_cached_xconf_data.cloudFWLocation, 0, sizeof(g_cached_xconf_data.cloudFWLocation));
+    }
+    if (g_cached_xconf_data.ipv6cloudFWLocation) {
+        memset(g_cached_xconf_data.ipv6cloudFWLocation, 0, sizeof(g_cached_xconf_data.ipv6cloudFWLocation));
+    }
+    if (g_cached_xconf_data.cloudProto) {
+        memset(g_cached_xconf_data.cloudProto, 0, sizeof(g_cached_xconf_data.cloudProto));
+    }
+    if (g_cached_xconf_data.cloudImmediateRebootFlag) {
+        memset(g_cached_xconf_data.cloudImmediateRebootFlag, 0, sizeof(g_cached_xconf_data.cloudImmediateRebootFlag));
+    }
+    if (g_cached_xconf_data.cloudDelayDownload) {
+        memset(g_cached_xconf_data.cloudDelayDownload, 0, sizeof(g_cached_xconf_data.cloudDelayDownload));
+    }
+    if (g_cached_xconf_data.cloudPDRIVersion) {
+        memset(g_cached_xconf_data.cloudPDRIVersion, 0, sizeof(g_cached_xconf_data.cloudPDRIVersion));
+    }
+    if (g_cached_xconf_data.peripheralFirmwares) {
+        memset(g_cached_xconf_data.peripheralFirmwares, 0, sizeof(g_cached_xconf_data.peripheralFirmwares));
+    }
+    if (g_cached_xconf_data.dlCertBundle) {
+        memset(g_cached_xconf_data.dlCertBundle, 0, sizeof(g_cached_xconf_data.dlCertBundle));
+    }
+    
+    // Zero out the entire structure
+    memset(&g_cached_xconf_data, 0, sizeof(XCONFRES));
+    
+    // Mark cache as invalid
+    g_xconf_data_valid = FALSE;
+    g_cached_http_code = 0;
+    
+    SWLOG_DEBUG("[CACHE_MEM] Global XConf cache cleared\n");
+}
+
+/**
+ * @brief Save parsed XConf data to global in-memory cache
+ * 
+ * Populates the global g_cached_xconf_data structure with parsed XConf
+ * response data. This allows fast access without file I/O or JSON parsing.
+ * 
+ * Thread Safety: Thread-safe, uses g_xconf_data_cache mutex
+ * 
+ * @param pResponse Parsed XConf response structure to cache
+ * @param http_code HTTP status code from XConf query
+ * @return TRUE on success, FALSE on error
+ */
+static gboolean save_cached_xconf_data(const XCONFRES *pResponse, int http_code)
+{
+    if (!pResponse) {
+        SWLOG_ERROR("[CACHE_MEM] Cannot save NULL XConf response to memory cache\n");
+        return FALSE;
+    }
+    
+    SWLOG_INFO("[CACHE_MEM] Saving parsed XConf data to global in-memory cache\n");
+    
+    // === CRITICAL SECTION START ===
+    G_LOCK(xconf_data_cache);
+    
+    // Clear existing cache before overwriting
+    clear_cached_xconf_data_internal();
+    
+    // Deep copy all fields from pResponse to g_cached_xconf_data
+    // Note: XCONFRES uses fixed-size char arrays, not pointers
+    
+    if (pResponse->cloudFWVersion[0]) {
+        strncpy(g_cached_xconf_data.cloudFWVersion, pResponse->cloudFWVersion, 
+                sizeof(g_cached_xconf_data.cloudFWVersion) - 1);
+        g_cached_xconf_data.cloudFWVersion[sizeof(g_cached_xconf_data.cloudFWVersion) - 1] = '\0';
+    }
+    
+    if (pResponse->cloudFWFile[0]) {
+        strncpy(g_cached_xconf_data.cloudFWFile, pResponse->cloudFWFile, 
+                sizeof(g_cached_xconf_data.cloudFWFile) - 1);
+        g_cached_xconf_data.cloudFWFile[sizeof(g_cached_xconf_data.cloudFWFile) - 1] = '\0';
+    }
+    
+    if (pResponse->cloudFWLocation[0]) {
+        strncpy(g_cached_xconf_data.cloudFWLocation, pResponse->cloudFWLocation, 
+                sizeof(g_cached_xconf_data.cloudFWLocation) - 1);
+        g_cached_xconf_data.cloudFWLocation[sizeof(g_cached_xconf_data.cloudFWLocation) - 1] = '\0';
+    }
+    
+    if (pResponse->ipv6cloudFWLocation[0]) {
+        strncpy(g_cached_xconf_data.ipv6cloudFWLocation, pResponse->ipv6cloudFWLocation, 
+                sizeof(g_cached_xconf_data.ipv6cloudFWLocation) - 1);
+        g_cached_xconf_data.ipv6cloudFWLocation[sizeof(g_cached_xconf_data.ipv6cloudFWLocation) - 1] = '\0';
+    }
+    
+    if (pResponse->cloudProto[0]) {
+        strncpy(g_cached_xconf_data.cloudProto, pResponse->cloudProto, 
+                sizeof(g_cached_xconf_data.cloudProto) - 1);
+        g_cached_xconf_data.cloudProto[sizeof(g_cached_xconf_data.cloudProto) - 1] = '\0';
+    }
+    
+    if (pResponse->cloudImmediateRebootFlag[0]) {
+        strncpy(g_cached_xconf_data.cloudImmediateRebootFlag, pResponse->cloudImmediateRebootFlag, 
+                sizeof(g_cached_xconf_data.cloudImmediateRebootFlag) - 1);
+        g_cached_xconf_data.cloudImmediateRebootFlag[sizeof(g_cached_xconf_data.cloudImmediateRebootFlag) - 1] = '\0';
+    }
+    
+    if (pResponse->cloudDelayDownload[0]) {
+        strncpy(g_cached_xconf_data.cloudDelayDownload, pResponse->cloudDelayDownload, 
+                sizeof(g_cached_xconf_data.cloudDelayDownload) - 1);
+        g_cached_xconf_data.cloudDelayDownload[sizeof(g_cached_xconf_data.cloudDelayDownload) - 1] = '\0';
+    }
+    
+    if (pResponse->cloudPDRIVersion[0]) {
+        strncpy(g_cached_xconf_data.cloudPDRIVersion, pResponse->cloudPDRIVersion, 
+                sizeof(g_cached_xconf_data.cloudPDRIVersion) - 1);
+        g_cached_xconf_data.cloudPDRIVersion[sizeof(g_cached_xconf_data.cloudPDRIVersion) - 1] = '\0';
+    }
+    
+    if (pResponse->peripheralFirmwares[0]) {
+        strncpy(g_cached_xconf_data.peripheralFirmwares, pResponse->peripheralFirmwares, 
+                sizeof(g_cached_xconf_data.peripheralFirmwares) - 1);
+        g_cached_xconf_data.peripheralFirmwares[sizeof(g_cached_xconf_data.peripheralFirmwares) - 1] = '\0';
+    }
+    
+    if (pResponse->dlCertBundle[0]) {
+        strncpy(g_cached_xconf_data.dlCertBundle, pResponse->dlCertBundle, 
+                sizeof(g_cached_xconf_data.dlCertBundle) - 1);
+        g_cached_xconf_data.dlCertBundle[sizeof(g_cached_xconf_data.dlCertBundle) - 1] = '\0';
+    }
+    
+    // Save HTTP code
+    g_cached_http_code = http_code;
+    
+    // Mark cache as valid
+    g_xconf_data_valid = TRUE;
+    
+    G_UNLOCK(xconf_data_cache);
+    // === CRITICAL SECTION END ===
+    
+    SWLOG_INFO("[CACHE_MEM] Global in-memory cache saved successfully\n");
+    SWLOG_INFO("[CACHE_MEM]   - Version: '%s'\n", g_cached_xconf_data.cloudFWVersion);
+    SWLOG_INFO("[CACHE_MEM]   - File: '%s'\n", g_cached_xconf_data.cloudFWFile);
+    SWLOG_INFO("[CACHE_MEM]   - Location: '%s'\n", g_cached_xconf_data.cloudFWLocation);
+    SWLOG_INFO("[CACHE_MEM]   - HTTP Code: %d\n", g_cached_http_code);
+    
+    return TRUE;
+}
+
+/**
+ * @brief Get parsed XConf data from global in-memory cache
+ * 
+ * Returns a deep copy of the cached XConf response data. This is the
+ * primary access method for other functions to retrieve firmware metadata.
+ * 
+ * Use Case: DownloadFirmware can call this to get cloudFWLocation without
+ *           file I/O or JSON parsing overhead.
+ * 
+ * Thread Safety: Thread-safe, uses g_xconf_data_cache mutex
+ * 
+ * @param[out] pResponse Output structure to populate with cached data
+ * @param[out] pHttpCode Output HTTP status code (can be NULL if not needed)
+ * @return TRUE if cache is valid and data copied, FALSE if cache invalid/empty
+ */
+gboolean get_cached_xconf_data(XCONFRES *pResponse, int *pHttpCode)
+{
+    if (!pResponse) {
+        SWLOG_ERROR("[CACHE_MEM] Cannot copy to NULL pResponse\n");
+        return FALSE;
+    }
+    
+    gboolean result = FALSE;
+    
+    // === CRITICAL SECTION START ===
+    G_LOCK(xconf_data_cache);
+    
+    if (!g_xconf_data_valid) {
+        SWLOG_DEBUG("[CACHE_MEM] Global cache is invalid or empty\n");
+        G_UNLOCK(xconf_data_cache);
+        return FALSE;
+    }
+    
+    // Deep copy cached data to output structure
+    memcpy(pResponse, &g_cached_xconf_data, sizeof(XCONFRES));
+    
+    // Copy HTTP code if requested
+    if (pHttpCode) {
+        *pHttpCode = g_cached_http_code;
+    }
+    
+    result = TRUE;
+    
+    G_UNLOCK(xconf_data_cache);
+    // === CRITICAL SECTION END ===
+    
+    SWLOG_DEBUG("[CACHE_MEM] Retrieved XConf data from global cache\n");
+    SWLOG_DEBUG("[CACHE_MEM]   - Version: '%s'\n", pResponse->cloudFWVersion);
+    SWLOG_DEBUG("[CACHE_MEM]   - Location: '%s'\n", pResponse->cloudFWLocation);
+    
+    return result;
+}
+
+/**
+ * @brief Clear the global XConf data cache (public interface)
+ * 
+ * Thread-safe public wrapper for clearing the global cache.
+ * Use this when cache needs to be invalidated (e.g., on error or manual refresh).
+ */
+void clear_cached_xconf_data(void)
+{
+    G_LOCK(xconf_data_cache);
+    clear_cached_xconf_data_internal();
+    G_UNLOCK(xconf_data_cache);
+    
+    SWLOG_INFO("[CACHE_MEM] Global XConf cache cleared by request\n");
 }

@@ -275,7 +275,55 @@ int rdkFwupdateMgr_unregisterProcess(guint64 handler_id);
  *       progress monitoring during firmware downloads.
  */
 gpointer rdkfw_progress_monitor_thread(gpointer user_data);
+
+/*
+ * Load XConf Response from File Cache
+ * 
+ * Loads and parses the cached XConf JSON response from disk.
+ * Used as fallback when in-memory cache is not available.
+ * 
+ * @param[out] pResponse Structure to populate with parsed data
+ * @return TRUE on success, FALSE if cache missing or corrupt
+ */
 gboolean load_xconf_from_cache(XCONFRES *pResponse);
+
+/*
+ * Get Cached XConf Data from In-Memory Cache
+ * 
+ * Retrieves parsed XConf response from global in-memory cache.
+ * This is faster than file I/O and avoids repeated JSON parsing.
+ * 
+ * Primary use case: DownloadFirmware uses this to get cloudFWLocation
+ * without file I/O overhead when downloadUrl parameter is NULL/empty.
+ * 
+ * Thread Safety: Thread-safe, uses internal mutex
+ * 
+ * @param[out] pResponse Structure to populate with cached data (deep copy)
+ * @param[out] pHttpCode HTTP status code from original XConf query (can be NULL)
+ * @return TRUE if cache is valid and data copied, FALSE if cache empty/invalid
+ * 
+ * Example Usage:
+ * ```c
+ * XCONFRES cached_data;
+ * int http_code;
+ * if (get_cached_xconf_data(&cached_data, &http_code)) {
+ *     // Use cached_data.cloudFWLocation for download URL
+ *     printf("Download URL: %s\n", cached_data.cloudFWLocation);
+ * }
+ * ```
+ */
+gboolean get_cached_xconf_data(XCONFRES *pResponse, int *pHttpCode);
+
+/*
+ * Clear Global In-Memory XConf Cache
+ * 
+ * Invalidates and clears the global in-memory XConf cache.
+ * Should be called when cache needs to be refreshed or on errors.
+ * 
+ * Thread Safety: Thread-safe, uses internal mutex
+ */
+void clear_cached_xconf_data(void);
+
 #ifdef GTEST_ENABLE
 gboolean save_xconf_to_cache(const char *xconf_response, int http_code);
 CheckUpdateResponse create_result_response(CheckForUpdateStatus status_code,
