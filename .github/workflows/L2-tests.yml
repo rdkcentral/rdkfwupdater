@@ -42,6 +42,10 @@ jobs:
         run: |
           docker run -d --name mockxconf -p 50050:50050 -p 50051:50051 -p 50052:50052 -e ENABLE_MTLS=true -v ${{ github.workspace }}:/mnt/L2_CONTAINER_SHARED_VOLUME ghcr.io/rdkcentral/docker-device-mgt-service-test/mockxconf:latest
 
+      - name: Copy unknown-accountid-xconf-rfc-response json to mockxconf service
+        run: |
+          docker cp ${{ github.workspace }}/test/xconf-certbundle-response.json mockxconf:/etc/xconf/xconf-certbundle-response.json
+
       - name: Start l2-container service with mTLS enabled
         run: |
           docker run -d --name native-platform --link mockxconf -e ENABLE_MTLS=true -v ${{ github.workspace }}:/mnt/L2_CONTAINER_SHARED_VOLUME ghcr.io/rdkcentral/docker-device-mgt-service-test/native-platform:latest
