@@ -243,6 +243,12 @@ extern Rfc_t rfc_list;
 // Trigger type constant for manual/D-Bus initiated downloads
 #define TRIGGER_MANUAL 1
 
+// ============================================================================
+// FORWARD DECLARATIONS (Internal Functions)
+// ============================================================================
+static void clear_cached_xconf_data_internal(void);
+static gboolean save_cached_xconf_data(const XCONFRES *pResponse, int http_code);
+
 /**
  * @brief Check if XConf response cache exists
  * @return TRUE if cache file exists, FALSE otherwise
