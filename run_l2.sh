@@ -92,6 +92,11 @@ echo "Running L2 Integration Tests"
 echo "=========================================="
 echo ""
 
+# ========================================
+# PHASE 1: Standard Certificate Tests (client.p12)
+# ========================================
+
+echo "[Phase 1] Running standard tests with normal certificates..."
 # Run all existing tests
 echo "[1/2] Running existing image download tests..."
 pytest --json-report --json-report-file $RESULT_DIR/rdkfwupdater_image_tests.json \
@@ -99,6 +104,10 @@ pytest --json-report --json-report-file $RESULT_DIR/rdkfwupdater_image_tests.jso
        test/functional-tests/tests/test_imagedwnl_error.py \
        test/functional-tests/tests/test_certbundle_dwnl.py \
        test/functional-tests/tests/test_peripheral_imagedwnl.py
+
+# ========================================
+# PHASE 2: D-Bus Handler and Cache Tests
+# ========================================
 
 # Run new D-Bus handler and cache tests
 echo ""
@@ -109,6 +118,35 @@ pytest -v -s --json-report --json-report-file $RESULT_DIR/rdkfwupdater_dbus_test
 	test/functional-tests/tests/test_dbus_CheckForUpdate.py \
 	test/functional-tests/tests/test_dbus_RegisterProcess.py \
 	test/functional-tests/tests/test_dbus_UpdateFirmware.py
+
+# ========================================
+# PHASE 3: PKCS#11 Certificate Fallback Test (if enabled)
+# ========================================
+
+if [ "$ENABLE_PKCS11" = "true" ]; then
+    echo ""
+    echo "=========================================="
+    echo "[Phase 3] PKCS#11 Certificate Fallback Test"
+    echo "=========================================="
+    echo ""
+    echo "Note: Phase 1 & 2 already validated PKCS#11 functionality"
+    echo "      This phase tests certselector fallback mechanism"
+    echo ""
+    
+    # Run PKCS#11 fallback test (removes devicecert_2.p12, verifies fallback to client.p12)
+    echo "Running certificate fallback test..."
+    pytest -v -s --json-report --json-report-file $RESULT_DIR/rdkfwupdater_pkcs11_fallback_tests.json \
+           test/functional-tests/tests/test_pkcs11_fallback.py
+    
+    echo ""
+    echo "PKCS#11 fallback test report: $RESULT_DIR/rdkfwupdater_pkcs11_fallback_tests.json"
+else
+    echo ""
+    echo "=========================================="
+    echo "PKCS#11 fallback test skipped (ENABLE_PKCS11 not set)"
+    echo "To enable: export ENABLE_PKCS11=true"
+    echo "=========================================="
+fi
 
 echo ""
 echo "=========================================="
