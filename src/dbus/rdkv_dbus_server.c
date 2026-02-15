@@ -2798,8 +2798,120 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
         return;
     }
     
-    if (!ctx->download_url || strlen(ctx->download_url) == 0) {
-        SWLOG_ERROR("[DOWNLOAD_WORKER] CRITICAL: Invalid download URL!\n");
+    // ========== STEP 1.5: DETERMINE EFFECTIVE DOWNLOAD URL ==========
+    // If download_url is provided, use it
+    // If download_url is NULL/empty, try to load from XConf cache
+    
+    gchar *effective_download_url = NULL;
+    
+    if (ctx->download_url && strlen(ctx->download_url) > 0) {
+        // Use custom URL provided by client
+        SWLOG_INFO("[DOWNLOAD_WORKER] Using custom download URL: %s\n", ctx->download_url);
+        effective_download_url = g_strdup(ctx->download_url);
+    } else {
+        // Load URL from XConf cache (try in-memory first, then file cache)
+        SWLOG_INFO("[DOWNLOAD_WORKER] No custom URL, attempting to load from XConf cache\n");
+        
+        XCONFRES xconf_response;
+        memset(&xconf_response, 0, sizeof(XCONFRES));
+        int http_code = 0;
+        gboolean cache_loaded = FALSE;
+        
+        // Try in-memory cache first (fastest - no file I/O)
+        SWLOG_INFO("[DOWNLOAD_WORKER] Attempting to load from in-memory cache...\n");
+        if (get_cached_xconf_data(&xconf_response, &http_code)) {
+            SWLOG_INFO("[DOWNLOAD_WORKER] SUCCESS: Loaded from in-memory cache\n");
+            SWLOG_INFO("[DOWNLOAD_WORKER]   - Version: %s\n", xconf_response.cloudFWVersion);
+            SWLOG_INFO("[DOWNLOAD_WORKER]   - Location: %s\n", xconf_response.cloudFWLocation);
+            SWLOG_INFO("[DOWNLOAD_WORKER]   - HTTP Code: %d\n", http_code);
+            cache_loaded = TRUE;
+        } else {
+            SWLOG_INFO("[DOWNLOAD_WORKER] In-memory cache miss, trying file cache...\n");
+            
+            // Fallback: Check if file cache exists
+            if (!xconf_cache_exists()) {
+                SWLOG_ERROR("[DOWNLOAD_WORKER] ERROR: No XConf cache found (neither memory nor file)\n");
+                SWLOG_ERROR("[DOWNLOAD_WORKER] Client must call CheckForUpdate first\n");
+                
+                // Emit error signal
+                ProgressUpdate *error_update = g_new0(ProgressUpdate, 1);
+                error_update->progress = -1;
+                error_update->status = FW_DWNL_ERROR;
+                error_update->handler_id = ctx->handler_id ? g_strdup(ctx->handler_id) : NULL;
+                error_update->firmware_name = ctx->firmware_name ? g_strdup(ctx->firmware_name) : NULL;
+                error_update->connection = ctx->connection;
+                g_idle_add(rdkfw_emit_download_progress, error_update);
+                
+                g_task_return_boolean(task, FALSE);
+                return;
+            }
+            
+            // Load from file cache
+            if (!load_xconf_from_cache(&xconf_response)) {
+                SWLOG_ERROR("[DOWNLOAD_WORKER] ERROR: Failed to load XConf file cache\n");
+                
+                // Emit error signal
+                ProgressUpdate *error_update = g_new0(ProgressUpdate, 1);
+                error_update->progress = -1;
+                error_update->status = FW_DWNL_ERROR;
+                error_update->handler_id = ctx->handler_id ? g_strdup(ctx->handler_id) : NULL;
+                error_update->firmware_name = ctx->firmware_name ? g_strdup(ctx->firmware_name) : NULL;
+                error_update->connection = ctx->connection;
+                g_idle_add(rdkfw_emit_download_progress, error_update);
+                
+                g_task_return_boolean(task, FALSE);
+                return;
+            }
+            
+            SWLOG_INFO("[DOWNLOAD_WORKER] SUCCESS: Loaded from file cache\n");
+            cache_loaded = TRUE;
+        }
+        
+        if (!cache_loaded) {
+            SWLOG_ERROR("[DOWNLOAD_WORKER] ERROR: Failed to load XConf cache from any source\n");
+            
+            // Emit error signal
+            ProgressUpdate *error_update = g_new0(ProgressUpdate, 1);
+            error_update->progress = -1;
+            error_update->status = FW_DWNL_ERROR;
+            error_update->handler_id = ctx->handler_id ? g_strdup(ctx->handler_id) : NULL;
+            error_update->firmware_name = ctx->firmware_name ? g_strdup(ctx->firmware_name) : NULL;
+            error_update->connection = ctx->connection;
+            g_idle_add(rdkfw_emit_download_progress, error_update);
+            
+            g_task_return_boolean(task, FALSE);
+            return;
+        }
+        
+        // Extract download URL from XConf response
+        const char *download_location = xconf_response.cloudFWLocation[0] ? 
+                                        xconf_response.cloudFWLocation : NULL;
+        
+        // Validate URL
+        if (download_location == NULL || strlen(download_location) == 0) {
+            SWLOG_ERROR("[DOWNLOAD_WORKER] ERROR: XConf cache has no firmware download URL\n");
+            SWLOG_ERROR("[DOWNLOAD_WORKER]   - cloudFWLocation is empty or NULL\n");
+            
+            // Emit error signal
+            ProgressUpdate *error_update = g_new0(ProgressUpdate, 1);
+            error_update->progress = -1;
+            error_update->status = FW_DWNL_ERROR;
+            error_update->handler_id = ctx->handler_id ? g_strdup(ctx->handler_id) : NULL;
+            error_update->firmware_name = ctx->firmware_name ? g_strdup(ctx->firmware_name) : NULL;
+            error_update->connection = ctx->connection;
+            g_idle_add(rdkfw_emit_download_progress, error_update);
+            
+            g_task_return_boolean(task, FALSE);
+            return;
+        }
+        
+        effective_download_url = g_strdup(download_location);
+        SWLOG_INFO("[DOWNLOAD_WORKER] Using firmware download URL from XConf: %s\n", effective_download_url);
+    }
+    
+    // Validate effective URL
+    if (!effective_download_url || strlen(effective_download_url) == 0) {
+        SWLOG_ERROR("[DOWNLOAD_WORKER] CRITICAL: No download URL available after resolution!\n");
         
         // Emit error signal
         ProgressUpdate *error_update = g_new0(ProgressUpdate, 1);
@@ -2810,9 +2922,12 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
         error_update->connection = ctx->connection;
         g_idle_add(rdkfw_emit_download_progress, error_update);
         
+        if (effective_download_url) g_free(effective_download_url);
         g_task_return_boolean(task, FALSE);
         return;
     }
+    
+    SWLOG_INFO("[DOWNLOAD_WORKER] Effective download URL resolved: %s\n", effective_download_url);
     
     // ========== STEP 2: BUILD DOWNLOAD PATH ==========
     SWLOG_INFO("[DOWNLOAD_WORKER] Building download path...\n");
@@ -2910,16 +3025,21 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     upgrade_ctx.server_type = HTTP_SSR_DIRECT;
     SWLOG_INFO("[DOWNLOAD_WORKER]   server_type = HTTP_SSR_DIRECT\n");
     
-    int url_len = snprintf(imageHTTPURL, sizeof(imageHTTPURL), "%s/%s", ctx->download_url, ctx->firmware_name);
+    int url_len = snprintf(imageHTTPURL, sizeof(imageHTTPURL), "%s/%s", effective_download_url, ctx->firmware_name);
     if (url_len < 0 || url_len >= sizeof(imageHTTPURL)) {
 	    SWLOG_ERROR("[DOWNLOAD_WORKER] ERROR: URL too long or snprintf failed (len=%d, max=%zu)\n",
 			    url_len, sizeof(imageHTTPURL));
-	    SWLOG_ERROR("[DOWNLOAD_WORKER] URL would be: %s/%s\n", ctx->download_url, ctx->firmware_name);
+	    SWLOG_ERROR("[DOWNLOAD_WORKER] URL would be: %s/%s\n", effective_download_url, ctx->firmware_name);
+	    g_free(effective_download_url);
 	    g_task_return_boolean(task, FALSE);
-    return;
+	    return;
     }
     upgrade_ctx.artifactLocationUrl = imageHTTPURL;
     SWLOG_INFO("[DOWNLOAD_WORKER]   artifactLocationUrl = %s\n", upgrade_ctx.artifactLocationUrl);
+    
+    // Free effective_download_url after building the final URL
+    g_free(effective_download_url);
+    effective_download_url = NULL;
     
     upgrade_ctx.dwlloc = download_path;
     SWLOG_INFO("[DOWNLOAD_WORKER]   dwlloc = %s\n", (const char*)upgrade_ctx.dwlloc);
