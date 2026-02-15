@@ -1216,7 +1216,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		// ========== CHECK FOR CACHED FILE (Scenario 8) ==========
 		
 		SWLOG_INFO("[DOWNLOADFIRMWARE] Checking for cached file...\n");
-		gchar *cache_path = g_strdup_printf("/opt/CDL/%s", firmware_name);  // MADHU - check if this is the path always to download image
+		gchar *cache_path = g_strdup_printf("/opt/CDL/%s", firmware_name);  // TODO - check if this is the path always to download image
 		SWLOG_INFO("[DOWNLOADFIRMWARE]   Cache path: %s\n", cache_path);
 		
 		if (g_file_test(cache_path, G_FILE_TEST_EXISTS)) {
@@ -2837,9 +2837,6 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
         difw_path = NULL;
     }
  // ========== STEP 3: LOAD DEVICE PROPERTIES  ==========
-    SWLOG_INFO("[DOWNLOAD_WORKER] ========================================\n");
-    SWLOG_INFO("[DOWNLOAD_WORKER] LOADING DEVICE PROPERTIES\n");
-    SWLOG_INFO("[DOWNLOAD_WORKER] ========================================\n");
     
     DeviceProperty_t device_info;
     memset(&device_info, 0, sizeof(DeviceProperty_t));
@@ -2852,9 +2849,6 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     }
     
     // ========== STEP 4: LOAD RFC SETTINGS ==========
-    SWLOG_INFO("[DOWNLOAD_WORKER] ========================================\n");
-    SWLOG_INFO("[DOWNLOAD_WORKER] LOADING RFC SETTINGS\n");
-    SWLOG_INFO("[DOWNLOAD_WORKER] ========================================\n");
     
     Rfc_t rfc_list;
     memset(&rfc_list, 0, sizeof(Rfc_t));
@@ -2880,7 +2874,7 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     SWLOG_INFO("[DOWNLOAD_WORKER] trigger_type = 4 (app-initiated via D-Bus)\n");
     
     // Initialize lastrun as empty string 
-    // In rdkv_main.c: char lastrun[64] = { 0 };  // Store last run time
+    // In rdkv_main.c: char lastrun[64] = { 0 };  
     char lastrun[64] = { 0 };
     SWLOG_INFO("[DOWNLOAD_WORKER] lastrun = \"\" (empty string, as in  rdkv_main.c)\n");
     

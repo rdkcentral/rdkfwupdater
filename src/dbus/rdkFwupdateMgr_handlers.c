@@ -1299,6 +1299,7 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
  * @param download_state D-Bus skeleton for progress signals (NULL = no progress)
  * @return DownloadFirmwareResult with result_code and error_message
  */
+/*
 DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName,
                                                        const gchar *downloadUrl,
                                                        const gchar *typeOfFirmware,
@@ -1598,14 +1599,13 @@ DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName
         // Signal thread to stop atomically (use 1 for true with gint type)
         g_atomic_int_set(&stop_monitor, 1);
         
-        /* Coverity fix: RESOURCE_LEAK - g_thread_join() frees the thread handle.
          * Do NOT set monitor_thread = NULL afterward as Coverity flags it as a leak.
          * The thread handle is properly freed by g_thread_join() and should not be
-         * used again after this point. */
+         * used again after this point. 
         g_thread_join(monitor_thread);
-        /* coverity[leaked_storage] - False positive: g_thread_join() already freed the GThread.
+        * coverity[leaked_storage] - False positive: g_thread_join() already freed the GThread.
          * Setting to NULL is defensive programming to prevent double-join. GLib documentation
-         * confirms the thread handle is consumed by g_thread_join(). */
+         * confirms the thread handle is consumed by g_thread_join(). *
         monitor_thread = NULL;
         
         SWLOG_INFO("[DOWNLOAD_HANDLER] Progress monitor thread stopped cleanly\n");
@@ -1613,8 +1613,8 @@ DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName
         // Note: monitor_mutex and monitor_ctx are cleaned up by the thread itself
         // Do NOT free them here to avoid double-free
     } else if (monitor_ctx != NULL) {
-        /* Coverity fix: RESOURCE_LEAK - If monitor_thread is NULL but monitor_ctx was allocated
-         * and thread creation failed, we need to clean it up here. */
+        * Coverity fix: RESOURCE_LEAK - If monitor_thread is NULL but monitor_ctx was allocated
+         * and thread creation failed, we need to clean it up here. *
         SWLOG_DEBUG("[DOWNLOAD_HANDLER] Cleaning up monitor_ctx (thread was not started)\n");
         if (monitor_ctx->handler_id) g_free(monitor_ctx->handler_id);
         if (monitor_ctx->firmware_name) g_free(monitor_ctx->firmware_name);
@@ -1704,11 +1704,12 @@ DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName
     SWLOG_INFO("[DOWNLOAD_HANDLER] === Download Handler Complete (result=%d) ===\n", 
                result.result_code);
     
-    /* coverity[leaked_storage] - False positive: monitor_thread was already cleaned up
+    * coverity[leaked_storage] - False positive: monitor_thread was already cleaned up
      * at line 1303 via g_thread_join(). All paths reaching this return have already
-     * stopped and freed the monitor thread. */
+     * stopped and freed the monitor thread. *
     return result;
-}
+} */
+
 
 /*
  * ===================================================================
