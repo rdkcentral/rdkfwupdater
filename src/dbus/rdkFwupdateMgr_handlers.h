@@ -331,5 +331,33 @@ CheckUpdateResponse create_result_response(CheckForUpdateStatus status_code,
 CheckUpdateResponse create_success_response(const gchar *available_version,
                                            const gchar *update_details,
                                            const gchar *status_message);
+
+/*
+ * Create CheckUpdateResponse for Opt-Out Scenarios (Exposed for Unit Testing)
+ * 
+ * Internal helper function that creates a response structure for IGNORE_OPTOUT and
+ * BYPASS_OPTOUT status codes. Always includes full firmware metadata (available_version
+ * and update_details) so clients can display update information even when updates are
+ * blocked by user preferences.
+ * 
+ * This function is used in the post-XConf opt-out evaluation phase as specified in
+ * PLAN-1.md Version 2.0. It ensures clients receive complete firmware information
+ * regardless of opt-out state.
+ * 
+ * Parameters:
+ *   status_code       - Status code (IGNORE_OPTOUT=4 or BYPASS_OPTOUT=5)
+ *   available_version - Firmware version from XConf server
+ *   update_details    - Pipe-delimited firmware metadata string
+ *   status_message    - Human-readable explanation of opt-out state
+ * 
+ * Returns:
+ *   CheckUpdateResponse with all fields populated (must be freed with checkupdate_response_free)
+ * 
+ * Note: This is an internal function - use rdkFwupdateMgr_checkForUpdate() for production code.
+ */
+CheckUpdateResponse create_optout_response(CheckForUpdateStatus status_code,
+                                           const gchar *available_version,
+                                           const gchar *update_details,
+                                           const gchar *status_message);
 #endif
 #endif // RDKFWUPDATEMGR_HANDLERS_H

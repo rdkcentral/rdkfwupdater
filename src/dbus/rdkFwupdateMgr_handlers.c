@@ -237,6 +237,9 @@ typedef struct {
 
 // Shared device and image information (populated at daemon startup)
 extern DeviceProperty_t device_info;
+
+// Forward declaration for getOPTOUTValue function from rdkFwupdateMgr.c
+extern int getOPTOUTValue(const char *file_name);
 extern ImageDetails_t cur_img_detail;
 extern Rfc_t rfc_list;
 
@@ -721,6 +724,55 @@ static CheckUpdateResponse create_result_response(CheckForUpdateStatus status_co
     
     SWLOG_INFO("[rdkFwupdateMgr] create_result_response: Response created with current image: '%s', status: '%s'\n", 
                response.current_img_version, response.status_message);
+    
+    return response;
+}
+
+/**
+ * @brief Create a CheckUpdateResponse for opt-out scenarios with firmware metadata.
+ * 
+ * Similar to create_success_response, but specifically for IGNORE_OPTOUT and BYPASS_OPTOUT
+ * status codes. Always includes full firmware metadata so clients can display available
+ * update information even when updates are blocked or require consent.
+ * 
+ * @param status_code Status code (IGNORE_OPTOUT or BYPASS_OPTOUT)
+ * @param available_version Firmware version from XConf server
+ * @param update_details Pipe-delimited firmware metadata string
+ * @param status_message Custom status message explaining opt-out state
+ * @return CheckUpdateResponse structure with allocated strings (must be freed by caller)
+ */
+#ifdef GTEST_ENABLE
+CheckUpdateResponse create_optout_response(CheckForUpdateStatus status_code,
+                                           const gchar *available_version,
+                                           const gchar *update_details,
+                                           const gchar *status_message)
+#else
+static CheckUpdateResponse create_optout_response(CheckForUpdateStatus status_code,
+                                                  const gchar *available_version,
+                                                  const gchar *update_details,
+                                                  const gchar *status_message)
+#endif
+{
+    CheckUpdateResponse response = {0};
+    char current_img_buffer[256] = {0};
+    
+    bool img_status = GetFirmwareVersion(current_img_buffer, sizeof(current_img_buffer));
+    
+    SWLOG_INFO("[rdkFwupdateMgr] create_optout_response: Creating response for status_code=%d\n", status_code);
+    SWLOG_INFO("[rdkFwupdateMgr]   - currentImg status: %s\n", img_status ? "SUCCESS" : "FAILED");
+    SWLOG_INFO("[rdkFwupdateMgr]   - current_img_buffer: '%s'\n", current_img_buffer);
+    
+    response.result = CHECK_FOR_UPDATE_SUCCESS;  // API call succeeded
+    response.status_code = status_code;           // IGNORE_OPTOUT or BYPASS_OPTOUT
+    response.current_img_version = g_strdup(img_status ? current_img_buffer : "Unknown");
+    response.available_version = g_strdup(available_version ? available_version : "");
+    response.update_details = g_strdup(update_details ? update_details : "");
+    response.status_message = g_strdup(status_message ? status_message : "");
+    
+    SWLOG_INFO("[rdkFwupdateMgr] create_optout_response: Response created with:\n");
+    SWLOG_INFO("[rdkFwupdateMgr]   - current: '%s'\n", response.current_img_version);
+    SWLOG_INFO("[rdkFwupdateMgr]   - available: '%s'\n", response.available_version);
+    SWLOG_INFO("[rdkFwupdateMgr]   - status_message: '%s'\n", response.status_message);
     
     return response;
 }
@@ -1229,6 +1281,14 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
                    response.cloudPDRIVersion[0] ? response.cloudPDRIVersion : "(empty)");
         SWLOG_INFO("=== [rdkFwupdateMgr] XConf Response - End ===\n"); 
        
+        // Check if firmware version is present
+        if (!response.cloudFWVersion[0] || strlen(response.cloudFWVersion) == 0) {
+            SWLOG_INFO("[rdkFwupdateMgr] XConf returned no firmware version - no update available\n");
+            return create_result_response(FIRMWARE_NOT_AVAILABLE, "No firmware update available");
+        }
+        
+        SWLOG_INFO("[rdkFwupdateMgr] XConf returned firmware version: '%s'\n", response.cloudFWVersion);
+        
         // Serialize XConf metadata into pipe-delimited string for D-Bus transport
         gchar *update_details = g_strdup_printf(
                 "File:%s|Location:%s|IPv6Location:%s|Version:%s|Protocol:%s|Reboot:%s|Delay:%s|PDRI:%s|Peripherals:%s|CertBundle:%s", 
@@ -1244,23 +1304,116 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
                 response.dlCertBundle[0] ? response.dlCertBundle : "N/A"
             );
         
-        // Determine result based on presence of firmware version
-        if (response.cloudFWVersion[0] && strlen(response.cloudFWVersion) > 0) {
-            SWLOG_INFO("[rdkFwupdateMgr] XConf returned firmware version: '%s'\n", response.cloudFWVersion);
-            
+        // ===== POST-XCONF OPT-OUT EVALUATION (PLAN-1.md v2.0) =====
+        SWLOG_INFO("[rdkFwupdateMgr] ===== BEGIN POST-XCONF OPT-OUT EVALUATION =====\n");
+        
+        // Parse critical update flag from XConf response
+        bool isCriticalUpdate = false;
+        if (strncmp(response.cloudImmediateRebootFlag, "true", 4) == 0) {
+            isCriticalUpdate = true;
+            SWLOG_INFO("[rdkFwupdateMgr] CRITICAL UPDATE DETECTED (cloudImmediateRebootFlag=true)\n");
+        } else {
+            SWLOG_INFO("[rdkFwupdateMgr] Non-critical update (cloudImmediateRebootFlag=%s)\n",
+                      response.cloudImmediateRebootFlag[0] ? response.cloudImmediateRebootFlag : "false");
+        }
+        
+        // Check 1: Is Maintenance Manager integration active?
+        SWLOG_INFO("[rdkFwupdateMgr] Checking maint_status: '%s'\n", device_info.maint_status);
+        if (strncmp(device_info.maint_status, "true", 4) != 0) {
+            SWLOG_INFO("[rdkFwupdateMgr] MaintenanceMGR not active (maint_status != 'true') - skipping opt-out logic\n");
+            SWLOG_INFO("[rdkFwupdateMgr] ===== END OPT-OUT EVALUATION: NORMAL FLOW =====\n");
             CheckUpdateResponse result = create_success_response(
                 response.cloudFWVersion,
                 update_details,
                 "Firmware update available"
             );
-            
             g_free(update_details);
             return result;
-        } else {
-            SWLOG_INFO("[rdkFwupdateMgr] XConf returned no firmware version - no update available\n");
-            g_free(update_details);
-            return create_result_response(FIRMWARE_NOT_AVAILABLE, "No firmware update available");
         }
+        
+        // Check 2: Is opt-out feature enabled for this device?
+        SWLOG_INFO("[rdkFwupdateMgr] Checking sw_optout: '%s'\n", device_info.sw_optout);
+        if (strncmp(device_info.sw_optout, "true", 4) != 0) {
+            SWLOG_INFO("[rdkFwupdateMgr] Opt-out feature disabled (sw_optout != 'true') - skipping opt-out logic\n");
+            SWLOG_INFO("[rdkFwupdateMgr] ===== END OPT-OUT EVALUATION: NORMAL FLOW =====\n");
+            CheckUpdateResponse result = create_success_response(
+                response.cloudFWVersion,
+                update_details,
+                "Firmware update available"
+            );
+            g_free(update_details);
+            return result;
+        }
+        
+        // Check 3: Read user's opt-out preference
+        SWLOG_INFO("[rdkFwupdateMgr] Reading opt-out preference from /opt/maintenance_mgr_record.conf\n");
+        int optout = getOPTOUTValue("/opt/maintenance_mgr_record.conf");
+        SWLOG_INFO("[rdkFwupdateMgr] Opt-out value: %d (-1=not set, 0=ENFORCE_OPTOUT, 1=IGNORE_UPDATE)\n", optout);
+        
+        if (optout == -1) {
+            SWLOG_INFO("[rdkFwupdateMgr] No opt-out preference set (file missing or no value) - allowing update\n");
+            SWLOG_INFO("[rdkFwupdateMgr] ===== END OPT-OUT EVALUATION: NORMAL FLOW =====\n");
+            CheckUpdateResponse result = create_success_response(
+                response.cloudFWVersion,
+                update_details,
+                "Firmware update available"
+            );
+            g_free(update_details);
+            return result;
+        }
+        
+        // Check 4: Apply opt-out decision logic
+        if (optout == 1) {
+            // User has opted out (IGNORE_UPDATE)
+            if (isCriticalUpdate) {
+                // Critical update bypasses opt-out
+                SWLOG_INFO("[rdkFwupdateMgr] CRITICAL UPDATE OVERRIDE: Bypassing user opt-out\n");
+                SWLOG_INFO("[rdkFwupdateMgr] ===== END OPT-OUT EVALUATION: CRITICAL BYPASS =====\n");
+                CheckUpdateResponse result = create_success_response(
+                    response.cloudFWVersion,
+                    update_details,
+                    "Critical firmware update available (security/stability)"
+                );
+                g_free(update_details);
+                return result;
+            } else {
+                // Non-critical update blocked by user
+                SWLOG_INFO("[rdkFwupdateMgr] BLOCKING UPDATE: User opted out (IGNORE_UPDATE), non-critical firmware\n");
+                SWLOG_INFO("[rdkFwupdateMgr] ===== END OPT-OUT EVALUATION: RETURNING IGNORE_OPTOUT =====\n");
+                CheckUpdateResponse result = create_optout_response(
+                    IGNORE_OPTOUT,
+                    response.cloudFWVersion,
+                    update_details,
+                    "Firmware download blocked - user has opted out of updates"
+                );
+                g_free(update_details);
+                return result;
+            }
+        }
+        else if (optout == 0) {
+            // User requires consent (ENFORCE_OPTOUT)
+            SWLOG_INFO("[rdkFwupdateMgr] CONSENT REQUIRED: User has ENFORCE_OPTOUT set\n");
+            SWLOG_INFO("[rdkFwupdateMgr] ===== END OPT-OUT EVALUATION: RETURNING BYPASS_OPTOUT =====\n");
+            CheckUpdateResponse result = create_optout_response(
+                BYPASS_OPTOUT,
+                response.cloudFWVersion,
+                update_details,
+                "Firmware available - user consent required before installation"
+            );
+            g_free(update_details);
+            return result;
+        }
+        
+        // Defensive: Should not reach here, but return normal flow
+        SWLOG_WARN("[rdkFwupdateMgr] WARNING: Unexpected opt-out value path - returning normal flow\n");
+        SWLOG_INFO("[rdkFwupdateMgr] ===== END OPT-OUT EVALUATION: FALLBACK NORMAL FLOW =====\n");
+        CheckUpdateResponse result = create_success_response(
+            response.cloudFWVersion,
+            update_details,
+            "Firmware update available"
+        );
+        g_free(update_details);
+        return result;
     } else {
         // XConf query failed - network or server error
         SWLOG_ERROR("[rdkFwupdateMgr] XConf communication failed: ret=%d, http=%d\n", ret, http_code);
