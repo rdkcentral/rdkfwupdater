@@ -140,6 +140,11 @@ librdksw_jsonparse_includedir = ${includedir}
 librdksw_flash_includedir = ${includedir}
 librdksw_fwutils_includedir = ${includedir}
 
+# Shared/common headers not tied to specific libraries
+include_HEADERS = \
+    ${top_srcdir}/src/rbusInterface/rbusInterface.h \
+    ${top_srcdir}/src/include/device_status_helper.h
+
 bin_PROGRAMS= rdkvfwupgrader
 
 # Always build rdkFwupdateMgr and testClient (no conditional compilation)
@@ -157,17 +162,8 @@ rdkvfwupgrader_SOURCES = \
 rdkvfwupgrader_LDADD = librdksw_jsonparse.la librdksw_upgrade.la librdksw_rfcIntf.la librdksw_iarmIntf.la librdksw_flash.la librdksw_fwutils.la $(cjson_LIBS) $(curl_LIBS) -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread -lrbus
 rdkvfwupgrader_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
 
-rdkvfwupgrader_include_HEADERS = \
-    ${top_srcdir}/src/rbusInterface/rbusInterface.h \
-    ${top_srcdir}/src/include/rfcinterface.h \
-    ${top_srcdir}/src/include/iarmInterface.h \
-    ${top_srcdir}/src/include/device_status_helper.h
-
 rdkvfwupgrader_CFLAGS = $(AM_CFLAGS) -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
 rdkvfwupgrader_CPPFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
-
-
-rdkvfwupgrader_includedir = ${includedir}
 
 # D-Bus daemon binary - always build (removed conditional compilation)
 rdkFwupdateMgr_SOURCES = \
@@ -184,10 +180,6 @@ rdkFwupdateMgr_LDADD = librdksw_jsonparse.la librdksw_upgrade.la librdksw_rfcInt
 
 rdkFwupdateMgr_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
 rdkFwupdateMgr_include_HEADERS = \
-    ${top_srcdir}/src/rbusInterface/rbusInterface.h \
-    ${top_srcdir}/src/include/rfcinterface.h \
-    ${top_srcdir}/src/include/iarmInterface.h \
-    ${top_srcdir}/src/include/device_status_helper.h \
     ${top_srcdir}/src/dbus/rdkv_dbus_server.h \
     ${top_srcdir}/src/dbus/rdkFwupdateMgr_handlers.h \
     ${top_srcdir}/src/dbus/xconf_comm_status.h
@@ -215,11 +207,6 @@ testrdkvfwupgrader_SOURCES = \
 
 testrdkvfwupgrader_CFLAGS = $(AM_CFLAGS) $(TEST_FWUPGRADER_CFLAGS)
 testrdkvfwupgrader_LDADD = -lIARMBus $(AM_LDFLAGS) librdksw_jsonparse.la
-
-testrdkvfwupgrader_include_HEADERS = \
-    ${top_srcdir}/test/testiarmInterface.h
-
-testrdkvfwupgrader_includedir = ${includedir}
 endif
 
 
