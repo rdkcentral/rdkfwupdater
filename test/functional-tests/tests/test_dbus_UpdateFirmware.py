@@ -258,7 +258,7 @@ def test_update_pci_firmware_success():
     VERIFY:
         - Returns RDKFW_UPDATE_SUCCESS
     """
-    proc = start_daemon()
+    start_daemon()
     initial_rdkfw_setup()
     write_device_prop()
     cleanup_daemon_files()
