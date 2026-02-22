@@ -24,7 +24,7 @@ import os
 import json
 from pathlib import Path
 
-from rdkfw_test_helper import *
+import rdkfw_test_helper
 
 # D-Bus Configuration
 DBUS_SERVICE_NAME = "org.rdkfwupdater.Service"
