@@ -494,6 +494,13 @@ static int fetch_xconf_firmware_info( XCONFRES *pResponse, int server_type, int 
                     ret = rdkv_upgrade_request(&xconf_context, &curl, pHttp_code);
                     SWLOG_INFO("fetch_xconf_firmware_info: rdkv_upgrade_request returned (ret=%d)\n", ret);
                     
+                    // Handle library-specific errors (negative values) - Daemon NEVER exits
+                    if (ret < 0) {
+                        SWLOG_ERROR("fetch_xconf_firmware_info: Library error: %s (code: %d)\n",
+                                   rdkv_upgrade_strerror(ret), ret);
+                        // Daemon continues - ret is already < 0, will be handled by existing error logic below
+                    }
+                    
                     SWLOG_INFO("fetch_xconf_firmware_info: XConf request completed - ret=%d, http_code=%d\n", ret, *pHttp_code);
                     
                     if( ret == 0 && *pHttp_code == 200 && DwnLoc.pvOut != NULL )
@@ -1304,7 +1311,7 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
                 response.dlCertBundle[0] ? response.dlCertBundle : "N/A"
             );
         
-        // ===== POST-XCONF OPT-OUT EVALUATION (PLAN-1.md v2.0) =====
+        // ===== POST-XCONF OPT-OUT EVALUATION =====
         SWLOG_INFO("[rdkFwupdateMgr] ===== BEGIN POST-XCONF OPT-OUT EVALUATION =====\n");
         
         // Parse critical update flag from XConf response
@@ -1744,6 +1751,13 @@ DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName
     
     SWLOG_INFO("[DOWNLOAD_HANDLER] rdkv_upgrade_request() returned: curl=%d, http=%d\n", 
                curl_ret_code, http_code);
+    
+    // Handle library-specific errors (negative values) - Daemon NEVER exits
+    if (curl_ret_code < 0) {
+        SWLOG_ERROR("[DOWNLOAD_HANDLER] Library error: %s (code: %d)\n",
+                   rdkv_upgrade_strerror(curl_ret_code), curl_ret_code);
+        // Daemon continues - error will be propagated to D-Bus client via existing error handling
+    }
     
     // Stop progress monitor thread ***
     if (monitor_thread != NULL) {

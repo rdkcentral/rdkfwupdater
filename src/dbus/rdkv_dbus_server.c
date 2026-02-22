@@ -3204,6 +3204,13 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     SWLOG_INFO("[DOWNLOAD_WORKER] Return value: %d\n", curl_ret_code);
     SWLOG_INFO("[DOWNLOAD_WORKER] HTTP code: %d\n", http_code);
     
+    // Handle library-specific errors (negative values) - Daemon NEVER exits
+    if (curl_ret_code < 0) {
+        SWLOG_ERROR("[DOWNLOAD_WORKER] Library error: %s (code: %d)\n",
+                   rdkv_upgrade_strerror(curl_ret_code), curl_ret_code);
+        // Daemon continues - error will be propagated to D-Bus client via existing error handling
+    }
+    
     // ========== STEP 9: STOP PROGRESS MONITOR THREAD ==========
     if (monitor_thread != NULL) {
         SWLOG_INFO("[DOWNLOAD_WORKER] Stopping progress monitor thread...\n");

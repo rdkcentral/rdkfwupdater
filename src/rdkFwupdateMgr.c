@@ -555,7 +555,14 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
                     peripheral_context.rfc_list = &rfc_list;
 
                     iCurlCode = rdkv_upgrade_request(&peripheral_context, &curl, &http_code);
-                    if( iCurlCode == 0 && http_code == 200 )
+                    
+                    // Handle library-specific errors (negative values) - Daemon NEVER exits
+                    if (iCurlCode < 0) {
+                        SWLOG_ERROR("%s: Peripheral upgrade failed with library error: %s (code: %d)\n",
+                                   __FUNCTION__, rdkv_upgrade_strerror(iCurlCode), iCurlCode);
+                        // Daemon continues running - just log error and continue
+                        iRet = -1;
+                    } else if( iCurlCode == 0 && http_code == 200 )
                     {
                         if( szRunningLen )
                         {
@@ -694,6 +701,13 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
         pci_context.rfc_list = &rfc_list;
 
         pci_curl_code = rdkv_upgrade_request(&pci_context, &curl, &http_code);
+        
+        // Handle library-specific errors (negative values) - Daemon NEVER exits
+        if (pci_curl_code < 0) {
+            SWLOG_ERROR("%s: PCI upgrade failed with library error: %s (code: %d)\n",
+                       __FUNCTION__, rdkv_upgrade_strerror(pci_curl_code), pci_curl_code);
+            // Daemon continues running - error already logged
+        }
     } else {
         SWLOG_INFO("checkForValidPCIUpgrade return false\n");
         pci_curl_code = 0;
@@ -736,6 +750,14 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
             pdri_context.rfc_list = &rfc_list;
 
             pdri_curl_code = rdkv_upgrade_request(&pdri_context, &curl, &http_code);
+            
+            // Handle library-specific errors (negative values) - Daemon NEVER exits
+            if (pdri_curl_code < 0) {
+                SWLOG_ERROR("%s: PDRI upgrade failed with library error: %s (code: %d)\n",
+                           __FUNCTION__, rdkv_upgrade_strerror(pdri_curl_code), pdri_curl_code);
+                // Daemon continues running - error already logged
+            }
+            
             snprintf(disableStatsUpdate, sizeof(disableStatsUpdate), "%s","no");
             if (pdri_curl_code == 100) {
                 pdri_curl_code = 0;
@@ -859,7 +881,13 @@ static int MakeXconfComms( XCONFRES *pResponse, int server_type, int *pHttp_code
                     xconf_context.rfc_list = &rfc_list;
 
                     ret = rdkv_upgrade_request(&xconf_context, &curl, pHttp_code);
-                    if( ret == 0 && *pHttp_code == 200 && DwnLoc.pvOut != NULL )
+                    
+                    // Handle library-specific errors (negative values) - Daemon NEVER exits
+                    if (ret < 0) {
+                        SWLOG_ERROR("%s: XCONF upgrade failed with library error: %s (code: %d)\n",
+                                   __FUNCTION__, rdkv_upgrade_strerror(ret), ret);
+                        // Daemon continues running - ret is already < 0, will be handled by existing error logic
+                    } else if( ret == 0 && *pHttp_code == 200 && DwnLoc.pvOut != NULL )
                     {
                         SWLOG_INFO( "MakeXconfComms: Calling getXconfRespData with input = %s\n", (char *)DwnLoc.pvOut );
                         ret = getXconfRespData( pResponse, (char *)DwnLoc.pvOut );
