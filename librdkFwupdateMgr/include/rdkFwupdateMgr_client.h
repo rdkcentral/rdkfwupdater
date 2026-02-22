@@ -22,12 +22,40 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+// Include process registration API
+#include "rdkFwupdateMgr_process.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /* ========================================================================
- * HANDLE TYPE
+ * IMPORTANT: PROCESS REGISTRATION REQUIRED
+ * ======================================================================== */
+
+/**
+ * BEFORE using any firmware APIs in this header, you MUST:
+ * 
+ * 1. Call registerProcess() to get a FirmwareInterfaceHandle
+ * 2. Use that handle for all subsequent API calls
+ * 3. Call unregisterProcess() when done
+ * 
+ * See rdkFwupdateMgr_process.h for details on:
+ *   - registerProcess()
+ *   - unregisterProcess()
+ *   - FirmwareInterfaceHandle
+ * 
+ * Example:
+ *   FirmwareInterfaceHandle handle = registerProcess("MyPlugin", "1.0");
+ *   if (handle == NULL) {
+ *       // Handle error
+ *   }
+ *   checkForUpdate(handle, ...);
+ *   unregisterProcess(handle);
+ */
+
+/* ========================================================================
+ * HANDLE TYPE (defined in rdkFwupdateMgr_process.h)
  * ======================================================================== */
 
 /**
