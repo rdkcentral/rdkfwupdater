@@ -2434,39 +2434,6 @@ flash_error:
  */
 static void clear_cached_xconf_data_internal(void)
 {
-    // No lock needed - caller must hold lock
-    
-    // Free all dynamically allocated string fields
-    if (g_cached_xconf_data.cloudFWVersion) {
-        memset(g_cached_xconf_data.cloudFWVersion, 0, sizeof(g_cached_xconf_data.cloudFWVersion));
-    }
-    if (g_cached_xconf_data.cloudFWFile) {
-        memset(g_cached_xconf_data.cloudFWFile, 0, sizeof(g_cached_xconf_data.cloudFWFile));
-    }
-    if (g_cached_xconf_data.cloudFWLocation) {
-        memset(g_cached_xconf_data.cloudFWLocation, 0, sizeof(g_cached_xconf_data.cloudFWLocation));
-    }
-    if (g_cached_xconf_data.ipv6cloudFWLocation) {
-        memset(g_cached_xconf_data.ipv6cloudFWLocation, 0, sizeof(g_cached_xconf_data.ipv6cloudFWLocation));
-    }
-    if (g_cached_xconf_data.cloudProto) {
-        memset(g_cached_xconf_data.cloudProto, 0, sizeof(g_cached_xconf_data.cloudProto));
-    }
-    if (g_cached_xconf_data.cloudImmediateRebootFlag) {
-        memset(g_cached_xconf_data.cloudImmediateRebootFlag, 0, sizeof(g_cached_xconf_data.cloudImmediateRebootFlag));
-    }
-    if (g_cached_xconf_data.cloudDelayDownload) {
-        memset(g_cached_xconf_data.cloudDelayDownload, 0, sizeof(g_cached_xconf_data.cloudDelayDownload));
-    }
-    if (g_cached_xconf_data.cloudPDRIVersion) {
-        memset(g_cached_xconf_data.cloudPDRIVersion, 0, sizeof(g_cached_xconf_data.cloudPDRIVersion));
-    }
-    if (g_cached_xconf_data.peripheralFirmwares) {
-        memset(g_cached_xconf_data.peripheralFirmwares, 0, sizeof(g_cached_xconf_data.peripheralFirmwares));
-    }
-    if (g_cached_xconf_data.dlCertBundle) {
-        memset(g_cached_xconf_data.dlCertBundle, 0, sizeof(g_cached_xconf_data.dlCertBundle));
-    }
     
     // Zero out the entire structure
     memset(&g_cached_xconf_data, 0, sizeof(XCONFRES));
