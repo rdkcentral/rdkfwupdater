@@ -265,7 +265,7 @@ def test_update_pci_firmware_success():
 
     # Create mock firmware file
     firmware_name = "ABCD_PCI_test.bin"
-    firmware_path = create_mock_firmware_file(firmware_name)
+    create_mock_firmware_file(firmware_name)
 
     # Create mock flash script (success)
     create_mock_flash_script(return_code=0)
