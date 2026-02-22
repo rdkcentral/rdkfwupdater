@@ -494,6 +494,13 @@ static int fetch_xconf_firmware_info( XCONFRES *pResponse, int server_type, int 
                     ret = rdkv_upgrade_request(&xconf_context, &curl, pHttp_code);
                     SWLOG_INFO("fetch_xconf_firmware_info: rdkv_upgrade_request returned (ret=%d)\n", ret);
                     
+                    // Handle library-specific errors (negative values) - Daemon NEVER exits
+                    if (ret < 0) {
+                        SWLOG_ERROR("fetch_xconf_firmware_info: Library error: %s (code: %d)\n",
+                                   rdkv_upgrade_strerror(ret), ret);
+                        // Daemon continues - ret is already < 0, will be handled by existing error logic below
+                    }
+                    
                     SWLOG_INFO("fetch_xconf_firmware_info: XConf request completed - ret=%d, http_code=%d\n", ret, *pHttp_code);
                     
                     if( ret == 0 && *pHttp_code == 200 && DwnLoc.pvOut != NULL )
@@ -1210,21 +1217,7 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
     if (xconf_cache_exists()) {
         SWLOG_INFO("[rdkFwupdateMgr] Cache hit! But still...\n");
     }	
-    //SWLOG_INFO("[rdkFwupdateMgr] CheckForUpdate: Checking for cached XConf data...\n");
     
-    // Try cache first to support offline recovery scenarios
-    /*
-    if (xconf_cache_exists()) {
-        SWLOG_INFO("[rdkFwupdateMgr] Cache hit! Loading XConf data from cache\n");
-        if (load_xconf_from_cache(&response)) {
-            ret = 0;
-            http_code = 200;
-            SWLOG_INFO("[rdkFwupdateMgr] Successfully loaded XConf data from cache\n");
-        } else {
-            SWLOG_ERROR("[rdkFwupdateMgr] Cache read failed, falling back to live XConf call\n");
-            ret = fetch_xconf_firmware_info(&response, server_type, &http_code);
-        }
-    } else { */
         SWLOG_INFO("[rdkFwupdateMgr] Making live XConf call\n");
         ret = fetch_xconf_firmware_info(&response, server_type, &http_code);
         
@@ -1247,7 +1240,6 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
             SWLOG_INFO("[rdkFwupdateMgr] VALIDATION PASSED - Firmware is valid for this device\n");
             SWLOG_INFO("[rdkFwupdateMgr] ===== VALIDATION & COMPARISON COMPLETE =====\n");
         }
-    //}
     
     SWLOG_INFO("[rdkFwupdateMgr] XConf call completed with result: ret=%d\n",ret);
     
@@ -1304,7 +1296,7 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
                 response.dlCertBundle[0] ? response.dlCertBundle : "N/A"
             );
         
-        // ===== POST-XCONF OPT-OUT EVALUATION (PLAN-1.md v2.0) =====
+        // ===== POST-XCONF OPT-OUT EVALUATION =====
         SWLOG_INFO("[rdkFwupdateMgr] ===== BEGIN POST-XCONF OPT-OUT EVALUATION =====\n");
         
         // Parse critical update flag from XConf response
@@ -1744,6 +1736,13 @@ DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName
     
     SWLOG_INFO("[DOWNLOAD_HANDLER] rdkv_upgrade_request() returned: curl=%d, http=%d\n", 
                curl_ret_code, http_code);
+    
+    // Handle library-specific errors (negative values) - Daemon NEVER exits
+    if (curl_ret_code < 0) {
+        SWLOG_ERROR("[DOWNLOAD_HANDLER] Library error: %s (code: %d)\n",
+                   rdkv_upgrade_strerror(curl_ret_code), curl_ret_code);
+        // Daemon continues - error will be propagated to D-Bus client via existing error handling
+    }
     
     // Stop progress monitor thread ***
     if (monitor_thread != NULL) {
@@ -2420,39 +2419,6 @@ flash_error:
  */
 static void clear_cached_xconf_data_internal(void)
 {
-    // No lock needed - caller must hold lock
-    
-    // Free all dynamically allocated string fields
-    if (g_cached_xconf_data.cloudFWVersion) {
-        memset(g_cached_xconf_data.cloudFWVersion, 0, sizeof(g_cached_xconf_data.cloudFWVersion));
-    }
-    if (g_cached_xconf_data.cloudFWFile) {
-        memset(g_cached_xconf_data.cloudFWFile, 0, sizeof(g_cached_xconf_data.cloudFWFile));
-    }
-    if (g_cached_xconf_data.cloudFWLocation) {
-        memset(g_cached_xconf_data.cloudFWLocation, 0, sizeof(g_cached_xconf_data.cloudFWLocation));
-    }
-    if (g_cached_xconf_data.ipv6cloudFWLocation) {
-        memset(g_cached_xconf_data.ipv6cloudFWLocation, 0, sizeof(g_cached_xconf_data.ipv6cloudFWLocation));
-    }
-    if (g_cached_xconf_data.cloudProto) {
-        memset(g_cached_xconf_data.cloudProto, 0, sizeof(g_cached_xconf_data.cloudProto));
-    }
-    if (g_cached_xconf_data.cloudImmediateRebootFlag) {
-        memset(g_cached_xconf_data.cloudImmediateRebootFlag, 0, sizeof(g_cached_xconf_data.cloudImmediateRebootFlag));
-    }
-    if (g_cached_xconf_data.cloudDelayDownload) {
-        memset(g_cached_xconf_data.cloudDelayDownload, 0, sizeof(g_cached_xconf_data.cloudDelayDownload));
-    }
-    if (g_cached_xconf_data.cloudPDRIVersion) {
-        memset(g_cached_xconf_data.cloudPDRIVersion, 0, sizeof(g_cached_xconf_data.cloudPDRIVersion));
-    }
-    if (g_cached_xconf_data.peripheralFirmwares) {
-        memset(g_cached_xconf_data.peripheralFirmwares, 0, sizeof(g_cached_xconf_data.peripheralFirmwares));
-    }
-    if (g_cached_xconf_data.dlCertBundle) {
-        memset(g_cached_xconf_data.dlCertBundle, 0, sizeof(g_cached_xconf_data.dlCertBundle));
-    }
     
     // Zero out the entire structure
     memset(&g_cached_xconf_data, 0, sizeof(XCONFRES));

@@ -714,92 +714,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		return;
 	}
 		
-		// 3. CHECK CACHE (FAST, NON-BLOCKING)
-		//SWLOG_INFO("\n[STEP 3] Cache Check\n");
-		//SWLOG_INFO("  Calling: xconf_cache_exists()\n");
-		//gboolean cache_exists = xconf_cache_exists();
-		//SWLOG_INFO("[CHECK_UPDATE] Result: %s\n", cache_exists ? "CACHE HIT" : "CACHE MISS");
-		/*
-		if (cache_exists) {
-			// CACHE HIT PATH
-			SWLOG_INFO("[CHECK_UPDATE] CACHE HIT PATH - Immediate Response\n");
-			SWLOG_INFO("[CHECK_UPDATE] Action: Loading firmware data from cache\n");
-			
-			CheckUpdateResponse response = rdkFwupdateMgr_checkForUpdate(handler_process_name);
-			
-			SWLOG_INFO("[CHECK_UPDATE] Cache data loaded successfully\n");
-			SWLOG_INFO("[CHECK_UPDATE] Cached Firmware Data:\n");
-			SWLOG_INFO("[CHECK_UPDATE]   API Result: %d ", response.result);
-			switch(response.result) {
-				case 0: SWLOG_INFO(" (CHECK_FOR_UPDATE_SUCCESS)\n"); break;
-				case 1: SWLOG_INFO(" (CHECK_FOR_UPDATE_FAIL)\n"); break;
-				default: SWLOG_INFO(" (UNKNOWN)\n"); break;
-			}
-			SWLOG_INFO("[CHECK_UPDATE]   Firmware Status Code: %d ", response.status_code);
-			switch(response.status_code) {
-				case 0: SWLOG_INFO(" (FIRMWARE_AVAILABLE)\n"); break;
-				case 1: SWLOG_INFO(" (FIRMWARE_NOT_AVAILABLE)\n"); break;
-				case 2: SWLOG_INFO(" (UPDATE_NOT_ALLOWED)\n"); break;
-				case 3: SWLOG_INFO(" (FIRMWARE_CHECK_ERROR)\n"); break;
-				case 4: SWLOG_INFO(" (IGNORE_OPTOUT)\n"); break;
-				case 5: SWLOG_INFO(" (BYPASS_OPTOUT)\n"); break;
-				default: SWLOG_INFO(" (UNKNOWN)\n"); break;
-			}
-			SWLOG_INFO("[CHECK_UPDATE]   - Current Version: '%s'\n", 
-			           response.current_img_version ? response.current_img_version : "N/A");
-			SWLOG_INFO("[CHECK_UPDATE]   - Available Version: '%s'\n", 
-			           response.available_version ? response.available_version : "N/A");
-			SWLOG_INFO("[CHECK_UPDATE]   - Status Message: '%s'\n", 
-			           response.status_message ? response.status_message : "N/A");
-					SWLOG_INFO("[CHECK_UPDATE] Sending immediate D-Bus method response\n");
-		// Send immediate D-Bus response (issssi): result + 4 strings + status_code
-		g_dbus_method_invocation_return_value(resp_ctx,
-			g_variant_new("(issssi)",
-				response.result,  // API call result (SUCCESS/FAIL)
-				response.current_img_version ? response.current_img_version : "",
-				response.available_version ? response.available_version : "",
-				response.update_details ? response.update_details : "",
-				response.status_message ? response.status_message : "",
-				response.status_code));  // Firmware status (0-5)
-			
-			SWLOG_INFO("[CHECK_UPDATE] D-Bus method response sent successfully\n");
-			
-			// Also emit signal for consistency (so clients can use either method or signal)
-			SWLOG_INFO("[CHECK_UPDATE] Emitting CheckForUpdateComplete signal for consistency...\n");
-			GError *signal_error = NULL;
-			gboolean signal_sent = g_dbus_connection_emit_signal(connection,
-				NULL, "/org/rdkfwupdater/Service",
-				"org.rdkfwupdater.Interface",
-				"CheckForUpdateComplete",
-				g_variant_new("(tiissss)",
-					g_ascii_strtoull(handler_process_name, NULL, 10),   // handler_id (uint64)
-					(gint32)response.result,                            // result (API call result)
-					(gint32)response.status_code,                       // status_code (firmware status)
-					response.current_img_version ? response.current_img_version : "",
-					response.available_version ? response.available_version : "",
-					response.update_details ? response.update_details : "",
-					response.status_message ? response.status_message : ""
-				),
-				&signal_error);
-			
-			if (signal_sent) {
-				SWLOG_INFO("[CHECK_UPDATE] Signal emitted successfully\n");
-			} else {
-				SWLOG_ERROR("[CHECK_UPDATE] Signal emission failed: %s\n",
-				           signal_error ? signal_error->message : "Unknown");
-				if (signal_error) g_error_free(signal_error);
-			}
-			
-			checkupdate_response_free(&response);
-			g_free(handler_process_name);
-			
-			SWLOG_INFO("[CHECK_UPDATE] CACHE HIT PATH COMPLETE\n");
-			SWLOG_INFO("[CHECK_UPDATE] Total processing: Immediate (no async operation)\n");
-			SWLOG_INFO("[CHECK_UPDATE] Client received: Real firmware data\n");
-			return;
-		} */
 		
-		// CACHE MISS PATH
 		SWLOG_INFO("  Async non-blocking fetch required\n");
 		SWLOG_INFO("  Client flow:\n");
 		SWLOG_INFO("    1. Gets FIRMWARE_CHECK_ERROR (status=3) immediately (check in progress)\n");
@@ -3203,6 +3118,13 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     SWLOG_INFO("[DOWNLOAD_WORKER] ========== rdkv_upgrade_request() RETURNED ==========\n");
     SWLOG_INFO("[DOWNLOAD_WORKER] Return value: %d\n", curl_ret_code);
     SWLOG_INFO("[DOWNLOAD_WORKER] HTTP code: %d\n", http_code);
+    
+    // Handle library-specific errors (negative values) - Daemon NEVER exits
+    if (curl_ret_code < 0) {
+        SWLOG_ERROR("[DOWNLOAD_WORKER] Library error: %s (code: %d)\n",
+                   rdkv_upgrade_strerror(curl_ret_code), curl_ret_code);
+        // Daemon continues - error will be propagated to D-Bus client via existing error handling
+    }
     
     // ========== STEP 9: STOP PROGRESS MONITOR THREAD ==========
     if (monitor_thread != NULL) {
