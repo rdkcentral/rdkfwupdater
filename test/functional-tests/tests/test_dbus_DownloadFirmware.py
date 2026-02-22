@@ -957,7 +957,7 @@ def test_progress_file_creation():
         handler_id = str(result[0] if isinstance(result, tuple) else result)
         assert int(handler_id) > 0, "Registration failed"
 
-        result = api.DownloadFirmware(
+        api.DownloadFirmware(
             handler_id,
             "test_progress.bin",
             "https://mockxconf:50052/firmwareupdate/getfirmwaredata/test_progress.bin",
