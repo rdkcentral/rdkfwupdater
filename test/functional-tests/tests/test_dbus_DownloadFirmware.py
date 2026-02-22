@@ -910,13 +910,10 @@ def test_peripheral_firmware_type():
 
         # Check if file was created (may or may not succeed depending on cert selector)
         # This is informational - the key validation is API acceptance above
-        peripheral_found = False
         if os.path.exists("/opt/CDL/peripheral_fw.bin"):
             print("[PASS] PERIPHERAL firmware downloaded to /opt/CDL")
-            peripheral_found = True
         elif os.path.exists("/tmp/peripheral_fw.bin"):
             print("[PASS] PERIPHERAL firmware downloaded to /tmp")
-            peripheral_found = True
         else:
             print("[INFO] File not created (expected with cert selector in test environment)")
             print("[INFO] D-Bus API correctly accepted PERIPHERAL type - test objective met")
