@@ -98,7 +98,7 @@ typedef enum {
 #define MAX_PERIPHERAL_VERSION_LEN 256
 
 typedef struct {
-    char FwFileName[MAX_FW_FILENAME_SIZE];  /* Firmware file name > **/
+    char FwFileName[MAX_FW_FILENAME_SIZE];  /* Firmware file name  */
     char FwUrl[MAX_FW_URL_SIZE];       /* Download URL  */
     char FwVersion[MAX_FW_VERSION_SIZE];    /* Firmware version string */
     char RebootImmediately[MAX_REBOOT_IMMEDIATELY_SIZE]; /*Reboot flag ("true" or "false")*/

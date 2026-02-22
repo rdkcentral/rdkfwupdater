@@ -1217,21 +1217,7 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
     if (xconf_cache_exists()) {
         SWLOG_INFO("[rdkFwupdateMgr] Cache hit! But still...\n");
     }	
-    //SWLOG_INFO("[rdkFwupdateMgr] CheckForUpdate: Checking for cached XConf data...\n");
     
-    // Try cache first to support offline recovery scenarios
-    /*
-    if (xconf_cache_exists()) {
-        SWLOG_INFO("[rdkFwupdateMgr] Cache hit! Loading XConf data from cache\n");
-        if (load_xconf_from_cache(&response)) {
-            ret = 0;
-            http_code = 200;
-            SWLOG_INFO("[rdkFwupdateMgr] Successfully loaded XConf data from cache\n");
-        } else {
-            SWLOG_ERROR("[rdkFwupdateMgr] Cache read failed, falling back to live XConf call\n");
-            ret = fetch_xconf_firmware_info(&response, server_type, &http_code);
-        }
-    } else { */
         SWLOG_INFO("[rdkFwupdateMgr] Making live XConf call\n");
         ret = fetch_xconf_firmware_info(&response, server_type, &http_code);
         
@@ -1254,7 +1240,6 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
             SWLOG_INFO("[rdkFwupdateMgr] VALIDATION PASSED - Firmware is valid for this device\n");
             SWLOG_INFO("[rdkFwupdateMgr] ===== VALIDATION & COMPARISON COMPLETE =====\n");
         }
-    //}
     
     SWLOG_INFO("[rdkFwupdateMgr] XConf call completed with result: ret=%d\n",ret);
     
