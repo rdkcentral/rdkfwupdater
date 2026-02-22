@@ -57,8 +57,8 @@ typedef enum {
     FIRMWARE_NOT_AVAILABLE = 1,   /* You're already on the latest version */
     UPDATE_NOT_ALLOWED = 2,       /* Firmware not compatible with this device model */
     FIRMWARE_CHECK_ERROR = 3,     /* Something went wrong checking for updates */
-    IGNORE_OPTOUT = 4,            /* Download not allowed (opt-out related) */
-    BYPASS_OPTOUT = 5             /* Download not allowed (opt-out bypass related) */ 
+    IGNORE_OPTOUT = 4,            /* User has opted out and the update is blocked */
+    BYPASS_OPTOUT = 5             /* Update available but requires explicit user consent before installation */ 
 } CheckForUpdateStatus;
 
 /**
