@@ -21,7 +21,6 @@ import dbus
 import subprocess
 import time
 import os
-import signal
 from threading import Thread, Event
 import pytest
 
