@@ -19,7 +19,6 @@ AUTOMAKE_OPTIONS = subdir-objects
 
 # Define the program name and the source files
 bin_PROGRAMS = rdkfw_device_status_gtest rdkfw_deviceutils_gtest rdkfw_main_gtest rdkfw_interface_gtest rdkfwupdatemgr_main_flow_gtest rdkFwupdateMgr_handlers_gtest dbus_handlers_gtest
-
 #bin_PROGRAMS = rdkfw_device_status_gtest rdkfw_deviceutils_gtest rdkfw_main_gtest rdkfw_interface_gtest  dbus_handlers_gtest
 # Define the include directories
 # NOTE: We explicitly use -I. to prioritize local test headers over system headers
@@ -78,6 +77,10 @@ rdkfw_interface_gtest_SOURCES = fwdl_interface_gtest.cpp \
 rdkFwupdateMgr_handlers_gtest_SOURCES = rdkFwupdateMgr_handlers_gtest.cpp \
     ./mocks/rdkFwupdateMgr_mock.cpp \
     ../src/dbus/rdkFwupdateMgr_handlers.c \
+    ../src/rdkv_upgrade.c \
+    ../src/chunk.c \
+    ../src/device_status_helper.c \
+    ../src/download_status_helper.c \
     ../src/json_process.c \
    deviceutils/json_parse.c
 # Note: json_process.c is mocked in rdkFwupdateMgr_mock.cpp to control XConf parsing behavior
@@ -123,6 +126,10 @@ rdkFwupdateMgr_handlers_gtest_CFLAGS = $(COMMON_CXXFLAGS)
 #   6. KEPT json_process.c - core JSON parsing
 rdkfwupdatemgr_main_flow_gtest_SOURCES = rdkfwupdatemgr_main_flow_gtest.cpp \
     ../src/rdkFwupdateMgr.c \
+    ../src/rdkv_upgrade.c \
+    ../src/chunk.c \
+    ../src/device_status_helper.c \
+    ../src/download_status_helper.c \
     ../src/deviceutils/device_api.c \
     ../src/deviceutils/deviceutils.c \
     ../src/json_process.c \
