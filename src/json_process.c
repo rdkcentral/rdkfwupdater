@@ -371,8 +371,7 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
                 if (retval < 0 || retval >= available) {
                     SWLOG_ERROR("dlCertBundle string too long, truncation occurred\n");
                     return ret;
-                }
-                available -= retval;
+                }                
             }
 
             if (response->dlAppBundle[0] != '\0') {
