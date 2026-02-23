@@ -1,0 +1,1 @@
+{"additionalFwVerInfo":"ABCD_PDRI_firmware_test","firmwareDownloadProtocol":"http","firmwareFilename":"ABCD_firmware_test.bin","firmwareLocation":"https://mockxconf:50052/getfirmwarefile/","firmwareVersion":"ABCD_firmware_test","rebootImmediately":false,"remCtrlAB11-20":"AB11-20_firmware_5103.3.4","dlCertBundle":"ca-store-update-bundle:0.1","dlAppBundle" : "XApp:1.0, YApp:2.0"}
