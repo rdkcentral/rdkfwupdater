@@ -116,23 +116,23 @@ rdkFwupdateMgr_handlers_gtest_CFLAGS = $(COMMON_CXXFLAGS)
 
 # rdkfwupdatemgr_main_flow_gtest: Tests rdkFwupdateMgr.c main flow functions
 # Covers: getTriggerType, handle_signal, prevCurUpdateInfo, initialValidation gaps, main() logic
-# Uses mocks ONLY - no real rfcinterface.c or iarmInterface.c to avoid multiple definition errors
+# Uses mocks ONLY - no real implementation files that are mocked in miscellaneous_mock.cpp
 # Key decisions:
 #   1. REMOVED rfcinterface.c - mocked in miscellaneous_mock.cpp (getRFCSettings, isIncremetalCDLEnable, etc.)
 #   2. REMOVED iarmInterface.c - mocked in miscellaneous_mock.cpp (init_event_handler, eventManager, etc.)
 #   3. REMOVED rbusInterface.c and rbus_mock.c - not needed for main flow tests
-#   4. KEPT rdkFwupdateMgr.c - core file under test
-#   5. KEPT deviceutils/* - device utility functions with deviceutils_mock.cpp
-#   6. KEPT json_process.c - core JSON parsing
+#   4. REMOVED rdkv_upgrade.c - mocked in miscellaneous_mock.cpp (rdkv_upgrade_request, downloadFile, etc.)
+#   5. REMOVED chunk.c - part of rdkv_upgrade.c functionality, mocked
+#   6. REMOVED device_status_helper.c - mocked in miscellaneous_mock.cpp (checkAndEnterStateRed, isDnsResolve, etc.)
+#   7. REMOVED download_status_helper.c - mocked in miscellaneous_mock.cpp (updateFWDownloadStatus, notifyDwnlStatus)
+#   8. KEPT rdkFwupdateMgr.c - core file under test
+#   9. KEPT deviceutils/* - device utility functions with deviceutils_mock.cpp
+#   10. KEPT json_process.c - core JSON parsing
 rdkfwupdatemgr_main_flow_gtest_SOURCES = rdkfwupdatemgr_main_flow_gtest.cpp \
     ../src/rdkFwupdateMgr.c \
-    ../src/rdkv_upgrade.c \
-    ../src/chunk.c \
-    ../src/device_status_helper.c \
-    ../src/download_status_helper.c \
+    ../src/json_process.c \
     ../src/deviceutils/device_api.c \
     ../src/deviceutils/deviceutils.c \
-    ../src/json_process.c \
     deviceutils/json_parse.c \
     miscellaneous_mock.cpp \
     ./mocks/deviceutils_mock.cpp

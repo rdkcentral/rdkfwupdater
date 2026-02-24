@@ -617,8 +617,29 @@ extern "C" {
     const char* getRFCErrorString(int code) {
         return "RFC_SUCCESS";
     }
-}
 
+    // ===========================================================================
+    // Additional stubs for functions referenced by linked source files
+    // ===========================================================================
+    
+    // Stub for flashImage (referenced by rdkv_upgrade.c)
+    int flashImage(const char* pFilename, const char* pCheckSum) {
+        // Mock implementation: return success by default
+        return 0; // Success
+    }
+    
+    // Stub for isConnectedToInternet (referenced by device_status_helper.c)
+    int isConnectedToInternet(const char* url) {
+        // Mock implementation: return connected by default
+        return 1; // Connected
+    }
+    
+    // Stub for write_RFCProperty (referenced by download_status_helper.c)
+    int write_RFCProperty(const char* param, const char* value) {
+        // Mock implementation: return success by default
+        return 0; // Success
+    }
+}
 class MockFunctionsInternal {
 public:
     MOCK_METHOD(void, RunCommand, (int command, void* arg1, char* jsondata, int size));
