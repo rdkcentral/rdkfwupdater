@@ -29,6 +29,9 @@ AM_LDFLAGS += $(GLIB_LIBS)
 # Build the RDK upgrade shared library
 lib_LTLIBRARIES = librdksw_upgrade.la librdksw_rfcIntf.la librdksw_iarmIntf.la librdksw_jsonparse.la librdksw_flash.la librdksw_fwutils.la librdkFwupdateMgr.la
 
+# Add librdkFwupdateMgr client library
+lib_LTLIBRARIES += librdkFwupdateMgr.la
+
 librdksw_upgrade_la_SOURCES = \
     ${top_srcdir}/src/rdkv_upgrade.c\
     ${top_srcdir}/src/chunk.c
@@ -170,6 +173,37 @@ librdkFwupdateMgr_includedir = ${includedir}
 include_HEADERS = \
     ${top_srcdir}/src/rbusInterface/rbusInterface.h \
     ${top_srcdir}/src/include/device_status_helper.h
+
+# ========================================================================
+# librdkFwupdateMgr - Wrapperlibrary 
+# ========================================================================
+
+librdkFwupdateMgr_la_SOURCES = \
+    ${top_srcdir}/librdkFwupdateMgr/src/rdkFwupdateMgr_process.c \
+    ${top_srcdir}/librdkFwupdateMgr/src/rdkFwupdateMgr_log.c
+
+librdkFwupdateMgr_la_CFLAGS = -fPIC -I${top_srcdir}/librdkFwupdateMgr/include -I${top_srcdir}/librdkFwupdateMgr/src $(AM_CFLAGS) $(GLIB_CFLAGS)
+librdkFwupdateMgr_la_CPPFLAGS = -fPIC -I${top_srcdir}/librdkFwupdateMgr/include -I${top_srcdir}/librdkFwupdateMgr/src $(GLIB_CFLAGS)
+librdkFwupdateMgr_la_LDFLAGS = -shared -version-info 1:0:0
+librdkFwupdateMgr_la_LIBADD = $(GLIB_LIBS) -lpthread
+
+librdkFwupdateMgr_include_HEADERS = \
+    ${top_srcdir}/librdkFwupdateMgr/include/rdkFwupdateMgr_process.h \
+    ${top_srcdir}/librdkFwupdateMgr/include/rdkFwupdateMgr_client.h
+
+librdkFwupdateMgr_includedir = ${includedir}/rdkFwupdateMgr
+
+# Example program for librdkFwupdateMgr
+noinst_PROGRAMS = example_plugin_registration
+
+example_plugin_registration_SOURCES = \
+    ${top_srcdir}/librdkFwupdateMgr/examples/example_plugin_registration.c
+
+example_plugin_registration_CFLAGS = -I${top_srcdir}/librdkFwupdateMgr/include $(AM_CFLAGS) $(GLIB_CFLAGS)
+example_plugin_registration_LDADD = librdkFwupdateMgr.la $(GLIB_LIBS) -lpthread
+example_plugin_registration_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
+
+# ========================================================================
 
 bin_PROGRAMS= rdkvfwupgrader
 

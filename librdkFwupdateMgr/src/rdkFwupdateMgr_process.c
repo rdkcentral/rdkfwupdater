@@ -69,12 +69,13 @@
  */
 
 #include "rdkFwupdateMgr_process.h"
+#include "rdkFwupdateMgr_log.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
 #include <gio/gio.h>
-
+#include <inttypes.h>
 /* ========================================================================
  * CONSTANTS
  * ======================================================================== */
@@ -145,7 +146,7 @@ static GDBusProxy* create_dbus_proxy(GError **error)
     // Connect to system bus
     connection = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, error);
     if (!connection) {
-        fprintf(stderr, "[rdkFwupdateMgr] Failed to connect to D-Bus system bus: %s\n",
+        FWUPMGR_ERROR("Failed to connect to D-Bus system bus: %s\n",
                 (*error)->message);
         return NULL;
     }
@@ -166,7 +167,7 @@ static GDBusProxy* create_dbus_proxy(GError **error)
     g_object_unref(connection);
 
     if (!proxy) {
-        fprintf(stderr, "[rdkFwupdateMgr] Failed to create D-Bus proxy: %s\n",
+        FWUPMGR_ERROR("Failed to create D-Bus proxy: %s\n",
                 (*error)->message);
         return NULL;
     }
@@ -188,17 +189,17 @@ static GDBusProxy* create_dbus_proxy(GError **error)
 static bool validate_process_name(const char *processName)
 {
     if (!processName) {
-        fprintf(stderr, "[rdkFwupdateMgr] ERROR: processName is NULL\n");
+        FWUPMGR_ERROR("processName is NULL\n");
         return false;
     }
 
     if (strlen(processName) == 0) {
-        fprintf(stderr, "[rdkFwupdateMgr] ERROR: processName is empty\n");
+        FWUPMGR_ERROR("processName is empty\n");
         return false;
     }
 
     if (strlen(processName) > MAX_PROCESS_NAME_LEN) {
-        fprintf(stderr, "[rdkFwupdateMgr] ERROR: processName exceeds max length (%d)\n",
+        FWUPMGR_ERROR("processName exceeds max length (%d)\n",
                 MAX_PROCESS_NAME_LEN);
         return false;
     }
@@ -219,12 +220,12 @@ static bool validate_process_name(const char *processName)
 static bool validate_lib_version(const char *libVersion)
 {
     if (!libVersion) {
-        fprintf(stderr, "[rdkFwupdateMgr] ERROR: libVersion is NULL\n");
+        FWUPMGR_ERROR("libVersion is NULL\n");
         return false;
     }
 
     if (strlen(libVersion) > MAX_LIB_VERSION_LEN) {
-        fprintf(stderr, "[rdkFwupdateMgr] ERROR: libVersion exceeds max length (%d)\n",
+        FWUPMGR_ERROR("libVersion exceeds max length (%d)\n",
                 MAX_LIB_VERSION_LEN);
         return false;
     }
@@ -261,9 +262,9 @@ FirmwareInterfaceHandle registerProcess(const char *processName, const char *lib
     guint64 handler_id = 0;
     char *handle_str = NULL;
 
-    fprintf(stderr, "[rdkFwupdateMgr] registerProcess() called\n");
-    fprintf(stderr, "[rdkFwupdateMgr]   processName: '%s'\n", processName ? processName : "NULL");
-    fprintf(stderr, "[rdkFwupdateMgr]   libVersion:  '%s'\n", libVersion ? libVersion : "NULL");
+    FWUPMGR_INFO("registerProcess() called\n");
+    FWUPMGR_INFO("  processName: '%s'\n", processName ? processName : "NULL");
+    FWUPMGR_INFO("  libVersion:  '%s'\n", libVersion ? libVersion : "NULL");
 
     // Validate inputs
     if (!validate_process_name(processName)) {
@@ -299,7 +300,7 @@ FirmwareInterfaceHandle registerProcess(const char *processName, const char *lib
     );
 
     if (!result) {
-        fprintf(stderr, "[rdkFwupdateMgr] RegisterProcess D-Bus call failed: %s\n",
+        FWUPMGR_ERROR("RegisterProcess D-Bus call failed: %s\n",
                 error->message);
         g_error_free(error);
         g_object_unref(proxy);
@@ -311,20 +312,21 @@ FirmwareInterfaceHandle registerProcess(const char *processName, const char *lib
     g_variant_unref(result);
     g_object_unref(proxy);
 
-    fprintf(stderr, "[rdkFwupdateMgr] Registration successful\n");
-    fprintf(stderr, "[rdkFwupdateMgr]   handler_id: %"G_GUINT64_FORMAT"\n", handler_id);
+    FWUPMGR_INFO("Registration successful\n");
+    FWUPMGR_INFO("  handler_id: %"G_GUINT64_FORMAT"\n", handler_id);
 
     // Convert handler_id to string (this becomes the handle)
     handle_str = (char*)malloc(32);  // Enough for uint64 as decimal string
     if (!handle_str) {
-        fprintf(stderr, "[rdkFwupdateMgr] ERROR: Failed to allocate memory for handle\n");
+        FWUPMGR_ERROR("Failed to allocate memory for handle\n");
         // Registration succeeded on daemon side, but we can't return handle
         // Caller should retry or handle gracefully
         return FIRMWARE_INVALID_HANDLE;
     }
 
-    snprintf(handle_str, 32, "%"PRIu64, handler_id);
-    fprintf(stderr, "[rdkFwupdateMgr] Handle created: '%s'\n", handle_str);
+    //snprintf(handle_str, 32, "" %PRIu64, handler_id);
+    snprintf(handle_str, 32, "%" PRIu64, handler_id);
+    FWUPMGR_INFO("Handle created: '%s'\n", handle_str);
 
     return (FirmwareInterfaceHandle)handle_str;
 }
@@ -355,31 +357,31 @@ void unregisterProcess(FirmwareInterfaceHandle handler)
 
     // NULL check: Safe to unregister NULL handle (no-op)
     if (!handler) {
-        fprintf(stderr, "[rdkFwupdateMgr] unregisterProcess() called with NULL handle (no-op)\n");
+        FWUPMGR_INFO("unregisterProcess() called with NULL handle (no-op)\n");
         return;
     }
 
-    fprintf(stderr, "[rdkFwupdateMgr] unregisterProcess() called\n");
-    fprintf(stderr, "[rdkFwupdateMgr]   handle: '%s'\n", handler);
+    FWUPMGR_INFO("unregisterProcess() called\n");
+    FWUPMGR_INFO("  handle: '%s'\n", handler);
 
     // Parse handler_id from string handle
     errno = 0;
     handler_id = strtoull(handler, NULL, 10);
     if (errno != 0 || handler_id == 0) {
-        fprintf(stderr, "[rdkFwupdateMgr] ERROR: Invalid handle format (not a valid handler_id)\n");
+        FWUPMGR_ERROR("Invalid handle format (not a valid handler_id)\n");
         // Still free the handle memory (best-effort cleanup)
         free(handler);
         return;
     }
 
-    fprintf(stderr, "[rdkFwupdateMgr]   handler_id: %"G_GUINT64_FORMAT"\n", handler_id);
+    FWUPMGR_INFO("  handler_id: %"G_GUINT64_FORMAT"\n", handler_id);
 
     // Create D-Bus proxy
     proxy = create_dbus_proxy(&error);
     if (!proxy) {
-        fprintf(stderr, "[rdkFwupdateMgr] WARNING: Failed to create D-Bus proxy for unregister\n");
+        FWUPMGR_WARN("Failed to create D-Bus proxy for unregister\n");
         if (error) {
-            fprintf(stderr, "[rdkFwupdateMgr]   Error: %s\n", error->message);
+            FWUPMGR_WARN("  Error: %s\n", error->message);
             g_error_free(error);
         }
         // Continue with cleanup even if D-Bus call fails
@@ -388,7 +390,7 @@ void unregisterProcess(FirmwareInterfaceHandle handler)
     }
 
     // Call UnregisterProcess D-Bus method
-    fprintf(stderr, "[rdkFwupdateMgr] Calling UnregisterProcess D-Bus method...\n");
+    FWUPMGR_INFO("Calling UnregisterProcess D-Bus method...\n");
     result = g_dbus_proxy_call_sync(
         proxy,
         "UnregisterProcess",
@@ -400,9 +402,9 @@ void unregisterProcess(FirmwareInterfaceHandle handler)
     );
 
     if (!result) {
-        fprintf(stderr, "[rdkFwupdateMgr] WARNING: UnregisterProcess D-Bus call failed: %s\n",
+        FWUPMGR_WARN("UnregisterProcess D-Bus call failed: %s\n",
                 error->message);
-        fprintf(stderr, "[rdkFwupdateMgr]   (This is OK if daemon already cleaned up)\n");
+        FWUPMGR_WARN("  (This is OK if daemon already cleaned up)\n");
         g_error_free(error);
         g_object_unref(proxy);
         // Continue with local cleanup
@@ -416,13 +418,13 @@ void unregisterProcess(FirmwareInterfaceHandle handler)
     g_object_unref(proxy);
 
     if (success) {
-        fprintf(stderr, "[rdkFwupdateMgr] Unregistration successful\n");
+        FWUPMGR_INFO("Unregistration successful\n");
     } else {
-        fprintf(stderr, "[rdkFwupdateMgr] WARNING: Daemon reported unregistration failure\n");
-        fprintf(stderr, "[rdkFwupdateMgr]   (Handler may have already been unregistered)\n");
+        FWUPMGR_WARN("Daemon reported unregistration failure\n");
+        FWUPMGR_WARN("  (Handler may have already been unregistered)\n");
     }
 
     // Free handle memory (always, regardless of D-Bus call success)
     free(handler);
-    fprintf(stderr, "[rdkFwupdateMgr] Handle memory freed\n");
+    FWUPMGR_INFO("Handle memory freed\n");
 }
