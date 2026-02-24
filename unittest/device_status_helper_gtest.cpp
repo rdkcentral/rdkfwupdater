@@ -162,7 +162,7 @@ TEST_F(CreateJsonTestFixture, TestName) {
     EXPECT_CALL(*g_DeviceStatusMock, GetAccountID (_, _)).Times(1).WillOnce(Return(18));
     EXPECT_CALL(*g_DeviceStatusMock, GetSerialNum (_, _)).Times(1).WillOnce(Return(18));
     EXPECT_CALL(*g_DeviceStatusMock, GetUTCTime (_, _)).Times(1).WillOnce(Return(6));
-    EXPECT_CALL(*g_DeviceStatusMock, GetInstalledBundles (_, _)).Times(1).WillOnce(Return(7));
+    EXPECT_CALL(*g_DeviceStatusMock, GetInstalledBundles (_, _, _)).Times(1).WillOnce(Return(7));
     EXPECT_CALL(*g_DeviceStatusMock, GetRdmManifestVersion (_, _)).Times(1).WillOnce(Return(19));
     EXPECT_CALL(*g_DeviceStatusMock, GetTimezone  (_, _, _)).Times(1).WillOnce(Return(7));
     EXPECT_CALL(*g_DeviceStatusMock, GetCapabilities  (_, _)).Times(1).WillOnce(Return(2));

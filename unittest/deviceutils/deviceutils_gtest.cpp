@@ -218,7 +218,7 @@ TEST_F(DeviceUtilsTestFixture, TestName_getJsonRpc_Fail)
 TEST_F(DeviceUtilsTestFixture, TestName_getInstalledBundleFileList_Fail)
 {
     metaDataFileList_st *meta_ret = NULL;
-    EXPECT_EQ(getInstalledBundleFileList(), meta_ret);
+    EXPECT_EQ(getInstalledBundleFileList(NULL), meta_ret);
 }
 TEST_F(DeviceUtilsTestFixture, TestName_getMetaDataFile_Null)
 {
