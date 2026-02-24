@@ -45,7 +45,7 @@ class DeviceStatusInterface
 	virtual size_t GetAccountID( char *pAccountID, size_t szBufSize ) = 0;
 	virtual size_t GetSerialNum( char *pSerialNum, size_t szBufSize ) = 0;
 	virtual size_t GetUTCTime( char *pUTCTime, size_t szBufSize ) = 0;
-	virtual size_t GetInstalledBundles(char *pBundles, size_t szBufSize) = 0;
+	virtual size_t GetInstalledBundles(char *pBundles, size_t szBufSize, const char *bundleType) = 0;
 	virtual size_t GetRdmManifestVersion( char *pRdmManifestVersion, size_t szBufSize ) = 0;
 	virtual size_t GetTimezone( char *pTimezone, const char *cpuArch, size_t szBufSize ) = 0;
 	virtual size_t GetCapabilities( char *pCapabilities, size_t szBufSize ) = 0;
@@ -81,7 +81,7 @@ class DeviceStatusMock: public DeviceStatusInterface
     	MOCK_METHOD(size_t, GetAccountID, ( char *pAccountID, size_t szBufSize ), ());
     	MOCK_METHOD(size_t, GetSerialNum, ( char *pSerialNum, size_t szBufSize ), ());
     	MOCK_METHOD(size_t, GetUTCTime, ( char *pUTCTime, size_t szBufSize ), ());
-    	MOCK_METHOD(size_t, GetInstalledBundles, (char *pBundles, size_t szBufSize), ());
+    	MOCK_METHOD(size_t, GetInstalledBundles, (char *pBundles, size_t szBufSize, const char *bundleType), ());
     	MOCK_METHOD(size_t, GetRdmManifestVersion, ( char *pRdmManifestVersion, size_t szBufSize ), ());
     	MOCK_METHOD(size_t, GetTimezone, ( char *pTimezone, const char *cpuArch, size_t szBufSize ), ());
     	MOCK_METHOD(size_t, GetCapabilities, ( char *pCapabilities, size_t szBufSize ), ());

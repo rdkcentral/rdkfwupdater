@@ -272,7 +272,7 @@ extern "C" size_t GetUTCTime(char *pUTCTime, size_t szBufSize) {
     return strlen(pUTCTime);
 }
 
-extern "C" size_t GetInstalledBundles(char *pBundles, size_t szBufSize) {
+extern "C" size_t GetInstalledBundles(char *pBundles, size_t szBufSize, const char *bundleType) {
     if (pBundles && szBufSize > 0) {
         strncpy(pBundles, "bundle1,bundle2", szBufSize - 1);
         pBundles[szBufSize - 1] = '\0';
