@@ -75,7 +75,7 @@ public:
     MOCK_METHOD(void, logMilestone, (const char*), ());
     MOCK_METHOD(int, eraseFolderExcePramaFile, (const char*, const char*, const char*), ());
     MOCK_METHOD(int, doCurlPutRequest, (void*, FileDwnl_t*, char*, int*), ());
-    MOCK_METHOD(void, checkAndEnterStateRed, (int, const char*), ());
+    MOCK_METHOD(int, checkAndEnterStateRed, (int, const char*), ());
     MOCK_METHOD(int, getRFCSettings, (Rfc_t*), ());
     MOCK_METHOD(void, eventManager, (const char*, const char*), ());
     MOCK_METHOD(int, updateFWDownloadStatus, (struct FWDownloadStatus*, const char*), ());
@@ -255,11 +255,11 @@ extern "C" {
         return global_mockexternal_ptr->doCurlPutRequest(in_curl, pfile_dwnl, jsonrpc_auth_token, out_httpCode);
     }
 
-    void checkAndEnterStateRed(int curlret, const char *) {
+    int checkAndEnterStateRed(int curlret, const char *) {
         if (global_mockexternal_ptr == nullptr) {
-            return; // Return default value if global_mockexternal_ptr is NULL
+            return 0; // Return success if global_mockexternal_ptr is NULL
         }
-        global_mockexternal_ptr->checkAndEnterStateRed(curlret, "");
+        return global_mockexternal_ptr->checkAndEnterStateRed(curlret, "");
     }
 
     int getRFCSettings(Rfc_t *rfc_list) {
@@ -617,8 +617,29 @@ extern "C" {
     const char* getRFCErrorString(int code) {
         return "RFC_SUCCESS";
     }
-}
 
+    // ===========================================================================
+    // Additional stubs for functions referenced by linked source files
+    // ===========================================================================
+    
+    // Stub for flashImage (referenced by rdkv_upgrade.c)
+    int flashImage(const char* pFilename, const char* pCheckSum) {
+        // Mock implementation: return success by default
+        return 0; // Success
+    }
+    
+    // Stub for isConnectedToInternet (referenced by device_status_helper.c)
+    int isConnectedToInternet(const char* url) {
+        // Mock implementation: return connected by default
+        return 1; // Connected
+    }
+    
+    // Stub for write_RFCProperty (referenced by download_status_helper.c)
+    int write_RFCProperty(const char* param, const char* value) {
+        // Mock implementation: return success by default
+        return 0; // Success
+    }
+}
 class MockFunctionsInternal {
 public:
     MOCK_METHOD(void, RunCommand, (int command, void* arg1, char* jsondata, int size));
