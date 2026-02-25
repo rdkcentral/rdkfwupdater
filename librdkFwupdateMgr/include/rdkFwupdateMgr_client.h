@@ -379,6 +379,173 @@ DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,const FwDwnlReq *
  */
 UpdateResult updateFirmware(FirmwareInterfaceHandle handle,const FwUpdateReq *fwupdatereq,UpdateCallback callback);
 
+/* ========================================================================
+ * ASYNC CHECK FOR UPDATE API (NEW)
+ * ======================================================================== */
+
+/**
+ * @brief Callback ID type for async operations
+ * 
+ * This is a unique identifier returned by async APIs.
+ * Use this ID to cancel pending operations if needed.
+ * A value of 0 indicates an invalid/error ID.
+ */
+typedef uint32_t AsyncCallbackId;
+
+/**
+ * @brief Update information structure for async callbacks
+ * 
+ * This structure contains the results of an async firmware update check.
+ * It is provided to your callback when the check completes.
+ * 
+ * IMPORTANT MEMORY RULES:
+ * - All string pointers are ONLY valid during the callback
+ * - Do NOT free any fields yourself
+ * - Do NOT store pointers - copy data with strdup() if needed
+ * - The library manages all memory
+ */
+typedef struct {
+    /** API result: 0 = success, non-zero = error */
+    int32_t result;
+    
+    /** Status code (see CheckForUpdateStatus enum) */
+    int32_t status_code;
+    
+    /** Current firmware version (e.g., "V1.2.3") */
+    const char *current_version;
+    
+    /** Available firmware version (e.g., "V1.3.0" or NULL if none) */
+    const char *available_version;
+    
+    /** Raw update details string from daemon (comma-separated key:value pairs) */
+    const char *update_details;
+    
+    /** Human-readable status message (e.g., "New firmware available") */
+    const char *status_message;
+    
+    /** Convenience flag: true if new firmware is available to download */
+    bool update_available;
+} AsyncUpdateInfo;
+
+/**
+ * @brief Async callback function type
+ * 
+ * Your callback function must match this signature.
+ * It will be called when the firmware update check completes.
+ * 
+ * IMPORTANT THREADING NOTES:
+ * - This callback runs in a BACKGROUND THREAD (not your thread!)
+ * - Keep callback execution short - no blocking operations
+ * - Don't call other library functions from inside callback
+ * - Use proper synchronization if accessing shared data
+ * 
+ * MEMORY LIFETIME:
+ * - The AsyncUpdateInfo structure is ONLY valid during this callback
+ * - All string pointers are ONLY valid during this callback
+ * - Copy any data you need with strdup() if you need it later
+ * 
+ * @param info Pointer to update information (valid only during callback)
+ * @param user_data Your opaque data pointer (from checkForUpdate_async call)
+ */
+typedef void (*AsyncUpdateCallback)(const AsyncUpdateInfo *info, void *user_data);
+
+/**
+ * @brief Check for firmware update asynchronously (non-blocking)
+ * 
+ * This is the modern, non-blocking version of checkForUpdate().
+ * It returns immediately and calls your callback when the result is ready.
+ * 
+ * HOW IT WORKS:
+ * 1. You call this function with your callback
+ * 2. Function returns immediately with a callback ID
+ * 3. Library sends D-Bus request to daemon
+ * 4. Your code continues running (not blocked)
+ * 5. Later, when daemon responds, library calls your callback
+ * 6. Callback receives firmware update information
+ * 
+ * ADVANTAGES OVER checkForUpdate():
+ * - Non-blocking: Your code keeps running
+ * - No handler registration needed
+ * - Simpler API: Just provide callback and optional user data
+ * - Multiple concurrent calls supported (up to 64 at once)
+ * - Automatic timeout handling (60 seconds)
+ * 
+ * Parameters:
+ *   callback - Your function to call when check completes (REQUIRED, cannot be NULL)
+ *   user_data - Your opaque data pointer, passed back to callback (OPTIONAL, can be NULL)
+ * 
+ * Returns:
+ *   AsyncCallbackId (>0) - Success, callback registered and will be invoked later
+ *   0 - Failure (invalid callback, system not initialized, or registry full)
+ * 
+ * Example usage:
+ * @code
+ *   void my_callback(const AsyncUpdateInfo *info, void *user_data) {
+ *       printf("Update available: %s\n", info->update_available ? "YES" : "NO");
+ *       if (info->update_available) {
+ *           printf("New version: %s\n", info->available_version);
+ *       }
+ *   }
+ *   
+ *   AsyncCallbackId id = checkForUpdate_async(my_callback, NULL);
+ *   if (id == 0) {
+ *       fprintf(stderr, "Failed to start async check\n");
+ *   } else {
+ *       printf("Check started, callback ID: %u\n", id);
+ *       // Your code continues running here...
+ *   }
+ * @endcode
+ * 
+ * IMPORTANT NOTES:
+ * - Callback is invoked in a BACKGROUND THREAD (not your thread!)
+ * - Callback must be thread-safe if it accesses shared data
+ * - Library handles all memory allocation and cleanup
+ * - If daemon doesn't respond within 60 seconds, callback is invoked with timeout error
+ * - You can cancel pending checks with checkForUpdate_async_cancel()
+ * - Maximum 64 concurrent async calls allowed
+ * 
+ * WHEN TO USE THIS vs checkForUpdate():
+ * - Use this if you want non-blocking behavior
+ * - Use checkForUpdate() if you need synchronous/blocking behavior (rare)
+ * - This is the recommended API for new code
+ */
+AsyncCallbackId checkForUpdate_async(AsyncUpdateCallback callback, void *user_data);
+
+/**
+ * @brief Cancel a pending async firmware update check
+ * 
+ * Cancels a pending async operation started with checkForUpdate_async().
+ * If the operation is still waiting for the daemon to respond, your callback
+ * will NOT be invoked. If the daemon has already responded and the callback
+ * is being invoked or has completed, this function returns an error.
+ * 
+ * Parameters:
+ *   callback_id - The ID returned by checkForUpdate_async()
+ * 
+ * Returns:
+ *   0 - Success, callback was cancelled and will not be invoked
+ *   -1 - Failure (invalid ID, not found, or already completed/cancelled)
+ * 
+ * Example usage:
+ * @code
+ *   AsyncCallbackId id = checkForUpdate_async(my_callback, NULL);
+ *   
+ *   // ... later, if you want to cancel ...
+ *   if (checkForUpdate_async_cancel(id) == 0) {
+ *       printf("Callback cancelled successfully\n");
+ *   } else {
+ *       printf("Callback already completed or not found\n");
+ *   }
+ * @endcode
+ * 
+ * IMPORTANT NOTES:
+ * - Safe to call from any thread
+ * - Cannot cancel if callback is already executing or completed
+ * - After cancellation, the callback ID becomes invalid
+ * - No harm in calling this on an already-completed operation (just returns -1)
+ */
+int checkForUpdate_async_cancel(AsyncCallbackId callback_id);
+
 #ifdef __cplusplus
 }
 #endif

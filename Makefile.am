@@ -149,12 +149,15 @@ include_HEADERS = \
     ${top_srcdir}/src/include/device_status_helper.h
 
 # ========================================================================
-# librdkFwupdateMgr - Wrapperlibrary 
+# librdkFwupdateMgr - Wrapper library 
+# Includes async CheckForUpdate API implementation (Phase 1-5 complete)
 # ========================================================================
 
 librdkFwupdateMgr_la_SOURCES = \
     ${top_srcdir}/librdkFwupdateMgr/src/rdkFwupdateMgr_process.c \
-    ${top_srcdir}/librdkFwupdateMgr/src/rdkFwupdateMgr_log.c
+    ${top_srcdir}/librdkFwupdateMgr/src/rdkFwupdateMgr_log.c \
+    ${top_srcdir}/librdkFwupdateMgr/src/rdkFwupdateMgr_async.c \
+    ${top_srcdir}/librdkFwupdateMgr/src/rdkFwupdateMgr_async_api.c
 
 librdkFwupdateMgr_la_CFLAGS = -fPIC -I${top_srcdir}/librdkFwupdateMgr/include -I${top_srcdir}/librdkFwupdateMgr/src $(AM_CFLAGS) $(GLIB_CFLAGS)
 librdkFwupdateMgr_la_CPPFLAGS = -fPIC -I${top_srcdir}/librdkFwupdateMgr/include -I${top_srcdir}/librdkFwupdateMgr/src $(GLIB_CFLAGS)
@@ -167,8 +170,8 @@ librdkFwupdateMgr_include_HEADERS = \
 
 librdkFwupdateMgr_includedir = ${includedir}/rdkFwupdateMgr
 
-# Example program for librdkFwupdateMgr
-noinst_PROGRAMS = example_plugin_registration
+# Example programs for librdkFwupdateMgr
+noinst_PROGRAMS = example_plugin_registration example_checkforupdate
 
 example_plugin_registration_SOURCES = \
     ${top_srcdir}/librdkFwupdateMgr/examples/example_plugin_registration.c
@@ -176,6 +179,13 @@ example_plugin_registration_SOURCES = \
 example_plugin_registration_CFLAGS = -I${top_srcdir}/librdkFwupdateMgr/include $(AM_CFLAGS) $(GLIB_CFLAGS)
 example_plugin_registration_LDADD = librdkFwupdateMgr.la $(GLIB_LIBS) -lpthread
 example_plugin_registration_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
+
+example_checkforupdate_SOURCES = \
+    ${top_srcdir}/librdkFwupdateMgr/examples/example_checkforupdate.c
+
+example_checkforupdate_CFLAGS = -I${top_srcdir}/librdkFwupdateMgr/include $(AM_CFLAGS) $(GLIB_CFLAGS)
+example_checkforupdate_LDADD = librdkFwupdateMgr.la $(GLIB_LIBS) -lpthread
+example_checkforupdate_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
 
 # ========================================================================
 

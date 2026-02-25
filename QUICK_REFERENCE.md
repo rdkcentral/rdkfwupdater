@@ -4,18 +4,25 @@
 ```bash
 ./configure && make                     # Build everything
 make librdkFwupdateMgr.la               # Build library only
-make example_plugin_registration        # Build example
+make example_plugin_registration        # Build registration example
+make example_checkforupdate             # Build checkForUpdate example
 sudo make install                       # Install library
 ```
 
-## Run Example
+## Run Examples
 ```bash
+# Example 1: Process registration
 sudo systemctl start rdkFwupdateMgr.service  # Start daemon
-./example_plugin_registration                 # Run example
+./example_plugin_registration                 # Run registration example
 tail -f /opt/logs/rdkFwupdateMgr.log         # View logs
+
+# Example 2: Check for updates
+./example_checkforupdate                      # Run checkForUpdate example
 ```
 
 ## API Usage
+
+### Registration
 ```c
 #include "rdkFwupdateMgr_process.h"
 
@@ -23,13 +30,37 @@ tail -f /opt/logs/rdkFwupdateMgr.log         # View logs
 FirmwareInterfaceHandle h = registerProcess("MyPlugin", "1.0");
 if (h == NULL) { /* error */ }
 
-// Use
-checkForUpdate(h, ...);
-downloadFirmware(h, ...);
-
 // Cleanup
 unregisterProcess(h);
 h = NULL;
+```
+
+### Check for Updates
+```c
+#include "rdkFwupdateMgr_client.h"
+
+// Callback function
+void on_update(const FwInfoData *fwinfo) {
+    printf("Status: %d\n", fwinfo->status);
+    if (fwinfo->status == FIRMWARE_AVAILABLE) {
+        printf("New version: %s\n", fwinfo->UpdateDetails->FwVersion);
+    }
+}
+
+// Check for updates
+CheckForUpdateResult result = checkForUpdate(h, on_update);
+if (result != CHECK_FOR_UPDATE_SUCCESS) { /* error */ }
+```
+
+### Download & Update (Coming Soon)
+```c
+// Download
+FwDwnlReq req = {...};
+downloadFirmware(h, &req, download_callback);
+
+// Flash
+FwUpdateReq req = {...};
+updateFirmware(h, &req, update_callback);
 ```
 
 ## Logging Macros
