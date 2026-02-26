@@ -170,8 +170,26 @@ librdkFwupdateMgr_include_HEADERS = \
 
 librdkFwupdateMgr_includedir = ${includedir}/rdkFwupdateMgr
 
-# Example programs for librdkFwupdateMgr
-noinst_PROGRAMS = example_plugin_registration example_checkforupdate
+# ========================================================================
+# Define all binaries to be installed
+# ========================================================================
+
+bin_PROGRAMS = rdkvfwupgrader rdkFwupdateMgr testClient
+
+# ========================================================================
+# Example programs for librdkFwupdateMgr - Install to rootfs for testing
+# ========================================================================
+# These example programs are installed to ${bindir} (typically /usr/bin)
+# so they can be executed on the device for testing Register, Unregister,
+# and CheckForUpdate functionality.
+#
+# Usage on device:
+#   example_plugin_registration    - Test plugin registration/unregistration
+#   example_checkforupdate         - Test synchronous CheckForUpdate
+#   example_async_checkforupdate   - Test asynchronous CheckForUpdate API
+# ========================================================================
+
+bin_PROGRAMS += example_plugin_registration example_checkforupdate example_async_checkforupdate
 
 example_plugin_registration_SOURCES = \
     ${top_srcdir}/librdkFwupdateMgr/examples/example_plugin_registration.c
@@ -187,13 +205,16 @@ example_checkforupdate_CFLAGS = -I${top_srcdir}/librdkFwupdateMgr/include $(AM_C
 example_checkforupdate_LDADD = librdkFwupdateMgr.la $(GLIB_LIBS) -lpthread
 example_checkforupdate_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
 
+example_async_checkforupdate_SOURCES = \
+    ${top_srcdir}/librdkFwupdateMgr/examples/example_async_checkforupdate.c
+
+example_async_checkforupdate_CFLAGS = -I${top_srcdir}/librdkFwupdateMgr/include $(AM_CFLAGS) $(GLIB_CFLAGS)
+example_async_checkforupdate_LDADD = librdkFwupdateMgr.la $(GLIB_LIBS) -lpthread
+example_async_checkforupdate_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
+
 # ========================================================================
-
-bin_PROGRAMS= rdkvfwupgrader
-
-# Always build rdkFwupdateMgr and testClient (no conditional compilation)
-bin_PROGRAMS += rdkFwupdateMgr
-bin_PROGRAMS += testClient
+# Main binaries
+# ========================================================================
 
 
 rdkvfwupgrader_SOURCES = \
