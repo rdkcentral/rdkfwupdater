@@ -550,6 +550,33 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
 }
 
 
+void deleteHiddenFiles(const char *path)
+{
+    DIR *dir;
+    struct dirent *entry;
+    char filepath[PATH_MAX];
+
+    if (!path) return;
+
+    dir = opendir(path);
+    if (!dir) return;
+
+    while ((entry = readdir(dir)) != NULL)
+    {
+        /* Hidden file check */
+        if (entry->d_name[0] == '.')
+        {
+            snprintf(filepath, sizeof(filepath),
+                     "%s/%s", path, entry->d_name);
+            SWLOG_INFO("Unlinking hidden files\n");
+            unlink(filepath);  /* Ignore failure for minimalism */
+
+        }
+    }
+
+    closedir(dir);
+}
+
 int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
 {
     int http_code;
@@ -618,7 +645,10 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
         }
         snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s", device_info.difw_path, pResponse->cloudFWFile);
 	    SWLOG_INFO("DWNL path with img name=%s\n", dwlpath_filename);
-        eraseFolderExcePramaFile(device_info.difw_path, pResponse->cloudFWFile, device_info.model);
+        eraseFolderExcePramFile(device_info.difw_path, pResponse->cloudFWFile, device_info.model);
+	//to delete the hidden files
+	deleteHiddenFiles(device_info.difw_path);
+	
 
         // context structure for PCI rdkv_upgrade_request
         RdkUpgradeContext_t pci_context = {0};
