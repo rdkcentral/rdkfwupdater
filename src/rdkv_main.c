@@ -645,7 +645,7 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
         }
         snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s", device_info.difw_path, pResponse->cloudFWFile);
 	    SWLOG_INFO("DWNL path with img name=%s\n", dwlpath_filename);
-        eraseFolderExceParamFile(device_info.difw_path, pResponse->cloudFWFile, device_info.model);
+        eraseFolderExceParamFile(device_info.difw_path, pResponse->cloudFWFile, pResponse->cloudPDRIVersion,device_info.model);
 	//to delete the hidden files
 	deleteHiddenFiles(device_info.difw_path);
 	
