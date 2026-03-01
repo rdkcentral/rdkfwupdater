@@ -33,8 +33,8 @@
  * 5. Library initialization/deinitialization hooks
  */
 
-#include "rdkFwupdateMgr_client.h"
-#include "rdkFwupdateMgr_async_internal.h"
+#include "rdkFwupdateMgr_process.h"
+//#include "rdkFwupdateMgr_async_internal.h"
 #include "rdkFwupdateMgr_log.h"
 #include <gio/gio.h>
 #include <stdlib.h>

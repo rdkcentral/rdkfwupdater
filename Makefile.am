@@ -157,7 +157,7 @@ librdkFwupdateMgr_la_SOURCES = \
     ${top_srcdir}/librdkFwupdateMgr/src/rdkFwupdateMgr_process.c \
     ${top_srcdir}/librdkFwupdateMgr/src/rdkFwupdateMgr_log.c \
     ${top_srcdir}/librdkFwupdateMgr/src/rdkFwupdateMgr_async.c \
-    ${top_srcdir}/librdkFwupdateMgr/src/rdkFwupdateMgr_async_api.c
+    ${top_srcdir}/librdkFwupdateMgr/src/rdkFwupdateMgr_api.c
 
 librdkFwupdateMgr_la_CFLAGS = -fPIC -I${top_srcdir}/librdkFwupdateMgr/include -I${top_srcdir}/librdkFwupdateMgr/src $(AM_CFLAGS) $(GLIB_CFLAGS)
 librdkFwupdateMgr_la_CPPFLAGS = -fPIC -I${top_srcdir}/librdkFwupdateMgr/include -I${top_srcdir}/librdkFwupdateMgr/src $(GLIB_CFLAGS)
@@ -165,8 +165,8 @@ librdkFwupdateMgr_la_LDFLAGS = -shared -version-info 1:0:0
 librdkFwupdateMgr_la_LIBADD = $(GLIB_LIBS) -lpthread
 
 librdkFwupdateMgr_include_HEADERS = \
-    ${top_srcdir}/librdkFwupdateMgr/include/rdkFwupdateMgr_process.h \
-    ${top_srcdir}/librdkFwupdateMgr/include/rdkFwupdateMgr_client.h
+    ${top_srcdir}/librdkFwupdateMgr/include/rdkFwupdateMgr_process.h 
+#    ${top_srcdir}/librdkFwupdateMgr/include/rdkFwupdateMgr_client.h
 
 librdkFwupdateMgr_includedir = ${includedir}/rdkFwupdateMgr
 
@@ -175,47 +175,6 @@ librdkFwupdateMgr_includedir = ${includedir}/rdkFwupdateMgr
 # ========================================================================
 
 bin_PROGRAMS = rdkvfwupgrader rdkFwupdateMgr testClient
-
-# ========================================================================
-# Example programs for librdkFwupdateMgr - Install to rootfs for testing
-# ========================================================================
-# These example programs are installed to ${bindir} (typically /usr/bin)
-# so they can be executed on the device for testing Register, Unregister,
-# and CheckForUpdate functionality.
-#
-# Usage on device:
-#   example_plugin_registration    - Test plugin registration/unregistration
-#   example_checkforupdate         - Test synchronous CheckForUpdate
-#   example_async_checkforupdate   - Test asynchronous CheckForUpdate API
-# ========================================================================
-
-bin_PROGRAMS += example_plugin_registration example_checkforupdate example_async_checkforupdate
-
-example_plugin_registration_SOURCES = \
-    ${top_srcdir}/librdkFwupdateMgr/examples/example_plugin_registration.c
-
-example_plugin_registration_CFLAGS = -I${top_srcdir}/librdkFwupdateMgr/include $(AM_CFLAGS) $(GLIB_CFLAGS)
-example_plugin_registration_LDADD = librdkFwupdateMgr.la $(GLIB_LIBS) -lpthread
-example_plugin_registration_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
-
-example_checkforupdate_SOURCES = \
-    ${top_srcdir}/librdkFwupdateMgr/examples/example_checkforupdate.c
-
-example_checkforupdate_CFLAGS = -I${top_srcdir}/librdkFwupdateMgr/include $(AM_CFLAGS) $(GLIB_CFLAGS)
-example_checkforupdate_LDADD = librdkFwupdateMgr.la $(GLIB_LIBS) -lpthread
-example_checkforupdate_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
-
-example_async_checkforupdate_SOURCES = \
-    ${top_srcdir}/librdkFwupdateMgr/examples/example_async_checkforupdate.c
-
-example_async_checkforupdate_CFLAGS = -I${top_srcdir}/librdkFwupdateMgr/include $(AM_CFLAGS) $(GLIB_CFLAGS)
-example_async_checkforupdate_LDADD = librdkFwupdateMgr.la $(GLIB_LIBS) -lpthread
-example_async_checkforupdate_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
-
-# ========================================================================
-# Main binaries
-# ========================================================================
-
 
 rdkvfwupgrader_SOURCES = \
     ${top_srcdir}/src/rdkv_main.c \
@@ -263,6 +222,27 @@ testClient_LDADD = $(GLIB_LIBS) -lgio-2.0 -lgobject-2.0 -lglib-2.0 -lpthread
 testClient_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
 testClient_CFLAGS = $(GLIB_CFLAGS) -Wall
 testClient_CPPFLAGS = $(GLIB_CFLAGS)
+
+
+# Build and install the example_plugin binary
+bin_PROGRAMS += example_plugin
+
+example_plugin_SOURCES = \
+    ${top_srcdir}/librdkFwupdateMgr/examples/example_app.c
+
+example_plugin_CFLAGS = \
+    -I${top_srcdir}/librdkFwupdateMgr/include \
+    $(AM_CFLAGS) \
+    $(GLIB_CFLAGS)
+
+example_plugin_LDADD = \
+    librdkFwupdateMgr.la \
+    $(GLIB_LIBS) \
+    -lpthread
+
+example_plugin_LDFLAGS = \
+    -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
+
 
 if INSTALL_TEST_FWUPGRADER
 bin_PROGRAMS += testrdkvfwupgrader

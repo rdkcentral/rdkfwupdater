@@ -429,11 +429,12 @@ void unregisterProcess(FirmwareInterfaceHandle handler)
     FWUPMGR_INFO("Handle memory freed\n");
 }
 
+#if 0
 /* ========================================================================
  * FIRMWARE UPDATE APIs - CheckForUpdate
  * ======================================================================== */
 
-#include "rdkFwupdateMgr_client.h"
+//#include "rdkFwupdateMgr_client.h"
 #include <pthread.h>
 
 /* Callback registry for async operations */
@@ -671,7 +672,7 @@ CheckForUpdateResult checkForUpdate(FirmwareInterfaceHandle handle, UpdateEventC
     FWUPMGR_INFO("checkForUpdate: Completed successfully\n");
     return CHECK_FOR_UPDATE_SUCCESS;
 }
-
+#endif
 /**
  * @brief Download firmware image (stub implementation)
  *
@@ -682,6 +683,7 @@ CheckForUpdateResult checkForUpdate(FirmwareInterfaceHandle handle, UpdateEventC
  * @param callback Progress callback
  * @return RDKFW_DWNL_SUCCESS or RDKFW_DWNL_FAILED
  */
+#if 0
 DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,
                                 const FwDwnlReq *fwdwnlreq,
                                 DownloadCallback callback)
@@ -697,7 +699,7 @@ DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,
     FWUPMGR_WARN("downloadFirmware: Not implemented yet\n");
     return RDKFW_DWNL_FAILED;
 }
-
+#endif
 /**
  * @brief Flash firmware to device (stub implementation)
  *
@@ -708,6 +710,7 @@ DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,
  * @param callback Progress callback
  * @return RDKFW_UPDATE_SUCCESS or RDKFW_UPDATE_FAILED
  */
+#if 0
 UpdateResult updateFirmware(FirmwareInterfaceHandle handle,
                             const FwUpdateReq *fwupdatereq,
                             UpdateCallback callback)
@@ -723,3 +726,5 @@ UpdateResult updateFirmware(FirmwareInterfaceHandle handle,
     FWUPMGR_WARN("updateFirmware: Not implemented yet\n");
     return RDKFW_UPDATE_FAILED;
 }
+
+#endif

@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Comcast Cable Communications Management, LLC
+ * Copyright 2026 Comcast Cable Communications Management, LLC
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -7,427 +7,436 @@
  *
  * http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 /**
  * @file rdkFwupdateMgr_api.c
- * @brief Implementation of firmware update APIs (checkForUpdate, downloadFirmware, updateFirmware)
+ * @brief Public checkForUpdate() implementation
  *
- * This file implements the client-side firmware management APIs that communicate
- * with the rdkFwupdateMgr daemon via D-Bus.
+ * Implements the required API:
+ *   CheckForUpdateResult checkForUpdate(FirmwareInterfaceHandle handle,
+ *                                       UpdateEventCallback callback);
  *
- * ARCHITECTURE:
- * =============
- * - Synchronous D-Bus calls for checkForUpdate (fast, cache-based on daemon side)
- * - Asynchronous operations with callback mechanism for download/update progress
- * - D-Bus signals used for async notifications (CheckForUpdateComplete, etc.)
- * - Thread-safe callback invocation using GLib main context
+ * FLOW:
+ *   1. Validate: handle != NULL/empty, callback != NULL
+ *   2. Register callback in internal registry (BEFORE D-Bus call)
+ *   3. Fire D-Bus CheckForUpdate method call to daemon (fire-and-forget)
+ *   4. Return CHECK_FOR_UPDATE_SUCCESS immediately
  *
- * D-BUS PROTOCOL:
- * ===============
- * Service Name:   org.rdkfwupdater.Interface
- * Object Path:    /org/rdkfwupdater/Service
- * Interface:      org.rdkfwupdater.Interface
- *
- * Methods:
- *   CheckForUpdate(handler_process_name: s) -> (result: i, fwdata_*: various)
- *   DownloadFirmware(handlerId: s, firmwareName: s, ...) -> (result: s, status: s, message: s)
- *   UpdateFirmware(handlerId: s, firmwareName: s, ...) -> (UpdateResult: s, UpdateStatus: s, message: s)
- *
- * Signals:
- *   CheckForUpdateComplete(handlerId: t, result: i, statusCode: i, ...)
- *   DownloadProgress(handlerId: t, progress: i, status: i)
- *   UpdateProgress(handlerId: t, progress: i, status: i)
- *
- * CALLBACK MECHANISM:
- * ===================
- * - Callbacks are stored in a global registry (thread-safe with mutex)
- * - D-Bus signal handlers lookup callback by handler_id
- * - Callbacks are invoked on caller's thread (via GLib main context)
- * - FwInfoData structure allocated on heap, passed to callback, then freed
- *
- * MEMORY MANAGEMENT:
- * ==================
- * - FwInfoData and UpdateDetails allocated on heap, freed after callback
- * - Strings from D-Bus responses copied and freed appropriately
- * - Caller must not free callback parameters (library owns them)
- *
- * THREAD SAFETY:
- * ==============
- * - GDBus is thread-safe for method calls
- * - Callback registry protected by mutex
- * - Signal handlers run on D-Bus thread, callbacks queued to caller's thread
+ * The actual firmware result arrives via CheckForUpdateComplete signal,
+ * handled in rdkFwupdateMgr_async.c, which invokes the app callback.
  */
 
-#include "rdkFwupdateMgr_client.h"
+#include "rdkFwupdateMgr_process.h"
+#include "rdkFwupdateMgr_async_internal.h"
 #include "rdkFwupdateMgr_log.h"
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <errno.h>
 #include <gio/gio.h>
-#include <pthread.h>
+#include <string.h>
+#include <stdlib.h>
 
 /* ========================================================================
- * CONSTANTS
- * ======================================================================== */
-
-/** D-Bus service name for firmware update daemon */
-#define DBUS_SERVICE_NAME       "org.rdkfwupdater.Interface"
-
-/** D-Bus object path */
-#define DBUS_OBJECT_PATH        "/org/rdkfwupdater/Service"
-
-/** D-Bus interface name */
-#define DBUS_INTERFACE_NAME     "org.rdkfwupdater.Interface"
-
-/** Default D-Bus call timeout in milliseconds (30 seconds for CheckForUpdate) */
-#define DBUS_TIMEOUT_MS         30000
-
-/* ========================================================================
- * CALLBACK REGISTRY
+ * PUBLIC API
  * ======================================================================== */
 
 /**
- * Callback context stored for async operations
- */
-typedef struct {
-    FirmwareInterfaceHandle handle;
-    UpdateEventCallback update_callback;
-    DownloadCallback download_callback;
-    UpdateCallback firmware_update_callback;
-} CallbackContext;
-
-// Global callback registry (simple single-entry for now)
-// TODO: Extend to hash table for multi-handler support
-static CallbackContext g_callback_ctx = {0};
-static pthread_mutex_t g_callback_mutex = PTHREAD_MUTEX_INITIALIZER;
-
-/* ========================================================================
- * HELPER FUNCTIONS
- * ======================================================================== */
-
-/**
- * @brief Create D-Bus proxy for firmware update daemon
+ * @brief Check for firmware update — non-blocking, 2-parameter API
  *
- * @return GDBusProxy* on success, NULL on failure
- */
-static GDBusProxy* create_dbus_proxy(void) {
-    GError *error = NULL;
-    GDBusProxy *proxy = NULL;
-
-    // Connect to system bus
-    GDBusConnection *connection = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
-    if (!connection) {
-        FWUPMGR_ERROR("Failed to connect to D-Bus system bus: %s\n",
-                      error ? error->message : "unknown error");
-        if (error) g_error_free(error);
-        return NULL;
-    }
-
-    // Create proxy for firmware update daemon
-    proxy = g_dbus_proxy_new_sync(
-        connection,
-        G_DBUS_PROXY_FLAGS_NONE,
-        NULL,                       // GDBusInterfaceInfo
-        DBUS_SERVICE_NAME,
-        DBUS_OBJECT_PATH,
-        DBUS_INTERFACE_NAME,
-        NULL,                       // GCancellable
-        &error
-    );
-
-    if (!proxy) {
-        FWUPMGR_ERROR("Failed to create D-Bus proxy: %s\n",
-                      error ? error->message : "unknown error");
-        if (error) g_error_free(error);
-        g_object_unref(connection);
-        return NULL;
-    }
-
-    g_object_unref(connection);
-    return proxy;
-}
-
-/**
- * @brief Parse UpdateDetails from D-Bus response string
+ * Aligned to the required signature:
+ *   CheckForUpdateResult checkForUpdate(FirmwareInterfaceHandle handle,
+ *                                       UpdateEventCallback callback);
  *
- * Expected format: "FwFileName:xxx,FwUrl:xxx,FwVersion:xxx,RebootImmediately:xxx,..."
+ * INTERNAL SEQUENCE:
  *
- * @param details_str D-Bus update details string
- * @param details Output UpdateDetails structure
- */
-static void parse_update_details(const char *details_str, UpdateDetails *details) {
-    if (!details_str || !details) {
-        return;
-    }
-
-    // Initialize all fields to empty strings
-    memset(details, 0, sizeof(UpdateDetails));
-
-    // Parse comma-separated key:value pairs
-    char *str_copy = strdup(details_str);
-    if (!str_copy) {
-        FWUPMGR_ERROR("Failed to allocate memory for parsing update details\n");
-        return;
-    }
-
-    char *token = strtok(str_copy, ",");
-    while (token) {
-        char *colon = strchr(token, ':');
-        if (colon) {
-            *colon = '\0';  // Split key and value
-            const char *key = token;
-            const char *value = colon + 1;
-
-            if (strcmp(key, "FwFileName") == 0) {
-                strncpy(details->FwFileName, value, MAX_FW_FILENAME_SIZE - 1);
-            } else if (strcmp(key, "FwUrl") == 0) {
-                strncpy(details->FwUrl, value, MAX_FW_URL_SIZE - 1);
-            } else if (strcmp(key, "FwVersion") == 0) {
-                strncpy(details->FwVersion, value, MAX_FW_VERSION_SIZE - 1);
-            } else if (strcmp(key, "RebootImmediately") == 0) {
-                strncpy(details->RebootImmediately, value, MAX_REBOOT_IMMEDIATELY_SIZE - 1);
-            } else if (strcmp(key, "DelayDownload") == 0) {
-                strncpy(details->DelayDownload, value, MAX_DELAY_DOWNLOAD_SIZE - 1);
-            } else if (strcmp(key, "PDRIVersion") == 0) {
-                strncpy(details->PDRIVersion, value, MAX_PDRI_VERSION_LEN - 1);
-            } else if (strcmp(key, "PeripheralFirmwares") == 0) {
-                strncpy(details->PeripheralFirmwares, value, MAX_PERIPHERAL_VERSION_LEN - 1);
-            }
-        }
-        token = strtok(NULL, ",");
-    }
-
-    free(str_copy);
-}
-
-/* ========================================================================
- * PUBLIC API IMPLEMENTATION
- * ======================================================================== */
-
-/**
- * @brief Check for available firmware updates
+ *   [1] Validate parameters
+ *       handle must be non-NULL and non-empty (came from registerProcess)
+ *       callback must be non-NULL
  *
- * Sends CheckForUpdate D-Bus method call to daemon. The daemon responds
- * synchronously with firmware information (cached or live XConf query).
+ *   [2] Register callback FIRST (before D-Bus call)
+ *       internal_register_callback(handle, callback)
+ *       ─ Finds a free IDLE slot in the registry
+ *       ─ Stores handle (strdup'd) and callback pointer
+ *       ─ Sets slot state = PENDING
  *
- * Flow:
- * 1. Validate handle and callback
- * 2. Create D-Bus proxy
- * 3. Call CheckForUpdate method with handler_id
- * 4. Parse response (result, version, updateDetails, status_code)
- * 5. Build FwInfoData structure
- * 6. Invoke callback immediately (synchronous operation)
- * 7. Clean up resources
+ *       WHY REGISTER BEFORE SENDING?
+ *       If we sent the D-Bus call first, the daemon could be so fast that
+ *       it emits the signal before we finish registering — we'd miss it.
+ *       Registering first closes that race window completely.
  *
- * @param handle Handler ID from registerProcess()
- * @param callback Callback to receive firmware info
+ *   [3] Send D-Bus CheckForUpdate method call (fire-and-forget)
+ *       ─ Creates a fresh D-Bus connection (stateless design per process.h)
+ *       ─ Calls CheckForUpdate(handle) on org.rdkfwupdater.Interface
+ *       ─ Does NOT wait for the method reply (three trailing NULLs)
+ *       ─ Returns immediately after queueing the message
+ *
+ *   [4] Return CHECK_FOR_UPDATE_SUCCESS
+ *       App regains control. Background thread is watching for the signal.
+ *
+ *   [later, in background thread]
+ *       Daemon emits CheckForUpdateComplete signal
+ *       → on_check_complete_signal() parses payload
+ *       → dispatch_all_pending() finds slot with matching handle
+ *       → callback(handle, &event_data) called — 2-param, no user_data
+ *       → slot reset to IDLE
+ *
+ * @param handle    Valid FirmwareInterfaceHandle from registerProcess()
+ * @param callback  UpdateEventCallback invoked when result is available
  * @return CHECK_FOR_UPDATE_SUCCESS or CHECK_FOR_UPDATE_FAIL
  */
-CheckForUpdateResult checkForUpdate(FirmwareInterfaceHandle handle, UpdateEventCallback callback) {
-    FWUPMGR_INFO("checkForUpdate() called\n");
-
-    // Validate parameters
-    if (!handle) {
-        FWUPMGR_ERROR("checkForUpdate: handle is NULL\n");
+CheckForUpdateResult checkForUpdate(FirmwareInterfaceHandle handle,
+                                    UpdateEventCallback callback)
+{
+    /* [1] Validate */
+    if (handle == NULL || handle[0] == '\0') {
+        FWUPMGR_ERROR("checkForUpdate: invalid handle (NULL or empty)\n");
         return CHECK_FOR_UPDATE_FAIL;
     }
 
-    if (!callback) {
+    if (callback == NULL) {
         FWUPMGR_ERROR("checkForUpdate: callback is NULL\n");
         return CHECK_FOR_UPDATE_FAIL;
     }
 
-    FWUPMGR_INFO("checkForUpdate: handle=%s\n", handle);
+    FWUPMGR_INFO("checkForUpdate: handle='%s'\n", handle);
 
-    // Store callback for potential async signal handling
-    pthread_mutex_lock(&g_callback_mutex);
-    g_callback_ctx.handle = handle;
-    g_callback_ctx.update_callback = callback;
-    pthread_mutex_unlock(&g_callback_mutex);
-
-    // Create D-Bus proxy
-    GDBusProxy *proxy = create_dbus_proxy();
-    if (!proxy) {
-        FWUPMGR_ERROR("checkForUpdate: Failed to create D-Bus proxy\n");
+    /* [2] Register callback BEFORE sending D-Bus call */
+    if (!internal_register_callback(handle, callback)) {
+        FWUPMGR_ERROR("checkForUpdate: registry full, handle='%s'\n", handle);
         return CHECK_FOR_UPDATE_FAIL;
     }
 
-    // Call CheckForUpdate D-Bus method
-    FWUPMGR_INFO("checkForUpdate: Calling D-Bus method CheckForUpdate with handler_id=%s\n", handle);
-    
+    /* [3] Fire-and-forget D-Bus method call */
     GError *error = NULL;
-    GVariant *result = g_dbus_proxy_call_sync(
-        proxy,
-        "CheckForUpdate",
-        g_variant_new("(s)", handle),  // handler_process_name
+    GDBusConnection *conn = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
+
+    if (conn == NULL) {
+        FWUPMGR_ERROR("checkForUpdate: D-Bus connect failed: %s\n",
+                      error ? error->message : "unknown");
+        if (error) g_error_free(error);
+        /*
+         * Cannot send the D-Bus call. The daemon will never emit a signal
+         * for this request, so the registered callback would never fire.
+         * The slot will age out via CALLBACK_TIMEOUT_SECONDS cleanup.
+         * Return FAIL so the app knows the call did not go through.
+         */
+        return CHECK_FOR_UPDATE_FAIL;
+    }
+
+    /*
+     * Call CheckForUpdate(handle) on the daemon.
+     *
+     * The handle string is passed as the single argument (s).
+     * The daemon uses it to identify which component/process is requesting
+     * the check, and tags the outgoing signal accordingly.
+     *
+     * The three trailing NULLs make this fire-and-forget:
+     *   NULL → no GAsyncReadyCallback  (don't want a method reply)
+     *   NULL → no GCancellable
+     *   NULL → no user_data for reply callback
+     *
+     * g_dbus_connection_call() returns immediately after queuing the
+     * message to the D-Bus socket. We move on without waiting.
+     */
+    g_dbus_connection_call(
+        conn,
+        DBUS_SERVICE_NAME,                 /* destination                  */
+        DBUS_OBJECT_PATH,                  /* object path                  */
+        DBUS_INTERFACE_NAME,               /* interface                    */
+        DBUS_METHOD_CHECK,                 /* method: CheckForUpdate       */
+        g_variant_new("(s)", handle),      /* arg: handle string           */
+        NULL,                              /* expected reply type: none    */
         G_DBUS_CALL_FLAGS_NONE,
         DBUS_TIMEOUT_MS,
-        NULL,  // GCancellable
-        &error
+        NULL,                              /* GCancellable: none           */
+        NULL,                              /* reply callback: none         */
+        NULL                               /* user_data for reply: none    */
     );
 
-    if (error) {
-        FWUPMGR_ERROR("checkForUpdate: D-Bus call failed: %s\n", error->message);
-        g_error_free(error);
-        g_object_unref(proxy);
-        return CHECK_FOR_UPDATE_FAIL;
-    }
+    g_object_unref(conn);
 
-    if (!result) {
-        FWUPMGR_ERROR("checkForUpdate: D-Bus call returned NULL result\n");
-        g_object_unref(proxy);
-        return CHECK_FOR_UPDATE_FAIL;
-    }
+    FWUPMGR_INFO("checkForUpdate: D-Bus call sent, returning SUCCESS. handle='%s'\n",
+                 handle);
 
-    // Parse D-Bus response
-    // CheckForUpdate returns: (result: i, fwdata_version: s, fwdata_availableVersion: s,
-    //                          fwdata_updateDetails: s, fwdata_status: s, fwdata_status_code: i)
-    gint32 api_result = 0;
-    gchar *curr_version = NULL;
-    gchar *avail_version = NULL;
-    gchar *update_details_str = NULL;
-    gchar *status_str = NULL;
-    gint32 status_code = 0;
-
-    g_variant_get(result, "(issssi)",
-                  &api_result,
-                  &curr_version,
-                  &avail_version,
-                  &update_details_str,
-                  &status_str,
-                  &status_code);
-
-    FWUPMGR_INFO("checkForUpdate: D-Bus response received\n");
-    FWUPMGR_INFO("  api_result=%d (0=SUCCESS, 1=FAIL)\n", api_result);
-    FWUPMGR_INFO("  curr_version=%s\n", curr_version ? curr_version : "(null)");
-    FWUPMGR_INFO("  avail_version=%s\n", avail_version ? avail_version : "(null)");
-    FWUPMGR_INFO("  update_details=%s\n", update_details_str ? update_details_str : "(null)");
-    FWUPMGR_INFO("  status_str=%s\n", status_str ? status_str : "(null)");
-    FWUPMGR_INFO("  status_code=%d\n", status_code);
-
-    // Check if API call succeeded
-    if (api_result != CHECK_FOR_UPDATE_SUCCESS) {
-        FWUPMGR_ERROR("checkForUpdate: Daemon returned FAIL result\n");
-        g_free(curr_version);
-        g_free(avail_version);
-        g_free(update_details_str);
-        g_free(status_str);
-        g_variant_unref(result);
-        g_object_unref(proxy);
-        return CHECK_FOR_UPDATE_FAIL;
-    }
-
-    // Allocate FwInfoData structure
-    FwInfoData *fwinfo = (FwInfoData *)malloc(sizeof(FwInfoData));
-    if (!fwinfo) {
-        FWUPMGR_ERROR("checkForUpdate: Failed to allocate FwInfoData\n");
-        g_free(curr_version);
-        g_free(avail_version);
-        g_free(update_details_str);
-        g_free(status_str);
-        g_variant_unref(result);
-        g_object_unref(proxy);
-        return CHECK_FOR_UPDATE_FAIL;
-    }
-
-    // Allocate UpdateDetails structure
-    UpdateDetails *update_details = (UpdateDetails *)malloc(sizeof(UpdateDetails));
-    if (!update_details) {
-        FWUPMGR_ERROR("checkForUpdate: Failed to allocate UpdateDetails\n");
-        free(fwinfo);
-        g_free(curr_version);
-        g_free(avail_version);
-        g_free(update_details_str);
-        g_free(status_str);
-        g_variant_unref(result);
-        g_object_unref(proxy);
-        return CHECK_FOR_UPDATE_FAIL;
-    }
-
-    // Fill FwInfoData structure
-    memset(fwinfo, 0, sizeof(FwInfoData));
-    if (curr_version) {
-        strncpy(fwinfo->CurrFWVersion, curr_version, MAX_FW_VERSION_SIZE - 1);
-    }
-    fwinfo->status = (CheckForUpdateStatus)status_code;
-    fwinfo->UpdateDetails = update_details;
-
-    // Parse and fill UpdateDetails
-    parse_update_details(update_details_str, update_details);
-
-    // Invoke callback immediately (synchronous operation)
-    FWUPMGR_INFO("checkForUpdate: Invoking callback with status=%d\n", fwinfo->status);
-    callback(fwinfo);
-
-    // Clean up
-    free(update_details);
-    free(fwinfo);
-    g_free(curr_version);
-    g_free(avail_version);
-    g_free(update_details_str);
-    g_free(status_str);
-    g_variant_unref(result);
-    g_object_unref(proxy);
-
-    FWUPMGR_INFO("checkForUpdate: Completed successfully\n");
+    /* [4] Return immediately — app is unblocked */
     return CHECK_FOR_UPDATE_SUCCESS;
 }
 
+/* ========================================================================
+ * LIBRARY LIFECYCLE
+ * ======================================================================== */
+
 /**
- * @brief Download firmware image (stub implementation)
+ * @brief Library constructor — auto-called when .so is loaded
  *
- * TODO: Implement DownloadFirmware D-Bus method call
+ * Initializes the internal async engine (registry + background thread)
+ * before any app code runs.
+ */
+__attribute__((constructor))
+static void rdkFwupdateMgr_lib_init(void)
+{
+    FWUPMGR_INFO("=== rdkFwupdateMgr library loading ===\n");
+    if (internal_system_init() != 0) {
+        FWUPMGR_ERROR("rdkFwupdateMgr_lib_init: internal_system_init FAILED\n");
+    }
+    FWUPMGR_INFO("=== rdkFwupdateMgr library ready ===\n");
+}
+
+/**
+ * @brief Library destructor — auto-called when .so is unloaded
  *
- * @param handle Handler ID from registerProcess()
- * @param fwdwnlreq Download request details
- * @param callback Progress callback
+ * Stops background thread and frees all resources cleanly.
+ */
+__attribute__((destructor))
+static void rdkFwupdateMgr_lib_deinit(void)
+{
+    FWUPMGR_INFO("=== rdkFwupdateMgr library unloading ===\n");
+    internal_system_deinit();
+    FWUPMGR_INFO("=== rdkFwupdateMgr library unloaded ===\n");
+}
+
+
+/* ========================================================================
+ * DOWNLOAD FIRMWARE PUBLIC API
+ * ========================================================================
+ *
+ * Implements:
+ *   DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,
+ *                                   FwDwnlReq fwdwnlreq,
+ *                                   DownloadCallback callback);
+ *
+ * FLOW:
+ *   1. Validate: handle not NULL/empty, firmwareName not empty, callback not NULL
+ *   2. Register callback in download registry (BEFORE D-Bus call)
+ *   3. Fire DownloadFirmware D-Bus method call to daemon (fire-and-forget)
+ *   4. Return RDKFW_DWNL_SUCCESS immediately
+ *
+ *   [later — fires multiple times as download progresses]
+ *   Daemon emits DownloadProgress(progress%, status) signal repeatedly
+ *   → on_download_progress_signal() fires in background thread
+ *   → dispatch_all_dwnl_active() calls every ACTIVE DownloadCallback
+ *   → slot stays ACTIVE until DWNL_COMPLETED or DWNL_ERROR
+ * ======================================================================== */
+
+/**
+ * @brief Initiate firmware download — non-blocking, returns immediately
+ *
+ * @param handle      Valid FirmwareInterfaceHandle from registerProcess()
+ * @param fwdwnlreq   Download request (passed by value, library copies it)
+ * @param callback    Invoked on each DownloadProgress signal
  * @return RDKFW_DWNL_SUCCESS or RDKFW_DWNL_FAILED
  */
 DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,
-                                const FwDwnlReq *fwdwnlreq,
-                                DownloadCallback callback) {
-    FWUPMGR_INFO("downloadFirmware() called (stub)\n");
-    
-    if (!handle || !fwdwnlreq || !callback) {
-        FWUPMGR_ERROR("downloadFirmware: Invalid parameters\n");
+                                FwDwnlReq fwdwnlreq,
+                                DownloadCallback callback)
+{
+    /* [1] Validate */
+    if (handle == NULL || handle[0] == '\0') {
+        FWUPMGR_ERROR("downloadFirmware: invalid handle (NULL or empty)\n");
         return RDKFW_DWNL_FAILED;
     }
 
-    // TODO: Implement D-Bus call to DownloadFirmware
-    FWUPMGR_WARN("downloadFirmware: Not implemented yet\n");
-    return RDKFW_DWNL_FAILED;
+    if (fwdwnlreq.firmwareName[0] == '\0') {
+        FWUPMGR_ERROR("downloadFirmware: firmwareName is empty\n");
+        return RDKFW_DWNL_FAILED;
+    }
+
+    if (callback == NULL) {
+        FWUPMGR_ERROR("downloadFirmware: callback is NULL\n");
+        return RDKFW_DWNL_FAILED;
+    }
+
+    FWUPMGR_INFO("downloadFirmware: handle='%s' firmware='%s' type='%s' url='%s'\n",
+                 handle, fwdwnlreq.firmwareName,
+                 fwdwnlreq.TypeOfFirmware[0] ? fwdwnlreq.TypeOfFirmware : "(none)",
+                 fwdwnlreq.downloadUrl[0]    ? fwdwnlreq.downloadUrl    : "(use XConf)");
+
+    /* [2] Register callback BEFORE sending D-Bus call
+     *
+     * Same reason as checkForUpdate: if the daemon is fast enough to emit
+     * the first DownloadProgress signal before we register, we'd miss it.
+     * Register first, then send.
+     */
+    if (!internal_dwnl_register_callback(handle, callback)) {
+        FWUPMGR_ERROR("downloadFirmware: registry full, handle='%s'\n", handle);
+        return RDKFW_DWNL_FAILED;
+    }
+
+    /* [3] Fire-and-forget D-Bus DownloadFirmware method call
+     *
+     * Arguments: (ssss)
+     *   s handle          — identifies this app to the daemon
+     *   s firmwareName    — firmware image filename
+     *   s downloadUrl     — override URL or "" for XConf URL
+     *   s TypeOfFirmware  — "PCI" | "PDRI" | "PERIPHERAL"
+     *
+     * Three trailing NULLs = fire and forget (no reply waited for).
+     * g_dbus_connection_call() returns immediately.
+     */
+    GError *error = NULL;
+    GDBusConnection *conn = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
+
+    if (conn == NULL) {
+        FWUPMGR_ERROR("downloadFirmware: D-Bus connect failed: %s\n",
+                      error ? error->message : "unknown");
+        if (error) g_error_free(error);
+        return RDKFW_DWNL_FAILED;
+    }
+
+    g_dbus_connection_call(
+        conn,
+        DBUS_SERVICE_NAME,
+        DBUS_OBJECT_PATH,
+        DBUS_INTERFACE_NAME,
+        DBUS_METHOD_DOWNLOAD,                      /* method: DownloadFirmware   */
+        g_variant_new("(ssss)",
+                      handle,                      /* app's handler_id string    */
+                      fwdwnlreq.firmwareName,      /* firmware image name        */
+                      fwdwnlreq.downloadUrl,       /* override URL or ""         */
+                      fwdwnlreq.TypeOfFirmware),   /* PCI / PDRI / PERIPHERAL    */
+        NULL,                                      /* expected reply type: none  */
+        G_DBUS_CALL_FLAGS_NONE,
+        DBUS_TIMEOUT_MS,
+        NULL,                                      /* GCancellable: none         */
+        NULL,                                      /* reply callback: none       */
+        NULL                                       /* user_data: none            */
+    );
+
+    g_object_unref(conn);
+
+    FWUPMGR_INFO("downloadFirmware: D-Bus call sent, returning SUCCESS. handle='%s'\n",
+                 handle);
+
+    /* [4] Return immediately — app is unblocked */
+    return RDKFW_DWNL_SUCCESS;
 }
 
+/* ========================================================================
+ * UPDATE FIRMWARE PUBLIC API
+ * ========================================================================
+ *
+ * Implements:
+ *   UpdateResult updateFirmware(FirmwareInterfaceHandle handle,
+ *                               FwUpdateReq fwupdatereq,
+ *                               UpdateCallback callback);
+ *
+ * FLOW:
+ *   1. Validate: handle not NULL/empty, firmwareName not empty,
+ *                TypeOfFirmware not empty, callback not NULL
+ *   2. Register callback in update registry (BEFORE D-Bus call)
+ *   3. Fire UpdateFirmware D-Bus method call to daemon (fire-and-forget)
+ *   4. Return RDKFW_UPDATE_SUCCESS immediately
+ *
+ *   [later — fires multiple times as flashing progresses]
+ *   Daemon emits UpdateProgress(progress%, status) signal repeatedly
+ *   → on_update_progress_signal() fires in background thread
+ *   → dispatch_all_update_active() calls every ACTIVE UpdateCallback
+ *   → slot stays ACTIVE until UPDATE_COMPLETED or UPDATE_ERROR
+ * ======================================================================== */
+
 /**
- * @brief Flash firmware to device (stub implementation)
+ * @brief Initiate firmware flashing — non-blocking, returns immediately
  *
- * TODO: Implement UpdateFirmware D-Bus method call
+ * D-Bus arguments sent to daemon: (sssb)
+ *   s  handle               — identifies this app
+ *   s  firmwareName         — image filename to flash
+ *   s  LocationOfFirmware   — path to image ("" = use device.properties)
+ *   s  TypeOfFirmware       — "PCI" | "PDRI" | "PERIPHERAL"
+ *   b  rebootImmediately    — reboot after flash?
  *
- * @param handle Handler ID from registerProcess()
- * @param fwupdatereq Update request details
- * @param callback Progress callback
+ * @param handle        Valid FirmwareInterfaceHandle from registerProcess()
+ * @param fwupdatereq   Update request (passed by value, library copies it)
+ * @param callback      Invoked on each UpdateProgress signal
  * @return RDKFW_UPDATE_SUCCESS or RDKFW_UPDATE_FAILED
  */
 UpdateResult updateFirmware(FirmwareInterfaceHandle handle,
-                            const FwUpdateReq *fwupdatereq,
-                            UpdateCallback callback) {
-    FWUPMGR_INFO("updateFirmware() called (stub)\n");
-    
-    if (!handle || !fwupdatereq || !callback) {
-        FWUPMGR_ERROR("updateFirmware: Invalid parameters\n");
+                             FwUpdateReq fwupdatereq,
+                             UpdateCallback callback)
+{
+    /* [1] Validate */
+    if (handle == NULL || handle[0] == '\0') {
+        FWUPMGR_ERROR("updateFirmware: invalid handle (NULL or empty)\n");
         return RDKFW_UPDATE_FAILED;
     }
 
-    // TODO: Implement D-Bus call to UpdateFirmware
-    FWUPMGR_WARN("updateFirmware: Not implemented yet\n");
-    return RDKFW_UPDATE_FAILED;
+    if (fwupdatereq.firmwareName[0] == '\0') {
+        FWUPMGR_ERROR("updateFirmware: firmwareName is empty\n");
+        return RDKFW_UPDATE_FAILED;
+    }
+
+    if (fwupdatereq.TypeOfFirmware[0] == '\0') {
+        FWUPMGR_ERROR("updateFirmware: TypeOfFirmware is empty\n");
+        return RDKFW_UPDATE_FAILED;
+    }
+
+    if (callback == NULL) {
+        FWUPMGR_ERROR("updateFirmware: callback is NULL\n");
+        return RDKFW_UPDATE_FAILED;
+    }
+
+    FWUPMGR_INFO("updateFirmware: handle='%s' firmware='%s' type='%s' "
+                 "location='%s' reboot=%s\n",
+                 handle,
+                 fwupdatereq.firmwareName,
+                 fwupdatereq.TypeOfFirmware,
+                 fwupdatereq.LocationOfFirmware[0]
+                     ? fwupdatereq.LocationOfFirmware
+                     : "(use device.properties path)",
+                 fwupdatereq.rebootImmediately ? "yes" : "no");
+
+    /* [2] Register callback BEFORE sending D-Bus call */
+    if (!internal_update_register_callback(handle, callback)) {
+        FWUPMGR_ERROR("updateFirmware: registry full, handle='%s'\n", handle);
+        return RDKFW_UPDATE_FAILED;
+    }
+
+    /* [3] Fire-and-forget D-Bus UpdateFirmware method call
+     *
+     * Arguments: (sssb)
+     *   s handle                — app's handler_id string
+     *   s firmwareName          — image to flash
+     *   s LocationOfFirmware    — path or "" for device.properties default
+     *   s TypeOfFirmware        — PCI / PDRI / PERIPHERAL
+     *   b rebootImmediately     — reboot after flash?
+     *
+     * Three trailing NULLs = fire and forget.
+     */
+    GError *error = NULL;
+    GDBusConnection *conn = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
+
+    if (conn == NULL) {
+        FWUPMGR_ERROR("updateFirmware: D-Bus connect failed: %s\n",
+                      error ? error->message : "unknown");
+        if (error) g_error_free(error);
+        return RDKFW_UPDATE_FAILED;
+    }
+
+    g_dbus_connection_call(
+        conn,
+        DBUS_SERVICE_NAME,
+        DBUS_OBJECT_PATH,
+        DBUS_INTERFACE_NAME,
+        DBUS_METHOD_UPDATE,                         /* method: UpdateFirmware     */
+        g_variant_new("(sssb)",
+                      handle,                       /* app's handler_id string    */
+                      fwupdatereq.firmwareName,     /* image to flash             */
+                      fwupdatereq.LocationOfFirmware, /* path or ""               */
+                      fwupdatereq.TypeOfFirmware,   /* PCI / PDRI / PERIPHERAL    */
+                      fwupdatereq.rebootImmediately),/* reboot flag               */
+        NULL,                                       /* expected reply: none       */
+        G_DBUS_CALL_FLAGS_NONE,
+        DBUS_TIMEOUT_MS,
+        NULL,                                       /* GCancellable: none         */
+        NULL,                                       /* reply callback: none       */
+        NULL                                        /* user_data: none            */
+    );
+
+    g_object_unref(conn);
+
+    FWUPMGR_INFO("updateFirmware: D-Bus call sent, returning SUCCESS. "
+                 "handle='%s'\n", handle);
+
+    /* [4] Return immediately — app is unblocked */
+    return RDKFW_UPDATE_SUCCESS;
 }
+
+

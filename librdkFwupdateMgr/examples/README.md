@@ -1,487 +1,331 @@
-# Example Programs for Testing on Device
+# How to Use `example_plugin`
 
-This directory contains example programs that demonstrate how to use the rdkFwupdateMgr client library. These programs are installed to `/usr/bin` on the device for testing purposes.
-
----
-
-## Installed Programs
-
-After building and installing, the following example programs will be available on the device:
-
-1. **example_plugin_registration** - Test plugin registration and unregistration
-2. **example_checkforupdate** - Test synchronous CheckForUpdate API
-3. **example_async_checkforupdate** - Test asynchronous CheckForUpdate API
+`example_plugin` is the compiled binary of `example_app.c`. It exercises the
+full `rdkFwupdateMgr` client library — register, check, download, flash, and
+unregister — against a live daemon over D-Bus.
 
 ---
 
 ## Prerequisites
 
-Before running the examples, ensure:
+Before running `example_plugin`, three things must be true on the target device.
 
-1. **rdkFwupdateMgr daemon is running:**
-   ```bash
-   # Check if daemon is running
-   ps aux | grep rdkFwupdateMgr
-   
-   # If not running, start it
-   systemctl start rdkFwupdateMgr
-   # OR
-   /usr/bin/rdkFwupdateMgr &
-   ```
-
-2. **D-Bus session is available:**
-   ```bash
-   # Check D-Bus
-   dbus-daemon --version
-   ```
-
-3. **Library is installed:**
-   ```bash
-   # Verify library exists
-   ls -l /usr/lib/librdkFwupdateMgr.so*
-   ```
-
----
-
-## Usage Examples
-
-### 1. Plugin Registration Test
-
-This example demonstrates how to register and unregister a plugin with the daemon.
+### 1. The daemon is running
 
 ```bash
-# Run the example
-example_plugin_registration
+systemctl status rdkFwupdateMgr
 ```
 
-**What it does:**
-- Registers a plugin named "ExamplePlugin" with handler ID 100
-- Keeps the plugin registered for 30 seconds
-- Unregisters the plugin
-- Exits
-
-**Expected Output:**
-```
-=== rdkFwupdateMgr Plugin Registration Example ===
-
-Step 1: Registering plugin 'ExamplePlugin' with handler_id=100...
-✓ Plugin registered successfully!
-
-Step 2: Plugin will remain registered for 30 seconds...
-(You can trigger CheckForUpdate from daemon during this time)
-...
-Step 3: Unregistering plugin...
-✓ Plugin unregistered successfully!
-
-=== Example completed successfully ===
-```
-
-**Testing during registration window:**
-While the plugin is registered (30 second window), you can test from another terminal:
-```bash
-# Trigger update check from daemon (will notify the plugin)
-testClient CheckForUpdate
-```
-
----
-
-### 2. Synchronous CheckForUpdate Test
-
-This example demonstrates the synchronous (blocking) CheckForUpdate API.
+If it is not running:
 
 ```bash
-# Run the example
-example_checkforupdate
+systemctl start rdkFwupdateMgr
 ```
 
-**What it does:**
-- Calls CheckForUpdate (blocks until daemon responds)
-- Prints update information
-- Exits
-
-**Expected Output:**
-```
-=== rdkFwupdateMgr CheckForUpdate Example ===
-
-Calling CheckForUpdate (synchronous)...
-This will block until the daemon responds...
-
-CheckForUpdate completed:
-  Status: 0
-  Update Available: Yes
-  Current Version: 1.0.0
-  New Version: 2.0.0
-  Download URL: http://example.com/firmware.bin
-
-=== Example completed ===
-```
-
-**Variations:**
-- If no update available, "Update Available" will be "No"
-- If daemon is not running, will show error after timeout
-
----
-
-### 3. Asynchronous CheckForUpdate Test
-
-This example demonstrates the asynchronous (non-blocking) CheckForUpdate API with multiple concurrent requests.
+If it has never been enabled:
 
 ```bash
-# Run the example
-example_async_checkforupdate
+systemctl enable --now rdkFwupdateMgr
 ```
 
-**What it does:**
-- Registers 3 handlers (UI, Background, Monitoring)
-- Each handler calls CheckForUpdate asynchronously
-- Demonstrates callback invocation
-- Tests cancellation (cancels one handler)
-- Waits for all callbacks to complete
+The binary will immediately fail at `registerProcess()` and print:
 
-**Expected Output:**
 ```
-=== rdkFwupdateMgr Async CheckForUpdate Example ===
-
-Initializing async subsystem...
-✓ Async subsystem initialized
-
-Scenario 1: Multiple concurrent async calls
--------------------------------------------
-[UI Handler] Calling checkForUpdate_async...
-[UI Handler] Request registered with callback_id: 1
-[Background Handler] Calling checkForUpdate_async...
-[Background Handler] Request registered with callback_id: 2
-[Monitoring Handler] Calling checkForUpdate_async...
-[Monitoring Handler] Request registered with callback_id: 3
-
-Scenario 2: Cancellation test
-----------------------------
-Cancelling Background Handler request...
-✓ Background Handler request cancelled
-
-Waiting for callbacks to complete (max 60 seconds)...
-
---- Callback Invoked ---
-Handler: UI Handler
-Status: 0 (SUCCESS)
-Message: Update check completed
-Update Available: Yes
-New Version: 2.0.0
-Download URL: http://example.com/firmware.bin
-Timestamp: 1709251200
-HTTP Status: 200
-Reboot Required: Yes
-------------------------
-
---- Callback Invoked ---
-Handler: Monitoring Handler
-Status: 0 (SUCCESS)
-Message: Update check completed
-Update Available: Yes
-New Version: 2.0.0
-------------------------
-
-✓ All callbacks completed
-(Background Handler was cancelled and did not receive callback)
-
-Cleanup...
-✓ Example completed successfully
+[ERROR] registerProcess() returned NULL.
+        Ensure rdkFwupdateMgr daemon is running.
+        Check: systemctl status rdkFwupdateMgr
 ```
 
----
+### 2. The library is installed and visible
 
-## Testing Scenarios
-
-### Scenario 1: Basic Plugin Registration
-
-Test that plugins can register and receive updates:
+The shared library `librdkFwupdateMgr.so` must be findable at runtime.
 
 ```bash
-# Terminal 1: Register plugin and keep it running
-example_plugin_registration
-# (Wait, don't exit yet)
-
-# Terminal 2: Trigger update check
-testClient CheckForUpdate
-
-# Terminal 1 should show callback notification
-```
-
-### Scenario 2: Synchronous vs Asynchronous
-
-Compare blocking vs non-blocking behavior:
-
-```bash
-# Synchronous (blocks until complete)
-time example_checkforupdate
-# Note: Will block for several seconds
-
-# Asynchronous (returns immediately)
-time example_async_checkforupdate
-# Note: Main thread doesn't block, callback invoked in background
-```
-
-### Scenario 3: Multiple Concurrent Requests
-
-Test that multiple plugins can request updates simultaneously:
-
-```bash
-# Run async example (which registers 3 handlers internally)
-example_async_checkforupdate
-
-# All 3 handlers should receive callbacks when update check completes
-```
-
-### Scenario 4: Cancellation
-
-Test that requests can be cancelled:
-
-```bash
-# Run async example (includes cancellation test)
-example_async_checkforupdate
-
-# Note: One handler is cancelled and should NOT receive callback
-# Check output to verify cancelled handler didn't get invoked
-```
-
-### Scenario 5: Stress Test
-
-Test many concurrent registrations:
-
-```bash
-# Run multiple instances
-for i in {1..10}; do
-    example_async_checkforupdate &
-done
-
-# Wait for all to complete
-wait
-
-# Check logs for any errors
-journalctl -u rdkFwupdateMgr -n 100
-```
-
----
-
-## Troubleshooting
-
-### Problem: "Failed to connect to D-Bus"
-
-**Solution:**
-```bash
-# Check if D-Bus daemon is running
-ps aux | grep dbus-daemon
-
-# Check D-Bus session bus address
-echo $DBUS_SESSION_BUS_ADDRESS
-
-# If not set, start a D-Bus session
-eval $(dbus-launch --sh-syntax)
-```
-
-### Problem: "rdkFwupdateMgr daemon not responding"
-
-**Solution:**
-```bash
-# Check if daemon is running
-ps aux | grep rdkFwupdateMgr
-
-# Check daemon logs
-journalctl -u rdkFwupdateMgr -f
-
-# Restart daemon
-systemctl restart rdkFwupdateMgr
-
-# Or manually start
-killall rdkFwupdateMgr
-/usr/bin/rdkFwupdateMgr &
-```
-
-### Problem: "Library not found"
-
-**Solution:**
-```bash
-# Check library installation
+# Confirm it is installed
 ls -l /usr/lib/librdkFwupdateMgr.so*
 
-# Update library cache
-ldconfig
-
-# Check library dependencies
-ldd /usr/bin/example_plugin_registration
+# If the library is in a non-standard path, tell the linker
+export LD_LIBRARY_PATH=/path/to/librdkFwupdateMgr:$LD_LIBRARY_PATH
 ```
 
-### Problem: "Timeout waiting for callback"
+### 3. D-Bus permissions allow the call
 
-**Possible causes:**
-1. Daemon is busy or crashed
-2. Network issues (daemon can't reach XConf server)
-3. Callback ID was cancelled
-
-**Solution:**
-```bash
-# Check daemon status
-systemctl status rdkFwupdateMgr
-
-# Check daemon logs for errors
-journalctl -u rdkFwupdateMgr -n 50
-
-# Verify network connectivity
-ping xconf.example.com
-
-# Check if daemon can reach backend
-testClient CheckForUpdate
-```
-
----
-
-## Debugging
-
-### Enable Debug Logging
-
-Set log level before running examples:
+The binary talks to the system bus. Confirm the D-Bus policy for
+`org.rdkfwupdater.Interface` allows your user or the root user:
 
 ```bash
-# Set environment variable for verbose logging
-export RDK_LOG_LEVEL=7
-
-# Run example
-example_async_checkforupdate
-
-# Check logs
-journalctl -u rdkFwupdateMgr -f
+cat /etc/dbus-1/system.d/rdkFwupdateMgr.conf
 ```
 
-### Monitor D-Bus Messages
+If running as a non-root user and calls are rejected, run as root or adjust
+the D-Bus policy file.
 
-Watch D-Bus traffic to see signal emissions:
+---
+
+## Build (if not already built by Yocto / autotools)
+
+For a quick native build on the device itself:
 
 ```bash
-# Monitor system bus
-dbus-monitor --system "interface='com.rdk.FirmwareUpdate'"
-
-# In another terminal, run example
-example_async_checkforupdate
+gcc example_app.c \
+    -o example_plugin \
+    -I/path/to/librdkFwupdateMgr/include \
+    -L/path/to/lib \
+    -lrdkFwupdateMgr \
+    $(pkg-config --cflags --libs gio-2.0) \
+    -lpthread
 ```
 
-### Check Memory Usage
-
-Verify no memory leaks:
+Through autotools (cross-build, Yocto):
 
 ```bash
-# Run under Valgrind (if available)
-valgrind --leak-check=full example_async_checkforupdate
-
-# Check process memory
-while true; do
-    ps aux | grep example_async
-    sleep 1
-done
+make example_plugin
+make install          # installs to $(DESTDIR)$(bindir)/example_plugin
 ```
 
 ---
 
-## Building and Installing
-
-To rebuild and install the examples:
+## Running
 
 ```bash
-# On build machine
-cd /path/to/rdkfwupdater
-./configure
-make clean
-make
-make install DESTDIR=/path/to/rootfs
-
-# Examples will be installed to:
-# ${DESTDIR}/usr/bin/example_plugin_registration
-# ${DESTDIR}/usr/bin/example_checkforupdate
-# ${DESTDIR}/usr/bin/example_async_checkforupdate
+example_plugin
 ```
 
----
-
-## Integration Testing
-
-For automated testing, you can use these examples in scripts:
+Or with full path:
 
 ```bash
-#!/bin/bash
-# test_fwupdate_integration.sh
-
-# Start daemon
-systemctl start rdkFwupdateMgr
-sleep 2
-
-# Test 1: Plugin registration
-echo "Test 1: Plugin registration"
-timeout 60 example_plugin_registration
-if [ $? -eq 0 ]; then
-    echo "✓ PASS"
-else
-    echo "✗ FAIL"
-    exit 1
-fi
-
-# Test 2: Sync API
-echo "Test 2: Synchronous CheckForUpdate"
-timeout 30 example_checkforupdate
-if [ $? -eq 0 ]; then
-    echo "✓ PASS"
-else
-    echo "✗ FAIL"
-    exit 1
-fi
-
-# Test 3: Async API
-echo "Test 3: Asynchronous CheckForUpdate"
-timeout 120 example_async_checkforupdate
-if [ $? -eq 0 ]; then
-    echo "✓ PASS"
-else
-    echo "✗ FAIL"
-    exit 1
-fi
-
-echo "All tests passed!"
+/usr/bin/example_plugin
 ```
 
 ---
 
-## Expected Installation Locations
+## What It Does — Step by Step
 
-After `make install`:
+The binary runs a fixed sequence. There are no command-line arguments.
+
+### Step 1 — Register
 
 ```
-/usr/bin/example_plugin_registration
-/usr/bin/example_checkforupdate
-/usr/bin/example_async_checkforupdate
-/usr/lib/librdkFwupdateMgr.so.1.0.0
-/usr/lib/librdkFwupdateMgr.so.1
-/usr/lib/librdkFwupdateMgr.so
-/usr/include/rdkFwupdateMgr/rdkFwupdateMgr_client.h
-/usr/include/rdkFwupdateMgr/rdkFwupdateMgr_process.h
+[Step 1] Registering with firmware daemon...
+         processName = 'ExampleApp'
+         libVersion  = '1.0.0'
+[Step 1] ✓ Registered successfully.
+           handle (handler_id string) = '12345'
+```
+
+`registerProcess("ExampleApp", "1.0.0")` sends a synchronous D-Bus call and
+blocks until the daemon responds. On success, the daemon assigns a numeric
+`handler_id` (here `12345`) and the library hands it back as a string. This
+string is your handle for every subsequent call.
+
+**If this step fails**, the daemon is not running or the D-Bus policy is
+blocking the call. The binary exits with `EXIT_FAILURE`.
+
+---
+
+### Step 2 — Check for update
+
+```
+[Step 2] Calling checkForUpdate()...
+[Step 2] ✓ checkForUpdate() returned CHECK_FOR_UPDATE_SUCCESS.
+           Callback registered. Waiting for daemon signal...
+```
+
+`checkForUpdate(handle, on_firmware_event)` returns **immediately**. It does
+not block. It only means the question was sent to the daemon successfully. The
+actual answer comes later.
+
+**If this step fails**, the library's internal callback registry is full (max
+64 slots) or the D-Bus call could not be sent.
+
+---
+
+### Step 3 — Wait for the callback (up to 60 seconds)
+
+```
+[Step 3] Waiting for CheckForUpdateComplete signal (timeout: 60s)...
+```
+
+The binary blocks internally on a `pthread_cond_timedwait`. The library's
+background thread is listening on D-Bus. When the daemon emits the
+`CheckForUpdateComplete` signal, the callback fires and prints:
+
+```
+┌─────────────────────────────────────────────────────┐
+│         CheckForUpdate Callback Received            │
+└─────────────────────────────────────────────────────┘
+  Handle (handler_id) : 12345
+  Update Available    : YES
+  Status              : FIRMWARE_AVAILABLE (0)
+  Current Version     : 2.0.0.0
+  Available Version   : 2.1.0.0
+  Status Message      : Firmware upgrade available
+
+  Next Action:
+  → New firmware available. Schedule downloadFirmware().
+└─────────────────────────────────────────────────────┘
+```
+
+The status printed is one of:
+
+| Status printed | Meaning |
+|---|---|
+| `FIRMWARE_AVAILABLE` | New firmware found — can proceed to download |
+| `FIRMWARE_NOT_AVAILABLE` | Already on latest — nothing to do |
+| `UPDATE_NOT_ALLOWED` | Device is in the exclusion list |
+| `FIRMWARE_CHECK_ERROR` | XConf/network error during the check |
+| `IGNORE_OPTOUT` | Device opted out of firmware downloads |
+| `BYPASS_OPTOUT` | Device opted out (bypass variant) |
+
+**If the 60-second timeout expires**, the daemon did not emit the signal. Check
+that the daemon is healthy and XConf is reachable from the device.
+
+---
+
+### Step 4 — Unregister
+
+```
+[Step 4] Unregistering from firmware daemon...
+[Step 4] ✓ Unregistered. Handle set to NULL.
+```
+
+`unregisterProcess(handle)` sends a synchronous `UnregisterProcess` D-Bus call
+and then frees the handle memory internally. After this, the handle is invalid.
+
+---
+
+### Final output
+
+On success:
+
+```
+┌─────────────────────────────────────────────────────┐
+│                 App completed OK                   │
+└─────────────────────────────────────────────────────┘
+```
+
+On any failure:
+
+```
+┌─────────────────────────────────────────────────────┐
+│              App completed with errors              │
+└─────────────────────────────────────────────────────┘
+```
+
+Exit code is `0` on success, `1` on failure.
+
+---
+
+## Extending It — Calling downloadFirmware and updateFirmware
+
+The `example_app.c` file already contains `run_download_example()` and
+`run_update_example()` functions. They are **not wired into `main()` by
+default** — `main()` only calls `checkForUpdate`. To exercise the full
+three-step flow, wire them into `main()` like this:
+
+```c
+int main(void)
+{
+    /* Step 1 — Register */
+    FirmwareInterfaceHandle handle = registerProcess("ExampleApp", "1.0.0");
+    if (handle == FIRMWARE_INVALID_HANDLE) return EXIT_FAILURE;
+
+    /* Step 2+3 — Check */
+    checkForUpdate(handle, on_firmware_event);
+    /* [wait on condvar — on_firmware_event signals when done] */
+
+    /* Only proceed if update is available */
+    if (g_firmware_available) {
+
+        /* Step 4+5 — Download */
+        run_download_example(handle);
+        /* [waits internally until DWNL_COMPLETED] */
+
+        /* Step 6+7 — Flash */
+        run_update_example(handle);
+        /* [waits internally until UPDATE_COMPLETED] */
+        /* device reboots here if rebootImmediately = true */
+    }
+
+    /* Step 8 — Unregister (skip if rebootImmediately = true) */
+    unregisterProcess(handle);
+    handle = NULL;
+
+    return EXIT_SUCCESS;
+}
+```
+
+> **Note:** Add a module-level `static int g_firmware_available = 0;` flag and
+> set it inside `on_firmware_event()` when `status == FIRMWARE_AVAILABLE`.
+
+---
+
+## Timeouts Reference
+
+| Stage | Timeout | Controlled by |
+|---|---|---|
+| `registerProcess()` | 10 seconds | `DBUS_TIMEOUT_MS` in process.c |
+| `checkForUpdate()` wait | 60 seconds | `deadline.tv_sec += 60` in main() |
+| `downloadFirmware()` wait | 5 minutes | `deadline.tv_sec += 300` in run_download_example() |
+| `updateFirmware()` wait | 10 minutes | `deadline.tv_sec += 600` in run_update_example() |
+| `unregisterProcess()` | 10 seconds | `DBUS_TIMEOUT_MS` in process.c |
+
+---
+
+## Diagnosing Common Failures
+
+### `registerProcess() returned NULL`
+```
+Cause:   Daemon not running, or D-Bus policy blocking the call.
+Fix:     systemctl start rdkFwupdateMgr
+         Check /etc/dbus-1/system.d/rdkFwupdateMgr.conf
+```
+
+### `checkForUpdate() returned FAIL`
+```
+Cause:   D-Bus send failed, or library internal registry is full.
+Fix:     Check journalctl -u rdkFwupdateMgr for daemon errors.
+         Restart the daemon and retry.
+```
+
+### 60-second timeout on CheckForUpdateComplete
+```
+Cause:   Daemon is running but did not emit the signal.
+         Possible reasons: XConf unreachable, daemon stuck processing.
+Fix:     journalctl -u rdkFwupdateMgr --since "1 minute ago"
+         Check network connectivity to XConf endpoint.
+         Restart daemon: systemctl restart rdkFwupdateMgr
+```
+
+### `librdkFwupdateMgr.so: cannot open shared object file`
+```
+Cause:   Library not in LD path.
+Fix:     export LD_LIBRARY_PATH=/usr/lib:$LD_LIBRARY_PATH
+         Or run ldconfig after installing the library.
 ```
 
 ---
 
-## Notes
+## Watching D-Bus Traffic in Real Time
 
-- Examples are designed to be **self-contained** and exit after demonstrating functionality
-- For **long-running testing**, modify the sleep durations in the source code
-- Examples use **standard output** for user-friendly messages
-- Examples use **proper error handling** and return non-zero on failure
-- Suitable for **automated testing** and **CI/CD integration**
+Use `dbus-monitor` on another terminal to see the exact messages flowing:
 
----
+```bash
+dbus-monitor --system "interface='org.rdkfwupdater.Interface'"
+```
 
-## Further Reading
+You will see:
 
-- [ASYNC_API_QUICK_REFERENCE.md](../ASYNC_API_QUICK_REFERENCE.md) - API documentation
-- [IMPLEMENTATION_SUMMARY.md](../IMPLEMENTATION_SUMMARY.md) - Architecture overview
-- [ASYNC_MEMORY_MANAGEMENT.md](../ASYNC_MEMORY_MANAGEMENT.md) - Memory management guide
+```
+method call   → RegisterProcess("ExampleApp", "1.0.0")
+method return ← handler_id = 12345
 
----
+method call   → CheckForUpdate("12345")
 
-**Last Updated:** 2026-02-26  
-**Maintainer:** RDK Firmware Update Team
+signal        ← CheckForUpdateComplete(0, 0, "2.0.0.0", "2.1.0.0", "...", "...")
+
+method call   → UnregisterProcess(12345)
+method return ← success = true
+```
+
+This is the fastest way to confirm the library and daemon are communicating correctly.
