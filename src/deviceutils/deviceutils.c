@@ -21,6 +21,8 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdbool.h>
+#include <limits.h>
+#include <unistd.h>
 
 #ifndef GTEST_ENABLE
 #include <secure_wrapper.h>
