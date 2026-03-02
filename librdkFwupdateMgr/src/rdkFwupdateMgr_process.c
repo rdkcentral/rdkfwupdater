@@ -32,7 +32,7 @@
  *
  * D-BUS PROTOCOL:
  * ===============
- * Service Name:   org.rdkfwupdater.Interface
+ * Service Name:   org.rdkfwupdater.Service
  * Object Path:    /org/rdkfwupdater/Service
  * Interface:      org.rdkfwupdater.Interface
  *
@@ -81,7 +81,7 @@
  * ======================================================================== */
 
 /** D-Bus service name for firmware update daemon */
-#define DBUS_SERVICE_NAME       "org.rdkfwupdater.Interface"
+#define DBUS_SERVICE_NAME       "org.rdkfwupdater.Service"
 
 /** D-Bus object path */
 #define DBUS_OBJECT_PATH        "/org/rdkfwupdater/Service"
