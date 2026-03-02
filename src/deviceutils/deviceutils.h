@@ -19,6 +19,8 @@
 #ifndef __DEVICEUTILS_H__
 #define __DEVICEUTILS_H__
 
+#include <dirent.h>
+#include <limits.h>
 #ifndef GTEST_ENABLE
 #include "urlHelper.h"
 #include "common_device_api.h"
