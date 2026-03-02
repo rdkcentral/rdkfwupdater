@@ -102,6 +102,32 @@ char *pPeripheralName[MAX_PERIPHERAL_ITEMS] = {
     "KwModelVer"
 };
 
+void deleteHiddenFiles(const char *path)
+{
+    DIR *dir;
+    struct dirent *entry;
+    char filepath[PATH_MAX];
+
+    if (!path) return;
+
+    dir = opendir(path);
+    if (!dir) return;
+
+    while ((entry = readdir(dir)) != NULL)
+    {
+        /* Hidden file check */
+        if (entry->d_name[0] == '.')
+        {
+            snprintf(filepath, sizeof(filepath),
+                     "%s/%s", path, entry->d_name);
+            SWLOG_INFO("Unlinking hidden files\n");
+            unlink(filepath);  /* Ignore failure for minimalism */
+
+        }
+    }
+                                                                                                                                               
+    closedir(dir);                                                                                                                             
+}  
 /* function RunCommand - runs a predefined system command using v_secure_popen
  
         Usage: size_t RunCommand <SYSCMD eSysCmd> <const char *pArgs> <char *pResult> <size_t szResultSize>
