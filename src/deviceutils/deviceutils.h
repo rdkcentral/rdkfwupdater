@@ -115,6 +115,5 @@ int getJRPCTokenData(char *token, char *pJsonStr, unsigned int token_size);
 metaDataFileList_st *getInstalledBundleFileList(const char *bundleType);
 metaDataFileList_st *getMetaDataFile(const char *dir);
 metaDataFileList_st * mergeLists(metaDataFileList_st *nvmList, metaDataFileList_st *rfsList);
-void deleteHiddenFiles(const char *path);
 
 #endif
