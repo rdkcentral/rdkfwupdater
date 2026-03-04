@@ -68,7 +68,7 @@
  * - Unregistration failures are silent (best-effort cleanup)
  */
 
-#include "rdkFwupdateMgr_process.h"
+#include "rdkFwupdateMgr_client.h"
 #include "rdkFwupdateMgr_log.h"
 #include <stdlib.h>
 #include <stdio.h>

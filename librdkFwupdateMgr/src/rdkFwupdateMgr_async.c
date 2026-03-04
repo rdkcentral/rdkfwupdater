@@ -346,19 +346,51 @@ static void dispatch_all_pending(const InternalSignalData *signal_data)
     CheckForUpdateStatus status = internal_map_status_code(signal_data->status_code);
 
     /*
-     * FwUpdateEventData is built once and shared (read-only) across
-     * all callback invocations. Strings point into signal_data which
-     * stays valid until internal_cleanup_signal_data() at the end of
-     * on_check_complete_signal().
+     * Build FwInfoData with UpdateDetails for the callback.
+     * This matches the public API signature: UpdateEventCallback(const FwInfoData*)
+     *
+     * MEMORY MANAGEMENT:
+     *   - FwInfoData is stack-allocated (valid during callback invocations)
+     *   - CurrFWVersion is copied from signal_data (array, not pointer)
+     *   - UpdateDetails is stack-allocated if needed
+     *   - All data valid until end of this function
      */
-    FwUpdateEventData event_data = {
-        .status            = status,
-        .current_version   = signal_data->current_version,
-        .available_version = signal_data->available_version,
-        .status_message    = signal_data->status_message,
-        .update_available  = (status == FIRMWARE_AVAILABLE)
-    };
+    FwInfoData fwinfo_data;
+    memset(&fwinfo_data, 0, sizeof(fwinfo_data));
 
+    /* Copy current firmware version */
+    if (signal_data->current_version) {
+        strncpy(fwinfo_data.CurrFWVersion, signal_data->current_version,
+                sizeof(fwinfo_data.CurrFWVersion) - 1);
+        fwinfo_data.CurrFWVersion[sizeof(fwinfo_data.CurrFWVersion) - 1] = '\0';
+    }
+
+    /* Set status */
+    fwinfo_data.status = status;
+
+    /* Parse and populate UpdateDetails if firmware is available */
+    UpdateDetails update_details;
+    if (status == FIRMWARE_AVAILABLE && signal_data->update_details) {
+        memset(&update_details, 0, sizeof(update_details));
+        
+        if (parse_update_details(signal_data->update_details, &update_details)) {
+            /* Point FwInfoData to our stack-allocated UpdateDetails */
+            fwinfo_data.UpdateDetails = &update_details;
+            
+            FWUPMGR_INFO("dispatch_all_pending: UpdateDetails populated\n");
+            FWUPMGR_INFO("  FwFileName: %s\n", update_details.FwFileName);
+            FWUPMGR_INFO("  FwVersion: %s\n", update_details.FwVersion);
+        } else {
+            /* Parse failed - set to NULL to indicate no details available */
+            fwinfo_data.UpdateDetails = NULL;
+            FWUPMGR_ERROR("dispatch_all_pending: parse_update_details failed\n");
+        }
+    } else {
+        /* Status is not FIRMWARE_AVAILABLE or no update_details string */
+        fwinfo_data.UpdateDetails = NULL;
+    }
+
+    /* Invoke all callbacks with the same FwInfoData */
     for (int i = 0; i < count; i++) {
         Snapshot *s = &snapshots[i];
 
@@ -366,13 +398,13 @@ static void dispatch_all_pending(const InternalSignalData *signal_data)
                      s->handle_copy);
 
         /*
-         * Two-parameter call — aligned to the required API:
-         *   UpdateEventCallback(FirmwareInterfaceHandle, const FwUpdateEventData*)
+         * Invoke callback with proper signature:
+         *   UpdateEventCallback(const FwInfoData *fwinfodata)
          *
-         * handle_copy is a stack-local copy of the handle string.
-         * It is valid for the duration of this callback invocation.
+         * handle_copy is passed but callback signature doesn't use it anymore.
+         * We pass it to maintain compatibility with 2-param callbacks if needed.
          */
-        s->callback(s->handle_copy, &event_data);
+        s->callback(&fwinfo_data);
 
         /* Reset slot to IDLE */
         pthread_mutex_lock(&g_registry.mutex);
@@ -1220,5 +1252,120 @@ UpdateStatus internal_map_update_status_code(int32_t status_code)
             return UPDATE_ERROR;
     }
 }
+
+/* ========================================================================
+ * UPDATE DETAILS PARSING
+ * ======================================================================== */
+
+/**
+ * @brief Parse update_details string into UpdateDetails structure
+ *
+ * The update_details string from the daemon is a comma-separated key:value format:
+ *   "FwFileName:filename.bin,FwUrl:https://...,FwVersion:1.0,..."
+ *
+ * This function safely parses it and populates the UpdateDetails structure.
+ *
+ * @param update_details_str   Comma-separated string from daemon (may be NULL)
+ * @param out_details          Output UpdateDetails structure (must be allocated)
+ * @return true if parsing succeeded (even if string was NULL/empty),
+ *         false only on critical errors
+ *
+ * Thread safety: Safe - operates on local data only
+ * Memory: out_details is caller-allocated, this function fills arrays
+ */
+static bool parse_update_details(const char *update_details_str,
+                                   UpdateDetails *out_details)
+{
+    if (out_details == NULL) {
+        FWUPMGR_ERROR("parse_update_details: out_details is NULL\n");
+        return false;
+    }
+
+    /* Zero-initialize the output structure */
+    memset(out_details, 0, sizeof(UpdateDetails));
+
+    /* Empty or NULL input is valid - just means no details available */
+    if (update_details_str == NULL || update_details_str[0] == '\0') {
+        FWUPMGR_INFO("parse_update_details: empty input, returning zeroed structure\n");
+        return true;
+    }
+
+    FWUPMGR_INFO("parse_update_details: parsing '%s'\n", update_details_str);
+
+    /* Make a working copy since strtok modifies the string */
+    char *work_str = strdup(update_details_str);
+    if (work_str == NULL) {
+        FWUPMGR_ERROR("parse_update_details: strdup failed\n");
+        return false;
+    }
+
+    /* Parse comma-separated key:value pairs */
+    char *saveptr = NULL;
+    char *token = strtok_r(work_str, ",", &saveptr);
+
+    while (token != NULL) {
+        /* Split on ':' to get key and value */
+        char *colon = strchr(token, ':');
+        if (colon == NULL) {
+            /* Malformed token, skip it */
+            FWUPMGR_ERROR("parse_update_details: malformed token '%s' (no colon)\n", token);
+            token = strtok_r(NULL, ",", &saveptr);
+            continue;
+        }
+
+        /* Null-terminate the key and get the value */
+        *colon = '\0';
+        const char *key = token;
+        const char *value = colon + 1;
+
+        /* Match keys and copy values into appropriate fields */
+        if (strcmp(key, "FwFileName") == 0) {
+            strncpy(out_details->FwFileName, value, 
+                    sizeof(out_details->FwFileName) - 1);
+        }
+        else if (strcmp(key, "FwUrl") == 0) {
+            strncpy(out_details->FwUrl, value,
+                    sizeof(out_details->FwUrl) - 1);
+        }
+        else if (strcmp(key, "FwVersion") == 0) {
+            strncpy(out_details->FwVersion, value,
+                    sizeof(out_details->FwVersion) - 1);
+        }
+        else if (strcmp(key, "RebootImmediately") == 0) {
+            strncpy(out_details->RebootImmediately, value,
+                    sizeof(out_details->RebootImmediately) - 1);
+        }
+        else if (strcmp(key, "DelayDownload") == 0) {
+            strncpy(out_details->DelayDownload, value,
+                    sizeof(out_details->DelayDownload) - 1);
+        }
+        else if (strcmp(key, "PDRIVersion") == 0) {
+            strncpy(out_details->PDRIVersion, value,
+                    sizeof(out_details->PDRIVersion) - 1);
+        }
+        else if (strcmp(key, "PeripheralFirmwares") == 0) {
+            strncpy(out_details->PeripheralFirmwares, value,
+                    sizeof(out_details->PeripheralFirmwares) - 1);
+        }
+        else {
+            /* Unknown key - log but don't fail */
+            FWUPMGR_INFO("parse_update_details: unknown key '%s', ignoring\n", key);
+        }
+
+        token = strtok_r(NULL, ",", &saveptr);
+    }
+
+    free(work_str);
+
+    FWUPMGR_INFO("parse_update_details: parsed successfully\n");
+    FWUPMGR_INFO("  FwFileName: %s\n", out_details->FwFileName);
+    FWUPMGR_INFO("  FwVersion: %s\n", out_details->FwVersion);
+
+    return true;
+}
+
+/* ========================================================================
+ * D-BUS SIGNAL HANDLERS
+ * ======================================================================== */
 
 
