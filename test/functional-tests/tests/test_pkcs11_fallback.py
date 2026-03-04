@@ -14,6 +14,7 @@ import os
 import time
 import json
 import dbus
+import shutil
 from pathlib import Path
 from rdkfw_test_helper import remove_file, write_on_file, initial_rdkfw_setup
 
@@ -55,10 +56,15 @@ def start_daemon_process():
     """Start D-Bus daemon"""
     subprocess.run(['pkill', '-9', '-f', 'rdkFwupdateMgr'], capture_output=True)
     time.sleep(0.5)
-    proc = subprocess.Popen([DAEMON_BINARY, "0", "1"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    proc = subprocess.Popen([DAEMON_BINARY, "0", "1"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     time.sleep(3)
     if proc.poll() is not None:
-        raise RuntimeError(f"Daemon failed to start (exit code: {proc.returncode})")
+        stdout, stderr = proc.communicate(timeout=1)
+        raise RuntimeError(
+            f"Daemon failed to start (exit code: {proc.returncode})\n"
+            f"stdout: {stdout.decode('utf-8', errors='ignore')}\n"
+            f"stderr: {stderr.decode('utf-8', errors='ignore')}"
+        )
     return proc
 
 
@@ -83,13 +89,20 @@ def backup_reference_cert():
     if not os.path.exists(ref_cert):
         pytest.skip("reference.p12 not found - PKCS#11 mode not enabled")
     
-    subprocess.run(['cp', ref_cert, backup], check=True, capture_output=True)
-    os.remove(ref_cert)
+    try:
+        shutil.copy2(ref_cert, backup)
+        os.remove(ref_cert)
+    except Exception as e:
+        # Restore on setup failure
+        if os.path.exists(backup) and not os.path.exists(ref_cert):
+            os.replace(backup, ref_cert)
+        raise RuntimeError(f"Failed to backup reference.p12: {e}")
     
     yield
     
+    # Restore original cert
     if os.path.exists(backup):
-        subprocess.run(['mv', backup, ref_cert], check=True, capture_output=True)
+        os.replace(backup, ref_cert)
 
 
 def test_certsel_fallback_verification(backup_reference_cert):
@@ -101,6 +114,7 @@ def test_certsel_fallback_verification(backup_reference_cert):
 
 def test_fallback_firmware_download(backup_reference_cert):
     """Ensure firmware daemon remains running when reference.p12 is missing (fallback scenario)."""
+    initial_rdkfw_setup()
     write_config_files()
     cleanup_daemon_files()
     daemon_proc = start_daemon_process()
