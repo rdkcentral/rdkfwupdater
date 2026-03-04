@@ -24,7 +24,7 @@ DBUS_INTERFACE = "org.rdkfwupdater.Interface"
 DAEMON_BINARY = "/usr/local/bin/rdkFwupdateMgr"
 CLEANUP_FILES = [
     "/tmp/dnldmgr_status.txt",
-    "/opt/curl_progress", 
+    "/opt/curl_progress",
     "/tmp/xconf_response_thunder.txt",
     "/tmp/fw_preparing_to_reboot",
     "/tmp/currently_running_image_name",
