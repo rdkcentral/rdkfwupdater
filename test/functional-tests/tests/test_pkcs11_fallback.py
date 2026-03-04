@@ -24,7 +24,7 @@ DBUS_INTERFACE = "org.rdkfwupdater.Interface"
 DAEMON_BINARY = "/usr/local/bin/rdkFwupdateMgr"
 CLEANUP_FILES = [
     "/tmp/dnldmgr_status.txt",
-    "/tmp/curl_progress", 
+    "/opt/curl_progress", 
     "/tmp/xconf_response_thunder.txt",
     "/tmp/fw_preparing_to_reboot",
     "/tmp/currently_running_image_name",
@@ -55,7 +55,7 @@ def start_daemon_process():
     """Start D-Bus daemon"""
     subprocess.run(['pkill', '-9', '-f', 'rdkFwupdateMgr'], capture_output=True)
     time.sleep(0.5)
-    proc = subprocess.Popen([DAEMON_BINARY, "0", "1"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    proc = subprocess.Popen([DAEMON_BINARY, "0", "1"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(3)
     if proc.poll() is not None:
         raise RuntimeError(f"Daemon failed to start (exit code: {proc.returncode})")
