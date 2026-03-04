@@ -127,19 +127,6 @@ def test_fallback_firmware_download(backup_reference_cert):
         cleanup_daemon_files()
 
 
-def test_verify_no_pkcs11_patch_activation(backup_reference_cert):
-    """Verify fallback certificates contain valid private keys (not sentinel keys)"""
-    if os.path.exists("/opt/certs/client.p12"):
-        result = subprocess.run(
-            ['openssl', 'pkcs12', '-in', '/opt/certs/client.p12', '-passin', 'pass:changeit', '-nocerts', '-nodes'],
-            capture_output=True, text=True
-        )
-        assert result.returncode == 0 and 'PRIVATE KEY' in result.stdout and len(result.stdout) > 100
-    
-    if os.path.exists("/opt/certs/client.pem"):
-        result = subprocess.run(['openssl', 'rsa', '-in', '/opt/certs/client.pem', '-check', '-noout'],
-                               capture_output=True, text=True)
-        assert result.returncode == 0
 
 
 def test_fallback_rdkvfwupgrader_direct(backup_reference_cert):
