@@ -64,7 +64,7 @@ extern "C" {
 #define MAX_PENDING_CALLBACKS    64
 #define CALLBACK_TIMEOUT_SECONDS 60
 
-#define DBUS_SERVICE_NAME        "org.rdkfwupdater.Interface"
+#define DBUS_SERVICE_NAME        "org.rdkfwupdater.Service"
 #define DBUS_OBJECT_PATH         "/org/rdkfwupdater/Service"
 #define DBUS_INTERFACE_NAME      "org.rdkfwupdater.Interface"
 #define DBUS_METHOD_CHECK        "CheckForUpdate"
