@@ -12,14 +12,18 @@
 
 /**
  * @file example_app.c
- * @brief Example application using rdkFwupdateMgr client library
+ * @brief Complete one-shot firmware update example
  *
- * COMPLETE FLOW:
- *   1. registerProcess()   → synchronous D-Bus call → get handle from daemon
- *   2. checkForUpdate()    → non-blocking, returns SUCCESS/FAIL immediately
- *   3. [background thread] → library receives CheckForUpdateComplete signal
- *   4. on_firmware_event() → callback fires, prints result
- *   5. unregisterProcess() → synchronous cleanup with daemon
+ * COMPLETE WORKFLOW (One-Shot Binary):
+ *   1. registerProcess()         → Get handle from daemon
+ *   2. checkForUpdate()          → Returns immediately; callback fires later
+ *   3. [Wait for callback]       → on_firmware_check_callback fires
+ *   4. downloadFirmware()        → Download firmware image (if available)
+ *   5. [Wait for download]       → on_download_progress_callback tracks progress
+ *   6. updateFirmware()          → Flash firmware to device
+ *   7. [Wait for flash]          → on_update_progress_callback tracks progress
+ *   8. unregisterProcess()       → Cleanup
+ *   9. Exit
  *
  * BUILD:
  *   gcc example_app.c \
@@ -32,10 +36,9 @@
  *   ./example_app
  */
 
-#include "rdkFwupdateMgr_process.h"   /* registerProcess(), unregisterProcess(),
-                                         FirmwareInterfaceHandle               */
-//#include "rdkFwupdateMgr_client.h"    /* checkForUpdate(), CheckForUpdateResult,
- //                                        CheckForUpdateStatus, FwUpdateEventData */
+#include "rdkFwupdateMgr_process.h"   /* registerProcess(), unregisterProcess() */
+#include "rdkFwupdateMgr_client.h"    /* checkForUpdate(), downloadFirmware(), 
+                                         updateFirmware(), all callbacks/enums  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,51 +47,76 @@
 #include <pthread.h>
 
 /* ========================================================================
- * SYNCHRONISATION
- *
- * checkForUpdate() returns immediately. The callback fires later from the
- * library's background thread. We use a mutex+condvar so main() can wait
- * until the callback has completed before calling unregisterProcess().
- *
- * In a real plugin you do NOT need this — you return to your event loop
- * and let the callback arrive naturally. This is only here to keep the
- * example process alive and sequenced correctly.
+ * GLOBAL STATE FOR WORKFLOW COORDINATION
+ * ========================================================================
+ * Since callbacks don't support user_data, we use global variables to:
+ *   - Store firmware info from checkForUpdate callback
+ *   - Track workflow progress (check → download → flash)
+ *   - Synchronize main thread with callback threads
  * ======================================================================== */
 
-static pthread_mutex_t g_done_mutex    = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t  g_done_cond     = PTHREAD_COND_INITIALIZER;
-static int             g_callback_done = 0;   /* 0 = waiting, 1 = received */
+/* Global handle (used across all API calls) */
+static FirmwareInterfaceHandle g_handle = NULL;
+
+/* Firmware check state */
+static pthread_mutex_t  g_check_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t   g_check_cond  = PTHREAD_COND_INITIALIZER;
+static int              g_check_done  = 0;
+static CheckForUpdateStatus g_check_status = FIRMWARE_CHECK_ERROR;
+static char             g_fw_current_version[64]   = {0};
+static char             g_fw_available_version[64] = {0};
+
+/* Download state */
+static pthread_mutex_t  g_download_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t   g_download_cond  = PTHREAD_COND_INITIALIZER;
+static int              g_download_done   = 0;
+static DownloadStatus   g_download_status = DWNL_ERROR;
+
+/* Update/flash state */
+static pthread_mutex_t  g_update_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t   g_update_cond  = PTHREAD_COND_INITIALIZER;
+static int              g_update_done   = 0;
+static UpdateStatus     g_update_status = UPDATE_ERROR;
+
+/* Exit code tracking */
+static int g_exit_code = EXIT_SUCCESS;
 
 /* ========================================================================
- * CALLBACK
+ * CALLBACK 1: checkForUpdate() Result
+ * ========================================================================
+ * This callback fires when the daemon emits UpdateEventSignal with the
+ * actual firmware check result (after XConf query completes).
+ * 
+ * Runs in library's background thread - NOT main thread!
  * ======================================================================== */
 
 /**
- * @brief Invoked by the library when CheckForUpdateComplete signal arrives
+ * @brief Callback invoked when firmware check completes
  *
- * This function runs in the library's background D-Bus signal thread,
- * NOT in the main thread.
+ * Signature: void fn(FirmwareInterfaceHandle, const FwUpdateEventData*)
  *
- * Signature is exactly UpdateEventCallback:
- *   void fn(FirmwareInterfaceHandle, const FwUpdateEventData *)
- *
- * @param handle     The handle that initiated the checkForUpdate call
- * @param event_data Firmware check result — valid ONLY during this call
+ * @param handle     Handler ID that initiated the check
+ * @param event_data Firmware check result (valid only during callback)
  */
-static void on_firmware_event(FirmwareInterfaceHandle handle,
-                               const FwUpdateEventData *event_data)
+static void on_firmware_check_callback(FirmwareInterfaceHandle handle,
+                                         const FwUpdateEventData *event_data)
 {
     printf("\n");
-    printf("┌─────────────────────────────────────────────────────┐\n");
-    printf("│         CheckForUpdate Callback Received            │\n");
-    printf("└─────────────────────────────────────────────────────┘\n");
+    printf("┌──────────────────────────────────────────────────────┐\n");
+    printf("│  ✓ checkForUpdate Callback Received                 │\n");
+    printf("└──────────────────────────────────────────────────────┘\n");
 
-    /* Handle — the handler_id string from registerProcess */
-    printf("  Handle (handler_id) : %s\n", handle ? handle : "(null)");
-    printf("  Update Available    : %s\n",
-           event_data->update_available ? "YES" : "NO");
+    if (!event_data) {
+        fprintf(stderr, "[ERROR] event_data is NULL in callback!\n");
+        pthread_mutex_lock(&g_check_mutex);
+        g_check_status = FIRMWARE_CHECK_ERROR;
+        g_check_done = 1;
+        pthread_cond_signal(&g_check_cond);
+        pthread_mutex_unlock(&g_check_mutex);
+        return;
+    }
 
-    /* Map status enum to readable string */
+    /* Map status to readable string */
     const char *status_str = "UNKNOWN";
     switch (event_data->status) {
         case FIRMWARE_AVAILABLE:     status_str = "FIRMWARE_AVAILABLE";     break;
@@ -98,255 +126,56 @@ static void on_firmware_event(FirmwareInterfaceHandle handle,
         case IGNORE_OPTOUT:          status_str = "IGNORE_OPTOUT";          break;
         case BYPASS_OPTOUT:          status_str = "BYPASS_OPTOUT";          break;
     }
-    printf("  Status              : %s (%d)\n", status_str, event_data->status);
 
-    /* Version strings — may be NULL if daemon did not provide them */
-    printf("  Current Version     : %s\n",
-           event_data->current_version   ? event_data->current_version   : "(not provided)");
-    printf("  Available Version   : %s\n",
+    printf("  Handle              : %s\n", handle ? handle : "(null)");
+    printf("  Status              : %s (%d)\n", status_str, event_data->status);
+    printf("  Update Available    : %s\n", event_data->update_available ? "YES" : "NO");
+    printf("  Current Version     : %s\n", 
+           event_data->current_version ? event_data->current_version : "(not provided)");
+    printf("  Available Version   : %s\n", 
            event_data->available_version ? event_data->available_version : "(not provided)");
     printf("  Status Message      : %s\n",
-           event_data->status_message    ? event_data->status_message    : "(not provided)");
+           event_data->status_message ? event_data->status_message : "(not provided)");
 
-    /* What the app should do next based on status */
-    printf("\n  Next Action:\n");
-    switch (event_data->status) {
-        case FIRMWARE_AVAILABLE:
-            printf("  → New firmware available. Schedule downloadFirmware().\n");
-            break;
-        case FIRMWARE_NOT_AVAILABLE:
-            printf("  → Already on latest firmware. No action needed.\n");
-            break;
-        case UPDATE_NOT_ALLOWED:
-            printf("  → Device is in exclusion list. Update blocked by policy.\n");
-            break;
-        case FIRMWARE_CHECK_ERROR:
-            printf("  → Check failed. Will retry on next scheduled interval.\n");
-            break;
-        case IGNORE_OPTOUT:
-        case BYPASS_OPTOUT:
-            printf("  → Device has opted out. Download not allowed.\n");
-            break;
+    /* Copy data to global state (data is only valid during this callback!) */
+    pthread_mutex_lock(&g_check_mutex);
+    
+    g_check_status = event_data->status;
+    
+    if (event_data->current_version) {
+        strncpy(g_fw_current_version, event_data->current_version, 
+                sizeof(g_fw_current_version) - 1);
     }
+    
+    if (event_data->available_version) {
+        strncpy(g_fw_available_version, event_data->available_version,
+                sizeof(g_fw_available_version) - 1);
+    }
+    
+    g_check_done = 1;
+    pthread_cond_signal(&g_check_cond);
+    pthread_mutex_unlock(&g_check_mutex);
 
-    printf("└─────────────────────────────────────────────────────┘\n\n");
-
-    /*
-     * IMPORTANT: Do NOT use event_data after this function returns.
-     * The library frees all string fields immediately after this call.
-     * If you need any strings later, strdup() them here.
-     *
-     * Example: char *ver = strdup(event_data->available_version);
-     */
-
-    /* Wake up main() so it can proceed to unregisterProcess() */
-    pthread_mutex_lock(&g_done_mutex);
-    g_callback_done = 1;
-    pthread_cond_signal(&g_done_cond);
-    pthread_mutex_unlock(&g_done_mutex);
+    printf("\n  → Firmware check data saved. Main thread will proceed.\n");
+    printf("└──────────────────────────────────────────────────────┘\n\n");
 }
 
 /* ========================================================================
- * MAIN
- * ======================================================================== */
-
-int main(void)
-{
-    int exit_code = EXIT_SUCCESS;
-
-    printf("┌─────────────────────────────────────────────────────┐\n");
-    printf("│      RDK Firmware Update Manager — Example App     │\n");
-    printf("└─────────────────────────────────────────────────────┘\n\n");
-
-    /* ----------------------------------------------------------------
-     * STEP 1: Register with the daemon
-     *
-     * registerProcess() is SYNCHRONOUS.
-     * It sends RegisterProcess(processName, libVersion) over D-Bus and
-     * waits for the daemon to respond with a uint64 handler_id.
-     *
-     * The returned handle is a malloc'd string like "12345".
-     *   - Library-owned: do NOT call free() on it yourself.
-     *   - It is freed internally inside unregisterProcess().
-     *   - Set to NULL after unregisterProcess() to avoid use-after-free.
-     * ---------------------------------------------------------------- */
-    printf("[Step 1] Registering with firmware daemon...\n");
-    printf("         processName = 'ExampleApp'\n");
-    printf("         libVersion  = '1.0.0'\n");
-
-    FirmwareInterfaceHandle handle = registerProcess("ExampleApp", "1.0.0");
-
-    if (handle == FIRMWARE_INVALID_HANDLE) {
-        fprintf(stderr, "\n[ERROR] registerProcess() returned NULL.\n");
-        fprintf(stderr, "        Ensure rdkFwupdateMgr daemon is running.\n");
-        fprintf(stderr, "        Check: systemctl status rdkFwupdateMgr\n");
-        return EXIT_FAILURE;
-    }
-
-    printf("[Step 1] ✓ Registered successfully.\n");
-    printf("           handle (handler_id string) = '%s'\n\n", handle);
-
-    /* ----------------------------------------------------------------
-     * STEP 2: Call checkForUpdate (non-blocking)
-     *
-     * checkForUpdate(handle, callback) does two things and returns:
-     *   a) Registers on_firmware_event in the library's internal registry
-     *      keyed by the handle string.
-     *   b) Sends CheckForUpdate(handle) D-Bus method call to daemon
-     *      (fire-and-forget — does not wait for reply).
-     *
-     * Returns CHECK_FOR_UPDATE_SUCCESS or CHECK_FOR_UPDATE_FAIL.
-     * The actual firmware result comes later via the callback.
-     * ---------------------------------------------------------------- */
-    printf("[Step 2] Calling checkForUpdate()...\n");
-
-    CheckForUpdateResult cfu_result = checkForUpdate(handle, on_firmware_event);
-
-    if (cfu_result == CHECK_FOR_UPDATE_FAIL) {
-        fprintf(stderr, "\n[ERROR] checkForUpdate() returned FAIL.\n");
-        fprintf(stderr, "        Possible reasons:\n");
-        fprintf(stderr, "          - D-Bus connection error\n");
-        fprintf(stderr, "          - Library callback registry is full\n");
-        exit_code = EXIT_FAILURE;
-        goto unregister;
-    }
-
-    printf("[Step 2] ✓ checkForUpdate() returned CHECK_FOR_UPDATE_SUCCESS.\n");
-    printf("           Callback registered. Waiting for daemon signal...\n\n");
-
-    /* ----------------------------------------------------------------
-     * STEP 3: Wait for the callback
-     *
-     * The library's background thread is subscribed to the
-     * CheckForUpdateComplete D-Bus signal. When the daemon emits it,
-     * on_firmware_event() fires and signals g_done_cond.
-     *
-     * We wait with a 60-second timeout as a safety net.
-     *
-     * In a real plugin: return to your event loop here.
-     * The callback arrives whenever the daemon is ready.
-     * ---------------------------------------------------------------- */
-    printf("[Step 3] Waiting for CheckForUpdateComplete signal (timeout: 60s)...\n");
-
-    struct timespec deadline;
-    clock_gettime(CLOCK_REALTIME, &deadline);
-    deadline.tv_sec += 60;
-
-    pthread_mutex_lock(&g_done_mutex);
-    while (!g_callback_done) {
-        int rc = pthread_cond_timedwait(&g_done_cond, &g_done_mutex, &deadline);
-        if (rc != 0) {
-            printf("[Step 3] Timed out — daemon did not respond within 60 seconds.\n");
-            pthread_mutex_unlock(&g_done_mutex);
-            exit_code = EXIT_FAILURE;
-            goto unregister;
-        }
-    }
-    pthread_mutex_unlock(&g_done_mutex);
-
-    printf("[Step 3] ✓ Callback completed.\n\n");
-
-    /* ----------------------------------------------------------------
-     * STEP 4: Unregister from the daemon
-     *
-     * unregisterProcess() is SYNCHRONOUS.
-     * It sends UnregisterProcess(handler_id) to the daemon and then
-     * frees the handle memory internally.
-     *
-     * After this call:
-     *   - handle memory is FREED — do not dereference it.
-     *   - Set handle = NULL immediately.
-     *   - Any further checkForUpdate() with this handle will fail.
-     * ---------------------------------------------------------------- */
-unregister:
-    printf("[Step 4] Unregistering from firmware daemon...\n");
-
-    unregisterProcess(handle);
-    handle = NULL;     /* ← MUST set to NULL — handle is freed inside */
-
-    printf("[Step 4] ✓ Unregistered. Handle set to NULL.\n\n");
-
-    if (exit_code == EXIT_SUCCESS) {
-        printf("┌─────────────────────────────────────────────────────┐\n");
-        printf("│                 App completed OK                   │\n");
-        printf("└─────────────────────────────────────────────────────┘\n");
-    } else {
-        printf("┌─────────────────────────────────────────────────────┐\n");
-        printf("│              App completed with errors              │\n");
-        printf("└─────────────────────────────────────────────────────┘\n");
-    }
-
-    return exit_code;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════
- * SEQUENCE DIAGRAM
- * ═══════════════════════════════════════════════════════════════════════
- *
- *  main thread                  Library internals            Daemon
- *  ───────────                  ─────────────────            ──────
- *
- *  registerProcess("ExampleApp", "1.0.0")
- *    │─── RegisterProcess("ExampleApp","1.0.0") ────────────► │
- *    │◄── (t) handler_id = 12345 ───────────────────────────── │
- *    handle = "12345"
- *
- *  checkForUpdate("12345", on_firmware_event)
- *    │  registry: slot[0] = { PENDING, "12345", on_firmware_event }
- *    │─── CheckForUpdate("12345") ──────────────────────────► │
- *    │  (returns immediately)                                  │
- *  result = CHECK_FOR_UPDATE_SUCCESS                           │
- *                                                              │  [XConf query...]
- *  pthread_cond_timedwait()  ← main blocks here               │
- *                                                              │
- *                     bg thread ◄── CheckForUpdateComplete signal ──│
- *                       parse signal data
- *                       dispatch_all_pending():
- *                         on_firmware_event("12345", &event_data)
- *                           [prints result]
- *                           [pthread_cond_signal()]
- *                         slot[0] → IDLE
- *
- *  [main wakes up]
- *
- *  unregisterProcess("12345")
- *    │─── UnregisterProcess(t=12345) ───────────────────────► │
- *    │◄── (b) success = TRUE ───────────────────────────────── │
- *    free("12345")
- *  handle = NULL
- *
- * ═══════════════════════════════════════════════════════════════════════
- */
-
-
-
-
-/* ========================================================================
- * DOWNLOAD FIRMWARE EXAMPLE
+ * CALLBACK 2: downloadFirmware() Progress
  * ========================================================================
- *
- * Demonstrates calling downloadFirmware() after a successful checkForUpdate.
- * In a real plugin, you would call this from your on_firmware_event callback
- * when status == FIRMWARE_AVAILABLE.
- *
- * This section is a standalone function you can call from main()
- * after checkForUpdate confirms an update is available.
+ * This callback fires repeatedly as download progresses (1%, 10%, 50%, 100%).
+ * Runs in library's background thread.
  * ======================================================================== */
-
-/* Progress tracking — module level (no user_data in DownloadCallback) */
-static int             g_download_done   = 0;
-static pthread_mutex_t g_dwnl_mutex      = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t  g_dwnl_cond       = PTHREAD_COND_INITIALIZER;
 
 /**
- * @brief DownloadCallback — fires on every DownloadProgress signal
+ * @brief Callback invoked on each download progress update
  *
- * Strict signature: void fn(int progress_per, DownloadStatus fwdwnlstatus)
- * No handle, no user_data — matches the DownloadCallback typedef exactly.
+ * Signature: void fn(int progress_per, DownloadStatus fwdwnlstatus)
  *
- * Called from background thread. Do not block here.
+ * @param progress_per   Download percentage (0-100)
+ * @param fwdwnlstatus   Current download state
  */
-static void on_download_progress(int progress_per, DownloadStatus fwdwnlstatus)
+static void on_download_progress_callback(int progress_per, DownloadStatus fwdwnlstatus)
 {
     const char *status_str = "UNKNOWN";
     switch (fwdwnlstatus) {
@@ -355,173 +184,46 @@ static void on_download_progress(int progress_per, DownloadStatus fwdwnlstatus)
         case DWNL_ERROR:       status_str = "DWNL_ERROR";       break;
     }
 
-    /* Simple progress bar */
-    int bar_filled = progress_per / 5;   /* 20 chars = 100% */
-    printf("  [");
-    for (int i = 0; i < 20; i++) printf(i < bar_filled ? "█" : "░");
+    /* Print progress bar: [████████░░░░░░░░░░░░] 40%  DWNL_IN_PROGRESS */
+    int bar_filled = progress_per / 5;  /* 20 characters = 100% */
+    printf("    [");
+    for (int i = 0; i < 20; i++) {
+        printf(i < bar_filled ? "█" : "░");
+    }
     printf("] %3d%%  %s\n", progress_per, status_str);
 
-    /* Wake main() when download ends */
+    /* On terminal states (COMPLETED or ERROR), wake main thread */
     if (fwdwnlstatus == DWNL_COMPLETED || fwdwnlstatus == DWNL_ERROR) {
-        if (fwdwnlstatus == DWNL_COMPLETED) {
-            printf("\n  ✓ Download complete!\n");
-        } else {
-            printf("\n  ✗ Download failed.\n");
-        }
-
-        pthread_mutex_lock(&g_dwnl_mutex);
+        pthread_mutex_lock(&g_download_mutex);
+        g_download_status = fwdwnlstatus;
         g_download_done = 1;
-        pthread_cond_signal(&g_dwnl_cond);
-        pthread_mutex_unlock(&g_dwnl_mutex);
-    }
-}
+        pthread_cond_signal(&g_download_cond);
+        pthread_mutex_unlock(&g_download_mutex);
 
-/**
- * @brief Run the full downloadFirmware flow
- *
- * Call this from main() after checkForUpdate returns FIRMWARE_AVAILABLE.
- * Demonstrates: fill FwDwnlReq → call downloadFirmware → wait for callbacks.
- *
- * @param handle  The same handle used for checkForUpdate
- */
-void run_download_example(FirmwareInterfaceHandle handle)
-{
-    printf("\n┌─────────────────────────────────────────────────────┐\n");
-    printf("│              downloadFirmware Example               │\n");
-    printf("└─────────────────────────────────────────────────────┘\n\n");
-
-    /* ---- Fill FwDwnlReq ---- */
-    FwDwnlReq req;
-    memset(&req, 0, sizeof(req));
-
-    /* firmwareName: required */
-    strncpy(req.firmwareName, "RNGUX_4.5.1_VBN.bin", sizeof(req.firmwareName) - 1);
-
-    /* downloadUrl: optional — leave empty to use XConf URL */
-    req.downloadUrl[0] = '\0';   /* "" = use daemon's XConf-provided URL */
-
-    /* TypeOfFirmware: PCI | PDRI | PERIPHERAL */
-    strncpy(req.TypeOfFirmware, "PCI", sizeof(req.TypeOfFirmware) - 1);
-
-    printf("[Download] firmwareName   = '%s'\n", req.firmwareName);
-    printf("[Download] downloadUrl    = '%s'\n",
-           req.downloadUrl[0] ? req.downloadUrl : "(empty — use XConf URL)");
-    printf("[Download] TypeOfFirmware = '%s'\n\n", req.TypeOfFirmware);
-
-    /* ---- Call downloadFirmware (non-blocking) ---- */
-    printf("[Download] Calling downloadFirmware()...\n");
-
-    DownloadResult result = downloadFirmware(handle, req, on_download_progress);
-
-    if (result == RDKFW_DWNL_FAILED) {
-        fprintf(stderr, "[Download] ERROR: downloadFirmware() returned FAIL\n");
-        return;
-    }
-
-    printf("[Download] Returned RDKFW_DWNL_SUCCESS — waiting for progress signals...\n\n");
-    printf("  Progress:\n");
-
-    /* ---- Wait for download to complete ---- */
-    struct timespec deadline;
-    clock_gettime(CLOCK_REALTIME, &deadline);
-    deadline.tv_sec += 300;   /* 5 minute timeout for download */
-
-    pthread_mutex_lock(&g_dwnl_mutex);
-    while (!g_download_done) {
-        int rc = pthread_cond_timedwait(&g_dwnl_cond, &g_dwnl_mutex, &deadline);
-        if (rc != 0) {
-            printf("\n[Download] Timed out waiting for download completion.\n");
-            pthread_mutex_unlock(&g_dwnl_mutex);
-            return;
+        if (fwdwnlstatus == DWNL_COMPLETED) {
+            printf("\n    ✓ Download completed successfully!\n\n");
+        } else {
+            printf("\n    ✗ Download failed!\n\n");
         }
     }
-    pthread_mutex_unlock(&g_dwnl_mutex);
-
-    printf("[Download] Download flow complete.\n");
 }
 
-/*
- * ═══════════════════════════════════════════════════════════════
- * HOW TO USE run_download_example() FROM main():
- * ═══════════════════════════════════════════════════════════════
- *
- *   // After checkForUpdate callback confirms FIRMWARE_AVAILABLE:
- *   run_download_example(handle);
- *
- * OR integrate directly into on_firmware_event():
- *
- *   static void on_firmware_event(FirmwareInterfaceHandle handle,
- *                                  const FwUpdateEventData *event_data)
- *   {
- *       if (event_data->status == FIRMWARE_AVAILABLE) {
- *           // Do NOT call downloadFirmware() directly here —
- *           // this is the background thread and you'd block it.
- *           // Instead: set a flag and call it from your main event loop.
- *           g_firmware_available = 1;
- *           pthread_cond_signal(&g_fw_available_cond);
- *       }
- *   }
- * ═══════════════════════════════════════════════════════════════
- *
- * DOWNLOAD SIGNAL FLOW:
- * ═══════════════════════════════════════════════════════════════
- *
- *  main thread           Library bg thread         Daemon
- *  ───────────           ─────────────────         ──────
- *
- *  downloadFirmware()
- *    register callback ──► dwnl_registry slot=ACTIVE
- *    D-Bus call ───────────────────────────────────► DownloadFirmware(...)
- *    return RDKFW_DWNL_SUCCESS
- *
- *  [main waits on condvar]
- *                                                    [downloading... 1%]
- *                        ◄── DownloadProgress(1, IN_PROGRESS) signal ──
- *                        on_download_progress(1, DWNL_IN_PROGRESS)
- *                        → prints progress bar     slot stays ACTIVE
- *
- *                                                    [downloading... 50%]
- *                        ◄── DownloadProgress(50, IN_PROGRESS) signal ──
- *                        on_download_progress(50, DWNL_IN_PROGRESS)
- *                        → prints progress bar     slot stays ACTIVE
- *
- *                                                    [download done]
- *                        ◄── DownloadProgress(100, COMPLETED) signal ──
- *                        on_download_progress(100, DWNL_COMPLETED)
- *                        → prints "complete"
- *                        → pthread_cond_signal()   slot → IDLE
- *
- *  [main wakes up]
- *  unregisterProcess()
- * ═══════════════════════════════════════════════════════════════
- */
 /* ========================================================================
- * UPDATE FIRMWARE EXAMPLE
+ * CALLBACK 3: updateFirmware() Progress
  * ========================================================================
- *
- * Demonstrates calling updateFirmware() after downloadFirmware completes.
- *
- * Full sequence in a real app:
- *   checkForUpdate  → FIRMWARE_AVAILABLE
- *   downloadFirmware → DWNL_COMPLETED
- *   updateFirmware   → UPDATE_COMPLETED  ← this section
+ * This callback fires repeatedly as flash progresses (1%, 10%, 50%, 100%).
+ * Runs in library's background thread.
  * ======================================================================== */
 
-/* Synchronisation — same pattern used for checkForUpdate and downloadFirmware */
-static int             g_update_done  = 0;
-static pthread_mutex_t g_upd_mutex    = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t  g_upd_cond     = PTHREAD_COND_INITIALIZER;
-
 /**
- * @brief UpdateCallback — fires on every UpdateProgress signal
+ * @brief Callback invoked on each firmware flash progress update
  *
- * Strict signature: void fn(int progress_per, UpdateStatus fwupdatestatus)
- * Runs in library background thread. Do not block here.
+ * Signature: void fn(int progress_per, UpdateStatus fwupdatestatus)
  *
- * @param progress_per      Flash completion percentage (0–100)
- * @param fwupdatestatus    Current flashing state
+ * @param progress_per    Flash percentage (0-100)
+ * @param fwupdatestatus  Current flash state
  */
-static void on_update_progress(int progress_per, UpdateStatus fwupdatestatus)
+static void on_update_progress_callback(int progress_per, UpdateStatus fwupdatestatus)
 {
     const char *status_str = "UNKNOWN";
     switch (fwupdatestatus) {
@@ -530,177 +232,426 @@ static void on_update_progress(int progress_per, UpdateStatus fwupdatestatus)
         case UPDATE_ERROR:       status_str = "UPDATE_ERROR";       break;
     }
 
-    /* Progress bar — 20 chars wide = 100% */
-    int filled = progress_per / 5;
-    printf("  [");
-    for (int i = 0; i < 20; i++) printf(i < filled ? "▓" : "░");
+    /* Print progress bar: [████████░░░░░░░░░░░░] 40%  UPDATE_IN_PROGRESS */
+    int bar_filled = progress_per / 5;  /* 20 characters = 100% */
+    printf("    [");
+    for (int i = 0; i < 20; i++) {
+        printf(i < bar_filled ? "▓" : "░");
+    }
     printf("] %3d%%  %s\n", progress_per, status_str);
 
-    /* On terminal states, wake main() */
+    /* On terminal states (COMPLETED or ERROR), wake main thread */
     if (fwupdatestatus == UPDATE_COMPLETED || fwupdatestatus == UPDATE_ERROR) {
-        if (fwupdatestatus == UPDATE_COMPLETED)
-            printf("\n  ✓ Firmware flashed successfully!\n");
-        else
-            printf("\n  ✗ Firmware flash failed.\n");
-
-        pthread_mutex_lock(&g_upd_mutex);
+        pthread_mutex_lock(&g_update_mutex);
+        g_update_status = fwupdatestatus;
         g_update_done = 1;
-        pthread_cond_signal(&g_upd_cond);
-        pthread_mutex_unlock(&g_upd_mutex);
-    }
-}
+        pthread_cond_signal(&g_update_cond);
+        pthread_mutex_unlock(&g_update_mutex);
 
-/**
- * @brief Run the full updateFirmware flow
- *
- * Call this from main() after downloadFirmware completes with DWNL_COMPLETED.
- *
- * @param handle    The same handle used for checkForUpdate / downloadFirmware
- */
-void run_update_example(FirmwareInterfaceHandle handle)
-{
-    printf("\n┌─────────────────────────────────────────────────────┐\n");
-    printf("│               updateFirmware Example               │\n");
-    printf("└─────────────────────────────────────────────────────┘\n\n");
-
-    /* ---- Fill FwUpdateReq ---- */
-    FwUpdateReq req;
-    memset(&req, 0, sizeof(req));
-
-    /* firmwareName: required — must match what was downloaded */
-    strncpy(req.firmwareName, "RNGUX_4.5.1_VBN.bin", sizeof(req.firmwareName) - 1);
-
-    /* TypeOfFirmware: required — PCI | PDRI | PERIPHERAL */
-    strncpy(req.TypeOfFirmware, "PCI", sizeof(req.TypeOfFirmware) - 1);
-
-    /*
-     * LocationOfFirmware: OPTIONAL
-     *   - Empty string ("") → daemon uses default path from /etc/device.properties
-     *   - Set a path if the image is in a non-default location
-     */
-    req.LocationOfFirmware[0] = '\0';   /* "" = use /etc/device.properties path */
-
-    /*
-     * rebootImmediately:
-     *   true  → daemon reboots device immediately after flash completes
-     *   false → app decides when to reboot
-     */
-    req.rebootImmediately = true;
-
-    printf("[Update] firmwareName       = '%s'\n", req.firmwareName);
-    printf("[Update] TypeOfFirmware     = '%s'\n", req.TypeOfFirmware);
-    printf("[Update] LocationOfFirmware = '%s'\n",
-           req.LocationOfFirmware[0]
-               ? req.LocationOfFirmware
-               : "(empty — daemon uses /etc/device.properties)");
-    printf("[Update] rebootImmediately  = %s\n\n",
-           req.rebootImmediately ? "true" : "false");
-
-    /* ---- Call updateFirmware (non-blocking) ---- */
-    printf("[Update] Calling updateFirmware()...\n");
-
-    UpdateResult result = updateFirmware(handle, req, on_update_progress);
-
-    if (result == RDKFW_UPDATE_FAILED) {
-        fprintf(stderr, "[Update] ERROR: updateFirmware() returned FAIL\n");
-        fprintf(stderr, "         Possible reasons:\n");
-        fprintf(stderr, "           - Invalid handle\n");
-        fprintf(stderr, "           - Empty firmwareName or TypeOfFirmware\n");
-        fprintf(stderr, "           - Library update registry is full\n");
-        fprintf(stderr, "           - D-Bus connection error\n");
-        return;
-    }
-
-    printf("[Update] Returned RDKFW_UPDATE_SUCCESS — "
-           "waiting for flash progress signals...\n\n");
-    printf("  Flash Progress:\n");
-
-    /* ---- Wait for flash to complete ---- */
-    struct timespec deadline;
-    clock_gettime(CLOCK_REALTIME, &deadline);
-    deadline.tv_sec += 600;   /* 10 minute timeout — flashing can be slow */
-
-    pthread_mutex_lock(&g_upd_mutex);
-    while (!g_update_done) {
-        int rc = pthread_cond_timedwait(&g_upd_cond, &g_upd_mutex, &deadline);
-        if (rc != 0) {
-            printf("\n[Update] Timed out waiting for flash completion (10 min).\n");
-            pthread_mutex_unlock(&g_upd_mutex);
-            return;
+        if (fwupdatestatus == UPDATE_COMPLETED) {
+            printf("\n    ✓ Firmware flash completed successfully!\n\n");
+        } else {
+            printf("\n    ✗ Firmware flash failed!\n\n");
         }
     }
-    pthread_mutex_unlock(&g_upd_mutex);
-
-    printf("[Update] updateFirmware flow complete.\n");
-    if (req.rebootImmediately) {
-        printf("[Update] rebootImmediately=true — "
-               "device will reboot shortly.\n");
-        printf("[Update] Do not call unregisterProcess() — "
-               "process will not survive the reboot.\n");
-    }
 }
 
-/*
- * ═══════════════════════════════════════════════════════════════
- * HOW TO USE run_update_example() FROM main():
- * ═══════════════════════════════════════════════════════════════
- *
- *   // After downloadFirmware callback confirms DWNL_COMPLETED:
- *   run_update_example(handle);
- *
- * ═══════════════════════════════════════════════════════════════
- * COMPLETE THREE-STEP SEQUENCE IN main():
- * ═══════════════════════════════════════════════════════════════
- *
- *   FirmwareInterfaceHandle handle = registerProcess("MyApp", "1.0.0");
- *
- *   // Step 1 — check
- *   checkForUpdate(handle, on_firmware_event);
- *   // [wait] on_firmware_event → status == FIRMWARE_AVAILABLE
- *
- *   // Step 2 — download
- *   run_download_example(handle);
- *   // [wait] on_download_progress(100, DWNL_COMPLETED)
- *
- *   // Step 3 — flash
- *   run_update_example(handle);
- *   // [wait] on_update_progress(100, UPDATE_COMPLETED)
- *   // → device reboots (if rebootImmediately = true)
- *
- *   unregisterProcess(handle);   // only if rebootImmediately = false
- *   handle = NULL;
- *
- * ═══════════════════════════════════════════════════════════════
- * UPDATE SIGNAL FLOW:
- * ═══════════════════════════════════════════════════════════════
- *
- *  main thread           Library bg thread           Daemon
- *  ───────────           ─────────────────           ──────
- *
- *  updateFirmware()
- *    register callback ──► update_registry slot=ACTIVE
- *    D-Bus call ──────────────────────────────────► UpdateFirmware(...)
- *    return RDKFW_UPDATE_SUCCESS
- *
- *  [main waits on condvar]
- *                                                    [flashing... 1%]
- *                        ◄── UpdateProgress(1, UPDATE_IN_PROGRESS) ──
- *                        on_update_progress(1, UPDATE_IN_PROGRESS)
- *                        → prints progress bar       slot stays ACTIVE
- *
- *                                                    [flashing... 50%]
- *                        ◄── UpdateProgress(50, UPDATE_IN_PROGRESS) ──
- *                        on_update_progress(50, UPDATE_IN_PROGRESS)
- *                        → prints progress bar       slot stays ACTIVE
- *
- *                                                    [flash done]
- *                        ◄── UpdateProgress(100, UPDATE_COMPLETED) ──
- *                        on_update_progress(100, UPDATE_COMPLETED)
- *                        → prints "flashed"
- *                        → pthread_cond_signal()     slot → IDLE
- *
- *  [main wakes up]
- *  (device reboots if rebootImmediately=true)
- * ═══════════════════════════════════════════════════════════════
- */
+/* ========================================================================
+ * MAIN - Complete One-Shot Firmware Update Workflow
+ * ========================================================================
+ * Executes the full sequence:
+ *   1. Register with daemon
+ *   2. Check for updates
+ *   3. Download firmware (if available)
+ *   4. Flash firmware
+ *   5. Unregister and exit
+ * ======================================================================== */
 
+int main(void)
+{
+    struct timespec timeout;
+    int rc;
+
+    printf("\n");
+    printf("╔═══════════════════════════════════════════════════════╗\n");
+    printf("║   RDK Firmware Update Manager - Complete Workflow    ║\n");
+    printf("╚═══════════════════════════════════════════════════════╝\n\n");
+
+    /* ====================================================================
+     * STEP 1: Register Process with Daemon
+     * ==================================================================== */
+    printf("┌─────────────────────────────────────────────────────┐\n");
+    printf("│ STEP 1: Register with firmware daemon              │\n");
+    printf("└─────────────────────────────────────────────────────┘\n");
+    printf("  Process Name : ExampleApp\n");
+    printf("  Lib Version  : 1.0.0\n\n");
+
+    g_handle = registerProcess("ExampleApp", "1.0.0");
+
+    if (g_handle == FIRMWARE_INVALID_HANDLE) {
+        fprintf(stderr, "[ERROR] registerProcess() failed!\n");
+        fprintf(stderr, "        Ensure rdkFwupdateMgr daemon is running:\n");
+        fprintf(stderr, "        systemctl status rdkFwupdateMgr.service\n\n");
+        return EXIT_FAILURE;
+    }
+
+    printf("  ✓ Registered successfully\n");
+    printf("    Handle: '%s'\n\n", g_handle);
+
+    /* ====================================================================
+     * STEP 2: Check for Firmware Updates (Async)
+     * ==================================================================== */
+    printf("┌─────────────────────────────────────────────────────┐\n");
+    printf("│ STEP 2: Check for firmware updates                 │\n");
+    printf("└─────────────────────────────────────────────────────┘\n");
+    printf("  Calling checkForUpdate()...\n");
+    printf("  (API returns immediately; callback fires when XConf query completes)\n\n");
+
+    CheckForUpdateResult cfu_result = checkForUpdate(g_handle, on_firmware_check_callback);
+
+    if (cfu_result != CHECK_FOR_UPDATE_SUCCESS) {
+        fprintf(stderr, "[ERROR] checkForUpdate() returned FAIL!\n");
+        fprintf(stderr, "        Possible reasons:\n");
+        fprintf(stderr, "          - D-Bus connection error\n");
+        fprintf(stderr, "          - Daemon not responding\n");
+        fprintf(stderr, "          - Invalid handle\n\n");
+        g_exit_code = EXIT_FAILURE;
+        goto cleanup_unregister;
+    }
+
+    printf("  ✓ checkForUpdate() returned SUCCESS\n");
+    printf("    (Daemon ACK received - waiting for actual firmware data...)\n\n");
+
+    /* Wait for callback with timeout (2 minutes for XConf query) */
+    printf("  Waiting for firmware check callback");
+    fflush(stdout);
+
+    clock_gettime(CLOCK_REALTIME, &timeout);
+    timeout.tv_sec += 120;  /* 2 minute timeout */
+
+    pthread_mutex_lock(&g_check_mutex);
+    while (!g_check_done) {
+        rc = pthread_cond_timedwait(&g_check_cond, &g_check_mutex, &timeout);
+        if (rc != 0) {
+            pthread_mutex_unlock(&g_check_mutex);
+            fprintf(stderr, "\n[ERROR] Timeout waiting for checkForUpdate callback (120s)\n");
+            fprintf(stderr, "        XConf query may be taking longer than expected.\n\n");
+            g_exit_code = EXIT_FAILURE;
+            goto cleanup_unregister;
+        }
+    }
+    pthread_mutex_unlock(&g_check_mutex);
+
+    /* Check result */
+    printf("\n");
+    if (g_check_status != FIRMWARE_AVAILABLE) {
+        printf("  ⚠ No firmware update available\n");
+        printf("    Status: %d\n", g_check_status);
+        printf("    Current Version: %s\n", g_fw_current_version);
+        
+        if (g_check_status == FIRMWARE_NOT_AVAILABLE) {
+            printf("    → Already on latest version. No action needed.\n\n");
+            g_exit_code = EXIT_SUCCESS;
+        } else {
+            printf("    → Cannot proceed with update.\n\n");
+            g_exit_code = EXIT_FAILURE;
+        }
+        goto cleanup_unregister;
+    }
+
+    printf("  ✓ Firmware update available!\n");
+    printf("    Current Version  : %s\n", g_fw_current_version);
+    printf("    Available Version: %s\n", g_fw_available_version);
+    printf("    → Proceeding to download...\n\n");
+
+    /* ====================================================================
+     * STEP 3: Download Firmware (Async)
+     * ==================================================================== */
+    printf("┌─────────────────────────────────────────────────────┐\n");
+    printf("│ STEP 3: Download firmware image                    │\n");
+    printf("└─────────────────────────────────────────────────────┘\n");
+
+    /* Prepare download request - use available version as firmware name */
+    FwDwnlReq download_req;
+    memset(&download_req, 0, sizeof(download_req));
+
+    /* Firmware name: Use a default or derive from available version */
+    snprintf(download_req.firmwareName, sizeof(download_req.firmwareName),
+             "firmware_%s.bin", g_fw_available_version);
+    
+    /* Download URL: Empty = use daemon's XConf-provided URL */
+    download_req.downloadUrl[0] = '\0';
+    
+    /* Type of firmware */
+    strncpy(download_req.TypeOfFirmware, "PCI", sizeof(download_req.TypeOfFirmware) - 1);
+
+    printf("  Firmware Name : %s\n", download_req.firmwareName);
+    printf("  Download URL  : (use XConf URL)\n");
+    printf("  Firmware Type : %s\n\n", download_req.TypeOfFirmware);
+
+    printf("  Calling downloadFirmware()...\n\n");
+
+    DownloadResult dl_result = downloadFirmware(g_handle, download_req, 
+                                                 on_download_progress_callback);
+
+    if (dl_result != RDKFW_DWNL_SUCCESS) {
+        fprintf(stderr, "[ERROR] downloadFirmware() returned FAIL!\n\n");
+        g_exit_code = EXIT_FAILURE;
+        goto cleanup_unregister;
+    }
+
+    printf("  ✓ downloadFirmware() returned SUCCESS\n");
+    printf("    Waiting for download progress...\n\n");
+    printf("  Download Progress:\n");
+
+    /* Wait for download completion with timeout (5 minutes) */
+    clock_gettime(CLOCK_REALTIME, &timeout);
+    timeout.tv_sec += 300;  /* 5 minute timeout for download */
+
+    pthread_mutex_lock(&g_download_mutex);
+    while (!g_download_done) {
+        rc = pthread_cond_timedwait(&g_download_cond, &g_download_mutex, &timeout);
+        if (rc != 0) {
+            pthread_mutex_unlock(&g_download_mutex);
+            fprintf(stderr, "[ERROR] Timeout waiting for download completion (5 min)\n\n");
+            g_exit_code = EXIT_FAILURE;
+            goto cleanup_unregister;
+        }
+    }
+    pthread_mutex_unlock(&g_download_mutex);
+
+    /* Check download result */
+    if (g_download_status != DWNL_COMPLETED) {
+        fprintf(stderr, "[ERROR] Download failed (status=%d)\n\n", g_download_status);
+        g_exit_code = EXIT_FAILURE;
+        goto cleanup_unregister;
+    }
+
+    printf("  → Download complete. Proceeding to flash...\n\n");
+
+    /* ====================================================================
+     * STEP 4: Update/Flash Firmware (Async)
+     * ==================================================================== */
+    printf("┌─────────────────────────────────────────────────────┐\n");
+    printf("│ STEP 4: Flash firmware to device                   │\n");
+    printf("└─────────────────────────────────────────────────────┘\n");
+
+    /* Prepare update request */
+    FwUpdateReq update_req;
+    memset(&update_req, 0, sizeof(update_req));
+
+    /* Must match what was downloaded */
+    strncpy(update_req.firmwareName, download_req.firmwareName,
+            sizeof(update_req.firmwareName) - 1);
+    
+    /* Must match download request */
+    strncpy(update_req.TypeOfFirmware, download_req.TypeOfFirmware,
+            sizeof(update_req.TypeOfFirmware) - 1);
+    
+    /* Location: Empty = use /etc/device.properties default path */
+    update_req.LocationOfFirmware[0] = '\0';
+    
+    /* Reboot after flash: false for this example (so we can unregister cleanly) */
+    update_req.rebootImmediately = false;
+
+    printf("  Firmware Name  : %s\n", update_req.firmwareName);
+    printf("  Firmware Type  : %s\n", update_req.TypeOfFirmware);
+    printf("  Location       : (use daemon default)\n");
+    printf("  Reboot Now     : %s\n\n", update_req.rebootImmediately ? "true" : "false");
+
+    printf("  Calling updateFirmware()...\n\n");
+
+    UpdateResult upd_result = updateFirmware(g_handle, update_req,
+                                              on_update_progress_callback);
+
+    if (upd_result != RDKFW_UPDATE_SUCCESS) {
+        fprintf(stderr, "[ERROR] updateFirmware() returned FAIL!\n\n");
+        g_exit_code = EXIT_FAILURE;
+        goto cleanup_unregister;
+    }
+
+    printf("  ✓ updateFirmware() returned SUCCESS\n");
+    printf("    Waiting for flash progress...\n\n");
+    printf("  Flash Progress:\n");
+
+    /* Wait for flash completion with timeout (10 minutes) */
+    clock_gettime(CLOCK_REALTIME, &timeout);
+    timeout.tv_sec += 600;  /* 10 minute timeout for flashing */
+
+    pthread_mutex_lock(&g_update_mutex);
+    while (!g_update_done) {
+        rc = pthread_cond_timedwait(&g_update_cond, &g_update_mutex, &timeout);
+        if (rc != 0) {
+            pthread_mutex_unlock(&g_update_mutex);
+            fprintf(stderr, "[ERROR] Timeout waiting for flash completion (10 min)\n\n");
+            g_exit_code = EXIT_FAILURE;
+            goto cleanup_unregister;
+        }
+    }
+    pthread_mutex_unlock(&g_update_mutex);
+
+    /* Check flash result */
+    if (g_update_status != UPDATE_COMPLETED) {
+        fprintf(stderr, "[ERROR] Firmware flash failed (status=%d)\n\n", g_update_status);
+        g_exit_code = EXIT_FAILURE;
+        goto cleanup_unregister;
+    }
+
+    printf("  → Flash complete!\n\n");
+
+    /* ====================================================================
+     * STEP 5: Unregister and Cleanup
+     * ==================================================================== */
+cleanup_unregister:
+    printf("┌─────────────────────────────────────────────────────┐\n");
+    printf("│ STEP 5: Unregister from daemon                     │\n");
+    printf("└─────────────────────────────────────────────────────┘\n");
+
+    if (g_handle != NULL) {
+        printf("  Calling unregisterProcess()...\n");
+        unregisterProcess(g_handle);
+        g_handle = NULL;
+        printf("  ✓ Unregistered successfully\n\n");
+    }
+
+    /* ====================================================================
+     * Final Status
+     * ==================================================================== */
+    printf("╔═══════════════════════════════════════════════════════╗\n");
+    if (g_exit_code == EXIT_SUCCESS) {
+        printf("║   ✓ FIRMWARE UPDATE WORKFLOW COMPLETED               ║\n");
+        printf("╚═══════════════════════════════════════════════════════╝\n\n");
+        if (g_update_status == UPDATE_COMPLETED) {
+            printf("  ⚠ NOTE: Firmware flashed successfully.\n");
+            printf("          System reboot required to activate new firmware.\n");
+            printf("          Use: systemctl reboot\n\n");
+        }
+    } else {
+        printf("║   ✗ FIRMWARE UPDATE WORKFLOW FAILED                  ║\n");
+        printf("╚═══════════════════════════════════════════════════════╝\n\n");
+        printf("  Check logs for details:\n");
+        printf("    tail -f /opt/logs/rdkFwupdateMgr.log\n\n");
+    }
+
+    return g_exit_code;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * COMPLETE WORKFLOW SEQUENCE DIAGRAM
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ *  Main Thread              Library BG Thread         Daemon Process
+ *  ───────────              ─────────────────         ──────────────
+ *
+ *  [STEP 1: Register]
+ *  registerProcess("ExampleApp", "1.0.0")
+ *    │───── D-Bus: RegisterProcess ──────────────────► │
+ *    │◄──── Returns handler_id=12345 ─────────────────┤
+ *  g_handle = "12345"
+ *
+ *  [STEP 2: Check for Update]
+ *  checkForUpdate(g_handle, on_firmware_check_callback)
+ *    │ - Register callback                            │
+ *    │───── D-Bus: CheckForUpdate(12345) ────────────► │
+ *    │◄──── Returns ACK ──────────────────────────────┤
+ *  Returns CHECK_FOR_UPDATE_SUCCESS                   │
+ *                                                      │
+ *  [Wait on condvar]                                   │ [Query XConf...]
+ *  pthread_cond_wait(&g_check_cond)                    │ [Parse response]
+ *                                                      │
+ *                     ◄─── D-Bus Signal: UpdateEventSignal(12345, data) ──┤
+ *                     Catch signal
+ *                     Parse firmware data
+ *                     on_firmware_check_callback(g_handle, event_data)
+ *                       ├─ Copy firmware versions
+ *                       ├─ Set g_check_done = 1
+ *                       └─ pthread_cond_signal(&g_check_cond)
+ *
+ *  [Main wakes up]
+ *  Check g_check_status == FIRMWARE_AVAILABLE
+ *
+ *  [STEP 3: Download Firmware]
+ *  downloadFirmware(g_handle, download_req, on_download_progress_callback)
+ *    │ - Register callback                            │
+ *    │───── D-Bus: DownloadFirmware(...) ────────────► │
+ *    │◄──── Returns ACK ──────────────────────────────┤
+ *  Returns RDKFW_DWNL_SUCCESS                         │
+ *                                                      │
+ *  [Wait on condvar]                                   │ [Download: 1%]
+ *  pthread_cond_wait(&g_download_cond)                 │
+ *                     ◄─── Signal: DownloadProgress(1, IN_PROGRESS) ──────┤
+ *                     on_download_progress_callback(1, DWNL_IN_PROGRESS)
+ *                       └─ Print progress bar
+ *                                                      │ [Download: 50%]
+ *                     ◄─── Signal: DownloadProgress(50, IN_PROGRESS) ─────┤
+ *                     on_download_progress_callback(50, DWNL_IN_PROGRESS)
+ *                       └─ Print progress bar
+ *                                                      │ [Download: 100%]
+ *                     ◄─── Signal: DownloadProgress(100, COMPLETED) ──────┤
+ *                     on_download_progress_callback(100, DWNL_COMPLETED)
+ *                       ├─ Set g_download_done = 1
+ *                       └─ pthread_cond_signal(&g_download_cond)
+ *
+ *  [Main wakes up]
+ *  Check g_download_status == DWNL_COMPLETED
+ *
+ *  [STEP 4: Flash Firmware]
+ *  updateFirmware(g_handle, update_req, on_update_progress_callback)
+ *    │ - Register callback                            │
+ *    │───── D-Bus: UpdateFirmware(...) ──────────────► │
+ *    │◄──── Returns ACK ──────────────────────────────┤
+ *  Returns RDKFW_UPDATE_SUCCESS                       │
+ *                                                      │
+ *  [Wait on condvar]                                   │ [Flash: 1%]
+ *  pthread_cond_wait(&g_update_cond)                   │
+ *                     ◄─── Signal: UpdateProgress(1, UPDATE_IN_PROGRESS) ─┤
+ *                     on_update_progress_callback(1, UPDATE_IN_PROGRESS)
+ *                       └─ Print progress bar
+ *                                                      │ [Flash: 100%]
+ *                     ◄─── Signal: UpdateProgress(100, UPDATE_COMPLETED) ─┤
+ *                     on_update_progress_callback(100, UPDATE_COMPLETED)
+ *                       ├─ Set g_update_done = 1
+ *                       └─ pthread_cond_signal(&g_update_cond)
+ *
+ *  [Main wakes up]
+ *  Check g_update_status == UPDATE_COMPLETED
+ *
+ *  [STEP 5: Cleanup]
+ *  unregisterProcess(g_handle)
+ *    │───── D-Bus: UnregisterProcess(12345) ────────► │
+ *    │◄──── Returns success ──────────────────────────┤
+ *    │ Free handle internally
+ *  g_handle = NULL
+ *
+ *  Exit(EXIT_SUCCESS)
+ *
+ * ═══════════════════════════════════════════════════════════════════════
+ * KEY TIMING NOTES:
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ * 1. checkForUpdate():
+ *    - API returns in ~5s (daemon ACK)
+ *    - Callback fires 1s to 2 hours later (XConf query time)
+ *    - We wait with 2 minute timeout (adjust for your network)
+ *
+ * 2. downloadFirmware():
+ *    - API returns immediately
+ *    - Callbacks fire repeatedly (progress updates)
+ *    - We wait with 5 minute timeout (adjust for firmware size/network)
+ *
+ * 3. updateFirmware():
+ *    - API returns immediately
+ *    - Callbacks fire repeatedly (flash progress)
+ *    - We wait with 10 minute timeout (adjust for flash speed)
+ *
+ * ═══════════════════════════════════════════════════════════════════════
+ * ERROR HANDLING:
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ * - Any API returning FAIL → goto cleanup_unregister
+ * - Any callback timeout → goto cleanup_unregister
+ * - Check status != AVAILABLE → exit with appropriate message
+ * - Download or flash errors → detected in callback, set g_exit_code
+ *
+ * ═══════════════════════════════════════════════════════════════════════
+ */

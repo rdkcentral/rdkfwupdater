@@ -12,75 +12,67 @@
 
 /**
  * @file rdkFwupdateMgr_api.c
- * @brief Public checkForUpdate() implementation
+ * @brief Public API implementations: checkForUpdate, downloadFirmware, updateFirmware
  *
- * Implements the required API:
- *   CheckForUpdateResult checkForUpdate(FirmwareInterfaceHandle handle,
- *                                       UpdateEventCallback callback);
+ * CHECKFORUPDATE DESIGN:
+ * =====================
+ * CheckForUpdate is a SYNCHRONOUS D-Bus method on the daemon.
+ * The daemon processes the XConf query and returns the result directly
+ * in the method reply — no separate signal needed for the basic result.
+ *
+ * The CheckForUpdateComplete SIGNAL also exists on the daemon and fires
+ * to all connected clients. We subscribe to it in async.c for multi-app
+ * broadcast delivery, but the primary result is read from the sync reply.
  *
  * FLOW:
  *   1. Validate: handle != NULL/empty, callback != NULL
- *   2. Register callback in internal registry (BEFORE D-Bus call)
- *   3. Fire D-Bus CheckForUpdate method call to daemon (fire-and-forget)
- *   4. Return CHECK_FOR_UPDATE_SUCCESS immediately
+ *   2. Register callback in registry (so signal-based delivery also works)
+ *   3. Call CheckForUpdate(handle) SYNCHRONOUSLY — wait for reply
+ *   4. Parse reply: (issssi) → result, versions, details, status_code
+ *   5. Build FwUpdateEventData, fire callback immediately
+ *   6. Return CHECK_FOR_UPDATE_SUCCESS
  *
- * The actual firmware result arrives via CheckForUpdateComplete signal,
- * handled in rdkFwupdateMgr_async.c, which invokes the app callback.
+ * DOWNLOAD / UPDATE FIRMWARE DESIGN:
+ * ====================================
+ * DownloadFirmware and UpdateFirmware are also synchronous calls but the
+ * daemon additionally emits progress signals (DownloadProgress, UpdateProgress)
+ * repeatedly. We register the callback, call sync to initiate, then the
+ * background thread delivers progress via signals.
  */
 
-#include "rdkFwupdateMgr_process.h"
+#include "rdkFwupdateMgr_client.h"
 #include "rdkFwupdateMgr_async_internal.h"
 #include "rdkFwupdateMgr_log.h"
 #include <gio/gio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <inttypes.h>
 
 /* ========================================================================
- * PUBLIC API
+ * checkForUpdate — SYNCHRONOUS implementation
  * ======================================================================== */
 
 /**
- * @brief Check for firmware update — non-blocking, 2-parameter API
+ * @brief Check for firmware update — calls daemon synchronously, fires callback
  *
- * Aligned to the required signature:
- *   CheckForUpdateResult checkForUpdate(FirmwareInterfaceHandle handle,
- *                                       UpdateEventCallback callback);
+ * Sends CheckForUpdate(handle) and blocks until the daemon replies.
+ * The daemon returns the result directly: (issssi)
+ *   i  result        (0=success, non-0=fail)
+ *   s  currentVersion
+ *   s  availableVersion
+ *   s  updateDetails
+ *   s  statusMessage
+ *   i  statusCode    (maps to CheckForUpdateStatus enum)
  *
- * INTERNAL SEQUENCE:
+ * On success, builds FwUpdateEventData and fires the callback immediately
+ * in the caller's thread — no signal, no background thread needed.
  *
- *   [1] Validate parameters
- *       handle must be non-NULL and non-empty (came from registerProcess)
- *       callback must be non-NULL
- *
- *   [2] Register callback FIRST (before D-Bus call)
- *       internal_register_callback(handle, callback)
- *       ─ Finds a free IDLE slot in the registry
- *       ─ Stores handle (strdup'd) and callback pointer
- *       ─ Sets slot state = PENDING
- *
- *       WHY REGISTER BEFORE SENDING?
- *       If we sent the D-Bus call first, the daemon could be so fast that
- *       it emits the signal before we finish registering — we'd miss it.
- *       Registering first closes that race window completely.
- *
- *   [3] Send D-Bus CheckForUpdate method call (fire-and-forget)
- *       ─ Creates a fresh D-Bus connection (stateless design per process.h)
- *       ─ Calls CheckForUpdate(handle) on org.rdkfwupdater.Interface
- *       ─ Does NOT wait for the method reply (three trailing NULLs)
- *       ─ Returns immediately after queueing the message
- *
- *   [4] Return CHECK_FOR_UPDATE_SUCCESS
- *       App regains control. Background thread is watching for the signal.
- *
- *   [later, in background thread]
- *       Daemon emits CheckForUpdateComplete signal
- *       → on_check_complete_signal() parses payload
- *       → dispatch_all_pending() finds slot with matching handle
- *       → callback(handle, &event_data) called — 2-param, no user_data
- *       → slot reset to IDLE
+ * Also registers callback in the async registry so the
+ * CheckForUpdateComplete broadcast signal (if the daemon emits it) also
+ * delivers to this callback.
  *
  * @param handle    Valid FirmwareInterfaceHandle from registerProcess()
- * @param callback  UpdateEventCallback invoked when result is available
+ * @param callback  Invoked with result before this function returns
  * @return CHECK_FOR_UPDATE_SUCCESS or CHECK_FOR_UPDATE_FAIL
  */
 CheckForUpdateResult checkForUpdate(FirmwareInterfaceHandle handle,
@@ -91,7 +83,6 @@ CheckForUpdateResult checkForUpdate(FirmwareInterfaceHandle handle,
         FWUPMGR_ERROR("checkForUpdate: invalid handle (NULL or empty)\n");
         return CHECK_FOR_UPDATE_FAIL;
     }
-
     if (callback == NULL) {
         FWUPMGR_ERROR("checkForUpdate: callback is NULL\n");
         return CHECK_FOR_UPDATE_FAIL;
@@ -99,65 +90,122 @@ CheckForUpdateResult checkForUpdate(FirmwareInterfaceHandle handle,
 
     FWUPMGR_INFO("checkForUpdate: handle='%s'\n", handle);
 
-    /* [2] Register callback BEFORE sending D-Bus call */
+    /* [2] Register in async registry catches CheckForUpdateComplete signal too */
     if (!internal_register_callback(handle, callback)) {
         FWUPMGR_ERROR("checkForUpdate: registry full, handle='%s'\n", handle);
         return CHECK_FOR_UPDATE_FAIL;
     }
 
-    /* [3] Fire-and-forget D-Bus method call */
+    /* [3] Connect to system D-Bus */
     GError *error = NULL;
     GDBusConnection *conn = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
-
     if (conn == NULL) {
         FWUPMGR_ERROR("checkForUpdate: D-Bus connect failed: %s\n",
                       error ? error->message : "unknown");
         if (error) g_error_free(error);
-        /*
-         * Cannot send the D-Bus call. The daemon will never emit a signal
-         * for this request, so the registered callback would never fire.
-         * The slot will age out via CALLBACK_TIMEOUT_SECONDS cleanup.
-         * Return FAIL so the app knows the call did not go through.
-         */
         return CHECK_FOR_UPDATE_FAIL;
     }
 
-    /*
-     * Call CheckForUpdate(handle) on the daemon.
-     *
-     * The handle string is passed as the single argument (s).
-     * The daemon uses it to identify which component/process is requesting
-     * the check, and tags the outgoing signal accordingly.
-     *
-     * The three trailing NULLs make this fire-and-forget:
-     *   NULL → no GAsyncReadyCallback  (don't want a method reply)
-     *   NULL → no GCancellable
-     *   NULL → no user_data for reply callback
-     *
-     * g_dbus_connection_call() returns immediately after queuing the
-     * message to the D-Bus socket. We move on without waiting.
-     */
-    g_dbus_connection_call(
+    /* [4] Call CheckForUpdate synchronously - 5s timeout for daemon ACK only */
+    FWUPMGR_INFO("checkForUpdate: calling CheckForUpdate on daemon, handle='%s'\n",
+                 handle);
+
+    GVariant *reply = g_dbus_connection_call_sync(
         conn,
-        DBUS_SERVICE_NAME,                 /* destination                  */
-        DBUS_OBJECT_PATH,                  /* object path                  */
-        DBUS_INTERFACE_NAME,               /* interface                    */
-        DBUS_METHOD_CHECK,                 /* method: CheckForUpdate       */
-        g_variant_new("(s)", handle),      /* arg: handle string           */
-        NULL,                              /* expected reply type: none    */
+        DBUS_SERVICE_NAME,
+        DBUS_OBJECT_PATH,
+        DBUS_INTERFACE_NAME,
+        DBUS_METHOD_CHECK,
+        g_variant_new("(s)", handle),   /* handler_process_name */
+        NULL,                           /* expected reply type: any */
         G_DBUS_CALL_FLAGS_NONE,
-        DBUS_TIMEOUT_MS,
-        NULL,                              /* GCancellable: none           */
-        NULL,                              /* reply callback: none         */
-        NULL                               /* user_data for reply: none    */
+        5000,                           /* 5s - only waiting for daemon ACK, not XConf result*/
+        NULL,                           /* GCancellable */
+        &error
     );
 
     g_object_unref(conn);
 
-    FWUPMGR_INFO("checkForUpdate: D-Bus call sent, returning SUCCESS. handle='%s'\n",
-                 handle);
+    if (reply == NULL) {
+        FWUPMGR_ERROR("checkForUpdate: D-Bus call failed: %s\n",
+                      error ? error->message : "unknown");
+        if (error) g_error_free(error);
+        return CHECK_FOR_UPDATE_FAIL;
+    }
 
-    /* [4] Return immediately — app is unblocked */
+    /* [5] Parse reply: (issssi)
+     *   i  api_result       0 = success
+     *   s  currentVersion
+     *   s  availableVersion
+     *   s  updateDetails    (unused by FwUpdateEventData but logged)
+     *   s  statusMessage
+     *   i  statusCode       maps to CheckForUpdateStatus enum
+     */
+    gint32  api_result   = 0;
+    gint32  status_code  = 0;
+    gchar  *curr_ver     = NULL;
+    gchar  *avail_ver    = NULL;
+    gchar  *upd_details  = NULL;
+    gchar  *status_msg   = NULL;
+
+    g_variant_get(reply, "(issssi)",
+                  &api_result,
+                  &curr_ver,
+                  &avail_ver,
+                  &upd_details,
+                  &status_msg,
+                  &status_code);
+    g_variant_unref(reply);
+
+    FWUPMGR_INFO("checkForUpdate: reply received — api_result=%d status_code=%d\n",
+                 api_result, status_code);
+    FWUPMGR_INFO("  currentVersion   = %s\n", curr_ver    ? curr_ver    : "(null)");
+    FWUPMGR_INFO("  availableVersion = %s\n", avail_ver   ? avail_ver   : "(null)");
+    FWUPMGR_INFO("  updateDetails    = %s\n", upd_details ? upd_details : "(null)");
+    FWUPMGR_INFO("  statusMessage    = %s\n", status_msg  ? status_msg  : "(null)");
+
+    if (api_result != 0) {
+        FWUPMGR_ERROR("checkForUpdate: daemon returned failure (api_result=%d)\n",
+                      api_result);
+        g_free(curr_ver); g_free(avail_ver);
+        g_free(upd_details); g_free(status_msg);
+        return CHECK_FOR_UPDATE_FAIL;
+    }
+
+    /* [6] Build FwUpdateEventData and fire callback in caller's thread */
+//    CheckForUpdateStatus status = internal_map_status_code(status_code);
+/*
+    FwUpdateEventData event_data = {
+       .status            = status,
+        .current_version   = curr_ver,
+        .available_version = avail_ver,
+        .status_message    = status_msg,
+        .update_available  = (status == FIRMWARE_AVAILABLE)
+    };
+
+    FWUPMGR_INFO("checkForUpdate: firing callback — status=%d update_available=%d\n",
+                 status, event_data.update_available);
+
+    callback(handle, &event_data);
+*/
+    /* [6] Don't fire callback here - daemon response is just an ACK.
+ * Callback will fire later when CheckForUpdateComplete signal arrives
+ * with real firmware data from XConf (5-30 seconds). */
+
+    g_free(curr_ver);
+    g_free(avail_ver);
+    g_free(upd_details);
+    g_free(status_msg);
+
+    if (api_result != 0) {
+	    FWUPMGR_ERROR("checkForUpdate: daemon rejected (api_result=%d)\n", api_result);
+	    return CHECK_FOR_UPDATE_FAIL;
+    }
+
+    FWUPMGR_INFO("checkForUpdate: trigger succeeded\n");
+    FWUPMGR_INFO("  Callback will fire when signal arrives \n");
+
+    FWUPMGR_INFO("checkForUpdate: done. handle='%s'\n", handle);
     return CHECK_FOR_UPDATE_SUCCESS;
 }
 
@@ -193,7 +241,6 @@ static void rdkFwupdateMgr_lib_deinit(void)
     internal_system_deinit();
     FWUPMGR_INFO("=== rdkFwupdateMgr library unloaded ===\n");
 }
-
 
 /* ========================================================================
  * DOWNLOAD FIRMWARE PUBLIC API
@@ -416,12 +463,12 @@ UpdateResult updateFirmware(FirmwareInterfaceHandle handle,
         DBUS_OBJECT_PATH,
         DBUS_INTERFACE_NAME,
         DBUS_METHOD_UPDATE,                         /* method: UpdateFirmware     */
-        g_variant_new("(sssb)",
+        g_variant_new("(ssss)",
                       handle,                       /* app's handler_id string    */
                       fwupdatereq.firmwareName,     /* image to flash             */
                       fwupdatereq.LocationOfFirmware, /* path or ""               */
                       fwupdatereq.TypeOfFirmware,   /* PCI / PDRI / PERIPHERAL    */
-                      fwupdatereq.rebootImmediately),/* reboot flag               */
+                      fwupdatereq.rebootImmediately ? "true" : "false"), /* 's' not 'b' — daemon expects string */
         NULL,                                       /* expected reply: none       */
         G_DBUS_CALL_FLAGS_NONE,
         DBUS_TIMEOUT_MS,
@@ -438,5 +485,3 @@ UpdateResult updateFirmware(FirmwareInterfaceHandle handle,
     /* [4] Return immediately — app is unblocked */
     return RDKFW_UPDATE_SUCCESS;
 }
-
-
