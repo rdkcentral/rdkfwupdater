@@ -100,7 +100,7 @@ def test_certsel_fallback_verification(backup_reference_cert):
 
 
 def test_fallback_firmware_download(backup_reference_cert):
-    """Test firmware download works with fallback to client.p12/client.pem"""
+    """Ensure firmware daemon remains running when reference.p12 is missing (fallback scenario)."""
     write_config_files()
     cleanup_daemon_files()
     daemon_proc = start_daemon_process()
