@@ -26,6 +26,7 @@
 
 #include "rdkFwupdateMgr_async_internal.h"
 #include "rdkFwupdateMgr_log.h"
+#include "rdkFwupdateMgr_client.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -54,6 +55,8 @@ static void  on_check_complete_signal(GDBusConnection *conn,
 
 static void  dispatch_all_pending(const InternalSignalData *signal_data);
 static void  registry_reset_slot(CallbackEntry *entry);
+static bool  parse_update_details(const char *update_details_str,
+                                   UpdateDetails *out_details);
 
 /* ========================================================================
  * LIBRARY LIFECYCLE

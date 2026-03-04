@@ -46,7 +46,7 @@
 #ifndef RDKFWUPDATEMGR_ASYNC_INTERNAL_H
 #define RDKFWUPDATEMGR_ASYNC_INTERNAL_H
 
-#include "rdkFwupdateMgr_process.h"
+#include "rdkFwupdateMgr_client.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <time.h>

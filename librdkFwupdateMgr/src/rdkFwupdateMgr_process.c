@@ -268,11 +268,11 @@ FirmwareInterfaceHandle registerProcess(const char *processName, const char *lib
 
     // Validate inputs
     if (!validate_process_name(processName)) {
-        return FIRMWARE_INVALID_HANDLE;
+        return NULL;
     }
 
     if (!validate_lib_version(libVersion)) {
-        return FIRMWARE_INVALID_HANDLE;
+        return NULL;
     }
 
     // Create D-Bus proxy
@@ -282,7 +282,7 @@ FirmwareInterfaceHandle registerProcess(const char *processName, const char *lib
         if (error) {
             g_error_free(error);
         }
-        return FIRMWARE_INVALID_HANDLE;
+        return NULL;
     }
 
     fprintf(stderr, "[rdkFwupdateMgr] D-Bus proxy created successfully\n");
@@ -304,7 +304,7 @@ FirmwareInterfaceHandle registerProcess(const char *processName, const char *lib
                 error->message);
         g_error_free(error);
         g_object_unref(proxy);
-        return FIRMWARE_INVALID_HANDLE;
+        return NULL;
     }
 
     // Extract handler_id from result
@@ -321,7 +321,7 @@ FirmwareInterfaceHandle registerProcess(const char *processName, const char *lib
         FWUPMGR_ERROR("Failed to allocate memory for handle\n");
         // Registration succeeded on daemon side, but we can't return handle
         // Caller should retry or handle gracefully
-        return FIRMWARE_INVALID_HANDLE;
+        return NULL;
     }
 
     //snprintf(handle_str, 32, "" %PRIu64, handler_id);

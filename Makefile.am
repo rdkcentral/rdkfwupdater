@@ -165,7 +165,7 @@ librdkFwupdateMgr_la_LDFLAGS = -shared -version-info 1:0:0
 librdkFwupdateMgr_la_LIBADD = $(GLIB_LIBS) -lpthread
 
 librdkFwupdateMgr_include_HEADERS = \
-    ${top_srcdir}/librdkFwupdateMgr/include/rdkFwupdateMgr_process.h 
+    ${top_srcdir}/librdkFwupdateMgr/include/rdkFwupdateMgr_client.h 
 #    ${top_srcdir}/librdkFwupdateMgr/include/rdkFwupdateMgr_client.h
 
 librdkFwupdateMgr_includedir = ${includedir}/rdkFwupdateMgr

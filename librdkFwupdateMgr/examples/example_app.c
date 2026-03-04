@@ -432,14 +432,21 @@ int main(void)
     memset(&download_req, 0, sizeof(download_req));
 
     /* Firmware name: Use a default or derive from available version */
-    snprintf(download_req.firmwareName, sizeof(download_req.firmwareName),
-             "firmware_%s.bin", g_fw_available_version);
+    //snprintf(download_req.firmwareName, sizeof(download_req.firmwareName),
+     //        "firmware_%s.bin", g_fw_available_version);
     
     /* Download URL: Empty = use daemon's XConf-provided URL */
-    download_req.downloadUrl[0] = '\0';
+     download_req.downloadUrl = "";
     
     /* Type of firmware */
-    strncpy(download_req.TypeOfFirmware, "PCI", sizeof(download_req.TypeOfFirmware) - 1);
+    //const char *firmwareName;
+    //strncpy(download_req.TypeOfFirmware, "PCI", sizeof(download_req.TypeOfFirmware) - 1);
+    char firmwareName[256];
+
+    snprintf(firmwareName, sizeof(firmwareName),
+		    "firmware_%s.bin", g_fw_available_version);
+
+    download_req.firmwareName = firmwareName;
 
     printf("  Firmware Name : %s\n", download_req.firmwareName);
     printf("  Download URL  : (use XConf URL)\n");
@@ -447,7 +454,7 @@ int main(void)
 
     printf("  Calling downloadFirmware()...\n\n");
 
-    DownloadResult dl_result = downloadFirmware(g_handle, download_req, 
+    DownloadResult dl_result = downloadFirmware(g_handle, &download_req, 
                                                  on_download_progress_callback);
 
     if (dl_result != RDKFW_DWNL_SUCCESS) {
@@ -495,15 +502,18 @@ int main(void)
     memset(&update_req, 0, sizeof(update_req));
 
     /* Must match what was downloaded */
-    strncpy(update_req.firmwareName, download_req.firmwareName,
-            sizeof(update_req.firmwareName) - 1);
+    //strncpy(update_req.firmwareName, download_req.firmwareName,
+    //        sizeof(update_req.firmwareName) - 1);
+    update_req.firmwareName = download_req.firmwareName;
     
     /* Must match download request */
-    strncpy(update_req.TypeOfFirmware, download_req.TypeOfFirmware,
-            sizeof(update_req.TypeOfFirmware) - 1);
+    //strncpy(update_req.TypeOfFirmware, download_req.TypeOfFirmware,
+    //        sizeof(update_req.TypeOfFirmware) - 1);
+    update_req.TypeOfFirmware = download_req.TypeOfFirmware;
     
     /* Location: Empty = use /etc/device.properties default path */
-    update_req.LocationOfFirmware[0] = '\0';
+    //update_req.LocationOfFirmware[0] = '\0';
+    update_req.LocationOfFirmware = "";
     
     /* Reboot after flash: false for this example (so we can unregister cleanly) */
     update_req.rebootImmediately = false;
@@ -515,7 +525,7 @@ int main(void)
 
     printf("  Calling updateFirmware()...\n\n");
 
-    UpdateResult upd_result = updateFirmware(g_handle, update_req,
+    UpdateResult upd_result = updateFirmware(g_handle, &update_req,
                                               on_update_progress_callback);
 
     if (upd_result != RDKFW_UPDATE_SUCCESS) {
