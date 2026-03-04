@@ -132,8 +132,10 @@ def test_fallback_firmware_download(backup_reference_cert):
 def test_fallback_rdkvfwupgrader_direct(backup_reference_cert):
     """Test rdkvfwupgrader binary directly with fallback certificates"""
     # Ensure any lingering daemon from previous test is fully gone
+    # (previously test_verify_no_pkcs11_patch_activation provided natural delay)
     subprocess.run(['pkill', '-9', '-f', 'rdkFwupdateMgr'], capture_output=True)
-    time.sleep(2)
+    subprocess.run(['pkill', '-9', '-f', 'rdkvfwupgrader'], capture_output=True)
+    time.sleep(5)  # Allow daemon and its curl connections to fully release
 
     initial_rdkfw_setup()
     write_config_files()
