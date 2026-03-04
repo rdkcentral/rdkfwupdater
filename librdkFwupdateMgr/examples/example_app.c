@@ -102,13 +102,10 @@ static int g_exit_code = EXIT_SUCCESS;
  * @param handle      The firmware interface handle (session ID)
  * @param event_data  Firmware check result (valid only during callback)
  */
-static void on_firmware_check_callback(FirmwareInterfaceHandle handle,
-                                       FwInfoData *event_data)
+static void on_firmware_check_callback(const FwInfoData *event_data)
 {
     printf("\n");
-    printf("┌──────────────────────────────────────────────────────┐\n");
     printf("│  ✓ checkForUpdate Callback Received                 │\n");
-    printf("└──────────────────────────────────────────────────────┘\n");
 
     if (!event_data) {
         fprintf(stderr, "[ERROR] event_data is NULL in callback!\n");
@@ -132,7 +129,7 @@ static void on_firmware_check_callback(FirmwareInterfaceHandle handle,
     }
 
     printf("\n  === Basic Firmware Info ===\n");
-    printf("  Handle              : %s\n", handle ? handle : "(null)");
+    printf("  Handle              : %s\n", g_handle ? g_handle : "(null)");
     printf("  Status Code         : %s (%d)\n", status_str, event_data->status);
     printf("  Current FW Version  : %s\n", 
            event_data->CurrFWVersion[0] ? event_data->CurrFWVersion : "(not provided)");
@@ -351,7 +348,7 @@ int main(void)
 
     g_handle = registerProcess("ExampleApp", "1.0.0");
 
-    if (g_handle == FIRMWARE_INVALID_HANDLE) {
+    if (g_handle == NULL) {
         fprintf(stderr, "[ERROR] registerProcess() failed!\n");
         fprintf(stderr, "        Ensure rdkFwupdateMgr daemon is running:\n");
         fprintf(stderr, "        systemctl status rdkFwupdateMgr.service\n\n");
