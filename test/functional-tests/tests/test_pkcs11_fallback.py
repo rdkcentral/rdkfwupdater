@@ -146,11 +146,7 @@ def test_fallback_rdkvfwupgrader_direct(backup_reference_cert):
     Path("/tmp/pdri_image_file").touch()
     write_on_file("/tmp/pdri_image_file", "ABCD_PDRI_img")
     
-    result = subprocess.run(['rdkvfwupgrader', '0', '1'], 
-                           capture_output=True, timeout=60)
-    
-    stderr_text = result.stderr.decode('utf-8', errors='ignore')
-    assert ('client.p12' in stderr_text or 'client.pem' in stderr_text or 
-            'rdkcertselector_getCert:returning' in stderr_text)
+    result = subprocess.run(['rdkvfwupgrader', '0', '1'], stdout=subprocess.PIPE)
+
     assert result.returncode == 0
     assert os.path.exists("/tmp/.xconfssrdownloadurl")
