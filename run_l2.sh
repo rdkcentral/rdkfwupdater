@@ -129,9 +129,9 @@ if [ "$ENABLE_PKCS11" = "true" ]; then
     echo "[Phase 3/3] PKCS#11 Certificate Fallback Test"
     echo "=========================================="
     echo ""
-    echo "Note: Phases 1 & 2 use PKCS#11 reference.p12 certificate (if present)"
-    echo "      This phase validates certselector fallback to client.p12/client.pem"
-    echo "      when reference.p12 is missing or unavailable"
+    echo "Note: This phase tests PKCS#11 behavior when reference.p12 is not available."
+    echo "      It validates certselector fallback to client.p12/client.pem"
+    echo "      when reference.p12 is missing or unavailable."
     echo ""
     
     # Run PKCS#11 fallback test (removes reference.p12, verifies fallback to client.p12/client.pem)
