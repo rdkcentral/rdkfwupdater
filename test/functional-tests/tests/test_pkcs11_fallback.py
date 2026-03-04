@@ -131,6 +131,10 @@ def test_fallback_firmware_download(backup_reference_cert):
 
 def test_fallback_rdkvfwupgrader_direct(backup_reference_cert):
     """Test rdkvfwupgrader binary directly with fallback certificates"""
+    # Ensure any lingering daemon from previous test is fully gone
+    subprocess.run(['pkill', '-9', '-f', 'rdkFwupdateMgr'], capture_output=True)
+    time.sleep(2)
+
     initial_rdkfw_setup()
     write_config_files()
     
