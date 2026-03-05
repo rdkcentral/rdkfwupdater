@@ -85,9 +85,10 @@
  * - Protected by g_xconf_data_cache mutex for thread safety
  * 
  * Memory:
- * - Static allocation (program lifetime)
- * - String fields are heap-allocated (g_strdup)
- * - Must call clear_cached_xconf_data() before overwriting
+ * - Struct itself is statically allocated for the lifetime of the process
+ * - String data is stored in fixed-size char arrays inside XCONFRES
+ *   (no g_strdup/g_free; data is copied via memcpy/strncpy into the struct)
+ * - clear_cached_xconf_data() resets/invalidates the struct; no heap frees
  */
 static XCONFRES g_cached_xconf_data = {0};
 static gboolean g_xconf_data_valid = FALSE;
