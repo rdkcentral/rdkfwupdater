@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Comcast Cable Communications Management, LLC
+ * Copyright 2026 Comcast Cable Communications Management, LLC
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -139,3 +139,4 @@ void fwupmgr_log_internal(const char *level, const char *format, ...)
     
     pthread_mutex_unlock(&g_log_mutex);
 }
+
