@@ -1216,7 +1216,7 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
     int ret = -1;
     
     if (xconf_cache_exists()) {
-        SWLOG_INFO("[rdkFwupdateMgr] Cache hit! But still...\n");
+        SWLOG_INFO("[rdkFwupdateMgr] Cache hit detected, but proceeding with live XConf call to ensure freshest firmware metadata\n");
     }	
     
         SWLOG_INFO("[rdkFwupdateMgr] Making live XConf call\n");
