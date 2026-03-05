@@ -507,6 +507,13 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
                 }
                 unsetStateRed();
             }
+	    if (ret_curl_code == RDKV_UPGRADE_ERROR_THROTTLE_ZERO ){
+		    return RDKV_UPGRADE_ERROR_THROTTLE_ZERO;	
+	    }
+	    else if (ret_curl_code == RDKV_UPGRADE_ERROR_FORCE_EXIT) {
+		    return RDKV_UPGRADE_ERROR_FORCE_EXIT;
+	    }
+
             if (ret_curl_code != CURL_SUCCESS ||
                 (*pHttp_code != HTTP_SUCCESS && *pHttp_code != HTTP_CHUNK_SUCCESS && *pHttp_code != HTTP_PAGE_NOT_FOUND)) {
                 ret_curl_code = retryDownload(context, RETRY_COUNT, 60, pHttp_code, curl);
