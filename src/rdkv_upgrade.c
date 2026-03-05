@@ -507,6 +507,13 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
                 }
                 unsetStateRed();
             }
+	    if (ret_curl_code == RDKV_UPGRADE_ERROR_THROTTLE_ZERO ){
+		    return RDKV_UPGRADE_ERROR_THROTTLE_ZERO;	
+	    }
+	    else if (ret_curl_code == RDKV_UPGRADE_ERROR_FORCE_EXIT) {
+		    return RDKV_UPGRADE_ERROR_FORCE_EXIT;
+	    }
+
             if (ret_curl_code != CURL_SUCCESS ||
                 (*pHttp_code != HTTP_SUCCESS && *pHttp_code != HTTP_CHUNK_SUCCESS && *pHttp_code != HTTP_PAGE_NOT_FOUND)) {
                 ret_curl_code = retryDownload(context, RETRY_COUNT, 60, pHttp_code, curl);
@@ -1294,6 +1301,12 @@ int fallBack(
         //curl_ret_code = codebigdownloadFile(artifactLocationUrl, localDownloadLocation, httpCode);
         SWLOG_INFO("%s: calling retryDownload\n", __FUNCTION__ );
         curl_ret_code = retryDownload(context, CB_RETRY_COUNT, 10, httpCode, curl);
+	if (curl_ret_code == RDKV_UPGRADE_ERROR_THROTTLE_ZERO ){
+                    return RDKV_UPGRADE_ERROR_THROTTLE_ZERO;
+        }
+        else if (curl_ret_code == RDKV_UPGRADE_ERROR_FORCE_EXIT) {
+                return RDKV_UPGRADE_ERROR_FORCE_EXIT;
+         }
         if ((curl_ret_code == CURL_SUCCESS) && (*httpCode == HTTP_SUCCESS || *httpCode == HTTP_CHUNK_SUCCESS)) {
             SWLOG_INFO("%s : Codebig Image upgrade Success: ret=%d httpcode=%d\n", __FUNCTION__, curl_ret_code, *httpCode);
             if ((filePresentCheck(DIRECT_BLOCK_FILENAME)) != 0) {
