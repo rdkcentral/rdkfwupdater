@@ -538,6 +538,12 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
         }
         else if (server_type == HTTP_SSR_CODEBIG || server_type == HTTP_XCONF_CODEBIG) {
             ret_curl_code = codebigdownloadFile(context, pHttp_code, curl);
+	    if (ret_curl_code == RDKV_UPGRADE_ERROR_THROTTLE_ZERO ){
+                    return RDKV_UPGRADE_ERROR_THROTTLE_ZERO;
+            }
+            else if (ret_curl_code == RDKV_UPGRADE_ERROR_FORCE_EXIT) {
+                    return RDKV_UPGRADE_ERROR_FORCE_EXIT;
+            }
             if (ret_curl_code != CURL_SUCCESS ||
                 (*pHttp_code != HTTP_SUCCESS && *pHttp_code != HTTP_CHUNK_SUCCESS && *pHttp_code != HTTP_PAGE_NOT_FOUND)) {
                 if( ret_curl_code != CODEBIG_SIGNING_FAILED )
