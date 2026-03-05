@@ -157,27 +157,6 @@ typedef struct {
     gchar *error_message;                    // Error description if failed
 } DownloadFirmwareResult;
 
-/*
- * Download Firmware
- * 
- * Initiates firmware download from XConf-provided URL or custom URL.
- * This function performs the actual download in the calling thread.
- * 
- * Parameters:
- *   firmwareName - Firmware filename to download
- *   downloadUrl - Custom URL or empty string (use XConf URL)
- *   typeOfFirmware - Firmware type: "PCI", "PDRI", "PERIPHERAL"
- *   localFilePath - Destination file path
- *   download_state - DownloadState pointer for progress updates (can be NULL)
- * 
- * Returns:
- *   DownloadFirmwareResult with result_code and error details
- */
-DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName,
-                                                       const gchar *downloadUrl,
-                                                       const gchar *typeOfFirmware,
-                                                       const gchar *localFilePath,
-                                                       void *download_state);
 
 /*
  * Update Firmware (Future Implementation)
