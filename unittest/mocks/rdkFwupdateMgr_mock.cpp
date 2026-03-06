@@ -142,13 +142,7 @@ extern "C" size_t GetFirmwareVersion(char *pFWVersion, size_t szBufSize) {
 // File operations
 // =============================================================================
 
-extern "C" int filePresentCheck(const char *filename) {
-    if (!g_RdkFwupdateMgrMock) {
-        cerr << "filePresentCheck: g_RdkFwupdateMgrMock is NULL" << endl;
-        return 0;
-    }
-    return g_RdkFwupdateMgrMock->filePresentCheck(filename);
-}
+// filePresentCheck is now in deviceutils_mock.cpp
 
 extern "C" bool isConnectedToInternet() {
     if (!g_RdkFwupdateMgrMock) {
@@ -202,13 +196,7 @@ extern "C" size_t GetBuildType(char *pBuildType, size_t szBufSize) {
     return 3;
 }
 
-extern "C" size_t GetModelNum(char *pModelNum, size_t szBufSize) {
-    if (pModelNum && szBufSize > 0) {
-        strncpy(pModelNum, "TEST_MODEL", szBufSize - 1);
-        pModelNum[szBufSize - 1] = '\0';
-    }
-    return strlen(pModelNum);
-}
+// GetModelNum is now in deviceutils_mock.cpp
 
 extern "C" size_t GetMFRName(char *pMFRName, size_t szBufSize) {
     if (pMFRName && szBufSize > 0) {
@@ -310,21 +298,7 @@ extern "C" size_t GetCapabilities(char *pCapabilities, size_t szBufSize) {
     return strlen(pCapabilities);
 }
 
-extern "C" int getDevicePropertyData(const char *model, char *data, int size) {
-    if (!data || size <= 0) {
-        return -1;
-    }
-    
-    if (strncmp(model, "CPU_ARCH", 8) == 0) {
-        strncpy(data, "X86", size - 1);
-    } else if (strncmp(model, "DEVICE_NAME", 11) == 0) {
-        strncpy(data, "PLATCO", size - 1);
-    } else {
-        strncpy(data, "UNKNOWN", size - 1);
-    }
-    data[size - 1] = '\0';
-    return 0;
-}
+// getDevicePropertyData is now in deviceutils_mock.cpp
 
 // =============================================================================
 // Utility functions used by json_process.c
@@ -349,10 +323,7 @@ extern "C" size_t lastDwnlImg(char *pLastImg, size_t szBufSize) {
     return strlen(pLastImg);
 }
 
-extern "C" int v_secure_system(const char *command, ...) {
-    // Stub - just return success
-    return 0;
-}
+// v_secure_system is now in deviceutils_mock.cpp
 
 extern "C" void eventManager(int event_type, const char *event_data) {
     // Stub - event manager
