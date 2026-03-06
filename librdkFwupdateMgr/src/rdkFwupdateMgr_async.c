@@ -504,7 +504,8 @@ static void registry_reset_slot(CallbackEntry *entry)
 /**
  * @brief Parse GVariant into InternalSignalData
  *
- * Expected signature: (iissss)
+ * Expected signature: (tiissss)
+ *   t  handler_id (uint64) - identifies which client this is for
  *   i  result_code
  *   i  status_code
  *   s  current_version
@@ -517,16 +518,17 @@ bool internal_parse_signal_data(GVariant *parameters, InternalSignalData *out_da
     if (parameters == NULL || out_data == NULL) return false;
 
     const gchar *sig = g_variant_get_type_string(parameters);
-    if (strcmp(sig, "(iissss)") != 0) {
+    if (strcmp(sig, "(tiissss)") != 0) {
         FWUPMGR_ERROR("internal_parse_signal_data: unexpected signature '%s'\n", sig);
         return false;
     }
 
     const gchar *cur = NULL, *avail = NULL, *details = NULL, *msg = NULL;
+    guint64 handler_id = 0;
     gint32 result = 0, status = 0;
 
-    g_variant_get(parameters, "(iissss)",
-                  &result, &status, &cur, &avail, &details, &msg);
+    g_variant_get(parameters, "(tiissss)",
+                  &handler_id, &result, &status, &cur, &avail, &details, &msg);
 
     out_data->result_code       = (int32_t)result;
     out_data->status_code       = (int32_t)status;
