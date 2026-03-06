@@ -73,18 +73,18 @@ rdkfw_interface_gtest_SOURCES = fwdl_interface_gtest.cpp \
 
 # rdkFwupdateMgr_handlers_gtest: Tests D-Bus handler functions for daemon
 # Tests the async, non-blocking, cache-first CheckForUpdate implementation
-# Uses mocks for XConf, device info, and other external dependencies
+# Uses MOCKS ONLY for rdkv_upgrade.c, chunk.c, device_status_helper.c, download_status_helper.c
+# These are all mocked in rdkFwupdateMgr_mock.cpp to avoid linking the entire codebase
 rdkFwupdateMgr_handlers_gtest_SOURCES = rdkFwupdateMgr_handlers_gtest.cpp \
     ./mocks/rdkFwupdateMgr_mock.cpp \
     ../src/dbus/rdkFwupdateMgr_handlers.c \
-    ../src/rdkv_upgrade.c \
-    ../src/chunk.c \
-    ../src/device_status_helper.c \
-    ../src/download_status_helper.c \
     ../src/json_process.c \
-   deviceutils/json_parse.c
-# Note: json_process.c is mocked in rdkFwupdateMgr_mock.cpp to control XConf parsing behavior
-# Note: rdkFwupdateMgr_mock.cpp provides stubs for current_flash, rfc_list, IsFlashInProgress, SWLOG_* functions
+    ../src/deviceutils/device_api.c \
+    ../src/deviceutils/deviceutils.c \
+    deviceutils/json_parse.c
+# Note: All functions from rdkv_upgrade.c, chunk.c, device_status_helper.c, and 
+#       download_status_helper.c are stubbed in rdkFwupdateMgr_mock.cpp
+# Note: rdkFwupdateMgr_mock.cpp also provides stubs for current_flash, rfc_list, IsFlashInProgress, SWLOG_* functions
 
 # Apply common properties to each program
 rdkfw_device_status_gtest_CPPFLAGS = $(COMMON_CPPFLAGS)
