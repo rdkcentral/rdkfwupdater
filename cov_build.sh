@@ -5,7 +5,7 @@ mkdir -p $INSTALL_DIR
 
 git clone https://github.com/rdkcentral/common_utilities.git
 cd common_utilities
-git checkout topic/RDKTV-39792
+git checkout develop
 autoreconf -i
 ./configure  --enable-rdkcertselector --prefix=${INSTALL_DIR} CFLAGS=" -DRDK_LOGGER "
 make && make install
