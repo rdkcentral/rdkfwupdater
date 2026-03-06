@@ -673,10 +673,9 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
             fprintf(fp, "%s\n", imageHTTPURL);
             fclose(fp);
         }
-        snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s", device_info.difw_path, pResponse->cloudFWFile);
-	    SWLOG_INFO("DWNL path with img name=%s\n", dwlpath_filename);
-        eraseFolderExcePramaFile(device_info.difw_path, pResponse->cloudFWFile, device_info.model);
-
+	snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s", device_info.difw_path, pResponse->cloudFWFile);
+	SWLOG_INFO("DWNL path with img name=%s\n", dwlpath_filename);
+	eraseFolderExceParamFile(device_info.difw_path, pResponse->cloudFWFile, pResponse->cloudPDRIVersion,device_info.model);
         // context structure for PCI rdkv_upgrade_request
         RdkUpgradeContext_t pci_context = {0};
         pci_context.upgrade_type = PCI_UPGRADE;
