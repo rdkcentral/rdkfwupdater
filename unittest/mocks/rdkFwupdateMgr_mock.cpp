@@ -17,6 +17,8 @@
  */
 
 #include "rdkFwupdateMgr_mock.h"
+#include "rdkFwupdateMgr_handlers.h"  // For DownloadFirmwareResult
+#include "rdkv_upgrade.h"              // For RdkUpgradeContext_t
 #include <cstring>
 #include <iostream>
 
@@ -427,5 +429,78 @@ extern "C" {
     
     void SWLOG_ERROR(const char* format, ...) {
         // Stub - suppress output in tests
+    }
+    
+    // =============================================================================
+    // rdkFwupdateMgr_handlers.c Dependencies (Stubs for Unit Testing)
+    // =============================================================================
+    
+    /**
+     * @brief Stub for rdkFwupdateMgr_downloadFirmware (not yet fully implemented)
+     * 
+     * This stub allows handler tests to compile and link. It returns a
+     * minimal error response indicating the function is not implemented.
+     * 
+     * The actual implementation will be added when download functionality
+     * is fully integrated with the D-Bus server.
+     */
+    DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(
+        const gchar *handler_id,
+        const gchar *firmware_name,
+        const gchar *firmware_type,
+        const gchar *localFilePath,
+        const gchar *download_url)
+    {
+        DownloadFirmwareResult result;
+        result.result_code = DOWNLOAD_ERROR;
+        result.error_message = g_strdup("rdkFwupdateMgr_downloadFirmware: stub implementation (not yet available)");
+        return result;
+    }
+    
+    // NOTE: rdkv_upgrade_request is already defined above (line 165) as extern "C" wrapper
+    // that delegates to the mock. Do NOT redefine it here to avoid duplicate symbol errors.
+    
+    /**
+     * @brief Stub for rdkv_upgrade_strerror (from rdkv_upgrade.c)
+     * 
+     * Converts error codes to human-readable strings.
+     */
+    const char* rdkv_upgrade_strerror(int error) {
+        switch(error) {
+            case 0: return "Success";
+            case -1: return "Throttle speed set to 0";
+            case -2: return "Force exit requested";
+            default:
+                if (error > 0) return "CURL error";
+                return "Unknown library error";
+        }
+    }
+    
+    /**
+     * @brief Stub for getOPTOUTValue (from common_utilities)
+     * 
+     * Returns opt-out status for firmware updates.
+     * Default: 0 (opt-out disabled, updates allowed)
+     */
+    int getOPTOUTValue(const char* path) {
+        return 0; // Opt-out disabled by default
+    }
+    
+    /**
+     * @brief Stub for notifyDwnlStatus (from download_status_helper.c)
+     * 
+     * Notifies download status changes via RFC.
+     */
+    int notifyDwnlStatus(const char *key, const char *value, RFCVALDATATYPE datatype) {
+        return 0; // Success
+    }
+    
+    /**
+     * @brief Stub for updateFWDownloadStatus (from download_status_helper.c)
+     * 
+     * Updates firmware download status file.
+     */
+    int updateFWDownloadStatus(struct FWDownloadStatus* status, const char* path) {
+        return 0; // Success
     }
 }

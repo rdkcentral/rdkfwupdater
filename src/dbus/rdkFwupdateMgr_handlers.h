@@ -157,6 +157,32 @@ typedef struct {
     gchar *error_message;                    // Error description if failed
 } DownloadFirmwareResult;
 
+/*
+ * Download Firmware (Implementation In Progress)
+ * 
+ * Downloads firmware image from specified location to local storage.
+ * Validates all parameters and returns appropriate error codes.
+ * 
+ * Parameters:
+ *   handler_id      - Process registration ID (required)
+ *   firmware_name   - Firmware filename (required)
+ *   firmware_type   - Type: "PCI", "PDRI", "PERIPHERAL" (optional, defaults to "PCI")
+ *   localFilePath   - Local destination path (required, must not be empty)
+ *   download_url    - Custom download URL (optional, NULL uses XConf cache)
+ * 
+ * Returns:
+ *   DownloadFirmwareResult with result_code and error_message
+ *   Must be freed by caller
+ * 
+ * Note: This function is currently stubbed for unit testing.
+ *       Full implementation will be added in future commits.
+ */
+DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(
+    const gchar *handler_id,
+    const gchar *firmware_name,
+    const gchar *firmware_type,
+    const gchar *localFilePath,
+    const gchar *download_url);
 
 /*
  * Update Firmware (Future Implementation)

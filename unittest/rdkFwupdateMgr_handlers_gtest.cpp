@@ -866,7 +866,7 @@ TEST_F(FetchXconfFirmwareInfoTest, Success_Http200_ValidResponse_ParseSuccess) {
     
     // Mock: rdkv_upgrade_request - simulates successful HTTP download
     EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
-        .WillOnce(testing::Invoke([](RdkUpgradeContext_t* context, void** curl, int* pHttp_code) {
+        .WillOnce(testing::Invoke([](const RdkUpgradeContext_t*  context, void** curl, int* pHttp_code) {
             // Simulate successful XConf communication: ret=0, http_code=200
             *pHttp_code = 200;  // MUST set this - checked at line 289
             return 0; // Success (0 = no errors)
@@ -1002,7 +1002,7 @@ TEST_F(FetchXconfFirmwareInfoTest, Failure_GetXconfRespData_ParseFail) {
     // (ret=0, http_code=200) by default - no need to mock here
      // Mock: rdkv_upgrade_request - simulates successful HTTP download
     EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
-        .WillOnce(testing::Invoke([](RdkUpgradeContext_t* context, void** curl, int* pHttp_code) {
+        .WillOnce(testing::Invoke([](const RdkUpgradeContext_t*  context, void** curl, int* pHttp_code) {
             *pHttp_code = 200;  // HTTP success
             return 0;  // Success
         }));
@@ -1067,7 +1067,7 @@ TEST_F(FetchXconfFirmwareInfoTest, Success_CacheSaveSuccess) {
     // (ret=0, http_code=200) by default - no need to mock here
     // Mock: rdkv_upgrade_request - simulates successful HTTP download
     EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
-        .WillOnce(testing::Invoke([](RdkUpgradeContext_t* context, void** curl, int* pHttp_code) {
+        .WillOnce(testing::Invoke([](const RdkUpgradeContext_t*  context, void** curl, int* pHttp_code) {
             *pHttp_code = 200;  // HTTP success
             return 0;  // Success
         }));
@@ -1149,7 +1149,7 @@ TEST_F(FetchXconfFirmwareInfoTest, Success_ServerTypeDirect_ValidResponse) {
     // (ret=0, http_code=200) and set server_type in context - no mocking needed
    // Mock: rdkv_upgrade_request - simulates successful HTTP download
     EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
-        .WillOnce(testing::Invoke([](RdkUpgradeContext_t* context, void** curl, int* pHttp_code) {
+        .WillOnce(testing::Invoke([](const RdkUpgradeContext_t*  context, void** curl, int* pHttp_code) {
             *pHttp_code = 200;  // HTTP success
             return 0;  // Success
         })); 
@@ -1798,7 +1798,7 @@ TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_ValidInputs_AcceptsParameter
     /* Mock successful download and create file */
     EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
         .WillOnce(testing::Invoke(
-            [localFilePath](RdkUpgradeContext_t* ctx, void** curl, int* http_code) {
+            [localFilePath](const RdkUpgradeContext_t*  ctx, void** curl, int* http_code) {
                 if (http_code) *http_code = 200;
                 // Create the file to simulate successful download
                 CreateFirmwareFile(localFilePath);
@@ -1839,7 +1839,7 @@ TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_NullFirmwareName_HandlesGrac
     /* Mock successful download */
     EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
         .WillOnce(testing::Invoke(
-            [](RdkUpgradeContext_t* ctx, void** curl, int* http_code) {
+            [](const RdkUpgradeContext_t*  ctx, void** curl, int* http_code) {
                 if (http_code) *http_code = 200;
                 return 0;
             }
@@ -1877,7 +1877,7 @@ TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_InvalidFirmwareType_UsesPCID
     /* Mock download */
     EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
         .WillOnce(testing::Invoke(
-            [localFilePath](RdkUpgradeContext_t* ctx, void** curl, int* http_code) {
+            [localFilePath](const RdkUpgradeContext_t*  ctx, void** curl, int* http_code) {
                 if (http_code) *http_code = 200;
                 CreateFirmwareFile(localFilePath);
                 return 0;
@@ -1918,7 +1918,7 @@ TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_CustomURL_UsesProvidedURL) {
     /* Mock download */
     EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
         .WillOnce(testing::Invoke(
-            [localFilePath](RdkUpgradeContext_t* ctx, void** curl, int* http_code) {
+            [localFilePath](const RdkUpgradeContext_t*  ctx, void** curl, int* http_code) {
                 if (http_code) *http_code = 200;
                 CreateFirmwareFile(localFilePath);
                 return 0;
@@ -1958,7 +1958,7 @@ TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_NoCustomURL_LoadsFromCache) 
     /* Mock download */
     EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
         .WillOnce(testing::Invoke(
-            [localFilePath](RdkUpgradeContext_t* ctx, void** curl, int* http_code) {
+            [localFilePath](const RdkUpgradeContext_t*  ctx, void** curl, int* http_code) {
                 if (http_code) *http_code = 200;
                 CreateFirmwareFile(localFilePath);
                 return 0;
@@ -2058,7 +2058,7 @@ TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_SuccessfulDownload_ReturnsSu
     /* Mock successful download */
     EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
         .WillOnce(testing::Invoke(
-            [localFilePath](RdkUpgradeContext_t* ctx, void** curl, int* http_code) {
+            [localFilePath](const RdkUpgradeContext_t*  ctx, void** curl, int* http_code) {
                 if (http_code) *http_code = 200;
                 CreateFirmwareFile(localFilePath);
                 return 0;  // Success
@@ -2129,7 +2129,7 @@ TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_Http404_ReturnsNotFound) {
     /* Mock HTTP 404 (curl success but HTTP 404) */
     EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
         .WillOnce(testing::Invoke(
-            [](RdkUpgradeContext_t* ctx, void** curl, int* http_code) {
+            [](const RdkUpgradeContext_t*  ctx, void** curl, int* http_code) {
                 if (http_code) *http_code = 404;
                 return 0;  // curl succeeded but HTTP 404
             }
@@ -2166,7 +2166,7 @@ TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_Http500_ReturnsError) {
     /* Mock HTTP 500 */
     EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
         .WillOnce(testing::Invoke(
-            [](RdkUpgradeContext_t* ctx, void** curl, int* http_code) {
+            [](const RdkUpgradeContext_t*  ctx, void** curl, int* http_code) {
                 if (http_code) *http_code = 500;
                 return -1;  // Error
             }
@@ -2208,7 +2208,7 @@ TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_PCIType_SetsCorrectUpgradeTy
     /* Mock download */
     EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
         .WillOnce(testing::Invoke(
-            [localFilePath](RdkUpgradeContext_t* ctx, void** curl, int* http_code) {
+            [localFilePath](const RdkUpgradeContext_t*  ctx, void** curl, int* http_code) {
                 if (http_code) *http_code = 200;
                 CreateFirmwareFile(localFilePath);
                 return 0;
@@ -2246,7 +2246,7 @@ TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_PDRIType_SetsCorrectUpgradeT
     /* Mock download */
     EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
         .WillOnce(testing::Invoke(
-            [localFilePath](RdkUpgradeContext_t* ctx, void** curl, int* http_code) {
+            [localFilePath](const RdkUpgradeContext_t*  ctx, void** curl, int* http_code) {
                 if (http_code) *http_code = 200;
                 CreateFirmwareFile(localFilePath);
                 return 0;
@@ -2295,7 +2295,7 @@ TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_PERIPHERAL_Type_SetsCorrectU
     /* Mock download */
     EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
         .WillOnce(testing::Invoke(
-            [localFilePath](RdkUpgradeContext_t* ctx, void** curl, int* http_code) {
+            [localFilePath](const RdkUpgradeContext_t*  ctx, void** curl, int* http_code) {
                 if (http_code) *http_code = 200;
                 CreateFirmwareFile(localFilePath);
                 return 0;
@@ -2332,7 +2332,7 @@ TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_NullFirmwareType_DefaultsToP
     /* Mock download */
     EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
         .WillOnce(testing::Invoke(
-            [localFilePath](RdkUpgradeContext_t* ctx, void** curl, int* http_code) {
+            [localFilePath](const RdkUpgradeContext_t*  ctx, void** curl, int* http_code) {
                 if (http_code) *http_code = 200;
                 CreateFirmwareFile(localFilePath);
                 return 0;
@@ -2549,7 +2549,7 @@ TEST_F(RdkFwupdateMgrHandlersTest, Integration_CheckThenDownload_Success) {
     /* Act 2: Download firmware using cache (empty URL = load from cache) */
     EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
         .WillOnce(testing::Invoke(
-            [localFilePath](RdkUpgradeContext_t* ctx, void** curl, int* http_code) {
+            [localFilePath](const RdkUpgradeContext_t*  ctx, void** curl, int* http_code) {
                 if (http_code) *http_code = 200;
                 CreateFirmwareFile(localFilePath);
                 return 0;
@@ -2643,7 +2643,7 @@ TEST_F(RdkFwupdateMgrHandlersTest, Integration_CustomURL_BypassesCheckForUpdate)
     /* Mock successful download */
     EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
         .WillOnce(testing::Invoke(
-            [localFilePath](RdkUpgradeContext_t* ctx, void** curl, int* http_code) {
+            [localFilePath](const RdkUpgradeContext_t* ctx, void** curl, int* http_code) {
                 if (http_code) *http_code = 200;
                 CreateFirmwareFile(localFilePath);
                 return 0;
