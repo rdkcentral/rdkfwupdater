@@ -582,6 +582,24 @@ extern "C" {
         }
         return 0; // Success
     }
+    
+    // Mock for rdkv_upgrade_strerror - converts error codes to human-readable strings
+    // Used by rdkFwupdateMgr.c for error logging
+    const char* rdkv_upgrade_strerror(int error) {
+        switch(error) {
+            case 0:  // RDKV_UPGRADE_SUCCESS
+                return "Success";
+            case -1:  // RDKV_UPGRADE_ERROR_THROTTLE_ZERO
+                return "Throttle speed set to 0 - download blocked";
+            case -2:  // RDKV_UPGRADE_ERROR_FORCE_EXIT
+                return "Force exit requested";
+            default:
+                if (error > 0) {
+                    return "CURL error";
+                }
+                return "Unknown library error";
+        }
+    }
 #endif
 
     // ===========================================================================
