@@ -73,7 +73,7 @@ public:
     MOCK_METHOD(bool, isMediaClientDevice, (), ());
     MOCK_METHOD(int, doAuthHttpFileDownload, (void*, FileDwnl_t*, int*), ());
     MOCK_METHOD(void, logMilestone, (const char*), ());
-    MOCK_METHOD(int, eraseFolderExcePramaFile, (const char*, const char*, const char*), ());
+    MOCK_METHOD(int, eraseFolderExceParamFile, (const char*, const char*,const char*,const char*), ());
     MOCK_METHOD(int, doCurlPutRequest, (void*, FileDwnl_t*, char*, int*), ());
     MOCK_METHOD(int, checkAndEnterStateRed, (int, const char*), ());
     MOCK_METHOD(int, getRFCSettings, (Rfc_t*), ());
@@ -241,11 +241,11 @@ extern "C" {
         global_mockexternal_ptr->logMilestone(msg_code);
     }
 
-    int eraseFolderExcePramaFile(const char *folder, const char* file_name, const char *model_num) {
+    int eraseFolderExceParamFile(const char *folder, const char* file_name, const char* pdri_file_name, const char *model_num) {
         if (global_mockexternal_ptr == nullptr) {
             return 0; // Return default value if global_mockexternal_ptr is NULL
         }
-        return global_mockexternal_ptr->eraseFolderExcePramaFile(folder, file_name, model_num);
+        return global_mockexternal_ptr->eraseFolderExceParamFile(folder, file_name, pdri_file_name,model_num);
     }
 
     int doCurlPutRequest(void *in_curl, FileDwnl_t *pfile_dwnl, char *jsonrpc_auth_token, int *out_httpCode) {
