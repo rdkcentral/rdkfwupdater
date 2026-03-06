@@ -82,7 +82,7 @@ extern "C" {
     bool isMediaClientDevice(void);
     int doAuthHttpFileDownload(void *in_curl, FileDwnl_t *pfile_dwnl, int *out_httpCode);
     void logMilestone(const char *msg_code);
-    int eraseFolderExcePramaFile(const char *folder, const char* file_name, const char *model_num);
+    int eraseFolderExceParamFile(const char *folder, const char* file_name,const char* pdri_file_name, const char *model_num);
     int doCurlPutRequest(void *in_curl, FileDwnl_t *pfile_dwnl, char *jsonrpc_auth_token, int *out_httpCode);
     int getOPTOUTValue(const char *filename);
     void getPidStore(const char *key, const char *value);
