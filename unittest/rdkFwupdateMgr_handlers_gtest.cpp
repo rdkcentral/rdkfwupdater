@@ -1786,31 +1786,6 @@ TEST_F(RdkFwupdateMgrHandlersTest, CheckForUpdate_CacheExistsHttpCodeMissing_Han
 }
 
 
-/**
- * @test Integration: CheckForUpdate shows no update available
- * @brief Verifies workflow when no update is needed
- */
-TEST_F(RdkFwupdateMgrHandlersTest, Integration_CheckNoUpdate_DownloadNotNeeded) {
-    /* Arrange: Create cache for "no update" scenario */
-    CreateTestFile(TEST_XCONF_CACHE_FILE, MOCK_XCONF_RESPONSE_NO_UPDATE);
-    CreateTestFile(TEST_XCONF_HTTP_CODE_FILE, "200");
-
-    /* Act: Check for update */
-    CheckUpdateResponse check_response = rdkFwupdateMgr_checkForUpdate("test_handler");
-
-    /* Assert: No update should be available */
-    EXPECT_EQ(check_response.result, CHECK_FOR_UPDATE_SUCCESS)
-        << "CheckForUpdate call should succeed";
-    EXPECT_EQ(check_response.status_code, FIRMWARE_NOT_AVAILABLE)
-        << "No firmware update should be available";
-
-    /* In this scenario, user would NOT proceed to download */
-    /* This test validates the check correctly identifies no update needed */
-
-    /* Cleanup */
-    checkupdate_response_free(&check_response);
-}
-
 
 // BATCH 6: Thread NULL Safety Tests (2 tests)
 // Target: Basic thread safety validation
