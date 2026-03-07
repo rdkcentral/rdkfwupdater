@@ -157,27 +157,6 @@ typedef struct {
     gchar *error_message;                    // Error description if failed
 } DownloadFirmwareResult;
 
-/*
- * Download Firmware
- * 
- * Initiates firmware download from XConf-provided URL or custom URL.
- * This function performs the actual download in the calling thread.
- * 
- * Parameters:
- *   firmwareName - Firmware filename to download
- *   downloadUrl - Custom URL or empty string (use XConf URL)
- *   typeOfFirmware - Firmware type: "PCI", "PDRI", "PERIPHERAL"
- *   localFilePath - Destination file path
- *   download_state - DownloadState pointer for progress updates (can be NULL)
- * 
- * Returns:
- *   DownloadFirmwareResult with result_code and error details
- */
-DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName,
-                                                       const gchar *downloadUrl,
-                                                       const gchar *typeOfFirmware,
-                                                       const gchar *localFilePath,
-                                                       void *download_state);
 
 /*
  * Update Firmware (Future Implementation)
@@ -275,12 +254,88 @@ int rdkFwupdateMgr_unregisterProcess(guint64 handler_id);
  *       progress monitoring during firmware downloads.
  */
 gpointer rdkfw_progress_monitor_thread(gpointer user_data);
+
+/*
+ * Load XConf Response from File Cache
+ * 
+ * Loads and parses the cached XConf JSON response from disk.
+ * Used as fallback when in-memory cache is not available.
+ * 
+ * @param[out] pResponse Structure to populate with parsed data
+ * @return TRUE on success, FALSE if cache missing or corrupt
+ */
 gboolean load_xconf_from_cache(XCONFRES *pResponse);
+
+/*
+ * Get Cached XConf Data from In-Memory Cache
+ * 
+ * Retrieves parsed XConf response from global in-memory cache.
+ * This is faster than file I/O and avoids repeated JSON parsing.
+ * 
+ * Primary use case: DownloadFirmware uses this to get cloudFWLocation
+ * without file I/O overhead when downloadUrl parameter is NULL/empty.
+ * 
+ * Thread Safety: Thread-safe, uses internal mutex
+ * 
+ * @param[out] pResponse Structure to populate with cached data (deep copy)
+ * @param[out] pHttpCode HTTP status code from original XConf query (can be NULL)
+ * @return TRUE if cache is valid and data copied, FALSE if cache empty/invalid
+ * 
+ * Example Usage:
+ * ```c
+ * XCONFRES cached_data;
+ * int http_code;
+ * if (get_cached_xconf_data(&cached_data, &http_code)) {
+ *     // Use cached_data.cloudFWLocation for download URL
+ *     printf("Download URL: %s\n", cached_data.cloudFWLocation);
+ * }
+ * ```
+ */
+gboolean get_cached_xconf_data(XCONFRES *pResponse, int *pHttpCode);
+
+/*
+ * Clear Global In-Memory XConf Cache
+ * 
+ * Invalidates and clears the global in-memory XConf cache.
+ * Should be called when cache needs to be refreshed or on errors.
+ * 
+ * Thread Safety: Thread-safe, uses internal mutex
+ */
+void clear_cached_xconf_data(void);
+
 #ifdef GTEST_ENABLE
 gboolean save_xconf_to_cache(const char *xconf_response, int http_code);
 CheckUpdateResponse create_result_response(CheckForUpdateStatus status_code,
                                                   const gchar *status_message);
 CheckUpdateResponse create_success_response(const gchar *available_version,
+                                           const gchar *update_details,
+                                           const gchar *status_message);
+
+/*
+ * Create CheckUpdateResponse for Opt-Out Scenarios (Exposed for Unit Testing)
+ * 
+ * Internal helper function that creates a response structure for IGNORE_OPTOUT and
+ * BYPASS_OPTOUT status codes. Always includes full firmware metadata (available_version
+ * and update_details) so clients can display update information even when updates are
+ * blocked by user preferences.
+ * 
+ * This function is used in the post-XConf opt-out evaluation phase as specified in
+ * PLAN-1.md Version 2.0. It ensures clients receive complete firmware information
+ * regardless of opt-out state.
+ * 
+ * Parameters:
+ *   status_code       - Status code (IGNORE_OPTOUT=4 or BYPASS_OPTOUT=5)
+ *   available_version - Firmware version from XConf server
+ *   update_details    - Pipe-delimited firmware metadata string
+ *   status_message    - Human-readable explanation of opt-out state
+ * 
+ * Returns:
+ *   CheckUpdateResponse with all fields populated (must be freed with checkupdate_response_free)
+ * 
+ * Note: This is an internal function - use rdkFwupdateMgr_checkForUpdate() for production code.
+ */
+CheckUpdateResponse create_optout_response(CheckForUpdateStatus status_code,
+                                           const gchar *available_version,
                                            const gchar *update_details,
                                            const gchar *status_message);
 #endif

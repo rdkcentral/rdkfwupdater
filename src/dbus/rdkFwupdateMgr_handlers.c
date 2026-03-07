@@ -64,6 +64,57 @@
 #define RED_STATE_FILE          "/lib/rdk/stateRedRecovery.sh"
 
 // ============================================================================
+// GLOBAL IN-MEMORY XCONF CACHE
+// ============================================================================
+/**
+ * @brief Global parsed XConf response cache
+ * 
+ * This structure holds the most recent successfully parsed XConf response
+ * in memory to avoid repeated file I/O and JSON parsing operations.
+ * 
+ * Benefits:
+ * - Fast access to firmware metadata without file I/O
+ * - No repeated JSON parsing overhead
+ * - Direct access to download URLs for DownloadFirmware API
+ * - Thread-safe via g_xconf_data_cache mutex
+ * 
+ * Lifecycle:
+ * - Populated by save_xconf_to_cache() after successful XConf query
+ * - Read by get_cached_xconf_data() with automatic deep copy
+ * - Cleared by clear_cached_xconf_data() on errors or invalidation
+ * - Protected by g_xconf_data_cache mutex for thread safety
+ * 
+ * Memory:
+ * - Struct itself is statically allocated for the lifetime of the process
+ * - String data is stored in fixed-size char arrays inside XCONFRES
+ *   (no g_strdup/g_free; data is copied via memcpy/strncpy into the struct)
+ * - clear_cached_xconf_data() resets/invalidates the struct; no heap frees
+ */
+static XCONFRES g_cached_xconf_data = {0};
+static gboolean g_xconf_data_valid = FALSE;
+static int g_cached_http_code = 0;
+
+/**
+ * @brief Mutex protecting global XConf data cache
+ * 
+ * Protects concurrent access to:
+ * - g_cached_xconf_data (parsed XConf response structure)
+ * - g_xconf_data_valid (cache validity flag)
+ * - g_cached_http_code (HTTP status code)
+ * 
+ * Lock Scope:
+ * - MUST lock before: save_cached_xconf_data(), get_cached_xconf_data(), clear_cached_xconf_data()
+ * - Release immediately after data copy completes
+ * - Do NOT hold during network calls or file I/O
+ * 
+ * Thread Safety:
+ * - Protects both read and write operations
+ * - Ensures atomicity of cache updates
+ * - Prevents partial reads during writes
+ */
+G_LOCK_DEFINE_STATIC(xconf_data_cache);
+
+// ============================================================================
 // CACHE SYNCHRONIZATION
 // ============================================================================
 /**
@@ -187,11 +238,20 @@ typedef struct {
 
 // Shared device and image information (populated at daemon startup)
 extern DeviceProperty_t device_info;
+
+// Forward declaration for getOPTOUTValue function from rdkFwupdateMgr.c
+extern int getOPTOUTValue(const char *file_name);
 extern ImageDetails_t cur_img_detail;
 extern Rfc_t rfc_list;
 
 // Trigger type constant for manual/D-Bus initiated downloads
 #define TRIGGER_MANUAL 1
+
+// ============================================================================
+// FORWARD DECLARATIONS (Internal Functions)
+// ============================================================================
+static void clear_cached_xconf_data_internal(void);
+static gboolean save_cached_xconf_data(const XCONFRES *pResponse, int http_code);
 
 /**
  * @brief Check if XConf response cache exists
@@ -294,9 +354,9 @@ static gboolean save_xconf_to_cache(const char *xconf_response, int http_code)
         return FALSE;
     }
 
-    SWLOG_INFO("[CACHE] Saving XConf response to cache files\n");
+    SWLOG_INFO("[CACHE] Saving XConf response to cache files and memory\n");
     
-    // === CRITICAL SECTION START ===
+    // === CRITICAL SECTION START (File Cache) ===
     G_LOCK(xconf_cache);
     
     // Save main XConf response (with lock held)
@@ -318,14 +378,34 @@ static gboolean save_xconf_to_cache(const char *xconf_response, int http_code)
     }
     
     G_UNLOCK(xconf_cache);
-    // === CRITICAL SECTION END ===
+    // === CRITICAL SECTION END (File Cache) ===
     
-    SWLOG_INFO("[CACHE] XConf data cached successfully\n");
+    SWLOG_INFO("[CACHE] XConf data cached to files successfully\n");
     SWLOG_INFO("[CACHE]   - Response file: %s\n", XCONF_CACHE_FILE);
     SWLOG_INFO("[CACHE]   - HTTP code file: %s (code: %d)\n", 
                XCONF_HTTP_CODE_FILE, http_code);
     
     g_free(http_code_str);
+    
+    // Parse JSON response and save to global in-memory cache
+    XCONFRES parsed_response = {0};
+    int parse_result = getXconfRespData(&parsed_response, (char *)xconf_response);
+    
+    if (parse_result == 0) {
+        SWLOG_INFO("[CACHE] Parsed XConf response successfully, saving to memory cache\n");
+        
+        // Save parsed data to global in-memory cache
+        if (save_cached_xconf_data(&parsed_response, http_code)) {
+            SWLOG_INFO("[CACHE] In-memory cache updated successfully\n");
+        } else {
+            SWLOG_ERROR("[CACHE] Failed to update in-memory cache (non-fatal)\n");
+        }
+    } else {
+        SWLOG_ERROR("[CACHE] Failed to parse XConf response for memory cache (error: %d)\n", parse_result);
+        SWLOG_ERROR("[CACHE] File cache saved but in-memory cache not updated\n");
+        // Non-fatal: file cache is still valid
+    }
+    
     return TRUE;
 }
 
@@ -406,11 +486,6 @@ static int fetch_xconf_firmware_info( XCONFRES *pResponse, int server_type, int 
                     xconf_context.trigger_type = local_trigger_type;
                     xconf_context.rfc_list = &local_rfc_list;  
 
-                    //#ifndef GTEST_ENABLE
-                    //SWLOG_INFO("Simulating a 120 seconds sleep()\n");
-                    //sleep(120);
-                    //SWLOG_INFO("Just now completed 120 seconds sleep\n");
-                    //#endif
                     SWLOG_INFO("fetch_xconf_firmware_info: Initiating XConf request with server_type=%d\n", server_type);
                     SWLOG_INFO("fetch_xconf_firmware_info: Context setup - device_info=%p, rfc_list=%p\n", 
                                xconf_context.device_info, xconf_context.rfc_list);
@@ -419,6 +494,13 @@ static int fetch_xconf_firmware_info( XCONFRES *pResponse, int server_type, int 
                     SWLOG_INFO("fetch_xconf_firmware_info: Calling rdkv_upgrade_request...\n");
                     ret = rdkv_upgrade_request(&xconf_context, &curl, pHttp_code);
                     SWLOG_INFO("fetch_xconf_firmware_info: rdkv_upgrade_request returned (ret=%d)\n", ret);
+                    
+                    // Handle library-specific errors (negative values) - Daemon NEVER exits
+                    if (ret < 0) {
+                        SWLOG_ERROR("fetch_xconf_firmware_info: Library error: %s (code: %d)\n",
+                                   rdkv_upgrade_strerror(ret), ret);
+                        // Daemon continues - ret is already < 0, will be handled by existing error logic below
+                    }
                     
                     SWLOG_INFO("fetch_xconf_firmware_info: XConf request completed - ret=%d, http_code=%d\n", ret, *pHttp_code);
                     
@@ -650,6 +732,55 @@ static CheckUpdateResponse create_result_response(CheckForUpdateStatus status_co
     
     SWLOG_INFO("[rdkFwupdateMgr] create_result_response: Response created with current image: '%s', status: '%s'\n", 
                response.current_img_version, response.status_message);
+    
+    return response;
+}
+
+/**
+ * @brief Create a CheckUpdateResponse for opt-out scenarios with firmware metadata.
+ * 
+ * Similar to create_success_response, but specifically for IGNORE_OPTOUT and BYPASS_OPTOUT
+ * status codes. Always includes full firmware metadata so clients can display available
+ * update information even when updates are blocked or require consent.
+ * 
+ * @param status_code Status code (IGNORE_OPTOUT or BYPASS_OPTOUT)
+ * @param available_version Firmware version from XConf server
+ * @param update_details Pipe-delimited firmware metadata string
+ * @param status_message Custom status message explaining opt-out state
+ * @return CheckUpdateResponse structure with allocated strings (must be freed by caller)
+ */
+#ifdef GTEST_ENABLE
+CheckUpdateResponse create_optout_response(CheckForUpdateStatus status_code,
+                                           const gchar *available_version,
+                                           const gchar *update_details,
+                                           const gchar *status_message)
+#else
+static CheckUpdateResponse create_optout_response(CheckForUpdateStatus status_code,
+                                                  const gchar *available_version,
+                                                  const gchar *update_details,
+                                                  const gchar *status_message)
+#endif
+{
+    CheckUpdateResponse response = {0};
+    char current_img_buffer[256] = {0};
+    
+    bool img_status = GetFirmwareVersion(current_img_buffer, sizeof(current_img_buffer));
+    
+    SWLOG_INFO("[rdkFwupdateMgr] create_optout_response: Creating response for status_code=%d\n", status_code);
+    SWLOG_INFO("[rdkFwupdateMgr]   - currentImg status: %s\n", img_status ? "SUCCESS" : "FAILED");
+    SWLOG_INFO("[rdkFwupdateMgr]   - current_img_buffer: '%s'\n", current_img_buffer);
+    
+    response.result = CHECK_FOR_UPDATE_SUCCESS;  // API call succeeded
+    response.status_code = status_code;           // IGNORE_OPTOUT or BYPASS_OPTOUT
+    response.current_img_version = g_strdup(img_status ? current_img_buffer : "Unknown");
+    response.available_version = g_strdup(available_version ? available_version : "");
+    response.update_details = g_strdup(update_details ? update_details : "");
+    response.status_message = g_strdup(status_message ? status_message : "");
+    
+    SWLOG_INFO("[rdkFwupdateMgr] create_optout_response: Response created with:\n");
+    SWLOG_INFO("[rdkFwupdateMgr]   - current: '%s'\n", response.current_img_version);
+    SWLOG_INFO("[rdkFwupdateMgr]   - available: '%s'\n", response.available_version);
+    SWLOG_INFO("[rdkFwupdateMgr]   - status_message: '%s'\n", response.status_message);
     
     return response;
 }
@@ -1084,21 +1215,7 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
     int server_type = HTTP_XCONF_DIRECT;
     int ret = -1;
     
-    SWLOG_INFO("[rdkFwupdateMgr] CheckForUpdate: Checking for cached XConf data...\n");
-    
-    // Try cache first to support offline recovery scenarios
-    if (xconf_cache_exists()) {
-        SWLOG_INFO("[rdkFwupdateMgr] Cache hit! Loading XConf data from cache\n");
-        if (load_xconf_from_cache(&response)) {
-            ret = 0;
-            http_code = 200;
-            SWLOG_INFO("[rdkFwupdateMgr] Successfully loaded XConf data from cache\n");
-        } else {
-            SWLOG_ERROR("[rdkFwupdateMgr] Cache read failed, falling back to live XConf call\n");
-            ret = fetch_xconf_firmware_info(&response, server_type, &http_code);
-        }
-    } else {
-        SWLOG_INFO("[rdkFwupdateMgr] Cache miss! Making live XConf call\n");
+        SWLOG_INFO("[rdkFwupdateMgr] Making live XConf call\n");
         ret = fetch_xconf_firmware_info(&response, server_type, &http_code);
         
         if (ret == 0 && http_code == 200) {
@@ -1120,7 +1237,6 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
             SWLOG_INFO("[rdkFwupdateMgr] VALIDATION PASSED - Firmware is valid for this device\n");
             SWLOG_INFO("[rdkFwupdateMgr] ===== VALIDATION & COMPARISON COMPLETE =====\n");
         }
-    }
     
     SWLOG_INFO("[rdkFwupdateMgr] XConf call completed with result: ret=%d\n",ret);
     
@@ -1154,6 +1270,14 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
                    response.cloudPDRIVersion[0] ? response.cloudPDRIVersion : "(empty)");
         SWLOG_INFO("=== [rdkFwupdateMgr] XConf Response - End ===\n"); 
        
+        // Check if firmware version is present
+        if (!response.cloudFWVersion[0] || strlen(response.cloudFWVersion) == 0) {
+            SWLOG_INFO("[rdkFwupdateMgr] XConf returned no firmware version - no update available\n");
+            return create_result_response(FIRMWARE_NOT_AVAILABLE, "No firmware update available");
+        }
+        
+        SWLOG_INFO("[rdkFwupdateMgr] XConf returned firmware version: '%s'\n", response.cloudFWVersion);
+        
         // Serialize XConf metadata into pipe-delimited string for D-Bus transport
         gchar *update_details = g_strdup_printf(
                 "File:%s|Location:%s|IPv6Location:%s|Version:%s|Protocol:%s|Reboot:%s|Delay:%s|PDRI:%s|Peripherals:%s|CertBundle:%s", 
@@ -1169,23 +1293,116 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
                 response.dlCertBundle[0] ? response.dlCertBundle : "N/A"
             );
         
-        // Determine result based on presence of firmware version
-        if (response.cloudFWVersion[0] && strlen(response.cloudFWVersion) > 0) {
-            SWLOG_INFO("[rdkFwupdateMgr] XConf returned firmware version: '%s'\n", response.cloudFWVersion);
-            
+        // ===== POST-XCONF OPT-OUT EVALUATION =====
+        SWLOG_INFO("[rdkFwupdateMgr] ===== BEGIN POST-XCONF OPT-OUT EVALUATION =====\n");
+        
+        // Parse critical update flag from XConf response
+        bool isCriticalUpdate = false;
+        if (strncmp(response.cloudImmediateRebootFlag, "true", 4) == 0) {
+            isCriticalUpdate = true;
+            SWLOG_INFO("[rdkFwupdateMgr] CRITICAL UPDATE DETECTED (cloudImmediateRebootFlag=true)\n");
+        } else {
+            SWLOG_INFO("[rdkFwupdateMgr] Non-critical update (cloudImmediateRebootFlag=%s)\n",
+                      response.cloudImmediateRebootFlag[0] ? response.cloudImmediateRebootFlag : "false");
+        }
+        
+        // Check 1: Is Maintenance Manager integration active?
+        SWLOG_INFO("[rdkFwupdateMgr] Checking maint_status: '%s'\n", device_info.maint_status);
+        if (strncmp(device_info.maint_status, "true", 4) != 0) {
+            SWLOG_INFO("[rdkFwupdateMgr] MaintenanceMGR not active (maint_status != 'true') - skipping opt-out logic\n");
+            SWLOG_INFO("[rdkFwupdateMgr] ===== END OPT-OUT EVALUATION: NORMAL FLOW =====\n");
             CheckUpdateResponse result = create_success_response(
                 response.cloudFWVersion,
                 update_details,
                 "Firmware update available"
             );
-            
             g_free(update_details);
             return result;
-        } else {
-            SWLOG_INFO("[rdkFwupdateMgr] XConf returned no firmware version - no update available\n");
-            g_free(update_details);
-            return create_result_response(FIRMWARE_NOT_AVAILABLE, "No firmware update available");
         }
+        
+        // Check 2: Is opt-out feature enabled for this device?
+        SWLOG_INFO("[rdkFwupdateMgr] Checking sw_optout: '%s'\n", device_info.sw_optout);
+        if (strncmp(device_info.sw_optout, "true", 4) != 0) {
+            SWLOG_INFO("[rdkFwupdateMgr] Opt-out feature disabled (sw_optout != 'true') - skipping opt-out logic\n");
+            SWLOG_INFO("[rdkFwupdateMgr] ===== END OPT-OUT EVALUATION: NORMAL FLOW =====\n");
+            CheckUpdateResponse result = create_success_response(
+                response.cloudFWVersion,
+                update_details,
+                "Firmware update available"
+            );
+            g_free(update_details);
+            return result;
+        }
+        
+        // Check 3: Read user's opt-out preference
+        SWLOG_INFO("[rdkFwupdateMgr] Reading opt-out preference from /opt/maintenance_mgr_record.conf\n");
+        int optout = getOPTOUTValue("/opt/maintenance_mgr_record.conf");
+        SWLOG_INFO("[rdkFwupdateMgr] Opt-out value: %d (-1=not set, 0=ENFORCE_OPTOUT, 1=IGNORE_UPDATE)\n", optout);
+        
+        if (optout == -1) {
+            SWLOG_INFO("[rdkFwupdateMgr] No opt-out preference set (file missing or no value) - allowing update\n");
+            SWLOG_INFO("[rdkFwupdateMgr] ===== END OPT-OUT EVALUATION: NORMAL FLOW =====\n");
+            CheckUpdateResponse result = create_success_response(
+                response.cloudFWVersion,
+                update_details,
+                "Firmware update available"
+            );
+            g_free(update_details);
+            return result;
+        }
+        
+        // Check 4: Apply opt-out decision logic
+        if (optout == 1) {
+            // User has opted out (IGNORE_UPDATE)
+            if (isCriticalUpdate) {
+                // Critical update bypasses opt-out
+                SWLOG_INFO("[rdkFwupdateMgr] CRITICAL UPDATE OVERRIDE: Bypassing user opt-out\n");
+                SWLOG_INFO("[rdkFwupdateMgr] ===== END OPT-OUT EVALUATION: CRITICAL BYPASS =====\n");
+                CheckUpdateResponse result = create_success_response(
+                    response.cloudFWVersion,
+                    update_details,
+                    "Critical firmware update available (security/stability)"
+                );
+                g_free(update_details);
+                return result;
+            } else {
+                // Non-critical update blocked by user
+                SWLOG_INFO("[rdkFwupdateMgr] BLOCKING UPDATE: User opted out (IGNORE_UPDATE), non-critical firmware\n");
+                SWLOG_INFO("[rdkFwupdateMgr] ===== END OPT-OUT EVALUATION: RETURNING IGNORE_OPTOUT =====\n");
+                CheckUpdateResponse result = create_optout_response(
+                    IGNORE_OPTOUT,
+                    response.cloudFWVersion,
+                    update_details,
+                    "Firmware download blocked - user has opted out of updates"
+                );
+                g_free(update_details);
+                return result;
+            }
+        }
+        else if (optout == 0) {
+            // User requires consent (ENFORCE_OPTOUT)
+            SWLOG_INFO("[rdkFwupdateMgr] CONSENT REQUIRED: User has ENFORCE_OPTOUT set\n");
+            SWLOG_INFO("[rdkFwupdateMgr] ===== END OPT-OUT EVALUATION: RETURNING BYPASS_OPTOUT =====\n");
+            CheckUpdateResponse result = create_optout_response(
+                BYPASS_OPTOUT,
+                response.cloudFWVersion,
+                update_details,
+                "Firmware available - user consent required before installation"
+            );
+            g_free(update_details);
+            return result;
+        }
+        
+        // Defensive: Should not reach here, but return normal flow
+        SWLOG_WARN("[rdkFwupdateMgr] WARNING: Unexpected opt-out value path - returning normal flow\n");
+        SWLOG_INFO("[rdkFwupdateMgr] ===== END OPT-OUT EVALUATION: FALLBACK NORMAL FLOW =====\n");
+        CheckUpdateResponse result = create_success_response(
+            response.cloudFWVersion,
+            update_details,
+            "Firmware update available"
+        );
+        g_free(update_details);
+        return result;
     } else {
         // XConf query failed - network or server error
         SWLOG_ERROR("[rdkFwupdateMgr] XConf communication failed: ret=%d, http=%d\n", ret, http_code);
@@ -1198,410 +1415,6 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
     }
 }
 
-/**
- * @brief Download firmware with progress monitoring
- * 
- * Main entry point for firmware download operation. Features:
- * - URL source: Custom URL or XConf cache
- * - Progress monitoring: Spawns thread if download_state provided
- * - Error handling: Comprehensive curl/HTTP error mapping
- * - Memory safety: All allocations checked and cleaned up
- * 
- * Thread Safety:
- * - Spawns progress monitor thread if needed
- * - Properly joins thread before returning
- * - All shared state protected by mutex
- * 
- * Memory Management:
- * - All g_strdup'd strings must be freed by caller
- * - Thread context freed by thread itself
- * - Mutex and context freed by thread on exit
- * 
- * @param firmwareName Firmware filename (for logging, can be NULL)
- * @param downloadUrl Custom URL or empty string to use XConf URL
- * @param typeOfFirmware Type: "PCI", "PDRI", "PERIPHERAL" (can be NULL)
- * @param localFilePath Destination path (required, must not be NULL)
- * @param download_state D-Bus skeleton for progress signals (NULL = no progress)
- * @return DownloadFirmwareResult with result_code and error_message
- */
-DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName,
-                                                       const gchar *downloadUrl,
-                                                       const gchar *typeOfFirmware,
-                                                       const gchar *localFilePath,
-                                                       void *download_state) {
-    SWLOG_INFO("[DOWNLOAD_HANDLER] === Starting Firmware Download ===\n");
-    SWLOG_INFO("[DOWNLOAD_HANDLER]   Firmware: %s\n", firmwareName ? firmwareName : "(null)");
-    SWLOG_INFO("[DOWNLOAD_HANDLER]   Custom URL: '%s'\n", downloadUrl ? downloadUrl : "(empty)");
-    SWLOG_INFO("[DOWNLOAD_HANDLER]   Type: %s\n", typeOfFirmware ? typeOfFirmware : "(null)");
-    SWLOG_INFO("[DOWNLOAD_HANDLER]   Destination: %s\n", localFilePath ? localFilePath : "(null)");
-    SWLOG_INFO("[DOWNLOAD_HANDLER]   Progress monitoring: %s\n", download_state ? "ENABLED" : "DISABLED");
-    
-    // Initialize result structure
-    DownloadFirmwareResult result;
-    result.result_code = DOWNLOAD_ERROR;
-    result.error_message = NULL;
-    
-    // Validate required parameters
-    if (localFilePath == NULL || strlen(localFilePath) == 0) {
-        SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: localFilePath is NULL or empty\n");
-        result.error_message = g_strdup("Invalid parameters: localFilePath required");
-        return result;
-    }
-    
-    // Determine effective download URL
-    gchar *effective_url = NULL;
-    
-    if (downloadUrl != NULL && strlen(downloadUrl) > 0) {
-        // Use custom URL provided by caller
-        SWLOG_INFO("[DOWNLOAD_HANDLER] Using custom URL: %s\n", downloadUrl);
-        effective_url = g_strdup(downloadUrl);
-        
-        if (effective_url == NULL) {
-            SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: Failed to duplicate URL string\n");
-            result.error_message = g_strdup("Memory allocation failed");
-            return result;
-        }
-    } else {
-        // Load URL from XConf cache
-        SWLOG_INFO("[DOWNLOAD_HANDLER] No custom URL, loading from XConf cache\n");
-        
-        if (!xconf_cache_exists()) {
-            SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: No XConf cache found\n");
-            SWLOG_ERROR("[DOWNLOAD_HANDLER] Client must call CheckForUpdate first\n");
-            result.error_message = g_strdup("No firmware metadata. Call CheckForUpdate first.");
-            return result;
-        }
-        
-        XCONFRES xconf_response;
-        memset(&xconf_response, 0, sizeof(XCONFRES));
-        
-        if (!load_xconf_from_cache(&xconf_response)) {
-            SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: Failed to load XConf cache\n");
-            result.error_message = g_strdup("Failed to load firmware metadata from cache");
-            return result;
-        }
-        
-        SWLOG_INFO("[DOWNLOAD_HANDLER] Loaded XConf metadata:\n");
-        SWLOG_INFO("[DOWNLOAD_HANDLER]   Version: %s\n", 
-                   xconf_response.cloudFWVersion ? xconf_response.cloudFWVersion : "(null)");
-        SWLOG_INFO("[DOWNLOAD_HANDLER]   URL: %s\n", 
-                   xconf_response.cloudFWFile ? xconf_response.cloudFWFile : "(null)");
-        
-        // Validate that cloudFWFile contains a valid URL
-        if (xconf_response.cloudFWFile == NULL || strlen(xconf_response.cloudFWFile) == 0) {
-            SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: XConf cache has no firmware URL\n");
-            result.error_message = g_strdup("Invalid XConf data: missing firmware URL");
-            return result;
-        }
-        
-        effective_url = g_strdup(xconf_response.cloudFWFile);
-        
-        if (effective_url == NULL) {
-            SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: Failed to duplicate XConf URL\n");
-            result.error_message = g_strdup("Memory allocation failed");
-            return result;
-        }
-    }
-    
-    // Validate effective URL
-    if (strlen(effective_url) == 0) {
-        SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: No download URL available\n");
-        result.error_message = g_strdup("No download URL available");
-        g_free(effective_url);
-        return result;
-    }
-    
-    SWLOG_INFO("[DOWNLOAD_HANDLER] Effective download URL: %s\n", effective_url);
-    
-    // Prepare upgrade context
-    RdkUpgradeContext_t upgrade_context;
-    memset(&upgrade_context, 0, sizeof(RdkUpgradeContext_t));
-    
-    // Determine upgrade type from firmware type parameter
-    if (typeOfFirmware != NULL) {
-        if (strcmp(typeOfFirmware, "PCI") == 0) {
-            upgrade_context.upgrade_type = PCI_UPGRADE;
-        } else if (strcmp(typeOfFirmware, "PDRI") == 0) {
-            upgrade_context.upgrade_type = PDRI_UPGRADE;
-        } else if (strcmp(typeOfFirmware, "PERIPHERAL") == 0) {
-            upgrade_context.upgrade_type = PERIPHERAL_UPGRADE;
-        } else {
-            SWLOG_ERROR("[DOWNLOAD_HANDLER] Unknown firmware type '%s', using PCI\n", typeOfFirmware);
-            upgrade_context.upgrade_type = PCI_UPGRADE;
-        }
-    } else {
-        upgrade_context.upgrade_type = PCI_UPGRADE;
-    }
-    
-    SWLOG_INFO("[DOWNLOAD_HANDLER] Upgrade type: %d\n", upgrade_context.upgrade_type);
-    
-    // CRITICAL: Set download_only flag (do NOT flash automatically)
-    upgrade_context.download_only = TRUE;
-    SWLOG_INFO("[DOWNLOAD_HANDLER] download_only=TRUE (will NOT auto-flash)\n");
-    
-    // Set context fields
-    upgrade_context.server_type = HTTP_SSR_DIRECT;
-    upgrade_context.artifactLocationUrl = effective_url;
-    upgrade_context.dwlloc = (const void*)localFilePath;
-    upgrade_context.pPostFields = NULL;
-    upgrade_context.immed_reboot_flag = "NO";
-    upgrade_context.delay_dwnl = 0;
-    
-    // Generate timestamp for lastrun
-    char timestamp[64];
-    snprintf(timestamp, sizeof(timestamp), "%ld", (long)time(NULL));
-    upgrade_context.lastrun = timestamp;
-    upgrade_context.disableStatsUpdate = (char*)"false";
-    upgrade_context.device_info = &device_info;
-    
-    int force_exit = 0;
-    upgrade_context.force_exit = &force_exit;
-    upgrade_context.trigger_type = TRIGGER_MANUAL;
-    upgrade_context.rfc_list = &rfc_list;
-    
-    
-    // *** NEW: Spawn progress monitor thread if download_state provided ***
-    GThread* monitor_thread = NULL;
-    gint stop_monitor = 0;  // Changed from gboolean to gint for g_atomic_int_get/set type safety
-    GMutex* monitor_mutex = NULL;
-    ProgressMonitorContext* monitor_ctx = NULL;
-    
-    if (download_state != NULL) {
-        SWLOG_INFO("[DOWNLOAD_HANDLER] Setting up progress monitoring...\n");
-        
-        // Cast download_state to the proper type
-        DownloadStateContext* dl_ctx = (DownloadStateContext*)download_state;
-        
-        // NULL CHECK: Validate download state context fields
-        if (dl_ctx->connection == NULL) {
-            SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: NULL D-Bus connection in download_state\n");
-            result.result_code = DOWNLOAD_ERROR;
-            result.error_message = g_strdup("Invalid download state (NULL connection)");
-            g_free(effective_url);
-            return result;
-        }
-        
-        // Allocate and initialize mutex for thread-safe access
-        monitor_mutex = g_new0(GMutex, 1);
-        if (monitor_mutex == NULL) {
-            SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: Failed to allocate monitor mutex\n");
-            result.result_code = DOWNLOAD_ERROR;
-            result.error_message = g_strdup("Memory allocation failed");
-            g_free(effective_url);
-            return result;
-        }
-        g_mutex_init(monitor_mutex);
-        SWLOG_DEBUG("[DOWNLOAD_HANDLER] Monitor mutex allocated and initialized\n");
-        
-        // Allocate progress monitor context
-        monitor_ctx = g_new0(ProgressMonitorContext, 1);
-        if (monitor_ctx == NULL) {
-            SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: Failed to allocate monitor context\n");
-            g_mutex_clear(monitor_mutex);
-            g_free(monitor_mutex);
-            result.result_code = DOWNLOAD_ERROR;
-            result.error_message = g_strdup("Memory allocation failed");
-            g_free(effective_url);
-            return result;
-        }
-        SWLOG_DEBUG("[DOWNLOAD_HANDLER] Monitor context allocated\n");
-        
-        // Initialize context fields
-        monitor_ctx->connection = dl_ctx->connection;  // Borrowed pointer (do NOT free)
-        monitor_ctx->handler_id = dl_ctx->handler_id ? g_strdup(dl_ctx->handler_id) : NULL;
-        monitor_ctx->firmware_name = dl_ctx->firmware_name ? g_strdup(dl_ctx->firmware_name) : NULL;
-        monitor_ctx->stop_flag = &stop_monitor;
-        monitor_ctx->mutex = monitor_mutex;
-        monitor_ctx->last_dlnow = 0;
-        monitor_ctx->last_activity_time = time(NULL);
-        
-        SWLOG_DEBUG("[DOWNLOAD_HANDLER] Monitor context initialized:\n");
-        SWLOG_DEBUG("[DOWNLOAD_HANDLER]   - Handler ID: %s\n", monitor_ctx->handler_id ? monitor_ctx->handler_id : "(null)");
-        SWLOG_DEBUG("[DOWNLOAD_HANDLER]   - Firmware: %s\n", monitor_ctx->firmware_name ? monitor_ctx->firmware_name : "(null)");
-        
-        // Spawn monitor thread
-        GError* thread_error = NULL;
-        monitor_thread = g_thread_try_new("rdkfw_progress_monitor", 
-                                          rdkfw_progress_monitor_thread, 
-                                          monitor_ctx, 
-                                          &thread_error);
-        
-        if (monitor_thread == NULL) {
-            SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: Failed to spawn monitor thread: %s\n",
-                       thread_error ? thread_error->message : "Unknown error");
-            SWLOG_ERROR("Thread creation failed");
-    if (monitor_ctx) {
-        g_free(monitor_ctx->handler_id);
-        g_free(monitor_ctx->firmware_name);
-        if (monitor_ctx->mutex) {
-            g_mutex_clear(monitor_ctx->mutex);
-            g_free(monitor_ctx->mutex);
-        }
-        g_free(monitor_ctx);
-        monitor_ctx = NULL;
-    } 
-            // Cleanup on thread creation failure
-            if (thread_error != NULL) {
-                g_error_free(thread_error);
-                thread_error = NULL;
-            }
-            
-            // Free string fields (g_strdup'd copies)
-            if (monitor_ctx->handler_id) {
-                g_free(monitor_ctx->handler_id);
-                monitor_ctx->handler_id = NULL;
-            }
-            if (monitor_ctx->firmware_name) {
-                g_free(monitor_ctx->firmware_name);
-                monitor_ctx->firmware_name = NULL;
-            }
-            
-            // Clear and free mutex
-            g_mutex_clear(monitor_mutex);
-            g_free(monitor_mutex);
-            monitor_mutex = NULL;
-            
-            // Free context
-            g_free(monitor_ctx);
-            monitor_ctx = NULL;
-            
-            // Continue without progress monitoring (non-fatal)
-            SWLOG_INFO("[DOWNLOAD_HANDLER] Continuing without progress monitoring\n");
-        } else {
-            SWLOG_INFO("[DOWNLOAD_HANDLER] Progress monitor thread started successfully\n");
-        }
-    } else {
-        SWLOG_INFO("[DOWNLOAD_HANDLER] No progress monitoring requested (download_state=NULL)\n");
-    }
-    
-    // Call rdkv_upgrade_request() (blocks until download completes or fails)
-    SWLOG_INFO("[DOWNLOAD_HANDLER] Calling rdkv_upgrade_request()...\n");
-    
-    void *curl_handle = NULL;
-    int http_code = 0;
-    int curl_ret_code = rdkv_upgrade_request(&upgrade_context, &curl_handle, &http_code);
-    
-    SWLOG_INFO("[DOWNLOAD_HANDLER] rdkv_upgrade_request() returned: curl=%d, http=%d\n", 
-               curl_ret_code, http_code);
-    
-    // Stop progress monitor thread ***
-    if (monitor_thread != NULL) {
-        SWLOG_INFO("[DOWNLOAD_HANDLER] Stopping progress monitor thread...\n");
-        
-        // Signal thread to stop atomically (use 1 for true with gint type)
-        g_atomic_int_set(&stop_monitor, 1);
-        
-        /* Coverity fix: RESOURCE_LEAK - g_thread_join() frees the thread handle.
-         * Do NOT set monitor_thread = NULL afterward as Coverity flags it as a leak.
-         * The thread handle is properly freed by g_thread_join() and should not be
-         * used again after this point. */
-        g_thread_join(monitor_thread);
-        /* coverity[leaked_storage] - False positive: g_thread_join() already freed the GThread.
-         * Setting to NULL is defensive programming to prevent double-join. GLib documentation
-         * confirms the thread handle is consumed by g_thread_join(). */
-        monitor_thread = NULL;
-        
-        SWLOG_INFO("[DOWNLOAD_HANDLER] Progress monitor thread stopped cleanly\n");
-        
-        // Note: monitor_mutex and monitor_ctx are cleaned up by the thread itself
-        // Do NOT free them here to avoid double-free
-    } else if (monitor_ctx != NULL) {
-        /* Coverity fix: RESOURCE_LEAK - If monitor_thread is NULL but monitor_ctx was allocated
-         * and thread creation failed, we need to clean it up here. */
-        SWLOG_DEBUG("[DOWNLOAD_HANDLER] Cleaning up monitor_ctx (thread was not started)\n");
-        if (monitor_ctx->handler_id) g_free(monitor_ctx->handler_id);
-        if (monitor_ctx->firmware_name) g_free(monitor_ctx->firmware_name);
-        if (monitor_ctx->mutex) {
-            g_mutex_clear(monitor_ctx->mutex);
-            g_free(monitor_ctx->mutex);
-        }
-        g_free(monitor_ctx);
-        monitor_ctx = NULL;
-    }
-    
-    // Analyze download result
-    if (curl_ret_code == 0 && (http_code == 200 || http_code == 206)) {
-        // Success: curl completed and HTTP OK/Partial Content
-        SWLOG_INFO("[DOWNLOAD_HANDLER] Download completed successfully!\n");
-        
-        // Verify file exists on disk
-        if (!g_file_test(localFilePath, G_FILE_TEST_EXISTS)) {
-            SWLOG_ERROR("[DOWNLOAD_HANDLER] ERROR: File not found after download: %s\n", localFilePath);
-            result.result_code = DOWNLOAD_ERROR;
-            result.error_message = g_strdup("File not found after download");
-            g_free(effective_url);
-            return result;
-        }
-        
-        // Get file size for logging
-        struct stat st;
-        if (stat(localFilePath, &st) == 0) {
-            SWLOG_INFO("[DOWNLOAD_HANDLER] Downloaded file size: %ld bytes\n", (long)st.st_size);
-        }
-        
-        result.result_code = DOWNLOAD_SUCCESS;
-        result.error_message = NULL;
-        
-    } else if (curl_ret_code == 0 && http_code == 404) {
-        // HTTP 404: Not Found
-        SWLOG_ERROR("[DOWNLOAD_HANDLER] Firmware not found (HTTP 404)\n");
-        result.result_code = DOWNLOAD_NOT_FOUND;
-        result.error_message = g_strdup("Firmware not found on server (HTTP 404)");
-        
-    } else if (curl_ret_code == 6) {
-        // CURLE_COULDNT_RESOLVE_HOST
-        SWLOG_ERROR("[DOWNLOAD_HANDLER] DNS resolution failed (curl error 6)\n");
-        result.result_code = DOWNLOAD_NETWORK_ERROR;
-        result.error_message = g_strdup("DNS resolution failed");
-        
-    } else if (curl_ret_code == 7) {
-        // CURLE_COULDNT_CONNECT
-        SWLOG_ERROR("[DOWNLOAD_HANDLER] Connection failed (curl error 7)\n");
-        result.result_code = DOWNLOAD_NETWORK_ERROR;
-        result.error_message = g_strdup("Connection failed");
-        
-    } else if (curl_ret_code == 28) {
-        // CURLE_OPERATION_TIMEDOUT
-        SWLOG_ERROR("[DOWNLOAD_HANDLER] Timeout (curl error 28)\n");
-        result.result_code = DOWNLOAD_NETWORK_ERROR;
-        result.error_message = g_strdup("Operation timed out");
-        
-    } else if (curl_ret_code == 18) {
-        // CURLE_PARTIAL_FILE
-        SWLOG_ERROR("[DOWNLOAD_HANDLER] Partial file transfer (curl error 18)\n");
-        result.result_code = DOWNLOAD_ERROR;
-        result.error_message = g_strdup("Partial file transfer (incomplete download)");
-        
-    } else if (curl_ret_code == 23) {
-        // CURLE_WRITE_ERROR
-        SWLOG_ERROR("[DOWNLOAD_HANDLER] Write error (curl error 23) - disk full?\n");
-        result.result_code = DOWNLOAD_ERROR;
-        result.error_message = g_strdup("Write error (disk full or permission denied)");
-        
-    } else {
-        // Generic error
-        SWLOG_ERROR("[DOWNLOAD_HANDLER] Download failed (curl=%d, HTTP=%d)\n", 
-                   curl_ret_code, http_code);
-        
-        char error_msg[256];
-        snprintf(error_msg, sizeof(error_msg), 
-                "Download failed (curl error %d, HTTP status %d)", 
-                curl_ret_code, http_code);
-        result.error_message = g_strdup(error_msg);
-    }
-    
-    // Cleanup
-    g_free(effective_url);
-    effective_url = NULL;
-    
-    SWLOG_INFO("[DOWNLOAD_HANDLER] === Download Handler Complete (result=%d) ===\n", 
-               result.result_code);
-    
-    /* coverity[leaked_storage] - False positive: monitor_thread was already cleaned up
-     * at line 1303 via g_thread_join(). All paths reaching this return have already
-     * stopped and freed the monitor thread. */
-    return result;
-}
 
 /*
  * ===================================================================
@@ -2140,4 +1953,208 @@ flash_error:
     
     SWLOG_INFO("[FLASH_WORKER] Thread exiting, result: %d\n", flash_result);
     return NULL;
+}
+
+// ============================================================================
+// GLOBAL IN-MEMORY XCONF CACHE MANAGEMENT FUNCTIONS
+// ============================================================================
+
+/**
+ * @brief Clear the global XConf data cache
+ * 
+ * Frees all dynamically allocated strings in the global cache and marks
+ * it as invalid. Should be called before overwriting with new data or
+ * when cache needs to be invalidated.
+ * 
+ * Thread Safety: Caller MUST hold g_xconf_data_cache lock
+ * 
+ * Note: This is an internal function, always called with lock held
+ */
+static void clear_cached_xconf_data_internal(void)
+{
+    
+    // Zero out the entire structure
+    memset(&g_cached_xconf_data, 0, sizeof(XCONFRES));
+    
+    // Mark cache as invalid
+    g_xconf_data_valid = FALSE;
+    g_cached_http_code = 0;
+    
+    SWLOG_DEBUG("[CACHE_MEM] Global XConf cache cleared\n");
+}
+
+/**
+ * @brief Save parsed XConf data to global in-memory cache
+ * 
+ * Populates the global g_cached_xconf_data structure with parsed XConf
+ * response data. This allows fast access without file I/O or JSON parsing.
+ * 
+ * Thread Safety: Thread-safe, uses g_xconf_data_cache mutex
+ * 
+ * @param pResponse Parsed XConf response structure to cache
+ * @param http_code HTTP status code from XConf query
+ * @return TRUE on success, FALSE on error
+ */
+static gboolean save_cached_xconf_data(const XCONFRES *pResponse, int http_code)
+{
+    if (!pResponse) {
+        SWLOG_ERROR("[CACHE_MEM] Cannot save NULL XConf response to memory cache\n");
+        return FALSE;
+    }
+    
+    SWLOG_INFO("[CACHE_MEM] Saving parsed XConf data to global in-memory cache\n");
+    
+    // === CRITICAL SECTION START ===
+    G_LOCK(xconf_data_cache);
+    
+    // Clear existing cache before overwriting
+    clear_cached_xconf_data_internal();
+    
+    // Deep copy all fields from pResponse to g_cached_xconf_data
+    // Note: XCONFRES uses fixed-size char arrays, not pointers
+    
+    if (pResponse->cloudFWVersion[0]) {
+        strncpy(g_cached_xconf_data.cloudFWVersion, pResponse->cloudFWVersion, 
+                sizeof(g_cached_xconf_data.cloudFWVersion) - 1);
+        g_cached_xconf_data.cloudFWVersion[sizeof(g_cached_xconf_data.cloudFWVersion) - 1] = '\0';
+    }
+    
+    if (pResponse->cloudFWFile[0]) {
+        strncpy(g_cached_xconf_data.cloudFWFile, pResponse->cloudFWFile, 
+                sizeof(g_cached_xconf_data.cloudFWFile) - 1);
+        g_cached_xconf_data.cloudFWFile[sizeof(g_cached_xconf_data.cloudFWFile) - 1] = '\0';
+    }
+    
+    if (pResponse->cloudFWLocation[0]) {
+        strncpy(g_cached_xconf_data.cloudFWLocation, pResponse->cloudFWLocation, 
+                sizeof(g_cached_xconf_data.cloudFWLocation) - 1);
+        g_cached_xconf_data.cloudFWLocation[sizeof(g_cached_xconf_data.cloudFWLocation) - 1] = '\0';
+    }
+    
+    if (pResponse->ipv6cloudFWLocation[0]) {
+        strncpy(g_cached_xconf_data.ipv6cloudFWLocation, pResponse->ipv6cloudFWLocation, 
+                sizeof(g_cached_xconf_data.ipv6cloudFWLocation) - 1);
+        g_cached_xconf_data.ipv6cloudFWLocation[sizeof(g_cached_xconf_data.ipv6cloudFWLocation) - 1] = '\0';
+    }
+    
+    if (pResponse->cloudProto[0]) {
+        strncpy(g_cached_xconf_data.cloudProto, pResponse->cloudProto, 
+                sizeof(g_cached_xconf_data.cloudProto) - 1);
+        g_cached_xconf_data.cloudProto[sizeof(g_cached_xconf_data.cloudProto) - 1] = '\0';
+    }
+    
+    if (pResponse->cloudImmediateRebootFlag[0]) {
+        strncpy(g_cached_xconf_data.cloudImmediateRebootFlag, pResponse->cloudImmediateRebootFlag, 
+                sizeof(g_cached_xconf_data.cloudImmediateRebootFlag) - 1);
+        g_cached_xconf_data.cloudImmediateRebootFlag[sizeof(g_cached_xconf_data.cloudImmediateRebootFlag) - 1] = '\0';
+    }
+    
+    if (pResponse->cloudDelayDownload[0]) {
+        strncpy(g_cached_xconf_data.cloudDelayDownload, pResponse->cloudDelayDownload, 
+                sizeof(g_cached_xconf_data.cloudDelayDownload) - 1);
+        g_cached_xconf_data.cloudDelayDownload[sizeof(g_cached_xconf_data.cloudDelayDownload) - 1] = '\0';
+    }
+    
+    if (pResponse->cloudPDRIVersion[0]) {
+        strncpy(g_cached_xconf_data.cloudPDRIVersion, pResponse->cloudPDRIVersion, 
+                sizeof(g_cached_xconf_data.cloudPDRIVersion) - 1);
+        g_cached_xconf_data.cloudPDRIVersion[sizeof(g_cached_xconf_data.cloudPDRIVersion) - 1] = '\0';
+    }
+    
+    if (pResponse->peripheralFirmwares[0]) {
+        strncpy(g_cached_xconf_data.peripheralFirmwares, pResponse->peripheralFirmwares, 
+                sizeof(g_cached_xconf_data.peripheralFirmwares) - 1);
+        g_cached_xconf_data.peripheralFirmwares[sizeof(g_cached_xconf_data.peripheralFirmwares) - 1] = '\0';
+    }
+    
+    if (pResponse->dlCertBundle[0]) {
+        strncpy(g_cached_xconf_data.dlCertBundle, pResponse->dlCertBundle, 
+                sizeof(g_cached_xconf_data.dlCertBundle) - 1);
+        g_cached_xconf_data.dlCertBundle[sizeof(g_cached_xconf_data.dlCertBundle) - 1] = '\0';
+    }
+    
+    // Save HTTP code
+    g_cached_http_code = http_code;
+    
+    // Mark cache as valid
+    g_xconf_data_valid = TRUE;
+    
+    G_UNLOCK(xconf_data_cache);
+    // === CRITICAL SECTION END ===
+    
+    SWLOG_INFO("[CACHE_MEM] Global in-memory cache saved successfully\n");
+    SWLOG_INFO("[CACHE_MEM]   - Version: '%s'\n", g_cached_xconf_data.cloudFWVersion);
+    SWLOG_INFO("[CACHE_MEM]   - File: '%s'\n", g_cached_xconf_data.cloudFWFile);
+    SWLOG_INFO("[CACHE_MEM]   - Location: '%s'\n", g_cached_xconf_data.cloudFWLocation);
+    SWLOG_INFO("[CACHE_MEM]   - HTTP Code: %d\n", g_cached_http_code);
+    
+    return TRUE;
+}
+
+/**
+ * @brief Get parsed XConf data from global in-memory cache
+ * 
+ * Returns a deep copy of the cached XConf response data. This is the
+ * primary access method for other functions to retrieve firmware metadata.
+ * 
+ * Use Case: DownloadFirmware can call this to get cloudFWLocation without
+ *           file I/O or JSON parsing overhead.
+ * 
+ * Thread Safety: Thread-safe, uses g_xconf_data_cache mutex
+ * 
+ * @param[out] pResponse Output structure to populate with cached data
+ * @param[out] pHttpCode Output HTTP status code (can be NULL if not needed)
+ * @return TRUE if cache is valid and data copied, FALSE if cache invalid/empty
+ */
+gboolean get_cached_xconf_data(XCONFRES *pResponse, int *pHttpCode)
+{
+    if (!pResponse) {
+        SWLOG_ERROR("[CACHE_MEM] Cannot copy to NULL pResponse\n");
+        return FALSE;
+    }
+    
+    gboolean result = FALSE;
+    
+    // === CRITICAL SECTION START ===
+    G_LOCK(xconf_data_cache);
+    
+    if (!g_xconf_data_valid) {
+        SWLOG_DEBUG("[CACHE_MEM] Global cache is invalid or empty\n");
+        G_UNLOCK(xconf_data_cache);
+        return FALSE;
+    }
+    
+    // Deep copy cached data to output structure
+    memcpy(pResponse, &g_cached_xconf_data, sizeof(XCONFRES));
+    
+    // Copy HTTP code if requested
+    if (pHttpCode) {
+        *pHttpCode = g_cached_http_code;
+    }
+    
+    result = TRUE;
+    
+    G_UNLOCK(xconf_data_cache);
+    // === CRITICAL SECTION END ===
+    
+    SWLOG_DEBUG("[CACHE_MEM] Retrieved XConf data from global cache\n");
+    SWLOG_DEBUG("[CACHE_MEM]   - Version: '%s'\n", pResponse->cloudFWVersion);
+    SWLOG_DEBUG("[CACHE_MEM]   - Location: '%s'\n", pResponse->cloudFWLocation);
+    
+    return result;
+}
+
+/**
+ * @brief Clear the global XConf data cache (public interface)
+ * 
+ * Thread-safe public wrapper for clearing the global cache.
+ * Use this when cache needs to be invalidated (e.g., on error or manual refresh).
+ */
+void clear_cached_xconf_data(void)
+{
+    G_LOCK(xconf_data_cache);
+    clear_cached_xconf_data_internal();
+    G_UNLOCK(xconf_data_cache);
+    
+    SWLOG_INFO("[CACHE_MEM] Global XConf cache cleared by request\n");
 }

@@ -75,7 +75,7 @@ public:
     MOCK_METHOD(void, logMilestone, (const char*), ());
     MOCK_METHOD(int, eraseFolderExceParamFile, (const char*, const char*,const char*,const char*), ());
     MOCK_METHOD(int, doCurlPutRequest, (void*, FileDwnl_t*, char*, int*), ());
-    MOCK_METHOD(void, checkAndEnterStateRed, (int, const char*), ());
+    MOCK_METHOD(int, checkAndEnterStateRed, (int, const char*), ());
     MOCK_METHOD(int, getRFCSettings, (Rfc_t*), ());
     MOCK_METHOD(void, eventManager, (const char*, const char*), ());
     MOCK_METHOD(int, updateFWDownloadStatus, (struct FWDownloadStatus*, const char*), ());
@@ -255,11 +255,11 @@ extern "C" {
         return global_mockexternal_ptr->doCurlPutRequest(in_curl, pfile_dwnl, jsonrpc_auth_token, out_httpCode);
     }
 
-    void checkAndEnterStateRed(int curlret, const char *) {
+    int checkAndEnterStateRed(int curlret, const char *) {
         if (global_mockexternal_ptr == nullptr) {
-            return; // Return default value if global_mockexternal_ptr is NULL
+            return 0; // Return success if global_mockexternal_ptr is NULL
         }
-        global_mockexternal_ptr->checkAndEnterStateRed(curlret, "");
+        return global_mockexternal_ptr->checkAndEnterStateRed(curlret, "");
     }
 
     int getRFCSettings(Rfc_t *rfc_list) {
@@ -617,8 +617,34 @@ extern "C" {
     const char* getRFCErrorString(int code) {
         return "RFC_SUCCESS";
     }
-}
 
+#ifndef GTEST_BASIC
+    // ===========================================================================
+    // Additional stubs for functions referenced by linked source files
+    // Only compiled when NOT building GTEST_BASIC (rdkfw_main_gtest)
+    // rdkfw_main_gtest includes real flash.c, device_status_helper.c, download_status_helper.c
+    // Other tests (rdkfwupdatemgr_main_flow_gtest) use these mocks instead
+    // ===========================================================================
+    
+    // Stub for flashImage (referenced by rdkv_upgrade.c, defined in flash.c)
+    // Signature: int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint, int trigger_type)
+    int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint, int trigger_type) {
+        return 0; // Success
+    }
+    
+    // Stub for isConnectedToInternet (referenced by device_status_helper.c)
+    // Signature: bool isConnectedToInternet(void)
+    bool isConnectedToInternet(void) {
+        return true; // Connected
+    }
+    
+    // Stub for write_RFCProperty (referenced by download_status_helper.c, defined in rfcinterface.c)
+    // Signature: int write_RFCProperty(char* type, const char* key, const char *data, RFCVALDATATYPE datatype)
+    int write_RFCProperty(char* type, const char* key, const char *data, RFCVALDATATYPE datatype) {
+        return 0; // Success
+    }
+#endif // !GTEST_BASIC
+}
 class MockFunctionsInternal {
 public:
     MOCK_METHOD(void, RunCommand, (int command, void* arg1, char* jsondata, int size));
