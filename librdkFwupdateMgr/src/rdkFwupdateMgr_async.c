@@ -1304,9 +1304,9 @@ static bool parse_update_details(const char *update_details_str,
         return false;
     }
 
-    /* Parse comma-separated key:value pairs */
+    /* Parse pipe-separated key:value pairs (daemon uses | not ,) */
     char *saveptr = NULL;
-    char *token = strtok_r(work_str, ",", &saveptr);
+    char *token = strtok_r(work_str, "|", &saveptr);
 
     while (token != NULL) {
         /* Split on ':' to get key and value */
@@ -1314,7 +1314,7 @@ static bool parse_update_details(const char *update_details_str,
         if (colon == NULL) {
             /* Malformed token, skip it */
             FWUPMGR_ERROR("parse_update_details: malformed token '%s' (no colon)\n", token);
-            token = strtok_r(NULL, ",", &saveptr);
+            token = strtok_r(NULL, "|", &saveptr);
             continue;
         }
 
@@ -1323,41 +1323,54 @@ static bool parse_update_details(const char *update_details_str,
         const char *key = token;
         const char *value = colon + 1;
 
-        /* Match keys and copy values into appropriate fields */
-        if (strcmp(key, "FwFileName") == 0) {
+        /* Match keys and copy values into appropriate fields
+         * Daemon uses: File, Location, Version, Reboot, Delay, PDRI, Peripherals
+         * We map them to our struct fields */
+        if (strcmp(key, "File") == 0) {
             strncpy(out_details->FwFileName, value, 
                     sizeof(out_details->FwFileName) - 1);
         }
-        else if (strcmp(key, "FwUrl") == 0) {
-            strncpy(out_details->FwUrl, value,
-                    sizeof(out_details->FwUrl) - 1);
+        else if (strcmp(key, "Location") == 0 || strcmp(key, "IPv6Location") == 0) {
+            /* Use Location if not empty, fallback to IPv6Location */
+            if (strcmp(value, "N/A") != 0 && value[0] != '\0') {
+                strncpy(out_details->FwUrl, value,
+                        sizeof(out_details->FwUrl) - 1);
+            }
         }
-        else if (strcmp(key, "FwVersion") == 0) {
+        else if (strcmp(key, "Version") == 0) {
             strncpy(out_details->FwVersion, value,
                     sizeof(out_details->FwVersion) - 1);
         }
-        else if (strcmp(key, "RebootImmediately") == 0) {
+        else if (strcmp(key, "Reboot") == 0) {
             strncpy(out_details->RebootImmediately, value,
                     sizeof(out_details->RebootImmediately) - 1);
         }
-        else if (strcmp(key, "DelayDownload") == 0) {
+        else if (strcmp(key, "Delay") == 0) {
             strncpy(out_details->DelayDownload, value,
                     sizeof(out_details->DelayDownload) - 1);
         }
-        else if (strcmp(key, "PDRIVersion") == 0) {
-            strncpy(out_details->PDRIVersion, value,
-                    sizeof(out_details->PDRIVersion) - 1);
+        else if (strcmp(key, "PDRI") == 0) {
+            if (strcmp(value, "N/A") != 0) {
+                strncpy(out_details->PDRIVersion, value,
+                        sizeof(out_details->PDRIVersion) - 1);
+            }
         }
-        else if (strcmp(key, "PeripheralFirmwares") == 0) {
-            strncpy(out_details->PeripheralFirmwares, value,
-                    sizeof(out_details->PeripheralFirmwares) - 1);
+        else if (strcmp(key, "Peripherals") == 0) {
+            if (strcmp(value, "N/A") != 0) {
+                strncpy(out_details->PeripheralFirmwares, value,
+                        sizeof(out_details->PeripheralFirmwares) - 1);
+            }
+        }
+        else if (strcmp(key, "Protocol") == 0 || strcmp(key, "CertBundle") == 0) {
+            /* These fields exist in daemon format but not in our struct - ignore */
+            FWUPMGR_INFO("parse_update_details: skipping field '%s'='%s'\n", key, value);
         }
         else {
             /* Unknown key - log but don't fail */
             FWUPMGR_INFO("parse_update_details: unknown key '%s', ignoring\n", key);
         }
 
-        token = strtok_r(NULL, ",", &saveptr);
+        token = strtok_r(NULL, "|", &saveptr);
     }
 
     free(work_str);

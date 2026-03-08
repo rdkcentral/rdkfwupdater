@@ -427,29 +427,20 @@ int main(void)
      * ==================================================================== */
     printf("│ STEP 3: Download firmware image                    │\n");
 
-    /* Prepare download request - use available version as firmware name */
+    /* Prepare download request using data from checkForUpdate callback */
     FwDwnlReq download_req;
     memset(&download_req, 0, sizeof(download_req));
 
-    /* Firmware name: Use a default or derive from available version */
-    //snprintf(download_req.firmwareName, sizeof(download_req.firmwareName),
-     //        "firmware_%s.bin", g_fw_available_version);
+    /* Use firmware filename from UpdateDetails if available, otherwise construct one */
+    const char *fw_name = (g_fw_filename[0] != '\0') ? g_fw_filename : "firmware_default.bin";
+    const char *fw_url = (g_fw_url[0] != '\0') ? g_fw_url : "";  /* Empty = use XConf URL */
     
-    /* Download URL: Empty = use daemon's XConf-provided URL */
-     download_req.downloadUrl = "";
-    
-    /* Type of firmware */
-    //const char *firmwareName;
-    //strncpy(download_req.TypeOfFirmware, "PCI", sizeof(download_req.TypeOfFirmware) - 1);
-    char firmwareName[256];
-
-    snprintf(firmwareName, sizeof(firmwareName),
-		    "firmware_%s.bin", g_fw_available_version);
-
-    download_req.firmwareName = firmwareName;
+    download_req.firmwareName = fw_name;
+    download_req.downloadUrl = fw_url;
+    download_req.TypeOfFirmware = "PCI";  /* Default to PCI type */
 
     printf("  Firmware Name : %s\n", download_req.firmwareName);
-    printf("  Download URL  : (use XConf URL)\n");
+    printf("  Download URL  : %s\n", download_req.downloadUrl[0] ? download_req.downloadUrl : "(use XConf URL)");
     printf("  Firmware Type : %s\n\n", download_req.TypeOfFirmware);
 
     printf("  Calling downloadFirmware()...\n\n");
