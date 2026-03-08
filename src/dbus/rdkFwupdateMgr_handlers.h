@@ -158,26 +158,31 @@ typedef struct {
 } DownloadFirmwareResult;
 
 /*
- * Download Firmware
+ * Download Firmware (Implementation In Progress)
  * 
- * Initiates firmware download from XConf-provided URL or custom URL.
- * This function performs the actual download in the calling thread.
+ * Downloads firmware image from specified location to local storage.
+ * Validates all parameters and returns appropriate error codes.
  * 
  * Parameters:
- *   firmwareName - Firmware filename to download
- *   downloadUrl - Custom URL or empty string (use XConf URL)
- *   typeOfFirmware - Firmware type: "PCI", "PDRI", "PERIPHERAL"
- *   localFilePath - Destination file path
- *   download_state - DownloadState pointer for progress updates (can be NULL)
+ *   handler_id      - Process registration ID (required)
+ *   firmware_name   - Firmware filename (required)
+ *   firmware_type   - Type: "PCI", "PDRI", "PERIPHERAL" (optional, defaults to "PCI")
+ *   localFilePath   - Local destination path (required, must not be empty)
+ *   download_url    - Custom download URL (optional, NULL uses XConf cache)
  * 
  * Returns:
- *   DownloadFirmwareResult with result_code and error details
+ *   DownloadFirmwareResult with result_code and error_message
+ *   Must be freed by caller
+ * 
+ * Note: This function is currently stubbed for unit testing.
+ *       Full implementation will be added in future commits.
  */
-DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(const gchar *firmwareName,
-                                                       const gchar *downloadUrl,
-                                                       const gchar *typeOfFirmware,
-                                                       const gchar *localFilePath,
-                                                       void *download_state);
+DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(
+    const gchar *handler_id,
+    const gchar *firmware_name,
+    const gchar *firmware_type,
+    const gchar *localFilePath,
+    const gchar *download_url);
 
 /*
  * Update Firmware (Future Implementation)
