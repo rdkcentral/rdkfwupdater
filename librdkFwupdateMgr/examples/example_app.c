@@ -137,29 +137,27 @@ static void on_firmware_check_callback(const FwInfoData *event_data)
     /* Print UpdateDetails if available (only when status == FIRMWARE_AVAILABLE) */
     if (event_data->status == FIRMWARE_AVAILABLE && event_data->UpdateDetails) {
         printf("\n  === Update Details (Available!) ===\n");
-        printf("  Firmware File Name  : %s\n", 
+        printf("  FwFileName          : %s\n", 
                event_data->UpdateDetails->FwFileName[0] ? 
-               event_data->UpdateDetails->FwFileName : "(empty)");
-        printf("  Download URL        : %s\n", 
+               event_data->UpdateDetails->FwFileName : "null");
+        printf("  FwUrl               : %s\n", 
                event_data->UpdateDetails->FwUrl[0] ? 
-               event_data->UpdateDetails->FwUrl : "(empty)");
-        printf("  Target FW Version   : %s\n", 
+               event_data->UpdateDetails->FwUrl : "null");
+        printf("  FwVersion           : %s\n", 
                event_data->UpdateDetails->FwVersion[0] ? 
-               event_data->UpdateDetails->FwVersion : "(empty)");
-        printf("  Reboot Immediately  : %s\n", 
+               event_data->UpdateDetails->FwVersion : "null");
+        printf("  RebootImmediately   : %s\n", 
                event_data->UpdateDetails->RebootImmediately[0] ? 
-               event_data->UpdateDetails->RebootImmediately : "(not set)");
-        printf("  Delay Download      : %s\n", 
+               event_data->UpdateDetails->RebootImmediately : "null");
+        printf("  DelayDownload       : %s\n", 
                event_data->UpdateDetails->DelayDownload[0] ? 
-               event_data->UpdateDetails->DelayDownload : "(not set)");
-        
-        /* Optional fields - may be empty */
-        if (event_data->UpdateDetails->PDRIVersion[0]) {
-            printf("  PDRI Version        : %s\n", event_data->UpdateDetails->PDRIVersion);
-        }
-        if (event_data->UpdateDetails->PeripheralFirmwares[0]) {
-            printf("  Peripheral FW       : %s\n", event_data->UpdateDetails->PeripheralFirmwares);
-        }
+               event_data->UpdateDetails->DelayDownload : "null");
+        printf("  PDRIVersion         : %s\n", 
+               event_data->UpdateDetails->PDRIVersion[0] ? 
+               event_data->UpdateDetails->PDRIVersion : "null");
+        printf("  PeripheralFirmwares : %s\n", 
+               event_data->UpdateDetails->PeripheralFirmwares[0] ? 
+               event_data->UpdateDetails->PeripheralFirmwares : "null");
     } else if (event_data->status == FIRMWARE_AVAILABLE && !event_data->UpdateDetails) {
         printf("\n  ⚠ WARNING: Status is FIRMWARE_AVAILABLE but UpdateDetails is NULL!\n");
     } else {
