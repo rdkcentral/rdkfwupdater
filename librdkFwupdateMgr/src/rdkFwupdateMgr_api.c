@@ -87,20 +87,10 @@ CheckForUpdateResult checkForUpdate(FirmwareInterfaceHandle handle,
 
     FWUPMGR_INFO("checkForUpdate: handle='%s'\n", handle);
 
-    /* [2] Register in async registry catches CheckForUpdateComplete signal too */
-    if (!internal_register_callback(handle, callback)) {
-        FWUPMGR_ERROR("checkForUpdate: registry full, handle='%s'\n", handle);
-        return CHECK_FOR_UPDATE_FAIL;
-    }
-
-    /* [3] Fire-and-forget D-Bus CheckForUpdate method call
+    /* [2] Connect to D-Bus FIRST before registering callback
      *
-     * Arguments: (s)
-     *   s handle  — identifies this app to the daemon
-     *
-     * Three trailing NULLs = fire and forget (no reply waited for).
-     * g_dbus_connection_call() returns immediately.
-     * Daemon will emit CheckForUpdateComplete signal when XConf query finishes.
+     * This prevents stale registry entries if D-Bus connection fails.
+     * We only register the callback if we can successfully send the request.
      */
     GError *error = NULL;
     GDBusConnection *conn = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
@@ -112,6 +102,26 @@ CheckForUpdateResult checkForUpdate(FirmwareInterfaceHandle handle,
         return CHECK_FOR_UPDATE_FAIL;
     }
 
+    /* [3] Register callback AFTER D-Bus connection succeeds
+     *
+     * Register immediately before sending to avoid race condition where
+     * the daemon responds before we're ready to receive the signal.
+     */
+    if (!internal_register_callback(handle, callback)) {
+        FWUPMGR_ERROR("checkForUpdate: registry full, handle='%s'\n", handle);
+        g_object_unref(conn);
+        return CHECK_FOR_UPDATE_FAIL;
+    }
+
+    /* [4] Fire-and-forget D-Bus CheckForUpdate method call
+     *
+     * Arguments: (s)
+     *   s handle  — identifies this app to the daemon
+     *
+     * Three trailing NULLs = fire and forget (no reply waited for).
+     * g_dbus_connection_call() returns immediately.
+     * Daemon will emit CheckForUpdateComplete signal when XConf query finishes.
+     */
     FWUPMGR_INFO("checkForUpdate: calling CheckForUpdate on daemon, handle='%s'\n",
                  handle);
 
@@ -136,7 +146,7 @@ CheckForUpdateResult checkForUpdate(FirmwareInterfaceHandle handle,
                  "Callback will fire when CheckForUpdateComplete signal arrives. "
                  "handle='%s'\n", handle);
 
-    /* [4] Return immediately — app is unblocked */
+    /* [5] Return immediately — app is unblocked */
     return CHECK_FOR_UPDATE_SUCCESS;
 }
 
@@ -184,9 +194,10 @@ static void rdkFwupdateMgr_lib_deinit(void)
  *
  * FLOW:
  *   1. Validate: handle not NULL/empty, firmwareName not empty, callback not NULL
- *   2. Register callback in download registry (BEFORE D-Bus call)
- *   3. Fire DownloadFirmware D-Bus method call to daemon (fire-and-forget)
- *   4. Return RDKFW_DWNL_SUCCESS immediately
+ *   2. Connect to D-Bus (fail early if connection fails)
+ *   3. Register callback in download registry (AFTER D-Bus connection succeeds)
+ *   4. Fire DownloadFirmware D-Bus method call to daemon (fire-and-forget)
+ *   5. Return RDKFW_DWNL_SUCCESS immediately
  *
  *   [later — fires multiple times as download progresses]
  *   Daemon emits DownloadProgress(progress%, status) signal repeatedly
@@ -239,27 +250,9 @@ DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,
                  (fwdwnlreq->TypeOfFirmware && fwdwnlreq->TypeOfFirmware[0]) ? fwdwnlreq->TypeOfFirmware : "(none)",
                  (fwdwnlreq->downloadUrl && fwdwnlreq->downloadUrl[0]) ? fwdwnlreq->downloadUrl : "(use XConf)");
 
-    /* [2] Register callback BEFORE sending D-Bus call
+    /* [2] Connect to D-Bus FIRST before registering callback
      *
-     * Same reason as checkForUpdate: if the daemon is fast enough to emit
-     * the first DownloadProgress signal before we register, we'd miss it.
-     * Register first, then send.
-     */
-    if (!internal_dwnl_register_callback(handle, callback)) {
-        FWUPMGR_ERROR("downloadFirmware: registry full, handle='%s'\n", handle);
-        return RDKFW_DWNL_FAILED;
-    }
-
-    /* [3] Fire-and-forget D-Bus DownloadFirmware method call
-     *
-     * Arguments: (ssss)
-     *   s handle          — identifies this app to the daemon
-     *   s firmwareName    — firmware image filename
-     *   s downloadUrl     — override URL or "" for XConf URL
-     *   s TypeOfFirmware  — "PCI" | "PDRI" | "PERIPHERAL"
-     *
-     * Three trailing NULLs = fire and forget (no reply waited for).
-     * g_dbus_connection_call() returns immediately.
+     * This prevents stale registry entries if D-Bus connection fails.
      */
     GError *error = NULL;
     GDBusConnection *conn = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
@@ -270,6 +263,29 @@ DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,
         if (error) g_error_free(error);
         return RDKFW_DWNL_FAILED;
     }
+
+    /* [3] Register callback AFTER D-Bus connection succeeds, BEFORE sending
+     *
+     * Register immediately before sending to avoid race condition where
+     * the daemon responds before we're ready to receive the signal.
+     */
+    if (!internal_dwnl_register_callback(handle, callback)) {
+        FWUPMGR_ERROR("downloadFirmware: registry full, handle='%s'\n", handle);
+        g_object_unref(conn);
+        return RDKFW_DWNL_FAILED;
+    }
+
+    /* [4] Fire-and-forget D-Bus DownloadFirmware method call
+     *
+     * Arguments: (ssss)
+     *   s handle          — identifies this app to the daemon
+     *   s firmwareName    — firmware image filename
+     *   s downloadUrl     — override URL or "" for XConf URL
+     *   s TypeOfFirmware  — "PCI" | "PDRI" | "PERIPHERAL"
+     *
+     * Three trailing NULLs = fire and forget (no reply waited for).
+     * g_dbus_connection_call() returns immediately.
+     */
 
     g_dbus_connection_call(
         conn,
@@ -311,9 +327,10 @@ DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,
  * FLOW:
  *   1. Validate: handle not NULL/empty, firmwareName not empty,
  *                TypeOfFirmware not empty, callback not NULL
- *   2. Register callback in update registry (BEFORE D-Bus call)
- *   3. Fire UpdateFirmware D-Bus method call to daemon (fire-and-forget)
- *   4. Return RDKFW_UPDATE_SUCCESS immediately
+ *   2. Connect to D-Bus (fail early if connection fails)
+ *   3. Register callback in update registry (AFTER D-Bus connection succeeds)
+ *   4. Fire UpdateFirmware D-Bus method call to daemon (fire-and-forget)
+ *   5. Return RDKFW_UPDATE_SUCCESS immediately
  *
  *   [later — fires multiple times as flashing progresses]
  *   Daemon emits UpdateProgress(progress%, status) signal repeatedly
@@ -325,12 +342,12 @@ DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,
 /**
  * @brief Initiate firmware flashing — non-blocking, returns immediately
  *
- * D-Bus arguments sent to daemon: (sssb)
+ * D-Bus arguments sent to daemon: (ssss)
  *   s  handle               — identifies this app
  *   s  firmwareName         — image filename to flash
  *   s  LocationOfFirmware   — path to image ("" = use device.properties)
  *   s  TypeOfFirmware       — "PCI" | "PDRI" | "PERIPHERAL"
- *   b  rebootImmediately    — reboot after flash?
+ *   s  rebootImmediately    — "true" or "false" (daemon expects string)
  *
  * @param handle        Valid FirmwareInterfaceHandle from registerProcess()
  * @param fwupdatereq   Update request (passed by value, library copies it)
@@ -387,22 +404,9 @@ UpdateResult updateFirmware(FirmwareInterfaceHandle handle,
                      : "(use device.properties path)",
                  fwupdatereq->rebootImmediately ? "yes" : "no");
 
-    /* [2] Register callback BEFORE sending D-Bus call */
-    if (!internal_update_register_callback(handle, callback)) {
-        FWUPMGR_ERROR("updateFirmware: registry full, handle='%s'\n", handle);
-        return RDKFW_UPDATE_FAILED;
-    }
-
-    /* [3] Fire-and-forget D-Bus UpdateFirmware method call
+    /* [2] Connect to D-Bus FIRST before registering callback
      *
-     * Arguments: (sssb)
-     *   s handle                — app's handler_id string
-     *   s firmwareName          — image to flash
-     *   s LocationOfFirmware    — path or "" for device.properties default
-     *   s TypeOfFirmware        — PCI / PDRI / PERIPHERAL
-     *   b rebootImmediately     — reboot after flash?
-     *
-     * Three trailing NULLs = fire and forget.
+     * This prevents stale registry entries if D-Bus connection fails.
      */
     GError *error = NULL;
     GDBusConnection *conn = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
@@ -413,6 +417,29 @@ UpdateResult updateFirmware(FirmwareInterfaceHandle handle,
         if (error) g_error_free(error);
         return RDKFW_UPDATE_FAILED;
     }
+
+    /* [3] Register callback AFTER D-Bus connection succeeds, BEFORE sending
+     *
+     * Register immediately before sending to avoid race condition where
+     * the daemon responds before we're ready to receive the signal.
+     */
+    if (!internal_update_register_callback(handle, callback)) {
+        FWUPMGR_ERROR("updateFirmware: registry full, handle='%s'\n", handle);
+        g_object_unref(conn);
+        return RDKFW_UPDATE_FAILED;
+    }
+
+    /* [4] Fire-and-forget D-Bus UpdateFirmware method call
+     *
+     * Arguments: (ssss)
+     *   s handle                — app's handler_id string
+     *   s firmwareName          — image to flash
+     *   s LocationOfFirmware    — path or "" for device.properties default
+     *   s TypeOfFirmware        — PCI / PDRI / PERIPHERAL
+     *   s rebootImmediately     — "true" or "false" (daemon expects string)
+     *
+     * Three trailing NULLs = fire and forget.
+     */
 
     g_dbus_connection_call(
         conn,
