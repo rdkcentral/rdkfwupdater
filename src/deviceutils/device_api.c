@@ -40,6 +40,56 @@
 
 #define MAC_ADDRESS_LEN 17
 
+/* function isSecureDbgSrvUnlocked - checks the buildtype, deviceType from RFC and enables secure debug services accordingly 
+        Usage: bool isSecureDbgSrvUnlocked <void>
+ 
+        RETURN - True (Enables Debug Services) if buildtype is dev or buildtype is labsigned and deviceType is test
+*/
+bool isSecureDbgSrvUnlocked(void) { 
+    bool dbgServices = isDebugServicesEnabled();
+    const char* deviceType = getDeviceTypeRFC();
+    BUILDTYPE eBuildType;
+    bool isDebugServicesUnlocked = false;
+    FILE *fp;
+    const char* key = "LABSIGNED_ENABLED=";
+    char buf[URL_MAX_LEN] = {0};
+    char buildBuf[URL_MAX_LEN] = {0};
+
+    GetBuildType(buildBuf, sizeof(buildBuf), &eBuildType);
+
+    if (eBuildType == eDEV) {
+        isDebugServicesUnlocked = true;
+    }
+    else if (eBuildType == ePROD) {
+        fp = fopen(DEVICE_PROPERTIES_FILE, "r");
+        if (!fp) {
+            COMMONUTILITIES_ERROR("isSecureDbgSrvUnlocked: can't open properties file\n");
+            return isDebugServicesUnlocked;
+        }
+        while (fgets(buf, sizeof(buf), fp)) {
+            if (strncmp(buf, key, strlen(key)) == 0) {
+                char *eVal = buf + strlen(key);
+				char pBuf[URL_MAX_LEN] = {0};
+                snprintf(pBuf, sizeof(pBuf), "%s", eVal);
+                stripinvalidchar(pBuf, strlen(pBuf));
+                if (strcasecmp(pBuf, "true") == 0) {
+                    if ((strcmp(deviceType, "test") == 0) && dbgServices) {
+                        SWLOG_INFO("isSecureDbgSrvUnlocked: Enabling debug services...\n");
+						SWLOG_INFO("isSecureDbgSrvUnlocked: dbgServices=%s, deviceType=%s, LABSIGNED_ENABLED=%s\n",dbgServices ? "true" : "false", deviceType, pBuf);
+                        isDebugServicesUnlocked = true;
+                    } else {
+						SWLOG_INFO("isSecureDbgSrvUnlocked: unable to enable debug services...\n");
+						SWLOG_INFO("isSecureDbgSrvUnlocked: dbgServices=%s, deviceType=%s, LABSIGNED_ENABLED=%s\n",dbgServices ? "true" : "false", deviceType, pBuf);
+                	}
+				}
+            	break;
+            }
+        }
+        fclose(fp);
+    }
+    return isDebugServicesUnlocked;
+}
+
 /* function GetServerUrlFile - scans a file for a URL. 
         Usage: size_t GetServerUrlFile <char *pServUrl> <size_t szBufSize> <char *pFileName>
  
@@ -891,7 +941,6 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
     BUILDTYPE eBuildType;
     char buf[URL_MAX_LEN];
     bool skip = false;
-    bool dbgServices = isDebugServicesEnabled(); //check debug services enabled
 
     if( pServURL != NULL )
     {
@@ -899,7 +948,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
         GetBuildType( buf, sizeof(buf), &eBuildType );
         if( isInStateRed() )
         {
-            if(( eBuildType != ePROD )  || ( dbgServices == true ))
+            if(isSecureDbgSrvUnlocked())
             {
                 len = GetServerUrlFile( pServURL, szBufSize, STATE_RED_CONF );
             }
@@ -910,7 +959,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
         }
         else
         {
-            if(( eBuildType != ePROD )  || ( dbgServices == true ))
+            if(isSecureDbgSrvUnlocked())
             {
                 if( (filePresentCheck( SWUPDATE_CONF ) == RDK_API_SUCCESS) )    // if the file exists
                 {
