@@ -136,7 +136,7 @@ not block. It only means the question was sent to the daemon successfully. The
 actual answer comes later.
 
 **If this step fails**, the library's internal callback registry is full (max
-64 slots) or the D-Bus call could not be sent.
+30 slots) or the D-Bus call could not be sent.
 
 ---
 
