@@ -73,9 +73,9 @@ public:
     MOCK_METHOD(bool, isMediaClientDevice, (), ());
     MOCK_METHOD(int, doAuthHttpFileDownload, (void*, FileDwnl_t*, int*), ());
     MOCK_METHOD(void, logMilestone, (const char*), ());
-    MOCK_METHOD(int, eraseFolderExcePramaFile, (const char*, const char*, const char*), ());
+    MOCK_METHOD(int, eraseFolderExceParamFile, (const char*, const char*,const char*,const char*), ());
     MOCK_METHOD(int, doCurlPutRequest, (void*, FileDwnl_t*, char*, int*), ());
-    MOCK_METHOD(void, checkAndEnterStateRed, (int, const char*), ());
+    MOCK_METHOD(int, checkAndEnterStateRed, (int, const char*), ());
     MOCK_METHOD(int, getRFCSettings, (Rfc_t*), ());
     MOCK_METHOD(void, eventManager, (const char*, const char*), ());
     MOCK_METHOD(int, updateFWDownloadStatus, (struct FWDownloadStatus*, const char*), ());
@@ -241,11 +241,11 @@ extern "C" {
         global_mockexternal_ptr->logMilestone(msg_code);
     }
 
-    int eraseFolderExcePramaFile(const char *folder, const char* file_name, const char *model_num) {
+    int eraseFolderExceParamFile(const char *folder, const char* file_name, const char* pdri_file_name, const char *model_num) {
         if (global_mockexternal_ptr == nullptr) {
             return 0; // Return default value if global_mockexternal_ptr is NULL
         }
-        return global_mockexternal_ptr->eraseFolderExcePramaFile(folder, file_name, model_num);
+        return global_mockexternal_ptr->eraseFolderExceParamFile(folder, file_name, pdri_file_name,model_num);
     }
 
     int doCurlPutRequest(void *in_curl, FileDwnl_t *pfile_dwnl, char *jsonrpc_auth_token, int *out_httpCode) {
@@ -255,11 +255,11 @@ extern "C" {
         return global_mockexternal_ptr->doCurlPutRequest(in_curl, pfile_dwnl, jsonrpc_auth_token, out_httpCode);
     }
 
-    void checkAndEnterStateRed(int curlret, const char *) {
+    int checkAndEnterStateRed(int curlret, const char *) {
         if (global_mockexternal_ptr == nullptr) {
-            return; // Return default value if global_mockexternal_ptr is NULL
+            return 0; // Return success if global_mockexternal_ptr is NULL
         }
-        global_mockexternal_ptr->checkAndEnterStateRed(curlret, "");
+        return global_mockexternal_ptr->checkAndEnterStateRed(curlret, "");
     }
 
     int getRFCSettings(Rfc_t *rfc_list) {
@@ -582,43 +582,72 @@ extern "C" {
         }
         return 0; // Success
     }
+    
+    // Mock for rdkv_upgrade_strerror - converts error codes to human-readable strings
+    // Used by rdkFwupdateMgr.c for error logging
+    const char* rdkv_upgrade_strerror(int error) {
+        switch(error) {
+            case 0:  // RDKV_UPGRADE_SUCCESS
+                return "Success";
+            case -1:  // RDKV_UPGRADE_ERROR_THROTTLE_ZERO
+                return "Throttle speed set to 0 - download blocked";
+            case -2:  // RDKV_UPGRADE_ERROR_FORCE_EXIT
+                return "Force exit requested";
+            default:
+                if (error > 0) {
+                    return "CURL error";
+                }
+                return "Unknown library error";
+        }
+    }
 #endif
 
+#ifdef HANDLER_TEST_ONLY
     // ===========================================================================
-    // EXTERNAL LIBRARY STUBS (IARM, RFC, etc.)
-    // These are stubs for external library functions that are not mocked
+    // rdkFwupdateMgr_handlers.c Function Stubs
+    // These are stubs for functions tested in rdkFwupdateMgr_handlers_gtest.cpp
+    // that are not yet implemented in production code
     // ===========================================================================
-
-    // IARM Bus stubs
-    int IARM_Bus_Init(const char *name) { return 0; }
-    int IARM_Bus_Connect(void) { return 0; }
-    int IARM_Bus_Disconnect(void) { return 0; }
-    int IARM_Bus_Term(void) { return 0; }
-    int IARM_Bus_IsConnected(const char *memberName, int *isRegistered) {
-        if (isRegistered) *isRegistered = 1;
-        return 0;
+    
+    // Forward declare types from handlers header
+    #ifndef DOWNLOAD_FIRMWARE_RESULT_DEFINED
+    #define DOWNLOAD_FIRMWARE_RESULT_DEFINED
+    typedef enum {
+        DOWNLOAD_SUCCESS = 0,
+        DOWNLOAD_ALREADY_EXISTS = 1,
+        DOWNLOAD_NETWORK_ERROR = 2,
+        DOWNLOAD_NOT_FOUND = 3,
+        DOWNLOAD_ERROR = 4
+    } DownloadFirmwareResultCode;
+    
+    typedef struct {
+        DownloadFirmwareResultCode result_code;
+        gchar *error_message;
+    } DownloadFirmwareResult;
+    #endif
+    
+    /**
+     * @brief Stub for rdkFwupdateMgr_downloadFirmware (not yet implemented in production)
+     * 
+     * This stub allows handler tests to compile and link. The actual implementation
+     * will be added to rdkFwupdateMgr_handlers.c when the download feature is complete.
+     * 
+     * For now, this stub returns DOWNLOAD_ERROR to indicate "not implemented".
+     */
+    DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(
+        const gchar *handler_id,
+        const gchar *firmware_name,
+        const gchar *firmware_type,
+        const gchar *localFilePath,
+        const gchar *download_url) 
+    {
+        DownloadFirmwareResult result;
+        result.result_code = DOWNLOAD_ERROR;
+        result.error_message = g_strdup("Function not yet implemented in production code");
+        return result;
     }
-    int IARM_Bus_RegisterEventHandler(const char *ownerName, int eventId, void *handler) { return 0; }
-    int IARM_Bus_UnRegisterEventHandler(const char *ownerName, int eventId) { return 0; }
-    int IARM_Bus_BroadcastEvent(const char *ownerName, int eventId, void *data, size_t len) { return 0; }
-
-    // RFC API stubs
-    int getRFCParameter(char* pcCallerID, const char* pcParameterName, char* pValue) {
-        if (pValue) {
-            strcpy(pValue, "false"); // Default RFC value
-        }
-        return 0;
-    }
-
-    int setRFCParameter(char* pcCallerID, const char* pcParameterName, const char* pcParameterType, const char* pcParameterValue) {
-        return 0;
-    }
-
-    const char* getRFCErrorString(int code) {
-        return "RFC_SUCCESS";
-    }
+#endif // HANDLER_TEST_ONLY
 }
-
 class MockFunctionsInternal {
 public:
     MOCK_METHOD(void, RunCommand, (int command, void* arg1, char* jsondata, int size));
