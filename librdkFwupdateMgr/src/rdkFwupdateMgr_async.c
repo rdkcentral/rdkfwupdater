@@ -59,6 +59,10 @@ static void  registry_reset_slot(CallbackEntry *entry);
 static bool  parse_update_details(const char *update_details_str,
                                    UpdateDetails *out_details);
 
+/* Forward declarations for download and update system initialization */
+static int   internal_dwnl_system_init(void);
+static int   internal_update_system_init(void);
+
 /* Forward declaration for download status mapping function */
 static DownloadStatus map_dwnl_status_string(const char *status_str);
 
@@ -127,6 +131,18 @@ int internal_system_init(void)
 
         struct timespec ts = { .tv_sec = 0, .tv_nsec = 100 * 1000 * 1000 };
         nanosleep(&ts, NULL);
+    }
+
+    /* Initialize download signal subscription */
+    if (internal_dwnl_system_init() != 0) {
+        FWUPMGR_ERROR("internal_system_init: download system init failed\n");
+        /* Continue anyway - checkForUpdate will still work */
+    }
+
+    /* Initialize update signal subscription */
+    if (internal_update_system_init() != 0) {
+        FWUPMGR_ERROR("internal_system_init: update system init failed\n");
+        /* Continue anyway - checkForUpdate will still work */
     }
 
     FWUPMGR_INFO("internal_system_init: ready\n");
