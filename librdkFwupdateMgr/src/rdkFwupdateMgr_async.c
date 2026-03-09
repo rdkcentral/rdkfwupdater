@@ -59,6 +59,9 @@ static void  registry_reset_slot(CallbackEntry *entry);
 static bool  parse_update_details(const char *update_details_str,
                                    UpdateDetails *out_details);
 
+/* Forward declaration for download status mapping function */
+static DownloadStatus map_dwnl_status_string(const char *status_str);
+
 /* ========================================================================
  * LIBRARY LIFECYCLE
  * ======================================================================== */

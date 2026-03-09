@@ -146,8 +146,10 @@ static GDBusProxy* create_dbus_proxy(GError **error)
     // Connect to system bus
     connection = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, error);
     if (!connection) {
+        // GLib doesn't guarantee *error is set in all failure cases
+        // (e.g., extreme out-of-memory conditions). Guard against NULL.
         FWUPMGR_ERROR("Failed to connect to D-Bus system bus: %s\n",
-                (*error)->message);
+                (error && *error) ? (*error)->message : "unknown error (GError not set)");
         return NULL;
     }
 
@@ -167,8 +169,9 @@ static GDBusProxy* create_dbus_proxy(GError **error)
     g_object_unref(connection);
 
     if (!proxy) {
+        // GLib doesn't guarantee *error is set in all failure cases.
         FWUPMGR_ERROR("Failed to create D-Bus proxy: %s\n",
-                (*error)->message);
+                (error && *error) ? (*error)->message : "unknown error (GError not set)");
         return NULL;
     }
 
@@ -319,8 +322,40 @@ FirmwareInterfaceHandle registerProcess(const char *processName, const char *lib
     handle_str = (char*)malloc(32);  // Enough for uint64 as decimal string
     if (!handle_str) {
         FWUPMGR_ERROR("Failed to allocate memory for handle\n");
-        // Registration succeeded on daemon side, but we can't return handle
-        // Caller should retry or handle gracefully
+        
+        // ⚠️ CRITICAL: Registration succeeded on daemon, but we can't return handle.
+        // Must unregister to prevent resource leak on daemon side.
+        FWUPMGR_ERROR("Attempting best-effort cleanup: UnregisterProcess(%" PRIu64 ")\n", 
+                      handler_id);
+        
+        // Create new proxy for cleanup call (previous one was already freed)
+        GError *cleanup_error = NULL;
+        GDBusProxy *cleanup_proxy = create_dbus_proxy(&cleanup_error);
+        if (cleanup_proxy) {
+            GVariant *cleanup_result = g_dbus_proxy_call_sync(
+                cleanup_proxy,
+                "UnregisterProcess",
+                g_variant_new("(t)", handler_id),
+                G_DBUS_CALL_FLAGS_NONE,
+                DBUS_TIMEOUT_MS,
+                NULL,
+                &cleanup_error
+            );
+            
+            if (cleanup_result) {
+                FWUPMGR_INFO("Cleanup successful: process unregistered\n");
+                g_variant_unref(cleanup_result);
+            } else {
+                FWUPMGR_ERROR("Cleanup failed: %s (registration may be leaked)\n",
+                              cleanup_error ? cleanup_error->message : "unknown");
+                if (cleanup_error) g_error_free(cleanup_error);
+            }
+            g_object_unref(cleanup_proxy);
+        } else {
+            FWUPMGR_ERROR("Cleanup proxy creation failed (registration leaked)\n");
+            if (cleanup_error) g_error_free(cleanup_error);
+        }
+        
         return NULL;
     }
 
@@ -364,12 +399,38 @@ void unregisterProcess(FirmwareInterfaceHandle handler)
     FWUPMGR_INFO("unregisterProcess() called\n");
     FWUPMGR_INFO("  handle: '%s'\n", handler);
 
-    // Parse handler_id from string handle
+    // Parse handler_id from string handle with strict validation
+    // Reject handles with leading/trailing whitespace or garbage characters
+    // Valid examples: "12345", "0"
+    // Invalid examples: "123abc", " 123", "123 ", "", "abc"
     errno = 0;
-    handler_id = strtoull(handler, NULL, 10);
-    if (errno != 0 || handler_id == 0) {
-        FWUPMGR_ERROR("Invalid handle format (not a valid handler_id)\n");
-        // Still free the handle memory (best-effort cleanup)
+    char *endptr = NULL;
+    handler_id = strtoull(handler, &endptr, 10);
+    
+    // Validation checks:
+    // 1. errno != 0: overflow or underflow occurred
+    // 2. endptr == handler: no digits were parsed (e.g., "abc")
+    // 3. *endptr != '\0': garbage after number (e.g., "123abc")
+    // 4. handler_id == 0: could be valid "0" or invalid input - check endptr
+    if (errno != 0) {
+        FWUPMGR_ERROR("Invalid handle: numeric overflow/underflow in '%s'\n", handler);
+        free(handler);
+        return;
+    }
+    if (endptr == handler) {
+        FWUPMGR_ERROR("Invalid handle: no digits found in '%s'\n", handler);
+        free(handler);
+        return;
+    }
+    if (*endptr != '\0') {
+        FWUPMGR_ERROR("Invalid handle: garbage characters after number in '%s' "
+                      "(parsed %" PRIu64 ", but '%s' remains)\n", 
+                      handler, handler_id, endptr);
+        free(handler);
+        return;
+    }
+    if (handler_id == 0) {
+        FWUPMGR_ERROR("Invalid handle: handler_id cannot be 0\n");
         free(handler);
         return;
     }

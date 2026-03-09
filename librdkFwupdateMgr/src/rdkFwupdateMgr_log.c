@@ -89,7 +89,22 @@ void fwupmgr_log_close(void)
     }
     
     if (g_log_file) {
-        fwupmgr_log_internal("INFO", "Logging shutdown\n");
+        // Write shutdown message directly to avoid deadlock
+        // (fwupmgr_log_internal would try to lock g_log_mutex again)
+        time_t now;
+        struct tm *tm_info;
+        char timestamp[64];
+        
+        time(&now);
+        tm_info = localtime(&now);
+        if (strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", tm_info) == 0) {
+            snprintf(timestamp, sizeof(timestamp), "UNKNOWN-TIME");
+        }
+        
+        fprintf(g_log_file, "%s [%s] INFO: Logging shutdown\n", 
+                timestamp, FWUPMGR_LOG_MODULE);
+        fflush(g_log_file);
+        
         fclose(g_log_file);
         g_log_file = NULL;
     }
