@@ -342,7 +342,7 @@ DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,
 /**
  * @brief Initiate firmware flashing — non-blocking, returns immediately
  *
- * D-Bus arguments sent to daemon: (ssss)
+ * D-Bus arguments sent to daemon: (sssss)
  *   s  handle               — identifies this app
  *   s  firmwareName         — image filename to flash
  *   s  LocationOfFirmware   — path to image ("" = use device.properties)
@@ -431,7 +431,7 @@ UpdateResult updateFirmware(FirmwareInterfaceHandle handle,
 
     /* [4] Fire-and-forget D-Bus UpdateFirmware method call
      *
-     * Arguments: (ssss)
+     * Arguments: (sssss)
      *   s handle                — app's handler_id string
      *   s firmwareName          — image to flash
      *   s LocationOfFirmware    — path or "" for device.properties default
@@ -447,12 +447,12 @@ UpdateResult updateFirmware(FirmwareInterfaceHandle handle,
         DBUS_OBJECT_PATH,
         DBUS_INTERFACE_NAME,
         DBUS_METHOD_UPDATE,                         /* method: UpdateFirmware     */
-        g_variant_new("(ssss)",
-                      handle,                                    /* app's handler_id string    */
+        g_variant_new("(sssss)",                                  /* ✅ 5 strings now! */
+                      handle,                                     /* app's handler_id string    */
                       fwupdatereq->firmwareName,                  /* image to flash             */
                       fwupdatereq->LocationOfFirmware ? fwupdatereq->LocationOfFirmware : "", /* path or "" */
                       fwupdatereq->TypeOfFirmware,                /* PCI / PDRI / PERIPHERAL    */
-                      fwupdatereq->rebootImmediately ? "true" : "false"), /* 's' not 'b' — daemon expects string */
+                      fwupdatereq->rebootImmediately ? "true" : "false"), /* reboot flag sent to daemon */
         NULL,                                       /* expected reply: none       */
         G_DBUS_CALL_FLAGS_NONE,
         DBUS_TIMEOUT_MS,
