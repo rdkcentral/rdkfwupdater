@@ -36,12 +36,12 @@ int copyFile(const char *src, const char *target);
 
 #include "miscellaneous.h"
 #include "miscellaneous_mock.cpp"
-
+#include "deviceutils_mock_global.h"
 
 #define JSON_STR_LEN        1000
 
 DeviceUtilsMock Deviceglobal;
-DeviceUtilsMock *g_DeviceUtilsMock = &Deviceglobal;
+//DeviceUtilsMock *g_DeviceUtilsMock = &Deviceglobal;
 
 #define GTEST_DEFAULT_RESULT_FILEPATH "/tmp/Gtest_Report/"
 #define GTEST_DEFAULT_RESULT_FILENAME "RdkFwDwnld_rdkvMain_gtest_report.json"

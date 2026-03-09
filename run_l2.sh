@@ -35,7 +35,7 @@ cd ../
 
 #Build rdkfwupdater
 autoreconf -i
-./configure --prefix=${INSTALL_DIR} --enable-rdkcertselector=yes --enable-mountutils=yes --enable-rfcapi=yes CFLAGS="-DRDK_LOGGER" --enable-extended-logger
+./configure --prefix=${INSTALL_DIR} --enable-rdkcertselector=yes --enable-mountutils=yes --enable-rfcapi=yes CFLAGS="-DRDK_LOGGER"
 make clean
 make && make install
 

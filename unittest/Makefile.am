@@ -19,7 +19,6 @@ AUTOMAKE_OPTIONS = subdir-objects
 
 # Define the program name and the source files
 bin_PROGRAMS = rdkfw_device_status_gtest rdkfw_deviceutils_gtest rdkfw_main_gtest rdkfw_interface_gtest rdkfwupdatemgr_main_flow_gtest rdkFwupdateMgr_handlers_gtest dbus_handlers_gtest
-
 #bin_PROGRAMS = rdkfw_device_status_gtest rdkfw_deviceutils_gtest rdkfw_main_gtest rdkfw_interface_gtest  dbus_handlers_gtest
 # Define the include directories
 # NOTE: We explicitly use -I. to prioritize local test headers over system headers
@@ -74,14 +73,18 @@ rdkfw_interface_gtest_SOURCES = fwdl_interface_gtest.cpp \
 
 # rdkFwupdateMgr_handlers_gtest: Tests D-Bus handler functions for daemon
 # Tests the async, non-blocking, cache-first CheckForUpdate implementation
-# Uses mocks for XConf, device info, and other external dependencies
+# Uses MOCKS ONLY for rdkv_upgrade.c, chunk.c, device_status_helper.c, download_status_helper.c, device_api.c, deviceutils.c
+# These are all mocked in rdkFwupdateMgr_mock.cpp and deviceutils_mock.cpp to avoid linking the entire codebase
 rdkFwupdateMgr_handlers_gtest_SOURCES = rdkFwupdateMgr_handlers_gtest.cpp \
     ./mocks/rdkFwupdateMgr_mock.cpp \
+    ./mocks/deviceutils_mock.cpp \
     ../src/dbus/rdkFwupdateMgr_handlers.c \
     ../src/json_process.c \
-   deviceutils/json_parse.c
-# Note: json_process.c is mocked in rdkFwupdateMgr_mock.cpp to control XConf parsing behavior
-# Note: rdkFwupdateMgr_mock.cpp provides stubs for current_flash, rfc_list, IsFlashInProgress, SWLOG_* functions
+    deviceutils/json_parse.c
+# Note: All functions from rdkv_upgrade.c, chunk.c, device_status_helper.c, download_status_helper.c
+#       are stubbed in rdkFwupdateMgr_mock.cpp
+# Note: device_api.c and deviceutils.c functions are mocked in deviceutils_mock.cpp
+# Note: rdkFwupdateMgr_mock.cpp also provides stubs for current_flash, rfc_list, IsFlashInProgress, SWLOG_* functions
 
 # Apply common properties to each program
 rdkfw_device_status_gtest_CPPFLAGS = $(COMMON_CPPFLAGS)
@@ -113,19 +116,23 @@ rdkFwupdateMgr_handlers_gtest_CFLAGS = $(COMMON_CXXFLAGS)
 
 # rdkfwupdatemgr_main_flow_gtest: Tests rdkFwupdateMgr.c main flow functions
 # Covers: getTriggerType, handle_signal, prevCurUpdateInfo, initialValidation gaps, main() logic
-# Uses mocks ONLY - no real rfcinterface.c or iarmInterface.c to avoid multiple definition errors
+# Uses mocks ONLY - no real implementation files that are mocked in miscellaneous_mock.cpp
 # Key decisions:
 #   1. REMOVED rfcinterface.c - mocked in miscellaneous_mock.cpp (getRFCSettings, isIncremetalCDLEnable, etc.)
 #   2. REMOVED iarmInterface.c - mocked in miscellaneous_mock.cpp (init_event_handler, eventManager, etc.)
 #   3. REMOVED rbusInterface.c and rbus_mock.c - not needed for main flow tests
-#   4. KEPT rdkFwupdateMgr.c - core file under test
-#   5. KEPT deviceutils/* - device utility functions with deviceutils_mock.cpp
-#   6. KEPT json_process.c - core JSON parsing
+#   4. REMOVED rdkv_upgrade.c - mocked in miscellaneous_mock.cpp (rdkv_upgrade_request, downloadFile, etc.)
+#   5. REMOVED chunk.c - part of rdkv_upgrade.c functionality, mocked
+#   6. REMOVED device_status_helper.c - mocked in miscellaneous_mock.cpp (checkAndEnterStateRed, isDnsResolve, etc.)
+#   7. REMOVED download_status_helper.c - mocked in miscellaneous_mock.cpp (updateFWDownloadStatus, notifyDwnlStatus)
+#   8. KEPT rdkFwupdateMgr.c - core file under test
+#   9. KEPT deviceutils/* - device utility functions with deviceutils_mock.cpp
+#   10. KEPT json_process.c - core JSON parsing
 rdkfwupdatemgr_main_flow_gtest_SOURCES = rdkfwupdatemgr_main_flow_gtest.cpp \
     ../src/rdkFwupdateMgr.c \
+    ../src/json_process.c \
     ../src/deviceutils/device_api.c \
     ../src/deviceutils/deviceutils.c \
-    ../src/json_process.c \
     deviceutils/json_parse.c \
     miscellaneous_mock.cpp \
     ./mocks/deviceutils_mock.cpp
