@@ -61,7 +61,7 @@ extern "C" {
  * CONSTANTS
  * ======================================================================== */
 
-#define MAX_PENDING_CALLBACKS    64
+#define MAX_PENDING_CALLBACKS    30  /* Reduced from 64 to keep stack usage < 10KB - Need to discuss the max number ; for now kept to 30 to resolve coverity issues*/
 #define CALLBACK_TIMEOUT_SECONDS 60
 
 #define DBUS_SERVICE_NAME        "org.rdkfwupdater.Service"
