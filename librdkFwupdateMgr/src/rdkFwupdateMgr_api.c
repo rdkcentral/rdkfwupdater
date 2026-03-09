@@ -213,6 +213,16 @@ DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,
         return RDKFW_DWNL_FAILED;
     }
 
+    if (fwdwnlreq == NULL) {
+        FWUPMGR_ERROR("downloadFirmware: fwdwnlreq is NULL\n");
+        return RDKFW_DWNL_FAILED;
+    }
+
+    if (fwdwnlreq->firmwareName == NULL) {
+        FWUPMGR_ERROR("downloadFirmware: firmwareName is NULL\n");
+        return RDKFW_DWNL_FAILED;
+    }
+
     if (fwdwnlreq->firmwareName[0] == '\0') {
         FWUPMGR_ERROR("downloadFirmware: firmwareName is empty\n");
         return RDKFW_DWNL_FAILED;
@@ -224,9 +234,10 @@ DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,
     }
 
     FWUPMGR_INFO("downloadFirmware: handle='%s' firmware='%s' type='%s' url='%s'\n",
-                 handle, fwdwnlreq->firmwareName,
-                 fwdwnlreq->TypeOfFirmware[0] ? fwdwnlreq->TypeOfFirmware : "(none)",
-                 fwdwnlreq->downloadUrl[0]    ? fwdwnlreq->downloadUrl    : "(use XConf)");
+                 handle, 
+                 fwdwnlreq->firmwareName,
+                 (fwdwnlreq->TypeOfFirmware && fwdwnlreq->TypeOfFirmware[0]) ? fwdwnlreq->TypeOfFirmware : "(none)",
+                 (fwdwnlreq->downloadUrl && fwdwnlreq->downloadUrl[0]) ? fwdwnlreq->downloadUrl : "(use XConf)");
 
     /* [2] Register callback BEFORE sending D-Bus call
      *
@@ -267,10 +278,10 @@ DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,
         DBUS_INTERFACE_NAME,
         DBUS_METHOD_DOWNLOAD,                      /* method: DownloadFirmware   */
         g_variant_new("(ssss)",
-                      handle,                      /* app's handler_id string    */
-                      fwdwnlreq->firmwareName,      /* firmware image name        */
-                      fwdwnlreq->downloadUrl,       /* override URL or ""         */
-                      fwdwnlreq->TypeOfFirmware),   /* PCI / PDRI / PERIPHERAL    */
+                      handle,                                     /* app's handler_id string    */
+                      fwdwnlreq->firmwareName,                     /* firmware image name        */
+                      fwdwnlreq->downloadUrl ? fwdwnlreq->downloadUrl : "",  /* override URL or ""  */
+                      fwdwnlreq->TypeOfFirmware ? fwdwnlreq->TypeOfFirmware : ""),  /* PCI / PDRI / PERIPHERAL */
         NULL,                                      /* expected reply type: none  */
         G_DBUS_CALL_FLAGS_NONE,
         DBUS_TIMEOUT_MS,
@@ -336,8 +347,23 @@ UpdateResult updateFirmware(FirmwareInterfaceHandle handle,
         return RDKFW_UPDATE_FAILED;
     }
 
+    if (fwupdatereq == NULL) {
+        FWUPMGR_ERROR("updateFirmware: fwupdatereq is NULL\n");
+        return RDKFW_UPDATE_FAILED;
+    }
+
+    if (fwupdatereq->firmwareName == NULL) {
+        FWUPMGR_ERROR("updateFirmware: firmwareName is NULL\n");
+        return RDKFW_UPDATE_FAILED;
+    }
+
     if (fwupdatereq->firmwareName[0] == '\0') {
         FWUPMGR_ERROR("updateFirmware: firmwareName is empty\n");
+        return RDKFW_UPDATE_FAILED;
+    }
+
+    if (fwupdatereq->TypeOfFirmware == NULL) {
+        FWUPMGR_ERROR("updateFirmware: TypeOfFirmware is NULL\n");
         return RDKFW_UPDATE_FAILED;
     }
 
@@ -356,7 +382,7 @@ UpdateResult updateFirmware(FirmwareInterfaceHandle handle,
                  handle,
                  fwupdatereq->firmwareName,
                  fwupdatereq->TypeOfFirmware,
-                 fwupdatereq->LocationOfFirmware[0]
+                 (fwupdatereq->LocationOfFirmware && fwupdatereq->LocationOfFirmware[0])
                      ? fwupdatereq->LocationOfFirmware
                      : "(use device.properties path)",
                  fwupdatereq->rebootImmediately ? "yes" : "no");
@@ -395,10 +421,10 @@ UpdateResult updateFirmware(FirmwareInterfaceHandle handle,
         DBUS_INTERFACE_NAME,
         DBUS_METHOD_UPDATE,                         /* method: UpdateFirmware     */
         g_variant_new("(ssss)",
-                      handle,                       /* app's handler_id string    */
-                      fwupdatereq->firmwareName,     /* image to flash             */
-                      fwupdatereq->LocationOfFirmware, /* path or ""               */
-                      fwupdatereq->TypeOfFirmware,   /* PCI / PDRI / PERIPHERAL    */
+                      handle,                                    /* app's handler_id string    */
+                      fwupdatereq->firmwareName,                  /* image to flash             */
+                      fwupdatereq->LocationOfFirmware ? fwupdatereq->LocationOfFirmware : "", /* path or "" */
+                      fwupdatereq->TypeOfFirmware,                /* PCI / PDRI / PERIPHERAL    */
                       fwupdatereq->rebootImmediately ? "true" : "false"), /* 's' not 'b' — daemon expects string */
         NULL,                                       /* expected reply: none       */
         G_DBUS_CALL_FLAGS_NONE,
