@@ -45,48 +45,49 @@
  
         RETURN - True (Enables Debug Services) if buildtype is dev or buildtype is labsigned and deviceType is test
 */
-bool isSecureDbgSrvUnlocked(void) { 
+bool isSecureDbgSrvUnlocked(void) 
+{ 
     bool dbgServices = isDebugServicesEnabled();
     const char* deviceType = getDeviceTypeRFC();
     BUILDTYPE eBuildType;
     bool isDebugServicesUnlocked = false;
-    FILE *fp;
-    const char* key = "LABSIGNED_ENABLED=";
-    char buf[URL_MAX_LEN] = {0};
-    char buildBuf[URL_MAX_LEN] = {0};
+	char labsigned[8];
+	char buildBuf[URL_MAX_LEN] = {0};
+	int ret = -1;
 
     GetBuildType(buildBuf, sizeof(buildBuf), &eBuildType);
 
     if (eBuildType == eDEV) {
         isDebugServicesUnlocked = true;
     }
-    else if (eBuildType == ePROD) {
-        fp = fopen(DEVICE_PROPERTIES_FILE, "r");
-        if (!fp) {
-            COMMONUTILITIES_ERROR("isSecureDbgSrvUnlocked: can't open properties file\n");
-            return isDebugServicesUnlocked;
+    else if (eBuildType == ePROD) 
+	{
+        labsigned[0] = 0;
+	    ret = getDevicePropertyData("LABSIGNED_ENABLED", labsigned, sizeof(labsigned));
+        if (ret == UTILS_SUCCESS) 
+	    {
+            SWLOG_INFO("labsigned_enabled is = %s\n", labsigned);
+        } 
+	    else 
+	    {
+            SWLOG_ERROR("%s: getDevicePropertyData() for labsigned_enabled fail\n", __FUNCTION__);
         }
-        while (fgets(buf, sizeof(buf), fp)) {
-            if (strncmp(buf, key, strlen(key)) == 0) {
-                char *eVal = buf + strlen(key);
-				char pBuf[URL_MAX_LEN] = {0};
-                snprintf(pBuf, sizeof(pBuf), "%s", eVal);
-                stripinvalidchar(pBuf, strlen(pBuf));
-                if (strcasecmp(pBuf, "true") == 0) {
-                    if ((strcmp(deviceType, "test") == 0) && dbgServices) {
-                        SWLOG_INFO("isSecureDbgSrvUnlocked: Enabling debug services...\n");
-						SWLOG_INFO("isSecureDbgSrvUnlocked: dbgServices=%s, deviceType=%s, LABSIGNED_ENABLED=%s\n",dbgServices ? "true" : "false", deviceType, pBuf);
-                        isDebugServicesUnlocked = true;
-                    } else {
-						SWLOG_INFO("isSecureDbgSrvUnlocked: unable to enable debug services...\n");
-						SWLOG_INFO("isSecureDbgSrvUnlocked: dbgServices=%s, deviceType=%s, LABSIGNED_ENABLED=%s\n",dbgServices ? "true" : "false", deviceType, pBuf);
-                	}
-				}
-            	break;
+
+	    if ((0 == (strncmp(labsigned, "true", 4))))
+	    {
+		    if ((strcmp(deviceType, "test") == 0) && dbgServices)
+			{
+			     SWLOG_INFO("isSecureDbgSrvUnlocked: Enabling debug services...\n");
+			     SWLOG_INFO("isSecureDbgSrvUnlocked: dbgServices=%s, deviceType=%s, LABSIGNED_ENABLED=%s\n",dbgServices ? "true" : "false", deviceType, labsigned);
+                 isDebugServicesUnlocked = true;
+            }   
+		    else
+			{
+			     SWLOG_INFO("isSecureDbgSrvUnlocked: unable to enable debug services...\n");
+			     SWLOG_INFO("isSecureDbgSrvUnlocked: dbgServices=%s, deviceType=%s, LABSIGNED_ENABLED=%s\n",dbgServices ? "true" : "false", deviceType, labsigned);
             }
-        }
-        fclose(fp);
-    }
+	    }
+	}
     return isDebugServicesUnlocked;
 }
 
