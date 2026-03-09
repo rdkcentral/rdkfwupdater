@@ -269,13 +269,19 @@ typedef enum {
  * @brief Parsed payload from DownloadProgress D-Bus signal
  *
  * Daemon emits this repeatedly as download progresses.
- * GVariant signature: (ii)
- *   i  progress_percent   (0–100)
- *   i  status_code        (maps to DownloadStatus enum)
+ * GVariant signature: (tsuss)
+ *   t  handlerId         (uint64 - handler ID)
+ *   s  firmwareName      (string - firmware filename)
+ *   u  progress          (uint32 - 0-100 percent)
+ *   s  status            (string - "INPROGRESS", "COMPLETED", "NOTSTARTED")
+ *   s  message           (string - human-readable message)
  */
 typedef struct {
-    int32_t progress_percent;   /**< 0–100                                 */
-    int32_t status_code;        /**< Maps to DownloadStatus enum           */
+    uint64_t handler_id;         /**< Handler ID from daemon               */
+    char    *firmware_name;      /**< Firmware filename (needs g_free)     */
+    uint32_t progress_percent;   /**< 0–100                                */
+    char    *status_string;      /**< Status string (needs g_free)         */
+    char    *message;            /**< Message string (needs g_free)        */
 } InternalDwnlSignalData;
 
 /**
@@ -381,13 +387,20 @@ typedef enum {
 /**
  * @brief Parsed payload from UpdateProgress D-Bus signal
  *
- * GVariant signature: (ii)
- *   i  progress_percent   (0–100)
- *   i  status_code        (maps to UpdateStatus enum)
+ * Daemon emits this repeatedly as firmware flashing progresses.
+ * GVariant signature: (tsiis)
+ *   t  handlerId         (uint64 - handler ID)
+ *   s  firmwareName      (string - firmware filename)
+ *   i  progress          (int32 - 0-100 percent)
+ *   i  status            (int32 - status code)
+ *   s  message           (string - human-readable message)
  */
 typedef struct {
-    int32_t progress_percent;   /**< 0–100                                   */
-    int32_t status_code;        /**< Maps to UpdateStatus enum               */
+    uint64_t handler_id;         /**< Handler ID from daemon               */
+    char    *firmware_name;      /**< Firmware filename (needs g_free)     */
+    int32_t  progress_percent;   /**< 0–100                                */
+    int32_t  status_code;        /**< Status code (maps to UpdateStatus)   */
+    char    *message;            /**< Message string (needs g_free)        */
 } InternalUpdateSignalData;
 
 /**

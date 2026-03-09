@@ -31,6 +31,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <time.h>
+#include <inttypes.h>  /* For PRIu64 */
 
 /* ========================================================================
  * GLOBAL STATE
@@ -697,10 +698,18 @@ static void on_download_progress_signal(GDBusConnection *conn,
         return;
     }
 
-    FWUPMGR_INFO("on_download_progress_signal: progress=%d%% status=%d\n",
-                 signal_data.progress_percent, signal_data.status_code);
+    FWUPMGR_INFO("on_download_progress_signal: handler=%" PRIu64 " firmware='%s' progress=%u%% status='%s'\n",
+                 signal_data.handler_id,
+                 signal_data.firmware_name ? signal_data.firmware_name : "(null)",
+                 signal_data.progress_percent,
+                 signal_data.status_string ? signal_data.status_string : "(null)");
 
     dispatch_all_dwnl_active(&signal_data);
+
+    // Free allocated strings from g_variant_get
+    g_free(signal_data.firmware_name);
+    g_free(signal_data.status_string);
+    g_free(signal_data.message);
 }
 
 /**
@@ -736,7 +745,7 @@ static void dispatch_all_dwnl_active(const InternalDwnlSignalData *signal_data)
     DwnlSnapshot snapshots[MAX_PENDING_CALLBACKS];
     int          count = 0;
 
-    DownloadStatus status = internal_map_dwnl_status_code(signal_data->status_code);
+    DownloadStatus status = map_dwnl_status_string(signal_data->status_string);
     bool           is_final = (status == DWNL_COMPLETED || status == DWNL_ERROR);
 
     /* ---- PHASE 1: snapshot under mutex ---- */
@@ -898,25 +907,40 @@ bool internal_parse_dwnl_signal_data(GVariant *parameters,
     if (parameters == NULL || out_data == NULL) return false;
 
     const gchar *sig = g_variant_get_type_string(parameters);
-    if (strcmp(sig, "(ii)") != 0) {
-        FWUPMGR_ERROR("internal_parse_dwnl_signal_data: unexpected signature '%s'\n", sig);
+    if (strcmp(sig, "(tsuss)") != 0) {
+        FWUPMGR_ERROR("internal_parse_dwnl_signal_data: unexpected signature '%s' (expected '(tsuss)')\n", sig);
         return false;
     }
 
-    gint32 progress = 0, status = 0;
-    g_variant_get(parameters, "(ii)", &progress, &status);
+    guint64  handler_id = 0;
+    gchar   *firmware_name = NULL;
+    guint32  progress = 0;
+    gchar   *status_str = NULL;
+    gchar   *message_str = NULL;
 
-    out_data->progress_percent = (int32_t)progress;
-    out_data->status_code      = (int32_t)status;
+    g_variant_get(parameters, "(tsuss)", 
+                  &handler_id, 
+                  &firmware_name, 
+                  &progress, 
+                  &status_str, 
+                  &message_str);
+
+    out_data->handler_id      = handler_id;
+    out_data->firmware_name   = firmware_name;   // Caller must g_free
+    out_data->progress_percent = progress;
+    out_data->status_string   = status_str;      // Caller must g_free
+    out_data->message         = message_str;     // Caller must g_free
 
     return true;
 }
 
 /**
- * @brief Map raw integer to DownloadStatus enum
+ * @brief Map status string to DownloadStatus enum
  */
 DownloadStatus internal_map_dwnl_status_code(int32_t status_code)
 {
+    // This function is kept for backward compatibility but now receives
+    // a mapped value. The actual mapping happens in the caller.
     switch (status_code) {
         case 0:  return DWNL_IN_PROGRESS;
         case 1:  return DWNL_COMPLETED;
@@ -926,6 +950,27 @@ DownloadStatus internal_map_dwnl_status_code(int32_t status_code)
                           status_code);
             return DWNL_ERROR;
     }
+}
+
+/**
+ * @brief Map status string from daemon to DownloadStatus enum
+ */
+static DownloadStatus map_dwnl_status_string(const char *status_str)
+{
+    if (status_str == NULL) {
+        return DWNL_ERROR;
+    }
+
+    if (strcmp(status_str, "INPROGRESS") == 0 || strcmp(status_str, "NOTSTARTED") == 0) {
+        return DWNL_IN_PROGRESS;
+    } else if (strcmp(status_str, "COMPLETED") == 0) {
+        return DWNL_COMPLETED;
+    } else if (strcmp(status_str, "ERROR") == 0 || strcmp(status_str, "DWNL_ERROR") == 0) {
+        return DWNL_ERROR;
+    }
+
+    FWUPMGR_ERROR("map_dwnl_status_string: unknown status '%s' → DWNL_ERROR\n", status_str);
+    return DWNL_ERROR;
 }
 
 /* ========================================================================
@@ -1041,10 +1086,17 @@ static void on_update_progress_signal(GDBusConnection *conn,
         return;
     }
 
-    FWUPMGR_INFO("on_update_progress_signal: progress=%d%% status=%d\n",
-                 signal_data.progress_percent, signal_data.status_code);
+    FWUPMGR_INFO("on_update_progress_signal: handler=%" PRIu64 " firmware='%s' progress=%d%% status=%d\n",
+                 signal_data.handler_id,
+                 signal_data.firmware_name ? signal_data.firmware_name : "(null)",
+                 signal_data.progress_percent,
+                 signal_data.status_code);
 
     dispatch_all_update_active(&signal_data);
+
+    // Free allocated strings from g_variant_get
+    g_free(signal_data.firmware_name);
+    g_free(signal_data.message);
 }
 
 /**
@@ -1227,17 +1279,30 @@ bool internal_parse_update_signal_data(GVariant *parameters,
     if (parameters == NULL || out_data == NULL) return false;
 
     const gchar *sig = g_variant_get_type_string(parameters);
-    if (strcmp(sig, "(ii)") != 0) {
+    if (strcmp(sig, "(tsiis)") != 0) {
         FWUPMGR_ERROR("internal_parse_update_signal_data: "
-                      "unexpected signature '%s'\n", sig);
+                      "unexpected signature '%s' (expected '(tsiis)')\n", sig);
         return false;
     }
 
-    gint32 progress = 0, status = 0;
-    g_variant_get(parameters, "(ii)", &progress, &status);
+    guint64  handler_id = 0;
+    gchar   *firmware_name = NULL;
+    gint32   progress = 0;
+    gint32   status = 0;
+    gchar   *message_str = NULL;
 
-    out_data->progress_percent = (int32_t)progress;
-    out_data->status_code      = (int32_t)status;
+    g_variant_get(parameters, "(tsiis)", 
+                  &handler_id, 
+                  &firmware_name, 
+                  &progress, 
+                  &status, 
+                  &message_str);
+
+    out_data->handler_id       = handler_id;
+    out_data->firmware_name    = firmware_name;   // Caller must g_free
+    out_data->progress_percent = progress;
+    out_data->status_code      = status;
+    out_data->message          = message_str;     // Caller must g_free
 
     return true;
 }
