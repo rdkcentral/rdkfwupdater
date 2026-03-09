@@ -124,7 +124,9 @@ void fwupmgr_log_internal(const char *level, const char *format, ...)
     // Get current timestamp
     time(&now);
     tm_info = localtime(&now);
-    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", tm_info);
+    if (strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", tm_info) == 0) {
+        snprintf(timestamp, sizeof(timestamp), "UNKNOWN-TIME");
+    }
     
     // Write log header: timestamp [MODULE] LEVEL:
     fprintf(output, "%s [%s] %s: ", timestamp, FWUPMGR_LOG_MODULE, level);
