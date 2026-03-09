@@ -30,7 +30,7 @@ AM_LDFLAGS += $(GLIB_LIBS)
 lib_LTLIBRARIES = librdksw_upgrade.la librdksw_rfcIntf.la librdksw_iarmIntf.la librdksw_jsonparse.la librdksw_flash.la librdksw_fwutils.la librdkFwupdateMgr.la
 
 # Add librdkFwupdateMgr client library
-lib_LTLIBRARIES += librdkFwupdateMgr.la
+#lib_LTLIBRARIES += librdkFwupdateMgr.la
 
 librdksw_upgrade_la_SOURCES = \
     ${top_srcdir}/src/rdkv_upgrade.c\
@@ -122,25 +122,25 @@ librdksw_fwutils_la_LDFLAGS = -shared
 librdksw_fwutils_la_LIBADD = $(AM_LDFLAGS)
 
 # Client Library Configuration - librdkFwupdateMgr.la
-librdkFwupdateMgr_la_SOURCES = \
-     ${top_srcdir}/librdkFwupdateMgr/src/
-    #${top_srcdir}/librdkFwupdateMgr/src/handle_mgr.c \
-    #${top_srcdir}/librdkFwupdateMgr/src/handle_registry.c \
-    #${top_srcdir}/librdkFwupdateMgr/src/dbus_client.c \
-    #${top_srcdir}/librdkFwupdateMgr/src/api_impl.c
+#librdkFwupdateMgr_la_SOURCES = \
+#     ${top_srcdir}/librdkFwupdateMgr/src/
+#    #${top_srcdir}/librdkFwupdateMgr/src/handle_mgr.c \
+#    #${top_srcdir}/librdkFwupdateMgr/src/handle_registry.c \
+#    #${top_srcdir}/librdkFwupdateMgr/src/dbus_client.c \
+#    #${top_srcdir}/librdkFwupdateMgr/src/api_impl.c
 
-librdkFwupdateMgr_la_CFLAGS = -fPIC \
-    -I${top_srcdir}/librdkFwupdateMgr/include \
-    -I${top_srcdir}/librdkFwupdateMgr/src \
-    $(GLIB_CFLAGS) -Wall -Wextra -Werror
+#librdkFwupdateMgr_la_CFLAGS = -fPIC \
+#    -I${top_srcdir}/librdkFwupdateMgr/include \
+#    -I${top_srcdir}/librdkFwupdateMgr/src \
+#    $(GLIB_CFLAGS) -Wall -Wextra -Werror
 
-librdkFwupdateMgr_la_CPPFLAGS = -fPIC \
-    -I${top_srcdir}/librdkFwupdateMgr/include \
-    -I${top_srcdir}/librdkFwupdateMgr/src \
-    $(GLIB_CFLAGS)
+#librdkFwupdateMgr_la_CPPFLAGS = -fPIC \
+#    -I${top_srcdir}/librdkFwupdateMgr/include \
+#    -I${top_srcdir}/librdkFwupdateMgr/src \
+#    $(GLIB_CFLAGS)
 
-librdkFwupdateMgr_la_LDFLAGS = -shared -version-info 1:0:0
-librdkFwupdateMgr_la_LIBADD = $(GLIB_LIBS) -lpthread
+#librdkFwupdateMgr_la_LDFLAGS = -shared -version-info 1:0:0
+#librdkFwupdateMgr_la_LIBADD = $(GLIB_LIBS) -lpthread
 
 # Library headers to install
 librdksw_upgrade_include_HEADERS = \
@@ -158,8 +158,8 @@ librdksw_fwutils_include_HEADERS = \
     ${top_srcdir}/src/deviceutils/device_api.h
 
 # Library Public Header for dbus clients
-librdkFwupdateMgr_include_HEADERS = \
-    ${top_srcdir}/librdkFwupdateMgr/include/rdkFwupdateMgr_client.h
+#librdkFwupdateMgr_include_HEADERS = \
+#    ${top_srcdir}/librdkFwupdateMgr/include/rdkFwupdateMgr_client.h
 
 librdksw_upgrade_includedir = ${includedir}
 librdksw_rfcIntf_includedir = ${includedir}
