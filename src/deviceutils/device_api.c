@@ -47,11 +47,10 @@
 */
 bool isSecureDbgSrvUnlocked(void) 
 { 
-    bool dbgServices = isDebugServicesEnabled();
-    const char* deviceType = getDeviceTypeRFC();
+	char* deviceType[16] = {0};
     BUILDTYPE eBuildType;
     bool isDebugServicesUnlocked = false;
-	char labsigned[8];
+	char labsigned[8] = {0};
 	char buildBuf[URL_MAX_LEN] = {0};
 	int ret = -1;
 
@@ -62,31 +61,28 @@ bool isSecureDbgSrvUnlocked(void)
     }
     else if (eBuildType == ePROD) 
 	{
-        labsigned[0] = 0;
-	    ret = getDevicePropertyData("LABSIGNED_ENABLED", labsigned, sizeof(labsigned));
-        if (ret == UTILS_SUCCESS) 
+		bool dbgServices = isDebugServicesEnabled();
+		getDeviceTypeRFC(deviceType, sizeof(deviceType));
+        ret = getDevicePropertyData("LABSIGNED_ENABLED", labsigned, sizeof(labsigned));
+        if (ret == UTILS_SUCCESS && (0 == (strncmp(labsigned, "true", 4)))) 
 	    {
             SWLOG_INFO("labsigned_enabled is = %s\n", labsigned);
+		    if ((strcmp(deviceType, "test") == 0) && dbgServices)
+		    {
+		         SWLOG_INFO("isSecureDbgSrvUnlocked: Enabling debug services...\n");
+		         SWLOG_INFO("isSecureDbgSrvUnlocked: dbgServices=%s, deviceType=%s, LABSIGNED_ENABLED=%s\n",dbgServices ? "true" : "false", deviceType, labsigned);
+                 isDebugServicesUnlocked = true;
+            }   
+		    else
+		    {
+		         SWLOG_INFO("isSecureDbgSrvUnlocked: unable to enable debug services...\n");
+		         SWLOG_INFO("isSecureDbgSrvUnlocked: dbgServices=%s, deviceType=%s, LABSIGNED_ENABLED=%s\n",dbgServices ? "true" : "false", deviceType, labsigned);
+            }
         } 
 	    else 
 	    {
             SWLOG_ERROR("%s: getDevicePropertyData() for labsigned_enabled fail\n", __FUNCTION__);
-        }
-
-	    if ((0 == (strncmp(labsigned, "true", 4))))
-	    {
-		    if ((strcmp(deviceType, "test") == 0) && dbgServices)
-			{
-			     SWLOG_INFO("isSecureDbgSrvUnlocked: Enabling debug services...\n");
-			     SWLOG_INFO("isSecureDbgSrvUnlocked: dbgServices=%s, deviceType=%s, LABSIGNED_ENABLED=%s\n",dbgServices ? "true" : "false", deviceType, labsigned);
-                 isDebugServicesUnlocked = true;
-            }   
-		    else
-			{
-			     SWLOG_INFO("isSecureDbgSrvUnlocked: unable to enable debug services...\n");
-			     SWLOG_INFO("isSecureDbgSrvUnlocked: dbgServices=%s, deviceType=%s, LABSIGNED_ENABLED=%s\n",dbgServices ? "true" : "false", deviceType, labsigned);
-            }
-	    }
+        }	    
 	}
     return isDebugServicesUnlocked;
 }
