@@ -313,6 +313,13 @@ typedef struct {
 /* ---- Download internal function declarations ---- */
 
 /**
+ * @brief Initialize download registry and subscribe to DownloadProgress signal
+ * Called from internal_system_init() after background thread is ready.
+ * @return 0 on success, -1 on error
+ */
+int internal_dwnl_system_init(void);
+
+/**
  * @brief Register a download callback keyed by handle
  *
  * @param handle    App's FirmwareInterfaceHandle (strdup'd internally)
