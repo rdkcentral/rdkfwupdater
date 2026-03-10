@@ -21,7 +21,8 @@
 
 using namespace std;
 
-extern DeviceUtilsMock *g_DeviceUtilsMock;
+// Define the global mock pointer (can be set by test suites)
+DeviceUtilsMock *g_DeviceUtilsMock = nullptr;
 
 extern "C" int v_secure_system(const char *mode, ...)
 {
