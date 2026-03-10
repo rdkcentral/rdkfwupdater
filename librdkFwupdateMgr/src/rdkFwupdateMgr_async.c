@@ -39,6 +39,8 @@
 
 static CallbackRegistry g_registry;
 static BackgroundThread g_bg_thread;
+static DwnlCallbackRegistry g_dwnl_registry;
+static UpdateCbRegistry g_update_registry;
 
 /* ========================================================================
  * FORWARD DECLARATIONS
@@ -54,6 +56,22 @@ static void  on_check_complete_signal(GDBusConnection *conn,
                                       GVariant *parameters,
                                       gpointer user_data);
 
+static void  on_download_progress_signal(GDBusConnection *conn,
+                                         const gchar *sender,
+                                         const gchar *object_path,
+                                         const gchar *interface_name,
+                                         const gchar *signal_name,
+                                         GVariant *parameters,
+                                         gpointer user_data);
+
+static void  on_update_progress_signal(GDBusConnection *conn,
+                                       const gchar *sender,
+                                       const gchar *object_path,
+                                       const gchar *interface_name,
+                                       const gchar *signal_name,
+                                       GVariant *parameters,
+                                       gpointer user_data);
+
 static void  dispatch_all_pending(const InternalSignalData *signal_data);
 static void  registry_reset_slot(CallbackEntry *entry);
 static bool  parse_update_details(const char *update_details_str,
@@ -61,6 +79,10 @@ static bool  parse_update_details(const char *update_details_str,
 
 /* Forward declaration for download status mapping function */
 static DownloadStatus map_dwnl_status_string(const char *status_str);
+
+/* Forward declarations for cleanup functions */
+static void internal_dwnl_system_deinit(void);
+static void internal_update_system_deinit(void);
 
 /* ========================================================================
  * LIBRARY LIFECYCLE
@@ -636,17 +658,7 @@ CheckForUpdateStatus internal_map_status_code(int32_t status_code)
  *   until the daemon sends DWNL_COMPLETED or DWNL_ERROR.
  * ======================================================================== */
 
-/* ---- Download registry global ---- */
-static DwnlCallbackRegistry g_dwnl_registry;
-
-/* ---- Forward declarations ---- */
-static void on_download_progress_signal(GDBusConnection *conn,
-                                        const gchar *sender,
-                                        const gchar *object_path,
-                                        const gchar *interface_name,
-                                        const gchar *signal_name,
-                                        GVariant *parameters,
-                                        gpointer user_data);
+/* ---- Forward declarations for helper functions ---- */
 static void dispatch_all_dwnl_active(const InternalDwnlSignalData *signal_data);
 static void dwnl_registry_reset_slot(DwnlCallbackEntry *entry);
 
@@ -660,7 +672,7 @@ static void dwnl_registry_reset_slot(DwnlCallbackEntry *entry);
 /**
  * @brief Cleanup download registry — called from internal_system_deinit()
  */
-void internal_dwnl_system_deinit(void)
+static void internal_dwnl_system_deinit(void)
 {
     pthread_mutex_lock(&g_dwnl_registry.mutex);
     for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
@@ -996,17 +1008,7 @@ static DownloadStatus map_dwnl_status_string(const char *status_str)
  * Registry slot: ACTIVE until UPDATE_COMPLETED or UPDATE_ERROR, then IDLE.
  * ======================================================================== */
 
-/* ---- Update registry global ---- */
-static UpdateCbRegistry g_update_registry;
-
-/* ---- Forward declarations ---- */
-static void on_update_progress_signal(GDBusConnection *conn,
-                                      const gchar *sender,
-                                      const gchar *object_path,
-                                      const gchar *interface_name,
-                                      const gchar *signal_name,
-                                      GVariant *parameters,
-                                      gpointer user_data);
+/* ---- Forward declarations for helper functions ---- */
 static void dispatch_all_update_active(const InternalUpdateSignalData *signal_data);
 static void update_registry_reset_slot(UpdateCbEntry *entry);
 
@@ -1020,7 +1022,7 @@ static void update_registry_reset_slot(UpdateCbEntry *entry);
  * Called from internal_system_deinit(). Signal unsubscription is handled
  * by the background thread.
  */
-void internal_update_system_deinit(void)
+static void internal_update_system_deinit(void)
 {
     pthread_mutex_lock(&g_update_registry.mutex);
     for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
