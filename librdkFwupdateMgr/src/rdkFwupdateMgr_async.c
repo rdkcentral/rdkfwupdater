@@ -59,10 +59,6 @@ static void  registry_reset_slot(CallbackEntry *entry);
 static bool  parse_update_details(const char *update_details_str,
                                    UpdateDetails *out_details);
 
-/* Forward declarations for download and update system initialization */
-static int   internal_dwnl_system_init(void);
-static int   internal_update_system_init(void);
-
 /* Forward declaration for download status mapping function */
 static DownloadStatus map_dwnl_status_string(const char *status_str);
 
