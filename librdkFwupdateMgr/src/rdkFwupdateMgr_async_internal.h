@@ -431,13 +431,8 @@ typedef struct {
 /* ---- Update internal function declarations ---- */
 
 /* ========================================================================
- * UPDATE LIFECYCLE & REGISTRATION
+ * UPDATE CALLBACK REGISTRATION
  * ======================================================================== */
-
-/**
- * @brief Cleanup update registry — called from internal_system_deinit()
- */
-void internal_update_system_deinit(void);
 
 /**
  * @brief Register an update callback keyed by handle
