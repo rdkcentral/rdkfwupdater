@@ -293,24 +293,34 @@ bool isDebugServicesEnabled(void)
  * @param type : void
  * @return test, if deviceType RFC is set to test, prod if deviceType is set to prod, else unknown
  * */
-const char* getDeviceTypeRFC(void) {
-    char deviceType[16] = "unknown";  // default
+void getDeviceType(char *deviceType, size_t size ){
+
+	if (deviceType == NULL || size == 0){
+        SWLOG_ERROR("%s: Invalid Arguments Passed...\n", __FUNCTION__);
+		return;
+	}
+	
     char rfc_data[RFC_VALUE_BUF_SIZE] = {0};
     int ret = read_RFCProperty("LABSGND", RFC_DEVICETYPE, rfc_data, sizeof(rfc_data));
 
     if (ret == -1) {
         SWLOG_ERROR("%s: Failed to read device type\n", __FUNCTION__);
-        return deviceType; 
+		strncpy(deviceType,"unknown", size - 1);
+		deviceType[size - 1] = '\0';
+		return;
+        //return deviceType; 
     }
 
     SWLOG_INFO("%s: RFC device type = %s\n", __FUNCTION__, rfc_data);
 
     if (strncasecmp(rfc_data, "prod", 4) == 0) {
-        strncpy(deviceType, "prod", sizeof(deviceType) - 1);
+        strncpy(deviceType, "prod", size - 1);
     } else if (strncasecmp(rfc_data, "test", 4) == 0) {
-        strncpy(deviceType, "test", sizeof(deviceType) - 1);
+        strncpy(deviceType, "test", size - 1);
+    } else {
+    strncpy(deviceType, "unknown", size - 1);
     }
 
-    deviceType[sizeof(deviceType) - 1] = '\0'; // to ensure null termination
-    return deviceType;
+    deviceType[size - 1] = '\0'; // to ensure null termination
+    return;
 }
