@@ -312,12 +312,9 @@ typedef struct {
 
 /* ---- Download internal function declarations ---- */
 
-/**
- * @brief Initialize download registry and subscribe to DownloadProgress signal
- * Called from internal_system_init() after background thread is ready.
- * @return 0 on success, -1 on error
- */
-int internal_dwnl_system_init(void);
+/* ========================================================================
+ * DOWNLOAD CALLBACK REGISTRATION
+ * ======================================================================== */
 
 /**
  * @brief Register a download callback keyed by handle
@@ -433,12 +430,9 @@ typedef struct {
 
 /* ---- Update internal function declarations ---- */
 
-/**
- * @brief Initialize update registry and subscribe to UpdateProgress signal
- * Called from internal_system_init() after background thread is ready.
- * @return 0 on success, -1 on error
- */
-int internal_update_system_init(void);
+/* ========================================================================
+ * UPDATE LIFECYCLE & REGISTRATION
+ * ======================================================================== */
 
 /**
  * @brief Cleanup update registry — called from internal_system_deinit()

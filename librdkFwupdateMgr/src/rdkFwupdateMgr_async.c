@@ -129,17 +129,21 @@ int internal_system_init(void)
         nanosleep(&ts, NULL);
     }
 
-    /* Initialize download signal subscription */
-    if (internal_dwnl_system_init() != 0) {
-        FWUPMGR_ERROR("internal_system_init: download system init failed\n");
-        /* Continue anyway - checkForUpdate will still work */
+    /* Initialize download and update registries */
+    memset(&g_dwnl_registry, 0, sizeof(g_dwnl_registry));
+    if (pthread_mutex_init(&g_dwnl_registry.mutex, NULL) != 0) {
+        FWUPMGR_ERROR("internal_system_init: dwnl mutex init failed\n");
+        return -1;
     }
+    g_dwnl_registry.initialized = true;
 
-    /* Initialize update signal subscription */
-    if (internal_update_system_init() != 0) {
-        FWUPMGR_ERROR("internal_system_init: update system init failed\n");
-        /* Continue anyway - checkForUpdate will still work */
+    memset(&g_update_registry, 0, sizeof(g_update_registry));
+    if (pthread_mutex_init(&g_update_registry.mutex, NULL) != 0) {
+        FWUPMGR_ERROR("internal_system_init: update mutex init failed\n");
+        pthread_mutex_destroy(&g_dwnl_registry.mutex);
+        return -1;
     }
+    g_update_registry.initialized = true;
 
     FWUPMGR_INFO("internal_system_init: ready\n");
     return 0;
@@ -169,7 +173,11 @@ void internal_system_deinit(void)
     if (g_bg_thread.context)   g_main_context_unref(g_bg_thread.context);
     pthread_mutex_destroy(&g_bg_thread.mutex);
 
-    /* Free any leftover handle_key strings */
+    /* Cleanup download and update registries */
+    internal_dwnl_system_deinit();
+    internal_update_system_deinit();
+
+    /* Free any leftover handle_key strings from CheckForUpdate registry */
     pthread_mutex_lock(&g_registry.mutex);
     for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
         if (g_registry.entries[i].handle_key != NULL) {
@@ -238,8 +246,41 @@ static void *background_thread_func(void *arg)
         NULL                         /* user_data destroy notify          */
     );
 
-    FWUPMGR_INFO("background_thread: subscribed (id=%u), entering event loop\n",
+    FWUPMGR_INFO("background_thread: subscribed to CheckForUpdateComplete (id=%u)\n",
                  g_bg_thread.subscription_id);
+
+    /*
+     * Subscribe to DownloadProgress and UpdateProgress signals.
+     * Must be done HERE in the background thread, not from main thread,
+     * because the connection belongs to this thread's GMainContext.
+     */
+    guint dwnl_sub_id = g_dbus_connection_signal_subscribe(
+        g_bg_thread.connection,
+        NULL,                           /* sender: any                        */
+        DBUS_INTERFACE_NAME,            /* interface                          */
+        DBUS_SIGNAL_DWNL_PROGRESS,     /* signal: DownloadProgress           */
+        DBUS_OBJECT_PATH,              /* object path                         */
+        NULL,                          /* arg0 filter: none                   */
+        G_DBUS_SIGNAL_FLAGS_NONE,
+        on_download_progress_signal,   /* handler                             */
+        NULL,
+        NULL
+    );
+    FWUPMGR_INFO("background_thread: subscribed to DownloadProgress (id=%u)\n", dwnl_sub_id);
+
+    guint update_sub_id = g_dbus_connection_signal_subscribe(
+        g_bg_thread.connection,
+        NULL,                           /* sender: any                        */
+        DBUS_INTERFACE_NAME,            /* interface                          */
+        DBUS_SIGNAL_UPDATE_PROGRESS,   /* signal: UpdateProgress             */
+        DBUS_OBJECT_PATH,              /* object path                         */
+        NULL,                          /* arg0 filter: none                   */
+        G_DBUS_SIGNAL_FLAGS_NONE,
+        on_update_progress_signal,     /* handler                             */
+        NULL,
+        NULL
+    );
+    FWUPMGR_INFO("background_thread: subscribed to UpdateProgress (id=%u)\n", update_sub_id);
 
     /* Signal main thread that we are ready */
     pthread_mutex_lock(&g_bg_thread.mutex);
@@ -610,55 +651,11 @@ static void dispatch_all_dwnl_active(const InternalDwnlSignalData *signal_data);
 static void dwnl_registry_reset_slot(DwnlCallbackEntry *entry);
 
 /* ========================================================================
- * DOWNLOAD REGISTRY INIT — called from internal_system_init()
+ * DOWNLOAD REGISTRY CLEANUP
  *
- * The download registry is initialised alongside the CheckForUpdate
- * registry and uses the SAME background thread and GLib event loop.
- * We only add a second D-Bus signal subscription.
+ * Called from internal_system_deinit() to free download registry resources.
+ * Signal unsubscription is handled by the background thread.
  * ======================================================================== */
-
-/**
- * @brief Initialize download registry and subscribe to DownloadProgress signal
- *
- * Called from internal_system_init() after the background thread is ready.
- * The background thread's connection and context already exist at this point.
- *
- * @return 0 on success, -1 on error
- */
-int internal_dwnl_system_init(void)
-{
-    FWUPMGR_INFO("internal_dwnl_system_init: begin\n");
-
-    memset(&g_dwnl_registry, 0, sizeof(g_dwnl_registry));
-    if (pthread_mutex_init(&g_dwnl_registry.mutex, NULL) != 0) {
-        FWUPMGR_ERROR("internal_dwnl_system_init: mutex init failed\n");
-        return -1;
-    }
-    g_dwnl_registry.initialized = true;
-
-    /*
-     * Subscribe to DownloadProgress signal on the SAME connection and
-     * context as the CheckForUpdate signal subscription.
-     * g_bg_thread.connection is already open from internal_system_init().
-     */
-    guint dwnl_sub_id = g_dbus_connection_signal_subscribe(
-        g_bg_thread.connection,
-        NULL,                           /* sender: any                        */
-        DBUS_INTERFACE_NAME,            /* interface                          */
-        DBUS_SIGNAL_DWNL_PROGRESS,     /* signal: DownloadProgress           */
-        DBUS_OBJECT_PATH,              /* object path                         */
-        NULL,                          /* arg0 filter: none                   */
-        G_DBUS_SIGNAL_FLAGS_NONE,
-        on_download_progress_signal,   /* handler                             */
-        NULL,
-        NULL
-    );
-
-    FWUPMGR_INFO("internal_dwnl_system_init: subscribed to DownloadProgress (id=%u)\n",
-                 dwnl_sub_id);
-
-    return 0;
-}
 
 /**
  * @brief Cleanup download registry — called from internal_system_deinit()
@@ -1018,42 +1015,10 @@ static void update_registry_reset_slot(UpdateCbEntry *entry);
  * ======================================================================== */
 
 /**
- * @brief Initialize update registry and subscribe to UpdateProgress signal
- *
- * Reuses g_bg_thread.connection — no new thread or connection needed.
- * Called from internal_system_init() after background thread is running.
- */
-int internal_update_system_init(void)
-{
-    FWUPMGR_INFO("internal_update_system_init: begin\n");
-
-    memset(&g_update_registry, 0, sizeof(g_update_registry));
-    if (pthread_mutex_init(&g_update_registry.mutex, NULL) != 0) {
-        FWUPMGR_ERROR("internal_update_system_init: mutex init failed\n");
-        return -1;
-    }
-    g_update_registry.initialized = true;
-
-    guint update_sub_id = g_dbus_connection_signal_subscribe(
-        g_bg_thread.connection,
-        NULL,                           /* sender: any                        */
-        DBUS_INTERFACE_NAME,            /* interface                          */
-        DBUS_SIGNAL_UPDATE_PROGRESS,    /* signal: UpdateProgress             */
-        DBUS_OBJECT_PATH,               /* object path                        */
-        NULL,                           /* arg0 filter: none                  */
-        G_DBUS_SIGNAL_FLAGS_NONE,
-        on_update_progress_signal,      /* handler                            */
-        NULL,
-        NULL
-    );
-
-    FWUPMGR_INFO("internal_update_system_init: subscribed to UpdateProgress (id=%u)\n",
-                 update_sub_id);
-    return 0;
-}
-
-/**
  * @brief Cleanup update registry — frees all strdup'd handle_key strings
+ *
+ * Called from internal_system_deinit(). Signal unsubscription is handled
+ * by the background thread.
  */
 void internal_update_system_deinit(void)
 {
