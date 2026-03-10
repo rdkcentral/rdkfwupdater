@@ -500,16 +500,15 @@ int main(void)
     //        sizeof(update_req.TypeOfFirmware) - 1);
     update_req.TypeOfFirmware = download_req.TypeOfFirmware;
     
-    /* Location: Empty = use /etc/device.properties default path */
-    //update_req.LocationOfFirmware[0] = '\0';
-    update_req.LocationOfFirmware = "";
+    /* Location: Use /opt/CDL (default firmware download directory) */
+    update_req.LocationOfFirmware = "/opt/CDL";
     
     /* Reboot after flash: false for this example (so we can unregister cleanly) */
     update_req.rebootImmediately = false;
 
     printf("  Firmware Name  : %s\n", update_req.firmwareName);
     printf("  Firmware Type  : %s\n", update_req.TypeOfFirmware);
-    printf("  Location       : (use daemon default)\n");
+    printf("  Location       : %s\n", update_req.LocationOfFirmware);
     printf("  Reboot Now     : %s\n\n", update_req.rebootImmediately ? "true" : "false");
 
     printf("  Calling updateFirmware()...\n\n");
