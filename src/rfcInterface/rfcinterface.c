@@ -299,28 +299,23 @@ void getDeviceType(char *deviceType, size_t size ){
         SWLOG_ERROR("%s: Invalid Arguments Passed...\n", __FUNCTION__);
 		return;
 	}
-	
+
+	const char* type = "unknown";
     char rfc_data[RFC_VALUE_BUF_SIZE] = {0};
     int ret = read_RFCProperty("LABSGND", RFC_DEVICETYPE, rfc_data, sizeof(rfc_data));
 
     if (ret == -1) {
         SWLOG_ERROR("%s: Failed to read device type\n", __FUNCTION__);
-		strncpy(deviceType,"unknown", size - 1);
-		deviceType[size - 1] = '\0';
-		return;
-        //return deviceType; 
-    }
+	}
 
     SWLOG_INFO("%s: RFC device type = %s\n", __FUNCTION__, rfc_data);
 
     if (strncasecmp(rfc_data, "prod", 4) == 0) {
-        strncpy(deviceType, "prod", size - 1);
+        type = "prod";
     } else if (strncasecmp(rfc_data, "test", 4) == 0) {
-        strncpy(deviceType, "test", size - 1);
-    } else {
-    strncpy(deviceType, "unknown", size - 1);
-    }
+        type = "test";
+    } 
 
-    deviceType[size - 1] = '\0'; // to ensure null termination
-    return;
+	strncpy(deviceType, type, size - 1);
+    deviceType[size - 1] = '\0';
 }
