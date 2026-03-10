@@ -120,10 +120,10 @@
  * - This IS the handle returned to caller
  * - freed by unregisterProcess()
  */
-typedef struct _FirmwareInterfaceContext {
-    uint64_t handler_id;          // Handler ID from daemon
-    char handler_id_str[32];      // String representation (this is the handle)
-} FirmwareInterfaceContext;
+//typedef struct _FirmwareInterfaceContext {
+ //   uint64_t handler_id;          // Handler ID from daemon
+  //  char handler_id_str[32];      // String representation (this is the handle)
+//} FirmwareInterfaceContext;
 
 /* ========================================================================
  * INTERNAL HELPER FUNCTIONS
