@@ -293,7 +293,7 @@ bool isDebugServicesEnabled(void)
  * @param type : void
  * @return test, if deviceType RFC is set to test, prod if deviceType is set to prod, else unknown
  * */
-void getDeviceType(char *deviceType, size_t size ){
+void getDeviceTypeRFC(char *deviceType, size_t size ){
 
 	if (deviceType == NULL || size == 0){
         SWLOG_ERROR("%s: Invalid Arguments Passed...\n", __FUNCTION__);
