@@ -47,7 +47,7 @@
 */
 bool isSecureDbgSrvUnlocked(void) 
 { 
-	char* deviceType[16] = {0};
+	char deviceType[16] = {0};
     BUILDTYPE eBuildType;
     bool isDebugServicesUnlocked = false;
 	char labsigned[8] = {0};
