@@ -56,8 +56,7 @@ rdkfw_main_gtest_SOURCES = basic_rdkv_main_gtest.cpp \
     ../src/deviceutils/device_api.c \
     ../src/deviceutils/deviceutils.c \
     deviceutils/json_parse.c \
-    ./mocks/deviceutils_mock.cpp \
-    ./mocks/device_status_helper_mock.cpp
+    ./mocks/deviceutils_mock.cpp
 
 rdkfw_interface_gtest_SOURCES = fwdl_interface_gtest.cpp \
     ./mocks/interface_mock.cpp \
