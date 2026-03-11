@@ -39,7 +39,7 @@ COMMON_CXXFLAGS = -frtti -fprofile-arcs -ftest-coverage -fpermissive
 # Define the source files
 rdkfw_device_status_gtest_SOURCES = device_status_helper_gtest.cpp ./mocks/device_status_helper_mock.cpp ../src/device_status_helper.c ../src/download_status_helper.c
 
-rdkfw_deviceutils_gtest_SOURCES = deviceutils/device_api_gtest.cpp deviceutils/deviceutils_gtest.cpp deviceutils/json_parse.c ./mocks/deviceutils_mock.cpp ../src/deviceutils/device_api.c ../src/deviceutils/deviceutils.c ../src/rfcInterface/rfcinterface.c ./mocks/interface_mock.cpp fwdl_interface_gtest.cpp
+rdkfw_deviceutils_gtest_SOURCES = deviceutils/device_api_gtest.cpp deviceutils/deviceutils_gtest.cpp deviceutils/json_parse.c ./mocks/deviceutils_mock.cpp ../src/deviceutils/device_api.c ../src/deviceutils/deviceutils.c
 
 # rdkfw_main_gtest: Tests core firmware upgrade logic (rdkv_main.c and rdkv_upgrade.c)
 # REFACTORED: Uses mocks instead of real helper implementations to avoid multiple definition errors
