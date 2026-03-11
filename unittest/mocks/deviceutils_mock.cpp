@@ -144,6 +144,17 @@ extern "C" int read_RFCProperty(char* type, const char* key, char *out_value, si
     return g_DeviceUtilsMock->read_RFCProperty(type, key, out_value, datasize);
 }
 
+extern "C" int write_RFCProperty(char* type, const char* key, const char *value, RFCVALDATATYPE datatype)
+{
+    if (!g_DeviceUtilsMock)
+    {
+        cout << "write_RFCProperty g_DeviceUtilsMock object is NULL" << endl;
+        return -1;
+    }
+    printf("Inside Mock Function write_RFCProperty\n");
+    return g_DeviceUtilsMock->write_RFCProperty(type, key, value, datatype);
+}
+
 extern "C" int filePresentCheck(const char *filename)
 {
     if (!g_DeviceUtilsMock)

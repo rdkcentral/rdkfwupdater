@@ -25,6 +25,19 @@
 //#include "rdk_fwdl_utils.h"  // For BUILDTYPE enum
 #define RDK_API_SUCCESS 0
 
+/* RFCVALDATATYPE is defined in rfcinterface.h but we cannot include it here
+ * because rfcinterface.h declares functions without extern "C", causing linkage
+ * conflicts with the extern "C" mock definitions in deviceutils_mock.cpp.
+ * Only define if not already provided by another header. */
+#ifndef VIDEO_RFCINTERFACE_RFCINTERFACE_H_
+typedef enum
+{
+  RFC_STRING=1,
+  RFC_BOOL,
+  RFC_UINT
+}RFCVALDATATYPE;
+#endif
+
 class DeviceUtilsInterface
 {
     public:
@@ -37,6 +50,7 @@ class DeviceUtilsInterface
 	virtual int getJsonRpcData(void *Curl_req, FileDwnl_t *req_data, char token_header, int httpCode ) = 0;
 	virtual int getDevicePropertyData(const char *model, char *data, int size) = 0;
 	virtual int read_RFCProperty(char* type, const char* key, char *out_value, size_t datasize) = 0;
+	virtual int write_RFCProperty(char* type, const char* key, const char *value, RFCVALDATATYPE datatype) = 0;
 	virtual int filePresentCheck(const char *filename) = 0;
 	virtual int getFileSize(const char *filename) = 0;
 	virtual bool isInStateRed() = 0;
@@ -59,6 +73,7 @@ class DeviceUtilsMock: public DeviceUtilsInterface
 	MOCK_METHOD(int, getJsonRpcData, (void *Curl_req, FileDwnl_t *req_data, char token_header, int httpCode ), ());
 	MOCK_METHOD(int, getDevicePropertyData, (const char *model, char *data, int size), ());
 	MOCK_METHOD(int, read_RFCProperty, (char* type, const char* key, char *out_value, size_t datasize), ());
+	MOCK_METHOD(int, write_RFCProperty, (char* type, const char* key, const char *value, RFCVALDATATYPE datatype), ());
 	MOCK_METHOD(int, filePresentCheck, (const char *filename ), ());
 	MOCK_METHOD(int, getFileSize, (const char *filename ), ());
 	MOCK_METHOD(bool, isInStateRed, (), ());
