@@ -18,13 +18,17 @@
 AUTOMAKE_OPTIONS = subdir-objects
 
 # Define the program name and the source files
-bin_PROGRAMS = rdkfw_device_status_gtest rdkfw_deviceutils_gtest rdkfw_main_gtest rdkfw_interface_gtest
-
+bin_PROGRAMS = rdkfw_device_status_gtest rdkfw_deviceutils_gtest rdkfw_main_gtest rdkfw_interface_gtest rdkfwupdatemgr_main_flow_gtest rdkFwupdateMgr_handlers_gtest dbus_handlers_gtest rdkFwupdateMgr_async_refcount_gtest rdkFwupdateMgr_async_stress_gtest rdkFwupdateMgr_async_cleanup_gtest rdkFwupdateMgr_async_signal_gtest rdkFwupdateMgr_async_threadsafety_gtest
+#bin_PROGRAMS = rdkfw_device_status_gtest rdkfw_deviceutils_gtest rdkfw_main_gtest rdkfw_interface_gtest  dbus_handlers_gtest
 # Define the include directories
 # NOTE: We explicitly use -I. to prioritize local test headers over system headers
 # This prevents conflicts with external library headers in /usr/local/include/
 # rdk_fwdl_utils.h includes rdkv_cdl_log_wrapper.h inside common_utilities. to over come this ,  
-COMMON_CPPFLAGS = -std=c++11 -I. -I/usr/include/cjson -I../src -I../src/cedmInterface -I../src/deviceutils/ -I../src/include/ -I../src/rbusInterface/ -I./mocks/ -I./deviceutils/ -DGTEST_ENABLE -DGTEST_BASIC -DIARM_ENABLED -DRFC_API_ENABLED -DT2_EVENT_ENABLED
+COMMON_CPPFLAGS = -std=c++11 -I. -I/usr/include/cjson -I../src -I../src/cedmInterface -I../src/deviceutils/ -I../src/include/ -I../src/rbusInterface/ -I./mocks/ -I./deviceutils/ -DGTEST_ENABLE -DIARM_ENABLED -DRFC_API_ENABLED -DT2_EVENT_ENABLED
+
+# GLib/GIO flags for D-Bus handler tests
+GLIB_CFLAGS := $(shell pkg-config --cflags glib-2.0 gio-2.0)
+GLIB_LIBS := $(shell pkg-config --libs glib-2.0 gio-2.0)
 
 # Define the libraries to link against
 COMMON_LDADD =  -lgtest -lgtest_main -lgmock_main -lgmock -lcjson -lgcov
@@ -67,6 +71,22 @@ rdkfw_interface_gtest_SOURCES = fwdl_interface_gtest.cpp \
     ../src/rbusInterface/rbusInterface.c \
     deviceutils/json_parse.c
 
+
+# rdkFwupdateMgr_handlers_gtest: Tests D-Bus handler functions for daemon
+# Tests the async, non-blocking, cache-first CheckForUpdate implementation
+# Uses MOCKS ONLY for rdkv_upgrade.c, chunk.c, device_status_helper.c, download_status_helper.c, device_api.c, deviceutils.c
+# These are all mocked in rdkFwupdateMgr_mock.cpp and deviceutils_mock.cpp to avoid linking the entire codebase
+rdkFwupdateMgr_handlers_gtest_SOURCES = rdkFwupdateMgr_handlers_gtest.cpp \
+    ./mocks/rdkFwupdateMgr_mock.cpp \
+    ./mocks/deviceutils_mock.cpp \
+    ../src/dbus/rdkFwupdateMgr_handlers.c \
+    ../src/json_process.c \
+    deviceutils/json_parse.c
+# Note: All functions from rdkv_upgrade.c, chunk.c, device_status_helper.c, download_status_helper.c
+#       are stubbed in rdkFwupdateMgr_mock.cpp
+# Note: device_api.c and deviceutils.c functions are mocked in deviceutils_mock.cpp
+# Note: rdkFwupdateMgr_mock.cpp also provides stubs for current_flash, rfc_list, IsFlashInProgress, SWLOG_* functions
+
 # Apply common properties to each program
 rdkfw_device_status_gtest_CPPFLAGS = $(COMMON_CPPFLAGS)
 rdkfw_device_status_gtest_LDADD = $(COMMON_LDADD) 
@@ -78,7 +98,7 @@ rdkfw_deviceutils_gtest_LDADD = $(COMMON_LDADD)
 rdkfw_deviceutils_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
 rdkfw_deviceutils_gtest_CFLAGS = $(COMMON_CXXFLAGS)
 
-rdkfw_main_gtest_CPPFLAGS = $(COMMON_CPPFLAGS)
+rdkfw_main_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -DGTEST_BASIC
 rdkfw_main_gtest_LDADD = $(COMMON_LDADD) 
 rdkfw_main_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
 rdkfw_main_gtest_CFLAGS = $(COMMON_CXXFLAGS)
@@ -87,3 +107,152 @@ rdkfw_interface_gtest_CPPFLAGS = $(COMMON_CPPFLAGS)
 rdkfw_interface_gtest_LDADD = $(COMMON_LDADD)
 rdkfw_interface_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
 rdkfw_interface_gtest_CFLAGS = $(COMMON_CXXFLAGS)
+
+
+rdkFwupdateMgr_handlers_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -I../src/dbus $(GLIB_CFLAGS) -DHANDLER_TEST_ONLY
+rdkFwupdateMgr_handlers_gtest_LDFLAGS = $(GLIB_LIBS)
+rdkFwupdateMgr_handlers_gtest_LDADD = $(COMMON_LDADD)
+rdkFwupdateMgr_handlers_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
+rdkFwupdateMgr_handlers_gtest_CFLAGS = $(COMMON_CXXFLAGS)
+
+# rdkfwupdatemgr_main_flow_gtest: Tests rdkFwupdateMgr.c main flow functions
+# Covers: getTriggerType, handle_signal, prevCurUpdateInfo, initialValidation gaps, main() logic
+# Uses mocks ONLY - no real implementation files that are mocked in miscellaneous_mock.cpp
+# Key decisions:
+#   1. REMOVED rfcinterface.c - mocked in miscellaneous_mock.cpp (getRFCSettings, isIncremetalCDLEnable, etc.)
+#   2. REMOVED iarmInterface.c - mocked in miscellaneous_mock.cpp (init_event_handler, eventManager, etc.)
+#   3. REMOVED rbusInterface.c and rbus_mock.c - not needed for main flow tests
+#   4. REMOVED rdkv_upgrade.c - mocked in miscellaneous_mock.cpp (rdkv_upgrade_request, downloadFile, etc.)
+#   5. REMOVED chunk.c - part of rdkv_upgrade.c functionality, mocked
+#   6. REMOVED device_status_helper.c - mocked in miscellaneous_mock.cpp (checkAndEnterStateRed, isDnsResolve, etc.)
+#   7. REMOVED download_status_helper.c - mocked in miscellaneous_mock.cpp (updateFWDownloadStatus, notifyDwnlStatus)
+#   8. KEPT rdkFwupdateMgr.c - core file under test
+#   9. KEPT deviceutils/* - device utility functions with deviceutils_mock.cpp
+#   10. KEPT json_process.c - core JSON parsing
+rdkfwupdatemgr_main_flow_gtest_SOURCES = rdkfwupdatemgr_main_flow_gtest.cpp \
+    ../src/rdkFwupdateMgr.c \
+    ../src/json_process.c \
+    ../src/deviceutils/device_api.c \
+    ../src/deviceutils/deviceutils.c \
+    deviceutils/json_parse.c \
+    miscellaneous_mock.cpp \
+    ./mocks/deviceutils_mock.cpp
+
+rdkfwupdatemgr_main_flow_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -I../src/dbus $(GLIB_CFLAGS)
+rdkfwupdatemgr_main_flow_gtest_LDFLAGS = $(GLIB_LIBS)
+rdkfwupdatemgr_main_flow_gtest_LDADD = $(COMMON_LDADD)
+rdkfwupdatemgr_main_flow_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
+rdkfwupdatemgr_main_flow_gtest_CFLAGS = $(COMMON_CXXFLAGS)
+
+# dbus_handlers_gtest: Comprehensive tests for D-Bus handler functions
+# Tests both rdkFwupdateMgr_handlers.c and rdkv_dbus_server.c
+# Covers CheckForUpdate, DownloadFirmware, cache operations, progress monitoring
+# Uses comprehensive mocking via dbus_handlers_gmock.cpp
+dbus_handlers_gtest_SOURCES = dbus_handlers.cpp \
+     test_dbus_fake.cpp \
+    ./mocks/dbus_handlers_gmock.cpp \
+    ../src/dbus/rdkFwupdateMgr_handlers.c \
+    ../src/json_process.c \
+    ../src/deviceutils/device_api.c \
+    ../src/deviceutils/deviceutils.c \
+    deviceutils/json_parse.c
+
+dbus_handlers_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -I../src/dbus -I../src/deviceutils $(GLIB_CFLAGS) -DDBUS_HANDLERS_TEST
+#dbus_handlers_gtest_LDFLAGS = $(GLIB_LIBS)
+# NOTE: dbus_handlers_gtest uses ONLY glib-2.0 (not gio-2.0) for link-time symbol interposition
+# This allows our fake g_dbus_connection_emit_signal() to override the real GLib version
+# Other test binaries still use full $(GLIB_LIBS) for safety
+dbus_handlers_gtest_LDFLAGS = $(shell pkg-config --libs glib-2.0)
+dbus_handlers_gtest_LDADD = $(COMMON_LDADD)
+dbus_handlers_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
+dbus_handlers_gtest_CFLAGS = $(COMMON_CXXFLAGS)
+
+# rdkFwupdateMgr_async_refcount_gtest: Tests reference counting for async API
+# Covers:
+#   - Basic reference counting operations (ref/unref)
+#   - Thread-safe concurrent ref/unref
+#   - Cleanup at zero refcount
+#   - Prevention of use-after-free and double-free
+# Uses internal async implementation files
+rdkFwupdateMgr_async_refcount_gtest_SOURCES = rdkFwupdateMgr_async_refcount_gtest.cpp \
+    ../librdkFwupdateMgr/src/rdkFwupdateMgr_async.c \
+    ../librdkFwupdateMgr/src/rdkFwupdateMgr_async_api.c
+
+rdkFwupdateMgr_async_refcount_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -I../librdkFwupdateMgr/src -I../librdkFwupdateMgr/include $(GLIB_CFLAGS) -DASYNC_TEST
+rdkFwupdateMgr_async_refcount_gtest_LDFLAGS = $(GLIB_LIBS) -lpthread
+rdkFwupdateMgr_async_refcount_gtest_LDADD = $(COMMON_LDADD)
+rdkFwupdateMgr_async_refcount_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
+rdkFwupdateMgr_async_refcount_gtest_CFLAGS = $(COMMON_CXXFLAGS)
+
+# rdkFwupdateMgr_async_stress_gtest: Stress tests for async API
+# Covers:
+#   - Concurrent registrations (1000+ operations)
+#   - Registry exhaustion and recovery
+#   - Rapid register/cancel cycles
+#   - Memory stability under load
+#   - Performance benchmarks
+# Uses full async API implementation
+rdkFwupdateMgr_async_stress_gtest_SOURCES = rdkFwupdateMgr_async_stress_gtest.cpp \
+    ../librdkFwupdateMgr/src/rdkFwupdateMgr_async.c \
+    ../librdkFwupdateMgr/src/rdkFwupdateMgr_async_api.c
+
+rdkFwupdateMgr_async_stress_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -I../librdkFwupdateMgr/src -I../librdkFwupdateMgr/include $(GLIB_CFLAGS) -DASYNC_TEST
+rdkFwupdateMgr_async_stress_gtest_LDFLAGS = $(GLIB_LIBS) -lpthread
+rdkFwupdateMgr_async_stress_gtest_LDADD = $(COMMON_LDADD)
+rdkFwupdateMgr_async_stress_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
+rdkFwupdateMgr_async_stress_gtest_CFLAGS = $(COMMON_CXXFLAGS)
+
+# rdkFwupdateMgr_async_cleanup_gtest: Tests cleanup and deinitialization for async API
+# Covers:
+#   - Cleanup with no active callbacks
+#   - Cleanup with pending callbacks
+#   - Cleanup with completed callbacks
+#   - Multiple init/cleanup cycles
+#   - Cleanup cancels pending operations
+# Uses full async API implementation
+rdkFwupdateMgr_async_cleanup_gtest_SOURCES = rdkFwupdateMgr_async_cleanup_gtest.cpp \
+    ../librdkFwupdateMgr/src/rdkFwupdateMgr_async.c \
+    ../librdkFwupdateMgr/src/rdkFwupdateMgr_async_api.c
+
+rdkFwupdateMgr_async_cleanup_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -I../librdkFwupdateMgr/src -I../librdkFwupdateMgr/include $(GLIB_CFLAGS) -DASYNC_TEST
+rdkFwupdateMgr_async_cleanup_gtest_LDFLAGS = $(GLIB_LIBS) -lpthread
+rdkFwupdateMgr_async_cleanup_gtest_LDADD = $(COMMON_LDADD)
+rdkFwupdateMgr_async_cleanup_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
+rdkFwupdateMgr_async_cleanup_gtest_CFLAGS = $(COMMON_CXXFLAGS)
+
+# rdkFwupdateMgr_async_signal_gtest: Tests signal parsing and memory management for async API
+# Covers:
+#   - Safe parsing of signal data
+#   - Handling of malformed/NULL signal data
+#   - Memory allocation/deallocation during signal processing
+#   - Concurrent signal handling
+#   - Large signal data handling
+# Uses full async API implementation
+rdkFwupdateMgr_async_signal_gtest_SOURCES = rdkFwupdateMgr_async_signal_gtest.cpp \
+    ../librdkFwupdateMgr/src/rdkFwupdateMgr_async.c \
+    ../librdkFwupdateMgr/src/rdkFwupdateMgr_async_api.c
+
+rdkFwupdateMgr_async_signal_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -I../librdkFwupdateMgr/src -I../librdkFwupdateMgr/include $(GLIB_CFLAGS) -DASYNC_TEST
+rdkFwupdateMgr_async_signal_gtest_LDFLAGS = $(GLIB_LIBS) -lpthread
+rdkFwupdateMgr_async_signal_gtest_LDADD = $(COMMON_LDADD)
+rdkFwupdateMgr_async_signal_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
+rdkFwupdateMgr_async_signal_gtest_CFLAGS = $(COMMON_CXXFLAGS)
+
+# rdkFwupdateMgr_async_threadsafety_gtest: Tests thread safety for async API
+# Covers:
+#   - Concurrent registration from multiple threads
+#   - Concurrent cancellation
+#   - Concurrent signal processing
+#   - Registry lock contention
+#   - Data race detection (run with ThreadSanitizer)
+# Uses full async API implementation
+rdkFwupdateMgr_async_threadsafety_gtest_SOURCES = rdkFwupdateMgr_async_threadsafety_gtest.cpp \
+    ../librdkFwupdateMgr/src/rdkFwupdateMgr_async.c \
+    ../librdkFwupdateMgr/src/rdkFwupdateMgr_async_api.c
+
+rdkFwupdateMgr_async_threadsafety_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -I../librdkFwupdateMgr/src -I../librdkFwupdateMgr/include $(GLIB_CFLAGS) -DASYNC_TEST
+rdkFwupdateMgr_async_threadsafety_gtest_LDFLAGS = $(GLIB_LIBS) -lpthread
+rdkFwupdateMgr_async_threadsafety_gtest_LDADD = $(COMMON_LDADD)
+rdkFwupdateMgr_async_threadsafety_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
+rdkFwupdateMgr_async_threadsafety_gtest_CFLAGS = $(COMMON_CXXFLAGS)
+

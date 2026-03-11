@@ -19,12 +19,18 @@
 AM_CFLAGS = $(TRACE_CFLAGS)
 
 AM_CFLAGS += -Wall -Werror $(cjson_CFLAGS) $(curl_CFLAGS) $(CFLAGS)
+AM_CFLAGS += $(EXTENDED_LOGGER_FLAG)
 AM_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
 AM_LDFLAGS += $(cjson_LIBS) $(curl_LIBS) 
 AM_LDFLAGS += -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread -lrbus
 
+AM_CFLAGS += $(GLIB_CFLAGS)
+AM_LDFLAGS += $(GLIB_LIBS)
 # Build the RDK upgrade shared library
-lib_LTLIBRARIES = librdksw_upgrade.la librdksw_rfcIntf.la librdksw_iarmIntf.la librdksw_jsonparse.la librdksw_flash.la librdksw_fwutils.la
+lib_LTLIBRARIES = librdksw_upgrade.la librdksw_rfcIntf.la librdksw_iarmIntf.la librdksw_jsonparse.la librdksw_flash.la librdksw_fwutils.la librdkFwupdateMgr.la
+
+# Add librdkFwupdateMgr client library
+#lib_LTLIBRARIES += librdkFwupdateMgr.la
 
 librdksw_upgrade_la_SOURCES = \
     ${top_srcdir}/src/rdkv_upgrade.c\
@@ -115,6 +121,27 @@ librdksw_flash_la_LIBADD = $(AM_LDFLAGS)
 librdksw_fwutils_la_LDFLAGS = -shared
 librdksw_fwutils_la_LIBADD = $(AM_LDFLAGS)
 
+# Client Library Configuration - librdkFwupdateMgr.la
+#librdkFwupdateMgr_la_SOURCES = \
+#     ${top_srcdir}/librdkFwupdateMgr/src/
+#    #${top_srcdir}/librdkFwupdateMgr/src/handle_mgr.c \
+#    #${top_srcdir}/librdkFwupdateMgr/src/handle_registry.c \
+#    #${top_srcdir}/librdkFwupdateMgr/src/dbus_client.c \
+#    #${top_srcdir}/librdkFwupdateMgr/src/api_impl.c
+
+#librdkFwupdateMgr_la_CFLAGS = -fPIC \
+#    -I${top_srcdir}/librdkFwupdateMgr/include \
+#    -I${top_srcdir}/librdkFwupdateMgr/src \
+#    $(GLIB_CFLAGS) -Wall -Wextra -Werror
+
+#librdkFwupdateMgr_la_CPPFLAGS = -fPIC \
+#    -I${top_srcdir}/librdkFwupdateMgr/include \
+#    -I${top_srcdir}/librdkFwupdateMgr/src \
+#    $(GLIB_CFLAGS)
+
+#librdkFwupdateMgr_la_LDFLAGS = -shared -version-info 1:0:0
+#librdkFwupdateMgr_la_LIBADD = $(GLIB_LIBS) -lpthread
+
 # Library headers to install
 librdksw_upgrade_include_HEADERS = \
     ${top_srcdir}/src/include/rdkv_upgrade.h
@@ -130,15 +157,50 @@ librdksw_fwutils_include_HEADERS = \
     ${top_srcdir}/src/deviceutils/deviceutils.h \
     ${top_srcdir}/src/deviceutils/device_api.h
 
+# Library Public Header for dbus clients
+#librdkFwupdateMgr_include_HEADERS = \
+#    ${top_srcdir}/librdkFwupdateMgr/include/rdkFwupdateMgr_client.h
+
 librdksw_upgrade_includedir = ${includedir}
 librdksw_rfcIntf_includedir = ${includedir}
 librdksw_iarmIntf_includedir = ${includedir}
 librdksw_jsonparse_includedir = ${includedir}
 librdksw_flash_includedir = ${includedir}
 librdksw_fwutils_includedir = ${includedir}
+librdkFwupdateMgr_includedir = ${includedir}
 
-bin_PROGRAMS= rdkvfwupgrader
+# Shared/common headers not tied to specific libraries
+include_HEADERS = \
+    ${top_srcdir}/src/rbusInterface/rbusInterface.h \
+    ${top_srcdir}/src/include/device_status_helper.h
 
+# ========================================================================
+# librdkFwupdateMgr - Wrapper library 
+# Includes async CheckForUpdate API implementation (Phase 1-5 complete)
+# ========================================================================
+
+librdkFwupdateMgr_la_SOURCES = \
+    ${top_srcdir}/librdkFwupdateMgr/src/rdkFwupdateMgr_process.c \
+    ${top_srcdir}/librdkFwupdateMgr/src/rdkFwupdateMgr_log.c \
+    ${top_srcdir}/librdkFwupdateMgr/src/rdkFwupdateMgr_async.c \
+    ${top_srcdir}/librdkFwupdateMgr/src/rdkFwupdateMgr_api.c
+
+librdkFwupdateMgr_la_CFLAGS = -fPIC -I${top_srcdir}/librdkFwupdateMgr/include -I${top_srcdir}/librdkFwupdateMgr/src $(AM_CFLAGS) $(GLIB_CFLAGS)
+librdkFwupdateMgr_la_CPPFLAGS = -fPIC -I${top_srcdir}/librdkFwupdateMgr/include -I${top_srcdir}/librdkFwupdateMgr/src $(GLIB_CFLAGS)
+librdkFwupdateMgr_la_LDFLAGS = -shared -version-info 1:0:0
+librdkFwupdateMgr_la_LIBADD = $(GLIB_LIBS) -lpthread
+
+librdkFwupdateMgr_include_HEADERS = \
+    ${top_srcdir}/librdkFwupdateMgr/include/rdkFwupdateMgr_client.h 
+#    ${top_srcdir}/librdkFwupdateMgr/include/rdkFwupdateMgr_client.h
+
+librdkFwupdateMgr_includedir = ${includedir}/rdkFwupdateMgr
+
+# ========================================================================
+# Define all binaries to be installed
+# ========================================================================
+
+bin_PROGRAMS = rdkvfwupgrader rdkFwupdateMgr testClient
 
 rdkvfwupgrader_SOURCES = \
     ${top_srcdir}/src/rdkv_main.c \
@@ -150,17 +212,63 @@ rdkvfwupgrader_SOURCES = \
 rdkvfwupgrader_LDADD = librdksw_jsonparse.la librdksw_upgrade.la librdksw_rfcIntf.la librdksw_iarmIntf.la librdksw_flash.la librdksw_fwutils.la $(cjson_LIBS) $(curl_LIBS) -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread -lrbus
 rdkvfwupgrader_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
 
-rdkvfwupgrader_include_HEADERS = \
-    ${top_srcdir}/src/rbusInterface/rbusInterface.h \
-    ${top_srcdir}/src/include/rfcinterface.h \
-    ${top_srcdir}/src/include/iarmInterface.h \
-    ${top_srcdir}/src/include/device_status_helper.h
-
-rdkvfwupgrader_CFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
+rdkvfwupgrader_CFLAGS = $(AM_CFLAGS) -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
 rdkvfwupgrader_CPPFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils
 
+# D-Bus daemon binary - always build (removed conditional compilation)
+rdkFwupdateMgr_SOURCES = \
+    ${top_srcdir}/src/rdkFwupdateMgr.c\
+    ${top_srcdir}/src/chunk.c \
+    ${top_srcdir}/src/device_status_helper.c \
+    ${top_srcdir}/src/rbusInterface/rbusInterface.c \
+    ${top_srcdir}/src/dbus/rdkv_dbus_server.c \
+    ${top_srcdir}/src/dbus/rdkFwupdateMgr_handlers.c \
+    ${top_srcdir}/src/dbus/xconf_comm_status.c
 
-rdkvfwupgrader_includedir = ${includedir}
+# Link against the RDK upgrade shared library AND new interface libraries
+rdkFwupdateMgr_LDADD = librdksw_jsonparse.la librdksw_upgrade.la librdksw_rfcIntf.la librdksw_iarmIntf.la librdksw_flash.la librdksw_fwutils.la $(cjson_LIBS) $(curl_LIBS) -lrdkloggers -ldwnlutil -lfwutils -lsecure_wrapper -lparsejson -lpthread -lrbus $(GLIB_LIBS)
+
+rdkFwupdateMgr_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
+rdkFwupdateMgr_include_HEADERS = \
+    ${top_srcdir}/src/dbus/rdkv_dbus_server.h \
+    ${top_srcdir}/src/dbus/rdkFwupdateMgr_handlers.h \
+    ${top_srcdir}/src/dbus/xconf_comm_status.h
+
+rdkFwupdateMgr_CFLAGS = $(AM_CFLAGS) -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/dbus $(GLIB_CFLAGS)
+rdkFwupdateMgr_CPPFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils -I${top_srcdir}/src/dbus $(GLIB_CFLAGS)
+
+rdkFwupdateMgr_includedir = ${includedir}
+
+# Test client binary - always build (removed conditional compilation)
+testClient_SOURCES = \
+    ${top_srcdir}/src/test/testClient.c
+
+# Test client needs explicit GLib/GDBus linking for ARM cross-compilation
+testClient_LDADD = $(GLIB_LIBS) -lgio-2.0 -lgobject-2.0 -lglib-2.0 -lpthread
+testClient_LDFLAGS = -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
+testClient_CFLAGS = $(GLIB_CFLAGS) -Wall
+testClient_CPPFLAGS = $(GLIB_CFLAGS)
+
+
+# Build and install the example_plugin binary
+bin_PROGRAMS += example_plugin
+
+example_plugin_SOURCES = \
+    ${top_srcdir}/librdkFwupdateMgr/examples/example_app.c
+
+example_plugin_CFLAGS = \
+    -I${top_srcdir}/librdkFwupdateMgr/include \
+    $(AM_CFLAGS) \
+    $(GLIB_CFLAGS)
+
+example_plugin_LDADD = \
+    librdkFwupdateMgr.la \
+    $(GLIB_LIBS) \
+    -lpthread
+
+example_plugin_LDFLAGS = \
+    -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
+
 
 if INSTALL_TEST_FWUPGRADER
 bin_PROGRAMS += testrdkvfwupgrader
@@ -170,26 +278,24 @@ testrdkvfwupgrader_SOURCES = \
 
 testrdkvfwupgrader_CFLAGS = $(AM_CFLAGS) $(TEST_FWUPGRADER_CFLAGS)
 testrdkvfwupgrader_LDADD = -lIARMBus $(AM_LDFLAGS) librdksw_jsonparse.la
-
-testrdkvfwupgrader_include_HEADERS = \
-    ${top_srcdir}/test/testiarmInterface.h
-
-testrdkvfwupgrader_includedir = ${includedir}
 endif
 
 
 if IS_TELEMETRY2_ENABLED
 rdkvfwupgrader_CFLAGS +=  $(T2_EVENT_FLAG)
+rdkFwupdateMgr_CFLAGS +=  $(T2_EVENT_FLAG)
 AM_LDFLAGS += -ltelemetry_msgsender -lt2utils
 endif
 
 if IS_LIBRFCAPI_ENABLED
 rdkvfwupgrader_CFLAGS += $(LIBRFCAPI_FLAG)
+rdkFwupdateMgr_CFLAGS += $(LIBRFCAPI_FLAG)
 AM_LDFLAGS += -lrfcapi
 endif
 
 if IS_IARMEVENT_ENABLED
 rdkvfwupgrader_CFLAGS += $(IARM_EVENT_FLAG)
+rdkFwupdateMgr_CFLAGS += $(IARM_EVENT_FLAG)
 testrdkvfwupgrader_CFLAGS = $(IARM_EVENT_FLAG)
 AM_LDFLAGS += -lIARMBus
 endif
@@ -197,11 +303,12 @@ endif
 if IS_LIBRDKCERTSEL_ENABLED
 librdksw_upgrade_la_CFLAGS += $(LIBRDKCERTSEL_FLAG)
 rdkvfwupgrader_CFLAGS += $(LIBRDKCERTSEL_FLAG)
+rdkFwupdateMgr_CFLAGS += $(LIBRDKCERTSEL_FLAG)
 AM_LDFLAGS += -lRdkCertSelector
 endif
 
 if IS_LIBRDKCONFIG_ENABLED
 rdkvfwupgrader_CFLAGS += $(LIBRDKCONFIG_FLAG)
+rdkFwupdateMgr_CFLAGS += $(LIBRDKCONFIG_FLAG)
 AM_LDFLAGS += -lrdkconfig
 endif
-

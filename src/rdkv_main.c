@@ -53,6 +53,9 @@
 #include <string.h>
 #include <strings.h>
 
+#ifdef USE_EXTENDED_LOGGER_INIT
+#include "rdk_logger.h"  /* For rdk_logger_ext_init and types */
+#endif
 #define JSON_STR_LEN        1000
 
 #define DOWNLOADED_PERIPHERAL_VERSION "/tmp/downloaded_peripheral_versions.txt"
@@ -495,7 +498,21 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
                     peripheral_context.rfc_list = &rfc_list;
 
                     iCurlCode = rdkv_upgrade_request(&peripheral_context, &curl, &http_code);
-                    if( iCurlCode == 0 && http_code == 200 )
+                    
+                    // Handle library-specific errors (negative values)
+                    if (iCurlCode < 0) {
+                        SWLOG_ERROR("%s: Peripheral upgrade failed with library error: %s (code: %d)\n",
+                                   __FUNCTION__, rdkv_upgrade_strerror(iCurlCode), iCurlCode);
+                        
+                        // CLI binary can exit on fatal library errors
+                        if (iCurlCode == RDKV_UPGRADE_ERROR_THROTTLE_ZERO || 
+                            iCurlCode == RDKV_UPGRADE_ERROR_FORCE_EXIT) {
+                            SWLOG_INFO("%s: Fatal library error, exiting process\n", __FUNCTION__);
+                            uninitialize(INITIAL_VALIDATION_SUCCESS);
+                            exit(1);
+                        }
+                        iRet = -1;
+                    } else if( iCurlCode == 0 && http_code == 200 )
                     {
                         if( szRunningLen )
                         {
@@ -545,7 +562,6 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
 
     return iRet;
 }
-
 
 int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
 {
@@ -613,9 +629,10 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
             fprintf(fp, "%s\n", imageHTTPURL);
             fclose(fp);
         }
-        snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s", device_info.difw_path, pResponse->cloudFWFile);
-	    SWLOG_INFO("DWNL path with img name=%s\n", dwlpath_filename);
-        eraseFolderExcePramaFile(device_info.difw_path, pResponse->cloudFWFile, device_info.model);
+	snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s", device_info.difw_path, pResponse->cloudFWFile);
+	SWLOG_INFO("DWNL path with img name=%s\n", dwlpath_filename);
+	eraseFolderExceParamFile(device_info.difw_path, pResponse->cloudFWFile, pResponse->cloudPDRIVersion,device_info.model);
+	
 
         // context structure for PCI rdkv_upgrade_request
         RdkUpgradeContext_t pci_context = {0};
@@ -634,6 +651,20 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
         pci_context.rfc_list = &rfc_list;
 
         pci_curl_code = rdkv_upgrade_request(&pci_context, &curl, &http_code);
+        
+        // Handle library-specific errors (negative values)
+        if (pci_curl_code < 0) {
+            SWLOG_ERROR("%s: PCI upgrade failed with library error: %s (code: %d)\n",
+                       __FUNCTION__, rdkv_upgrade_strerror(pci_curl_code), pci_curl_code);
+            
+            // CLI binary can exit on fatal library errors
+            if (pci_curl_code == RDKV_UPGRADE_ERROR_THROTTLE_ZERO || 
+                pci_curl_code == RDKV_UPGRADE_ERROR_FORCE_EXIT) {
+                SWLOG_INFO("%s: Fatal library error, exiting process\n", __FUNCTION__);
+                uninitialize(INITIAL_VALIDATION_SUCCESS);
+                exit(1);
+            }
+        }
     } else {
         SWLOG_INFO("checkForValidPCIUpgrade return false\n");
         pci_curl_code = 0;
@@ -676,6 +707,21 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
             pdri_context.rfc_list = &rfc_list;
 
             pdri_curl_code = rdkv_upgrade_request(&pdri_context, &curl, &http_code);
+            
+            // Handle library-specific errors (negative values)
+            if (pdri_curl_code < 0) {
+                SWLOG_ERROR("%s: PDRI upgrade failed with library error: %s (code: %d)\n",
+                           __FUNCTION__, rdkv_upgrade_strerror(pdri_curl_code), pdri_curl_code);
+                
+                // CLI binary can exit on fatal library errors
+                if (pdri_curl_code == RDKV_UPGRADE_ERROR_THROTTLE_ZERO || 
+                    pdri_curl_code == RDKV_UPGRADE_ERROR_FORCE_EXIT) {
+                    SWLOG_INFO("%s: Fatal library error, exiting process\n", __FUNCTION__);
+                    uninitialize(INITIAL_VALIDATION_SUCCESS);
+                    exit(1);
+                }
+            }
+            
             snprintf(disableStatsUpdate, sizeof(disableStatsUpdate), "%s","no");
             if (pdri_curl_code == 100) {
                 pdri_curl_code = 0;
@@ -798,7 +844,21 @@ static int MakeXconfComms( XCONFRES *pResponse, int server_type, int *pHttp_code
                     xconf_context.rfc_list = &rfc_list;
 
                     ret = rdkv_upgrade_request(&xconf_context, &curl, pHttp_code);
-                    if( ret == 0 && *pHttp_code == 200 && DwnLoc.pvOut != NULL )
+                    
+                    // Handle library-specific errors (negative values)
+                    if (ret < 0) {
+                        SWLOG_ERROR("%s: XCONF upgrade failed with library error: %s (code: %d)\n",
+                                   __FUNCTION__, rdkv_upgrade_strerror(ret), ret);
+                        
+                        // CLI binary can exit on fatal library errors
+                        if (ret == RDKV_UPGRADE_ERROR_THROTTLE_ZERO || 
+                            ret == RDKV_UPGRADE_ERROR_FORCE_EXIT) {
+                            SWLOG_INFO("%s: Fatal library error, exiting process\n", __FUNCTION__);
+                            uninitialize(INITIAL_VALIDATION_SUCCESS);
+                            exit(1);
+                        }
+                        // For non-fatal errors, ret is already < 0, will be handled by existing error logic
+                    } else if( ret == 0 && *pHttp_code == 200 && DwnLoc.pvOut != NULL )
                     {
                         SWLOG_INFO( "MakeXconfComms: Calling getXconfRespData with input = %s\n", (char *)DwnLoc.pvOut );
                         ret = getXconfRespData( pResponse, (char *)DwnLoc.pvOut );
@@ -996,7 +1056,20 @@ int main(int argc, char *argv[]) {
 
     rdkv_newaction.sa_sigaction = handle_signal;
     rdkv_newaction.sa_flags = SA_ONSTACK | SA_SIGINFO;
+    
+#ifdef USE_EXTENDED_LOGGER_INIT
+    rdk_logger_ext_config_t config = {
+        .pModuleName = "LOG.RDK.FWUPG",           /* Module name */
+        .loglevel = RDK_LOG_INFO,                 /* Default log level */
+        .output = RDKLOG_OUTPUT_CONSOLE,          /* Output to console (stdout/stderr) */
+        .format = RDKLOG_FORMAT_WITH_TS,          /* Timestamped format */
+        .pFilePolicy = NULL                       /* Not using file output, so NULL */
+    };
+    rdk_logger_ext_init(&config);
+#else
     log_init();
+#endif
+    
     ret_sig = sigaction(SIGUSR1, &rdkv_newaction, NULL);
     if (ret_sig == -1) {
         SWLOG_ERROR( "SIGUSR1 handler install fail\n");
@@ -1012,6 +1085,7 @@ int main(int argc, char *argv[]) {
     *response.cloudImmediateRebootFlag = 0;
     *response.peripheralFirmwares = 0;
     *response.dlCertBundle = 0;
+    *response.dlAppBundle = 0;
     *response.cloudPDRIVersion = 0;
     SWLOG_INFO("Starting c method rdkvfwupgrader\n");
     t2CountNotify("SYST_INFO_C_CDL", 1);

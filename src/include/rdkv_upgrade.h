@@ -1,3 +1,20 @@
+/*
+ * Copyright 2023 Comcast Cable Communications Management, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #ifndef RDKV_UPGRADE_H_
 #define RDKV_UPGRADE_H_
 
@@ -13,6 +30,24 @@ extern "C" {
 #ifdef GTEST_ENABLE
 #include "miscellaneous.h"
 #endif
+
+/**
+ * @brief Library error codes for upgrade operations
+ * NOTE: All values are negative to distinguish from CURL error codes (positive)
+ */
+typedef enum {
+    RDKV_UPGRADE_SUCCESS = 0,
+    RDKV_UPGRADE_ERROR_THROTTLE_ZERO = -100,  // Throttle speed = 0
+    RDKV_UPGRADE_ERROR_FORCE_EXIT = -101,      // Force exit (curl 23)
+} rdkv_upgrade_error_t;
+
+/**
+ * @brief Convert error code to human-readable string
+ * @param error Error code (can be library error or CURL error)
+ * @return Human-readable error message
+ */
+const char* rdkv_upgrade_strerror(int error);
+
 /**
  * @brief Input context structure for rdkv_upgrade_request function
  * Contains all input parameters passed to the upgrade request function
@@ -31,6 +66,9 @@ typedef struct {
     int* force_exit;                         //    Force exit flag pointer
     int trigger_type;                        //    Trigger type
     const Rfc_t* rfc_list;                  //     RFC list
+    int download_only;                       //     If non-zero, skip flashing (download-only mode for D-Bus API)
+    //void (*progress_callback)(unsigned long long current_bytes, unsigned long long total_bytes, void* user_data); // Progress callback
+    //void* progress_callback_data;            //     User data for progress callback
 } RdkUpgradeContext_t;
 
 /**
@@ -42,13 +80,61 @@ typedef struct {
  */
 int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* pHttp_code);
 
-int downloadFile( int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char* pPostFields, int *httpCode, void **curl, int *force_exit, const char *immed_reboot_flag, const DeviceProperty_t *device_info,const char *lastrun,const Rfc_t *rfc_list,char *disableStatsUpdate);
+/**
+ * @brief Download firmware file directly (HTTP/HTTPS)
+ * @param context Upgrade context containing all download parameters
+ * @param httpCode Output parameter for HTTP response code
+ * @param curl Output parameter for CURL handle
+ * @return CURL error code (0 = success)
+ */
+int downloadFile(
+    const RdkUpgradeContext_t* context,
+    int *httpCode,
+    void **curl
+);
 
-int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char *pPostFields, int *httpCode, void **curl, int *force_exit, const char *immed_reboot_flag, const DeviceProperty_t *device_info,const char *lastrun,const Rfc_t *rfc_list,char *disableStatsUpdate);
+/**
+ * @brief Download firmware file via CodeBig proxy
+ * @param context Upgrade context containing all download parameters
+ * @param httpCode Output parameter for HTTP response code
+ * @param curl Output parameter for CURL handle
+ * @return CURL error code (0 = success)
+ */
+int codebigdownloadFile(
+    const RdkUpgradeContext_t* context,
+    int *httpCode,
+    void **curl
+);
 
-int retryDownload(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char *pPostFields, int retry_cnt, int delay, int *httpCode, void **curl, int *force_exit, const char *immed_reboot_flag, const DeviceProperty_t *device_info,const char *lastrun,const Rfc_t *rfc_list, char *disableStatsUpdate);
+/**
+ * @brief Retry firmware download with exponential backoff
+ * @param context Upgrade context containing all download parameters
+ * @param retry_cnt Number of retry attempts
+ * @param delay Delay between retries (seconds)
+ * @param httpCode Output parameter for HTTP response code
+ * @param curl Output parameter for CURL handle
+ * @return CURL error code (0 = success)
+ */
+int retryDownload(
+    const RdkUpgradeContext_t* context,
+    int retry_cnt,
+    int delay,
+    int *httpCode,
+    void **curl
+);
 
-int fallBack(int server_type, const char* artifactLocationUrl, const void* localDownloadLocation, char *pPostFields, int *httpCode, void **curl, int *force_exit,const char *immed_reboot_flag, const DeviceProperty_t *device_info,const char *lastrun,const Rfc_t *rfc_list, char *disableStatsUpdate);
+/**
+ * @brief Fallback to alternate download method (Direct↔CodeBig)
+ * @param context Upgrade context containing all download parameters
+ * @param httpCode Output parameter for HTTP response code
+ * @param curl Output parameter for CURL handle
+ * @return CURL error code (0 = success)
+ */
+int fallBack(
+    const RdkUpgradeContext_t* context,
+    int *httpCode,
+    void **curl
+);
 
 
 void dwnlError(int curl_code, int http_code, int server_type,const DeviceProperty_t *device_info,const char *lastrun, char *disableStatsUpdate);
@@ -61,3 +147,4 @@ void Upgradet2ValNotify( char *marker, char *val );
 #endif
 
 #endif /* RDKV_UPGRADE_H_ */
+

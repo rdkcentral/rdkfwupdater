@@ -55,7 +55,7 @@ def test_dwnl_firmware_test():
     remove_file("/tmp/.xconfssrdownloadurl")
     route_file = Path("/tmp/pdri_image_file")
     route_file.touch(exist_ok=True)
-    write_on_file("/tmp/pdri_image_file ", "ABCD_PDRI_img")
+    write_on_file("/tmp/pdri_image_file", "ABCD_PDRI_img")
     result = subprocess.run(['rdkvfwupgrader', '0', '1'], stdout=subprocess.PIPE)
     assert result.returncode == 0
 
