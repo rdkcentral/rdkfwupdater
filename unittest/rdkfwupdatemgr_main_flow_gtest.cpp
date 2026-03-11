@@ -36,7 +36,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <signal.h>
-
+#include "deviceutils_mock_global.h"
 extern "C" {
 #include "rdkv_cdl_log_wrapper.h"
 #include "miscellaneous.h"
@@ -81,7 +81,7 @@ using namespace std;
 
 // Instantiate the global mock object for deviceutils_mock
 DeviceUtilsMock Deviceglobal;
-DeviceUtilsMock *g_DeviceUtilsMock = &Deviceglobal;
+//DeviceUtilsMock *g_DeviceUtilsMock = &Deviceglobal;
 
 // Test file paths
 #define TEST_CDL_FLASHED_IMAGE          "/tmp/test_cdl_flashed_file_name"
