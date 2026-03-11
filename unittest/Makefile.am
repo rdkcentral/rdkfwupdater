@@ -18,7 +18,7 @@
 AUTOMAKE_OPTIONS = subdir-objects
 
 # Define the program name and the source files
-bin_PROGRAMS = rdkfw_device_status_gtest rdkfw_deviceutils_gtest rdkfw_main_gtest rdkfw_interface_gtest rdkfwupdatemgr_main_flow_gtest rdkFwupdateMgr_handlers_gtest dbus_handlers_gtest
+bin_PROGRAMS = rdkfw_device_status_gtest rdkfw_deviceutils_gtest rdkfw_main_gtest rdkfw_interface_gtest rdkfwupdatemgr_main_flow_gtest rdkFwupdateMgr_handlers_gtest dbus_handlers_gtest rdkFwupdateMgr_async_refcount_gtest rdkFwupdateMgr_async_stress_gtest rdkFwupdateMgr_async_cleanup_gtest rdkFwupdateMgr_async_signal_gtest rdkFwupdateMgr_async_threadsafety_gtest
 #bin_PROGRAMS = rdkfw_device_status_gtest rdkfw_deviceutils_gtest rdkfw_main_gtest rdkfw_interface_gtest  dbus_handlers_gtest
 # Define the include directories
 # NOTE: We explicitly use -I. to prioritize local test headers over system headers
@@ -165,4 +165,93 @@ dbus_handlers_gtest_LDFLAGS = $(shell pkg-config --libs glib-2.0)
 dbus_handlers_gtest_LDADD = $(COMMON_LDADD)
 dbus_handlers_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
 dbus_handlers_gtest_CFLAGS = $(COMMON_CXXFLAGS)
+
+# rdkFwupdateMgr_async_refcount_gtest: Tests reference counting for async API
+# Covers:
+#   - Basic reference counting operations (ref/unref)
+#   - Thread-safe concurrent ref/unref
+#   - Cleanup at zero refcount
+#   - Prevention of use-after-free and double-free
+# Uses internal async implementation files
+rdkFwupdateMgr_async_refcount_gtest_SOURCES = rdkFwupdateMgr_async_refcount_gtest.cpp \
+    ../librdkFwupdateMgr/src/rdkFwupdateMgr_async.c \
+    ../librdkFwupdateMgr/src/rdkFwupdateMgr_async_api.c
+
+rdkFwupdateMgr_async_refcount_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -I../librdkFwupdateMgr/src -I../librdkFwupdateMgr/include $(GLIB_CFLAGS) -DASYNC_TEST
+rdkFwupdateMgr_async_refcount_gtest_LDFLAGS = $(GLIB_LIBS) -lpthread
+rdkFwupdateMgr_async_refcount_gtest_LDADD = $(COMMON_LDADD)
+rdkFwupdateMgr_async_refcount_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
+rdkFwupdateMgr_async_refcount_gtest_CFLAGS = $(COMMON_CXXFLAGS)
+
+# rdkFwupdateMgr_async_stress_gtest: Stress tests for async API
+# Covers:
+#   - Concurrent registrations (1000+ operations)
+#   - Registry exhaustion and recovery
+#   - Rapid register/cancel cycles
+#   - Memory stability under load
+#   - Performance benchmarks
+# Uses full async API implementation
+rdkFwupdateMgr_async_stress_gtest_SOURCES = rdkFwupdateMgr_async_stress_gtest.cpp \
+    ../librdkFwupdateMgr/src/rdkFwupdateMgr_async.c \
+    ../librdkFwupdateMgr/src/rdkFwupdateMgr_async_api.c
+
+rdkFwupdateMgr_async_stress_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -I../librdkFwupdateMgr/src -I../librdkFwupdateMgr/include $(GLIB_CFLAGS) -DASYNC_TEST
+rdkFwupdateMgr_async_stress_gtest_LDFLAGS = $(GLIB_LIBS) -lpthread
+rdkFwupdateMgr_async_stress_gtest_LDADD = $(COMMON_LDADD)
+rdkFwupdateMgr_async_stress_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
+rdkFwupdateMgr_async_stress_gtest_CFLAGS = $(COMMON_CXXFLAGS)
+
+# rdkFwupdateMgr_async_cleanup_gtest: Tests cleanup and deinitialization for async API
+# Covers:
+#   - Cleanup with no active callbacks
+#   - Cleanup with pending callbacks
+#   - Cleanup with completed callbacks
+#   - Multiple init/cleanup cycles
+#   - Cleanup cancels pending operations
+# Uses full async API implementation
+rdkFwupdateMgr_async_cleanup_gtest_SOURCES = rdkFwupdateMgr_async_cleanup_gtest.cpp \
+    ../librdkFwupdateMgr/src/rdkFwupdateMgr_async.c \
+    ../librdkFwupdateMgr/src/rdkFwupdateMgr_async_api.c
+
+rdkFwupdateMgr_async_cleanup_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -I../librdkFwupdateMgr/src -I../librdkFwupdateMgr/include $(GLIB_CFLAGS) -DASYNC_TEST
+rdkFwupdateMgr_async_cleanup_gtest_LDFLAGS = $(GLIB_LIBS) -lpthread
+rdkFwupdateMgr_async_cleanup_gtest_LDADD = $(COMMON_LDADD)
+rdkFwupdateMgr_async_cleanup_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
+rdkFwupdateMgr_async_cleanup_gtest_CFLAGS = $(COMMON_CXXFLAGS)
+
+# rdkFwupdateMgr_async_signal_gtest: Tests signal parsing and memory management for async API
+# Covers:
+#   - Safe parsing of signal data
+#   - Handling of malformed/NULL signal data
+#   - Memory allocation/deallocation during signal processing
+#   - Concurrent signal handling
+#   - Large signal data handling
+# Uses full async API implementation
+rdkFwupdateMgr_async_signal_gtest_SOURCES = rdkFwupdateMgr_async_signal_gtest.cpp \
+    ../librdkFwupdateMgr/src/rdkFwupdateMgr_async.c \
+    ../librdkFwupdateMgr/src/rdkFwupdateMgr_async_api.c
+
+rdkFwupdateMgr_async_signal_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -I../librdkFwupdateMgr/src -I../librdkFwupdateMgr/include $(GLIB_CFLAGS) -DASYNC_TEST
+rdkFwupdateMgr_async_signal_gtest_LDFLAGS = $(GLIB_LIBS) -lpthread
+rdkFwupdateMgr_async_signal_gtest_LDADD = $(COMMON_LDADD)
+rdkFwupdateMgr_async_signal_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
+rdkFwupdateMgr_async_signal_gtest_CFLAGS = $(COMMON_CXXFLAGS)
+
+# rdkFwupdateMgr_async_threadsafety_gtest: Tests thread safety for async API
+# Covers:
+#   - Concurrent registration from multiple threads
+#   - Concurrent cancellation
+#   - Concurrent signal processing
+#   - Registry lock contention
+#   - Data race detection (run with ThreadSanitizer)
+# Uses full async API implementation
+rdkFwupdateMgr_async_threadsafety_gtest_SOURCES = rdkFwupdateMgr_async_threadsafety_gtest.cpp \
+    ../librdkFwupdateMgr/src/rdkFwupdateMgr_async.c \
+    ../librdkFwupdateMgr/src/rdkFwupdateMgr_async_api.c
+
+rdkFwupdateMgr_async_threadsafety_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -I../librdkFwupdateMgr/src -I../librdkFwupdateMgr/include $(GLIB_CFLAGS) -DASYNC_TEST
+rdkFwupdateMgr_async_threadsafety_gtest_LDFLAGS = $(GLIB_LIBS) -lpthread
+rdkFwupdateMgr_async_threadsafety_gtest_LDADD = $(COMMON_LDADD)
+rdkFwupdateMgr_async_threadsafety_gtest_CXXFLAGS = $(COMMON_CXXFLAGS)
+rdkFwupdateMgr_async_threadsafety_gtest_CFLAGS = $(COMMON_CXXFLAGS)
 
