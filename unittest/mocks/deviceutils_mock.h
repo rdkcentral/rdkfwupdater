@@ -25,17 +25,16 @@
 //#include "rdk_fwdl_utils.h"  // For BUILDTYPE enum
 #define RDK_API_SUCCESS 0
 
-/* RFCVALDATATYPE is defined in rfcinterface.h but we cannot include it here
- * because rfcinterface.h declares functions without extern "C", causing linkage
- * conflicts with the extern "C" mock definitions in deviceutils_mock.cpp.
- * Only define if not already provided by another header. */
-#ifndef VIDEO_RFCINTERFACE_RFCINTERFACE_H_
-typedef enum
-{
-  RFC_STRING=1,
-  RFC_BOOL,
-  RFC_UINT
-}RFCVALDATATYPE;
+/* RFCVALDATATYPE is defined in rfcinterface.h. Include it here inside an
+ * extern "C" block so that the C symbols use C linkage in C++ tests and
+ * we avoid duplicating the typedef, which can cause redefinition errors
+ * when include order varies. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+#include "rfcinterface.h"
+#ifdef __cplusplus
+}
 #endif
 
 class DeviceUtilsInterface
