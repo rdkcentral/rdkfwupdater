@@ -22,6 +22,7 @@
 #ifndef GTEST_ENABLE
 #include "rdk_fwdl_utils.h"
 #include "system_utils.h"
+#include "rdkv_upgrade.h"
 #endif
 
 /*
@@ -215,12 +216,16 @@ int isIncremetalCDLEnable(const char *file_name)
     int chunk_dwld = 0;
     int ret = -1;
     char rfc_data[RFC_VALUE_BUF_SIZE];
+    char headerfile[136];
+    size_t content_len = 0;
 
     if (file_name == NULL) {
         SWLOG_ERROR("%s : Parameter is NULL\n", __FUNCTION__);
         return chunk_dwld;
     }
     SWLOG_INFO("%s: Checking IncremetalCDLEnable... Download image name=%s\n", __FUNCTION__, file_name);
+
+    snprintf(headerfile, sizeof(headerfile), "%s.header", file_name);
 
     *rfc_data = 0;
     ret = read_RFCProperty("IncrementalCDL", RFC_INCR_CDL, rfc_data, sizeof(rfc_data));
@@ -230,12 +235,22 @@ int isIncremetalCDLEnable(const char *file_name)
     }else {
         SWLOG_INFO("%s: rfc IncrementalCDL= %s\n", __FUNCTION__, rfc_data);
     }
-
+     
     if((strncmp(rfc_data, "true", 4)) == 0) {
         SWLOG_INFO("%s :  incremental cdl is TRUE\n", __FUNCTION__);
         if((filePresentCheck(file_name)) == 0) {
-            chunk_dwld = 1;
-            SWLOG_INFO("%s: File=%s is present. IncrementalCDL enable=%d\n",__FUNCTION__, file_name, chunk_dwld);
+            if (0 < (getFileSize(file_name)) && (filePresentCheck(headerfile)) == 0 ) {
+		content_len = getContentLength(headerfile);
+		if(content_len > 0) {
+                chunk_dwld = 1;
+                SWLOG_INFO("%s: File=%s is present. IncrementalCDL enable=%d\n",__FUNCTION__, file_name, chunk_dwld);
+		}
+            } else {
+                unlink(file_name);
+                if ((filePresentCheck(headerfile)) == 0) {
+                    unlink(headerfile);
+                }
+            }
         }
     }
     return chunk_dwld;
