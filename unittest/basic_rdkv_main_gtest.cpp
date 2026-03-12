@@ -93,6 +93,7 @@ extern "C" {
     int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* pHttp_code);
     size_t getContentLength(const char *file);
     int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_limit, int *httpcode);
+    int write_RFCProperty(char* type, const char* key, const char *data, RFCVALDATATYPE datatype);
 }
 
 TEST(getContentLengthTest,TestSuccess){
