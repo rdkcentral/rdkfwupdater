@@ -19,6 +19,7 @@
 #include "rfcinterface.h"
 
 #include "rdkv_cdl_log_wrapper.h"
+#include "rdkv_upgrade.h"
 #ifndef GTEST_ENABLE
 #include "rdk_fwdl_utils.h"
 #include "system_utils.h"
@@ -215,6 +216,8 @@ int isIncremetalCDLEnable(const char *file_name)
     int chunk_dwld = 0;
     int ret = -1;
     char rfc_data[RFC_VALUE_BUF_SIZE];
+    char headerfile[136];
+    size_t content_len = 0;
 
     if (file_name == NULL) {
         SWLOG_ERROR("%s : Parameter is NULL\n", __FUNCTION__);
@@ -222,6 +225,7 @@ int isIncremetalCDLEnable(const char *file_name)
     }
     SWLOG_INFO("%s: Checking IncremetalCDLEnable... Download image name=%s\n", __FUNCTION__, file_name);
 
+    snprintf(headerfile, sizeof(headerfile), "%s.header", file_name);
     *rfc_data = 0;
     ret = read_RFCProperty("IncrementalCDL", RFC_INCR_CDL, rfc_data, sizeof(rfc_data));
     if(ret == -1) {
@@ -234,8 +238,22 @@ int isIncremetalCDLEnable(const char *file_name)
     if((strncmp(rfc_data, "true", 4)) == 0) {
         SWLOG_INFO("%s :  incremental cdl is TRUE\n", __FUNCTION__);
         if((filePresentCheck(file_name)) == 0) {
-            chunk_dwld = 1;
-            SWLOG_INFO("%s: File=%s is present. IncrementalCDL enable=%d\n",__FUNCTION__, file_name, chunk_dwld);
+            if (0 < (getFileSize(file_name)) && (filePresentCheck(headerfile)) == 0 ) {
+                content_len = getContentLength(headerfile);
+                if(content_len > 0) {
+                    chunk_dwld = 1;
+                    SWLOG_INFO("%s: File=%s is present. IncrementalCDL enable=%d\n",__FUNCTION__, file_name, chunk_dwld);
+                } else {
+                    /* Invalid or missing Content-Length: remove partial download */
+                    unlink(file_name);
+                    unlink(headerfile);
+                }
+            } else {
+                unlink(file_name);
+                if ((filePresentCheck(headerfile)) == 0) {
+                    unlink(headerfile);
+                }
+            }
         }
     }
     return chunk_dwld;
