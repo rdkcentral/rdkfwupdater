@@ -101,23 +101,62 @@ echo "Running L2 Integration Tests"
 echo "=========================================="
 echo ""
 
+# ========================================
+# PHASE 1: Standard Certificate Tests (client.p12)
+# ========================================
+
+echo "[Phase 1/3] Running standard tests with normal certificates..."
 # Run all existing tests
-echo "[1/2] Running existing image download tests..."
+echo "Running existing image download tests..."
 pytest --json-report --json-report-file $RESULT_DIR/rdkfwupdater_image_tests.json \
        test/functional-tests/tests/test_imagedwnl.py \
        test/functional-tests/tests/test_imagedwnl_error.py \
        test/functional-tests/tests/test_certbundle_dwnl.py \
        test/functional-tests/tests/test_peripheral_imagedwnl.py
 
+# ========================================
+# PHASE 2: D-Bus Handler and Cache Tests
+# ========================================
+
 # Run new D-Bus handler and cache tests
 echo ""
-echo "[2/2] Running D-Bus handler and cache tests..."
+echo "[Phase 2/3] Running D-Bus handler and cache tests..."
 pytest -v -s --json-report --json-report-file $RESULT_DIR/rdkfwupdater_dbus_tests.json \
 	test/functional-tests/tests/test_dbus_DownloadFirmware.py \
 	test/functional-tests/tests/test_dbus_UnregisterProcess.py  \
 	test/functional-tests/tests/test_dbus_CheckForUpdate.py \
 	test/functional-tests/tests/test_dbus_RegisterProcess.py \
 	test/functional-tests/tests/test_dbus_UpdateFirmware.py
+
+# ========================================
+# PHASE 3: PKCS#11 Certificate Fallback Test (if enabled)
+# ========================================
+
+if [ "$ENABLE_PKCS11" = "true" ]; then
+    echo ""
+    echo "=========================================="
+    echo "[Phase 3/3] PKCS#11 Certificate Fallback Test"
+    echo "=========================================="
+    echo ""
+    echo "Note: This phase tests PKCS#11 behavior when reference.p12 is not available."
+    echo "      It validates certselector fallback to client.p12/client.pem"
+    echo "      when reference.p12 is missing or unavailable."
+    echo ""
+    
+    # Run PKCS#11 fallback test (removes reference.p12, verifies fallback to client.p12/client.pem)
+    echo "Running certificate fallback test..."
+    pytest -v -s --json-report --json-report-file $RESULT_DIR/rdkfwupdater_pkcs11_fallback_tests.json \
+           test/functional-tests/tests/test_pkcs11_fallback.py
+    
+    echo ""
+    echo "PKCS#11 fallback test report: $RESULT_DIR/rdkfwupdater_pkcs11_fallback_tests.json"
+else
+    echo ""
+    echo "=========================================="
+    echo "PKCS#11 fallback test skipped (ENABLE_PKCS11 not set)"
+    echo "To enable: export ENABLE_PKCS11=true"
+    echo "=========================================="
+fi
 
 echo ""
 echo "=========================================="
