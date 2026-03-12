@@ -19,10 +19,10 @@
 #include "rfcinterface.h"
 
 #include "rdkv_cdl_log_wrapper.h"
+#include "rdkv_upgrade.h"
 #ifndef GTEST_ENABLE
 #include "rdk_fwdl_utils.h"
 #include "system_utils.h"
-#include "rdkv_upgrade.h"
 #endif
 
 /*
