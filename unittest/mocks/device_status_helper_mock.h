@@ -52,7 +52,7 @@ class DeviceStatusInterface
 	virtual int filePresentCheck(const char *filename) = 0;
 	virtual bool isConnectedToInternet () = 0;
 	//virtual int updateFWDownloadStatus(struct FWDownloadStatus *fwdls, const char *disableStatsUpdate) = 0;
-	virtual int write_RFCProperty(const char *key, const char *value, RFCVALDATATYPE datatype) = 0;
+	virtual int write_RFCProperty(char* type, const char *key, const char *value, RFCVALDATATYPE datatype) = 0;
 	virtual void uninitialize(int data) = 0;
 	virtual void eventManager(const char *cur_event_name, const char *event_status) = 0;
 	virtual size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize ) = 0;
@@ -89,7 +89,7 @@ class DeviceStatusMock: public DeviceStatusInterface
     	MOCK_METHOD(bool, isConnectedToInternet, (), ());
     	MOCK_METHOD(int, v_secure_system, (const char *str ), ());
     	//MOCK_METHOD(int, updateFWDownloadStatus, (struct FWDownloadStatus *fwdls, const char *disableStatsUpdate), ());
-    	MOCK_METHOD(int, write_RFCProperty, (const char *key, const char *value, RFCVALDATATYPE datatype), ());
+    	MOCK_METHOD(int, write_RFCProperty, (char* type, const char *key, const char *value, RFCVALDATATYPE datatype), ());
     	MOCK_METHOD(void, uninitialize, (int data), ());
     	MOCK_METHOD(void, eventManager, (const char *cur_event_name, const char *event_status), ());
     	MOCK_METHOD(size_t, GetPDRIFileName, ( char *pPDRIFilename, size_t szBufSize ), ());

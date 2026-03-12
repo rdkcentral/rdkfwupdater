@@ -345,7 +345,10 @@ void unsetStateRed(void)
     if (ret == 0) {
         SWLOG_INFO("RED:unsetStateRed: Exiting State Red\n");
 	unlink(STATEREDFLAG);
-	write_RFCProperty("REDRECV", RFC_RED_RECV, "DISABLED", RFC_STRING);
+	int rfc_ret = write_RFCProperty("REDRECV", RFC_RED_RECV, "DISABLED", RFC_STRING);
+	if(rfc_ret == -1) {
+		SWLOG_ERROR("write_RFCProperty() return failed Status %d\n", rfc_ret);
+        }
     } else {
         SWLOG_INFO("RED:unsetStateRed: Not in State Red\n");
     }
