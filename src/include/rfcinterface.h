@@ -15,6 +15,9 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #ifndef VIDEO_RFCINTERFACE_RFCINTERFACE_H_
 #define VIDEO_RFCINTERFACE_RFCINTERFACE_H_
@@ -102,3 +105,7 @@ bool isDebugServicesEnabled(void);
 void getDeviceTypeRFC(char *deviceType, size_t size);
 
 #endif /* VIDEO_RFCINTERFACE_RFCINTERFACE_H_ */
+
+#ifdef __cplusplus
+}
+#endif
