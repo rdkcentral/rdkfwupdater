@@ -56,6 +56,12 @@ extern "C" FILE* v_secure_popen(const char *mode, ...)
     return g_DeviceUtilsMock->v_secure_popen(mode, cmd);
 }*/
 
+extern "C" void getDeviceTypeRFC(char *deviceType, size_t size)
+{
+    if (g_DeviceUtilsMock)
+        g_DeviceUtilsMock->getDeviceTypeRFC(deviceType, size);
+}
+
 extern "C" int v_secure_pclose(FILE *fp)
 {
     if (!g_DeviceUtilsMock)
