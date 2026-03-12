@@ -226,7 +226,6 @@ int isIncremetalCDLEnable(const char *file_name)
     SWLOG_INFO("%s: Checking IncremetalCDLEnable... Download image name=%s\n", __FUNCTION__, file_name);
 
     snprintf(headerfile, sizeof(headerfile), "%s.header", file_name);
-
     *rfc_data = 0;
     ret = read_RFCProperty("IncrementalCDL", RFC_INCR_CDL, rfc_data, sizeof(rfc_data));
     if(ret == -1) {
