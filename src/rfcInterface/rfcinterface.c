@@ -239,11 +239,15 @@ int isIncremetalCDLEnable(const char *file_name)
         SWLOG_INFO("%s :  incremental cdl is TRUE\n", __FUNCTION__);
         if((filePresentCheck(file_name)) == 0) {
             if (0 < (getFileSize(file_name)) && (filePresentCheck(headerfile)) == 0 ) {
-		content_len = getContentLength(headerfile);
-		if(content_len > 0) {
-                chunk_dwld = 1;
-                SWLOG_INFO("%s: File=%s is present. IncrementalCDL enable=%d\n",__FUNCTION__, file_name, chunk_dwld);
-		}
+                content_len = getContentLength(headerfile);
+                if(content_len > 0) {
+                    chunk_dwld = 1;
+                    SWLOG_INFO("%s: File=%s is present. IncrementalCDL enable=%d\n",__FUNCTION__, file_name, chunk_dwld);
+                } else {
+                    /* Invalid or missing Content-Length: remove partial download */
+                    unlink(file_name);
+                    unlink(headerfile);
+                }
             } else {
                 unlink(file_name);
                 if ((filePresentCheck(headerfile)) == 0) {
