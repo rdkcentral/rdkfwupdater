@@ -231,11 +231,11 @@ int isIncremetalCDLEnable(const char *file_name)
     ret = read_RFCProperty("IncrementalCDL", RFC_INCR_CDL, rfc_data, sizeof(rfc_data));
     if(ret == -1) {
         SWLOG_ERROR("%s: IncrementalCDL rfc=%s failed Status %d\n", __FUNCTION__, RFC_MTLS, ret);
+		
 	return chunk_dwld;
     }else {
         SWLOG_INFO("%s: rfc IncrementalCDL= %s\n", __FUNCTION__, rfc_data);
     }
-     
     if((strncmp(rfc_data, "true", 4)) == 0) {
         SWLOG_INFO("%s :  incremental cdl is TRUE\n", __FUNCTION__);
         if((filePresentCheck(file_name)) == 0) {
