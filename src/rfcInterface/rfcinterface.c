@@ -234,6 +234,7 @@ int isIncremetalCDLEnable(const char *file_name)
     }else {
         SWLOG_INFO("%s: rfc IncrementalCDL= %s\n", __FUNCTION__, rfc_data);
     }
+
     if((strncmp(rfc_data, "true", 4)) == 0) {
         SWLOG_INFO("%s :  incremental cdl is TRUE\n", __FUNCTION__);
         if((filePresentCheck(file_name)) == 0) {
