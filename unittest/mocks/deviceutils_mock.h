@@ -63,6 +63,7 @@ class DeviceUtilsMock: public DeviceUtilsInterface
 	MOCK_METHOD(int, getFileSize, (const char *filename ), ());
 	MOCK_METHOD(bool, isInStateRed, (), ());
 	MOCK_METHOD(bool, isDebugServicesEnabled, (), ());
+    MOCK_METHOD(void, getDeviceTypeRFC, (char*, size_t));
 	MOCK_METHOD(size_t, GetHwMacAddress, (char *iface, char *pMac, size_t szBufSize), ());
 	MOCK_METHOD(size_t, GetModelNum, ( char *pModelNum, size_t szBufSize ), ());
         MOCK_METHOD(void, t2CountNotify, (char *marker), ());

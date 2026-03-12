@@ -301,4 +301,21 @@ size_t GetTR181Url(TR181URL eURL, char *pUrlOut, size_t szBufSize);
 */
 size_t GetServURL(char *pServURL, size_t szBufSize);
 
+/* function isSecureDbgSrvUnlocked - determines whether the secure debug service may be unlocked.
+ *
+ *         The decision is based on:
+ *           - DbgServices RFC
+ *           - DeviceType RFC
+ *           - build type (Dev or Prod)
+ *           - LABSIGNED_ENABLED property value from /etc/device.properties
+ *
+ *         Usage: bool isSecureDbgSrvUnlocked(void)
+ *
+ *         RETURN - true if:
+ *                    - the build type is Dev; or
+ *                    - the build type is Prod, DbgServices RFC is enabled,
+ *                      DeviceType is "Test", and LABSIGNED_ENABLED is set to true;
+ *                  false otherwise.
+ */
+bool isSecureDbgSrvUnlocked(void);
 #endif
