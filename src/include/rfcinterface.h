@@ -16,7 +16,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-
 #ifndef VIDEO_RFCINTERFACE_RFCINTERFACE_H_
 #define VIDEO_RFCINTERFACE_RFCINTERFACE_H_
 
