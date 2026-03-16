@@ -41,20 +41,17 @@
 #define MAC_ADDRESS_LEN 17
 
 /* function isSecureDbgSrvUnlocked - checks the buildtype, deviceType from RFC and enables secure debug services accordingly 
-        Usage: bool isSecureDbgSrvUnlocked <void>
+        Usage: bool isSecureDbgSrvUnlocked <BUILDTYPE eBuildType>
  
         RETURN - True (Enables Debug Services) if buildtype is dev or buildtype is labsigned and deviceType is test
 */
-bool isSecureDbgSrvUnlocked(void) 
+bool isSecureDbgSrvUnlocked(BUILDTYPE eBuildType)
 { 
 	char deviceType[16] = {0};
-    BUILDTYPE eBuildType;
     bool isDebugServicesUnlocked = false;
 	char labsigned[8] = {0};
 	char buildBuf[URL_MAX_LEN] = {0};
 	int ret = -1;
-
-    GetBuildType(buildBuf, sizeof(buildBuf), &eBuildType);
 
     if (eBuildType == eDEV) {
         isDebugServicesUnlocked = true;
@@ -945,7 +942,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
         GetBuildType( buf, sizeof(buf), &eBuildType );
         if( isInStateRed() )
         {
-            if(isSecureDbgSrvUnlocked())
+            if(isSecureDbgSrvUnlocked(eBuildType))
             {
                 len = GetServerUrlFile( pServURL, szBufSize, STATE_RED_CONF );
             }
@@ -956,7 +953,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
         }
         else
         {
-            if(isSecureDbgSrvUnlocked())
+            if(isSecureDbgSrvUnlocked(eBuildType))
             {
                 if( (filePresentCheck( SWUPDATE_CONF ) == RDK_API_SUCCESS) )    // if the file exists
                 {
