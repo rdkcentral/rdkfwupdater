@@ -314,7 +314,7 @@ size_t GetServURL(char *pServURL, size_t szBufSize);
  *         RETURN - true if:
  *                    - the build type is Dev; or
  *                    - the build type is Prod, DbgServices RFC is enabled,
- *                      DeviceType is "Test", and LABSIGNED_ENABLED is set to true;
+ *                      DeviceType is "test", and LABSIGNED_ENABLED is set to true;
  *                  false otherwise.
  */
 bool isSecureDbgSrvUnlocked(BUILDTYPE eBuildType);
