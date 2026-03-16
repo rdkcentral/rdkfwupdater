@@ -309,7 +309,7 @@ size_t GetServURL(char *pServURL, size_t szBufSize);
  *           - build type (Dev or Prod)
  *           - LABSIGNED_ENABLED property value from /etc/device.properties
  *
- *         Usage: bool isSecureDbgSrvUnlocked(void)
+ *         Usage: bool isSecureDbgSrvUnlocked(BUILDTYPE eBuildType)
  *
  *         RETURN - true if:
  *                    - the build type is Dev; or
@@ -317,5 +317,5 @@ size_t GetServURL(char *pServURL, size_t szBufSize);
  *                      DeviceType is "Test", and LABSIGNED_ENABLED is set to true;
  *                  false otherwise.
  */
-bool isSecureDbgSrvUnlocked(void);
+bool isSecureDbgSrvUnlocked(BUILDTYPE eBuildType);
 #endif
