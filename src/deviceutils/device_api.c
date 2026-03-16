@@ -50,7 +50,6 @@ bool isSecureDbgSrvUnlocked(BUILDTYPE eBuildType)
 	char deviceType[16] = {0};
     bool isDebugServicesUnlocked = false;
 	char labsigned[8] = {0};
-	char buildBuf[URL_MAX_LEN] = {0};
 	int ret = -1;
 
     if (eBuildType == eDEV) {
