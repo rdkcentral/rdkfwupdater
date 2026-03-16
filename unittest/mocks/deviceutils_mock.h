@@ -37,7 +37,7 @@ class DeviceUtilsInterface
 	virtual int getJsonRpcData(void *Curl_req, FileDwnl_t *req_data, char token_header, int httpCode ) = 0;
 	virtual int getDevicePropertyData(const char *model, char *data, int size) = 0;
 	virtual int read_RFCProperty(char* type, const char* key, char *out_value, size_t datasize) = 0;
-	virtual void getDeviceTypeRFC(char* type, size_t datasize) = 0;
+	virtual void getDeviceTypeRFC(char* deviceType, size_t datasize) = 0;
 	virtual int filePresentCheck(const char *filename) = 0;
 	virtual int getFileSize(const char *filename) = 0;
 	virtual bool isInStateRed() = 0;
