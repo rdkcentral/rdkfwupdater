@@ -289,10 +289,11 @@ bool isDebugServicesEnabled(void)
 }
 
 
-/* Description: Checking device type rfc value
- * @param type : void
- * @return test, if deviceType RFC is set to test, prod if deviceType is set to prod, else unknown
- * */
+/* Description: Reads the device type RFC value and copies it into the provided buffer.
+ * @param deviceType Output buffer that receives the device type string ("test", "prod", or "unknown").
+ * @param size       Size of the deviceType buffer in bytes; must be greater than 0. The string is always NUL-terminated.
+ * @return void. On error or unrecognized RFC value, "unknown" is written to deviceType (if size > 0).
+ */
 void getDeviceTypeRFC(char *deviceType, size_t size ){
 
 	if (deviceType == NULL || size == 0){
