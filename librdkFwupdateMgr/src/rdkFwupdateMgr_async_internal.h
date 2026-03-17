@@ -14,32 +14,42 @@
  * @file rdkFwupdateMgr_async_internal.h
  * @brief Internal types and declarations — NOT part of public API
  *
- * ARCHITECTURE OVERVIEW:
- * ======================
+ * ARCHITECTURE OVERVIEW (Phase 1 — CheckForUpdate on-demand thread):
+ * ==================================================================
  *
- *  App A ──checkForUpdate(hdl_A, cb_A)──┐
- *  App B ──checkForUpdate(hdl_B, cb_B)──┼──► Registry (keyed by handle)
- *  App C ──checkForUpdate(hdl_C, cb_C)──┘          │
- *                                                   │  background thread
- *                                                   │  watches D-Bus
- *                                                   ▼
- *                        Daemon emits CheckForUpdateComplete signal (ONCE)
- *                                                   │
- *                                    on_check_complete_signal()
- *                                                   │
- *                            dispatch_all_pending() │
- *                             ├── cb_A(hdl_A, &event_data)
- *                             ├── cb_B(hdl_B, &event_data)
- *                             └── cb_C(hdl_C, &event_data)
+ * CheckForUpdate (ON-DEMAND WORKER THREAD — new):
  *
- * REGISTRY KEY:
- * =============
- *   Each entry keyed by FirmwareInterfaceHandle (string from registerProcess).
- *   One handle → one pending callback at a time.
+ *  App calls checkForUpdate(handle, callback)
+ *        │
+ *        ├─ Allocate CheckRequestContext on heap
+ *        ├─ pthread_create(internal_check_worker_thread, ctx)
+ *        │        │
+ *        │        ├─ New GMainContext + GMainLoop (isolated)
+ *        │        ├─ g_bus_get_sync() → D-Bus connection
+ *        │        ├─ Subscribe to CheckForUpdateComplete signal
+ *        │        ├─ Send CheckForUpdate D-Bus method call
+ *        │        ├─ Signal caller "ready" via condvar
+ *        │        ├─ g_main_loop_run() — waits for signal or 120s timeout
+ *        │        ├─ Signal arrives → parse → callback(&fwinfo_data)
+ *        │        └─ Cleanup everything, free(ctx), thread exits
+ *        │
+ *        ├─ pthread_cond_wait() for ready signal
+ *        └─ Return SUCCESS or FAIL
+ *
+ * Download / Update (PERSISTENT BG THREAD — unchanged):
+ *
+ *  App ──downloadFirmware(hdl, req, cb)──► DwnlRegistry ─┐
+ *  App ──updateFirmware(hdl, req, cb)───► UpdateRegistry ─┼─► BG thread
+ *                                                          │   watches D-Bus
+ *                                                          ▼
+ *                Daemon emits DownloadProgress / UpdateProgress
+ *                        → dispatch to all ACTIVE callbacks
  *
  * THREAD SAFETY:
  * ==============
- *   Registry protected by pthread_mutex.
+ *   CheckForUpdate: per-request ctx protected by ctx->ready_mutex (handshake),
+ *                   g_check_in_progress protected by g_check_in_progress_mutex.
+ *   Download/Update: registries protected by their own pthread_mutex.
  *   Callbacks invoked with mutex RELEASED (deadlock prevention).
  */
 
@@ -62,7 +72,6 @@ extern "C" {
  * ======================================================================== */
 
 #define MAX_PENDING_CALLBACKS    30  /* Reduced from 64 to keep stack usage < 10KB - Need to discuss the max number ; for now kept to 30 to resolve coverity issues*/
-#define CALLBACK_TIMEOUT_SECONDS 60
 
 #define DBUS_SERVICE_NAME        "org.rdkfwupdater.Service"
 #define DBUS_OBJECT_PATH         "/org/rdkfwupdater/Service"
@@ -71,22 +80,43 @@ extern "C" {
 #define DBUS_SIGNAL_COMPLETE     "CheckForUpdateComplete"
 #define DBUS_TIMEOUT_MS          5000
 
+/* Timeout for worker thread waiting for daemon signal (seconds) */
+#define CHECK_SIGNAL_TIMEOUT_SECONDS 120
+
 /* ========================================================================
- * CALLBACK ENTRY STATE
+ * CHECKFORUPDATE — ON-DEMAND WORKER THREAD CONTEXT (Phase 1)
  * ======================================================================== */
 
 /**
- * @brief Lifecycle of one registry slot
+ * @brief Per-request context for on-demand CheckForUpdate worker thread.
  *
- *   IDLE ──(register)──► PENDING ──(signal)──► DISPATCHED ──► IDLE
- *                            └──(timeout)──► TIMED_OUT ──► IDLE
+ * Lifecycle:
+ *   - Allocated by checkForUpdate() (caller thread) via calloc
+ *   - Ownership transferred to worker thread after condvar handshake
+ *   - Freed by worker thread after callback fires (or timeout/error)
+ *
+ * Memory: ~100 bytes (excluding GLib objects)
  */
-typedef enum {
-    CB_STATE_IDLE       = 0,
-    CB_STATE_PENDING    = 1,
-    CB_STATE_DISPATCHED = 2,
-    CB_STATE_TIMED_OUT  = 3
-} CallbackEntryState;
+typedef struct {
+    /* Condvar handshake: worker signals "I'm ready" to caller */
+    pthread_mutex_t   ready_mutex;
+    pthread_cond_t    ready_cond;
+    bool              is_ready;       /**< true = worker finished setup      */
+    bool              init_failed;    /**< true = D-Bus connect/subscribe failed */
+
+    /* GLib event loop (isolated, per-thread) */
+    GMainContext     *context;
+    GMainLoop        *main_loop;
+    GDBusConnection  *connection;
+    guint             subscription_id;
+
+    /* Request data */
+    char             *handle_key;     /**< strdup of FirmwareInterfaceHandle */
+    UpdateEventCallback callback;     /**< Client's callback function ptr    */
+
+    /* Thread handle (for join in destructor) */
+    pthread_t         thread;
+} CheckRequestContext;
 
 /* ========================================================================
  * INTERNAL SIGNAL DATA
@@ -108,40 +138,7 @@ typedef struct {
 } InternalSignalData;
 
 /* ========================================================================
- * CALLBACK REGISTRY ENTRY
- * ======================================================================== */
-
-/**
- * @brief One slot in the callback registry
- *
- * Keyed by handle_key (strdup of app's FirmwareInterfaceHandle).
- * No user_data — aligned to 2-param callback signature.
- *
- * MEMORY:
- *   handle_key is strdup'd on registration, freed on slot reset to IDLE.
- */
-typedef struct {
-    CallbackEntryState   state;            /**< Current lifecycle state       */
-    char                *handle_key;       /**< strdup of app's handle        */
-    UpdateEventCallback  callback;         /**< App's 2-param callback        */
-    time_t               registered_time;  /**< For timeout detection         */
-} CallbackEntry;
-
-/* ========================================================================
- * CALLBACK REGISTRY
- * ======================================================================== */
-
-/**
- * @brief Global registry — one instance per library load
- */
-typedef struct {
-    CallbackEntry    entries[MAX_PENDING_CALLBACKS];
-    pthread_mutex_t  mutex;
-    bool             initialized;
-} CallbackRegistry;
-
-/* ========================================================================
- * BACKGROUND THREAD
+ * BACKGROUND THREAD (for Download/Update only — Phase 1)
  * ======================================================================== */
 
 /**
@@ -165,7 +162,7 @@ typedef struct {
  * ======================================================================== */
 
 /**
- * @brief Initialize registry and start background thread
+ * @brief Initialize download/update registries and start background thread
  * Called from library __attribute__((constructor)).
  * @return 0 on success, -1 on error
  */
@@ -178,21 +175,43 @@ int  internal_system_init(void);
 void internal_system_deinit(void);
 
 /**
- * @brief Register a pending callback keyed by handle
+ * @brief Worker thread entry point for on-demand CheckForUpdate.
  *
- * No user_data — matches the 2-param UpdateEventCallback signature.
+ * Creates an isolated GLib event loop, connects to D-Bus, subscribes to
+ * CheckForUpdateComplete signal, sends CheckForUpdate D-Bus method call,
+ * then waits for the signal (with 120s timeout). Fires the client's
+ * callback when signal arrives, then cleans up all resources and exits.
  *
- * @param handle    App's FirmwareInterfaceHandle (will be strdup'd)
- * @param callback  App's UpdateEventCallback (2-param)
- * @return true on success, false if registry is full
+ * @param arg  CheckRequestContext* (ownership transferred from caller)
+ * @return NULL
  */
-bool internal_register_callback(FirmwareInterfaceHandle handle,
-                                 UpdateEventCallback callback);
+void *internal_check_worker_thread(void *arg);
+
+/**
+ * @brief Query whether a checkForUpdate() operation is currently in progress.
+ *
+ * Used by unregisterProcess() to enforce the session-state invariant:
+ * a client cannot unregister while it has outstanding operations.
+ *
+ * Thread-safe: protected by internal mutex.
+ *
+ * @return true if a checkForUpdate worker thread is active, false otherwise.
+ */
+bool internal_is_check_in_progress(void);
+
+/**
+ * @brief Cancel all active checkForUpdate worker threads and join them.
+ *
+ * Called from library destructor to ensure no threads are running
+ * when library code is unmapped.
+ */
+void internal_cancel_all_active_check_threads(void);
 
 /**
  * @brief Parse GVariant signal into InternalSignalData
  *
- * Expected GVariant signature: (iissss)
+ * Expected GVariant signature: (tiissss)
+ *   t  handler_id (uint64)
  *   i  result_code
  *   i  status_code
  *   s  current_version
