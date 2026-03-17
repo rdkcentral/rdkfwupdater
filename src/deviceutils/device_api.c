@@ -59,9 +59,10 @@ bool isSecureDbgSrvUnlocked(BUILDTYPE eBuildType)
 	char labsigned[8] = {0};
 	int ret = -1;
 
-    if (eBuildType != ePROD) {
+    if ((eBuildType != ePROD) && (eBuildType != eUNKNOWN)) {
         isDebugServicesUnlocked = true;
     }
+
     else if (eBuildType == ePROD) 
 	{
 		bool dbgServices = isDebugServicesEnabled();
@@ -71,18 +72,14 @@ bool isSecureDbgSrvUnlocked(BUILDTYPE eBuildType)
 	    {
             if (0 == strncmp(labsigned, "true", 4))
 		    {
-                SWLOG_INFO("labsigned_enabled is = %s\n", labsigned);
 		        if ((strcmp(deviceType, "test") == 0) && dbgServices)
 		        {
-		             SWLOG_INFO("isSecureDbgSrvUnlocked: Enabling debug services...\n");
                      isDebugServicesUnlocked = true;
                 }   
 		        else
 		        {
 		             SWLOG_INFO("isSecureDbgSrvUnlocked: unable to enable debug services...\n");
                 }
-                SWLOG_INFO("isSecureDbgSrvUnlocked: dbgServices=%s, deviceType=%s, LABSIGNED_ENABLED=%s\n",
-                           dbgServices ? "true" : "false", deviceType, labsigned);
             }
             else
             {
@@ -92,7 +89,12 @@ bool isSecureDbgSrvUnlocked(BUILDTYPE eBuildType)
 	    else 
 	    {
             SWLOG_ERROR("%s: getDevicePropertyData() for LABSIGNED_ENABLED failed\n", __FUNCTION__);
-        }	    
+        }
+		SWLOG_INFO("isSecureDbgSrvUnlocked: dbgServices=%s, deviceType=%s, LABSIGNED_ENABLED=%s\n", dbgServices ? "true" : "false", deviceType, labsigned);	
+		if(isDebugServicesUnlocked){
+			SWLOG_INFO("isSecureDbgSrvUnlocked: Enabling debug services...\n");
+			t2CountNotify("SYST_INFO_FW_DbgSrv", 1);
+		}
 	}
     return isDebugServicesUnlocked;
 }
