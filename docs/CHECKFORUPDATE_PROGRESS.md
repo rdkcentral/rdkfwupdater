@@ -29,6 +29,7 @@
 - [x] `rdkFwupdateMgr_api.c` — Rewrote `checkForUpdate()` to use on-demand worker thread model
 - [x] `rdkFwupdateMgr_api.c` — Updated library destructor to cancel/join active worker before BG thread cleanup
 - [x] `rdkFwupdateMgr_process.c` — Added session-state guard in `unregisterProcess()` (rejects if check in progress)
+- [x] **Encapsulated state (v1.2):** Replaced `extern` globals with `internal_begin_check()` / `internal_end_check()` / `internal_abort_check()` accessors. All state now `static` in `_async.c`. No more cross-file mutex access.
 - [x] All modified files compile cleanly (zero errors)
 
 ### Verification

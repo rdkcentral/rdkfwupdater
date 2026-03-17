@@ -200,6 +200,37 @@ void *internal_check_worker_thread(void *arg);
 bool internal_is_check_in_progress(void);
 
 /**
+ * @brief Atomically begin a checkForUpdate session and track the context.
+ *
+ * Sets g_check_in_progress = true and stores ctx in g_active_check_ctx.
+ * If a check is already in progress, returns false without modifying state.
+ *
+ * TL;DR: Replaces direct extern access to g_check_in_progress + g_active_check_ctx.
+ * All mutex handling is internal — callers never touch the mutex.
+ *
+ * @param ctx  The newly allocated CheckRequestContext to track.
+ * @return true if session started, false if another check is already active.
+ */
+bool internal_begin_check(CheckRequestContext *ctx);
+
+/**
+ * @brief Atomically end the checkForUpdate session and untrack the context.
+ *
+ * Sets g_check_in_progress = false and g_active_check_ctx = NULL.
+ * Called by the worker thread in cleanup, BEFORE freeing ctx.
+ */
+void internal_end_check(void);
+
+/**
+ * @brief Atomically clear in-progress state on error paths.
+ *
+ * Same as internal_end_check() but used when checkForUpdate() itself fails
+ * (e.g., pthread_create fails after internal_begin_check succeeded).
+ * The caller will free ctx directly.
+ */
+void internal_abort_check(void);
+
+/**
  * @brief Cancel all active checkForUpdate worker threads and join them.
  *
  * Called from library destructor to ensure no threads are running

@@ -42,17 +42,11 @@
 #include <stdlib.h>
 #include <inttypes.h>
 
-/* ---- Extern references to CheckForUpdate on-demand thread state ----
- *
- * These live in rdkFwupdateMgr_async.c. We access them here to:
- * (1) check/set g_check_in_progress -  enforce one-at-a-time per process
- * (2) track g_active_check_ctx - so the destructor can cancel/join the worker
- *
- * All access is protected by g_check_in_progress_mutex.
+/* No extern globals needed — all CheckForUpdate state is accessed through
+ * internal_begin_check() / internal_end_check() / internal_abort_check()
+ * / internal_is_check_in_progress() declared in rdkFwupdateMgr_async_internal.h.
+ * The mutex and state variables are static inside rdkFwupdateMgr_async.c.
  */
-extern pthread_mutex_t g_check_in_progress_mutex;
-extern bool            g_check_in_progress;
-extern CheckRequestContext *g_active_check_ctx;
 
 /* ========================================================================
  * checkForUpdate - ON-DEMAND WORKER THREAD implementation (Phase 1)
@@ -102,29 +96,17 @@ CheckForUpdateResult checkForUpdate(FirmwareInterfaceHandle handle,
      * wasteful and confusing (the app would get duplicate callbacks with
      * identical data). So we reject it immediately.
      */
-    pthread_mutex_lock(&g_check_in_progress_mutex);
-    if (g_check_in_progress) {
-        pthread_mutex_unlock(&g_check_in_progress_mutex);
-        FWUPMGR_WARN("checkForUpdate: already in progress, rejecting. "
-                     "handle='%s'\n", handle);
-        return CHECK_FOR_UPDATE_FAIL;
-    }
-    g_check_in_progress = true;
-    pthread_mutex_unlock(&g_check_in_progress_mutex);
 
     /* [4] Allocate per-request context on heap
      *
-     * The context struct holds everything the worker thread needs:
-     * the handle, callback pointer, condvar for handshake, and GLib objects.
-     * It's heap-allocated so it survives after checkForUpdate() returns.
-     * Ownership transfers to the worker thread after the condvar handshake.
+     * TL;DR: We allocate FIRST, then call internal_begin_check() to atomically
+     * set in-progress + track ctx. This way there's no window where in-progress
+     * is true but ctx isn't ready. If allocation fails, we just free and return
+     * without touching any global state.
      */
     CheckRequestContext *ctx = calloc(1, sizeof(CheckRequestContext));
     if (ctx == NULL) {
         FWUPMGR_ERROR("checkForUpdate: calloc failed for ctx\n");
-        pthread_mutex_lock(&g_check_in_progress_mutex);
-        g_check_in_progress = false;
-        pthread_mutex_unlock(&g_check_in_progress_mutex);
         return CHECK_FOR_UPDATE_FAIL;
     }
 
@@ -132,9 +114,6 @@ CheckForUpdateResult checkForUpdate(FirmwareInterfaceHandle handle,
     if (ctx->handle_key == NULL) {
         FWUPMGR_ERROR("checkForUpdate: strdup failed for handle\n");
         free(ctx);
-        pthread_mutex_lock(&g_check_in_progress_mutex);
-        g_check_in_progress = false;
-        pthread_mutex_unlock(&g_check_in_progress_mutex);
         return CHECK_FOR_UPDATE_FAIL;
     }
 
@@ -146,9 +125,6 @@ CheckForUpdateResult checkForUpdate(FirmwareInterfaceHandle handle,
         FWUPMGR_ERROR("checkForUpdate: ready_mutex init failed\n");
         free(ctx->handle_key);
         free(ctx);
-        pthread_mutex_lock(&g_check_in_progress_mutex);
-        g_check_in_progress = false;
-        pthread_mutex_unlock(&g_check_in_progress_mutex);
         return CHECK_FOR_UPDATE_FAIL;
     }
 
@@ -157,34 +133,35 @@ CheckForUpdateResult checkForUpdate(FirmwareInterfaceHandle handle,
         pthread_mutex_destroy(&ctx->ready_mutex);
         free(ctx->handle_key);
         free(ctx);
-        pthread_mutex_lock(&g_check_in_progress_mutex);
-        g_check_in_progress = false;
-        pthread_mutex_unlock(&g_check_in_progress_mutex);
         return CHECK_FOR_UPDATE_FAIL;
     }
 
-    /* [6] Track context for library-unload safety
+    /* [5] Atomically begin the check session: set in-progress + track ctx.
      *
-     * Store the ctx pointer in g_active_check_ctx so the library
-     * destructor can find and cancel/join the worker thread. Without this,
-     * dlclose() would unmap our code while the worker is still running - might lead to crash.
+     * TL;DR: internal_begin_check() does the duplicate rejection AND the
+     * context tracking in one mutex-protected operation. If another check
+     * is already active, it returns false and we clean up locally. The
+     * globals are never in an inconsistent state.
      */
-    pthread_mutex_lock(&g_check_in_progress_mutex);
-    g_active_check_ctx = ctx;
-    pthread_mutex_unlock(&g_check_in_progress_mutex);
+    if (!internal_begin_check(ctx)) {
+        FWUPMGR_WARN("checkForUpdate: already in progress, rejecting. "
+                     "handle='%s'\n", handle);
+        pthread_cond_destroy(&ctx->ready_cond);
+        pthread_mutex_destroy(&ctx->ready_mutex);
+        free(ctx->handle_key);
+        free(ctx);
+        return CHECK_FOR_UPDATE_FAIL;
+    }
 
-    /* [7] Spawn worker thread - ownership of ctx transfers to worker
+    /* [7] Spawn worker thread — ownership of ctx transfers to worker
      *
      * The worker thread will set up D-Bus, subscribe to signals,
      * send the CheckForUpdate request, and wait for the daemon's response.
-     * If pthread_create fails, we undo everything and return FAIL.
+     * If pthread_create fails, we undo the begin_check and return FAIL.
      */
     if (pthread_create(&ctx->thread, NULL, internal_check_worker_thread, ctx) != 0) {
         FWUPMGR_ERROR("checkForUpdate: pthread_create failed\n");
-        pthread_mutex_lock(&g_check_in_progress_mutex);
-        g_check_in_progress = false;
-        g_active_check_ctx = NULL;
-        pthread_mutex_unlock(&g_check_in_progress_mutex);
+        internal_abort_check();
         pthread_cond_destroy(&ctx->ready_cond);
         pthread_mutex_destroy(&ctx->ready_mutex);
         free(ctx->handle_key);

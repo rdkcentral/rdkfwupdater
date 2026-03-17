@@ -50,10 +50,18 @@ static DwnlCallbackRegistry g_dwnl_registry;
 static UpdateCbRegistry g_update_registry;
 
 /* ---- CheckForUpdate on-demand thread state ---- */
-/* Non-static: accessed by rdkFwupdateMgr_api.c via extern declarations */
-pthread_mutex_t g_check_in_progress_mutex = PTHREAD_MUTEX_INITIALIZER;
-bool            g_check_in_progress = false;
-CheckRequestContext *g_active_check_ctx = NULL;
+/*
+ * TL;DR: These are STATIC — only accessible through accessor functions below.
+ * This prevents other files from touching the mutex/flag/pointer directly,
+ * which would be fragile and race-prone. All access goes through:
+ *   internal_is_check_in_progress()        — query
+ *   internal_begin_check()                 — set in-progress, track ctx
+ *   internal_end_check()                   — clear in-progress, untrack ctx
+ *   internal_cancel_all_active_check_threads() — destructor cleanup
+ */
+static pthread_mutex_t g_check_in_progress_mutex = PTHREAD_MUTEX_INITIALIZER;
+static bool            g_check_in_progress = false;
+static CheckRequestContext *g_active_check_ctx = NULL;
 
 /* ========================================================================
  * FORWARD DECLARATIONS
@@ -332,6 +340,65 @@ bool internal_is_check_in_progress(void)
     bool result = g_check_in_progress;
     pthread_mutex_unlock(&g_check_in_progress_mutex);
     return result;
+}
+
+/**
+ * @brief Atomically try to begin a checkForUpdate session and track the context.
+ *
+ * TL;DR: This is the single entry point for transitioning from "idle" to
+ * "check in progress." It combines the duplicate-rejection check, the flag
+ * set, and the context tracking into ONE mutex-protected operation. The caller
+ * (checkForUpdate in _api.c) never touches the mutex or globals directly.
+ *
+ * @param ctx  The newly allocated CheckRequestContext to track.
+ * @return true if the check was started (no other check was active),
+ *         false if a check was already in progress (caller should return FAIL).
+ */
+bool internal_begin_check(CheckRequestContext *ctx)
+{
+    pthread_mutex_lock(&g_check_in_progress_mutex);
+    if (g_check_in_progress) {
+        pthread_mutex_unlock(&g_check_in_progress_mutex);
+        return false;  /* already in progress — reject */
+    }
+    g_check_in_progress = true;
+    g_active_check_ctx = ctx;
+    pthread_mutex_unlock(&g_check_in_progress_mutex);
+    return true;
+}
+
+/**
+ * @brief Atomically end the checkForUpdate session and untrack the context.
+ *
+ * TL;DR: Called by the worker thread in cleanup_common, right before freeing
+ * ctx. After this returns, g_active_check_ctx is NULL and g_check_in_progress
+ * is false — the next checkForUpdate() call will be accepted.
+ *
+ * IMPORTANT: Must be called BEFORE free(ctx). The mutex ensures the destructor
+ * cannot read g_active_check_ctx while we're freeing it.
+ */
+void internal_end_check(void)
+{
+    pthread_mutex_lock(&g_check_in_progress_mutex);
+    g_check_in_progress = false;
+    g_active_check_ctx = NULL;
+    pthread_mutex_unlock(&g_check_in_progress_mutex);
+}
+
+/**
+ * @brief Atomically clear in-progress flag WITHOUT untracking context.
+ *
+ * TL;DR: Used only on error paths in checkForUpdate() (in _api.c) when
+ * the context was never successfully tracked (e.g., calloc/strdup/mutex_init
+ * failed before internal_begin_check was called) or when pthread_create fails
+ * after begin_check. The caller will free ctx itself.
+ */
+void internal_abort_check(void)
+{
+    pthread_mutex_lock(&g_check_in_progress_mutex);
+    g_check_in_progress = false;
+    g_active_check_ctx = NULL;
+    pthread_mutex_unlock(&g_check_in_progress_mutex);
 }
 
 /**
@@ -643,11 +710,12 @@ init_failed:
     pthread_mutex_unlock(&ctx->ready_mutex);
 
 cleanup_common:
-    /* Reset global in-progress state and untrack this context */
-    pthread_mutex_lock(&g_check_in_progress_mutex);
-    g_check_in_progress = false;
-    g_active_check_ctx = NULL;
-    pthread_mutex_unlock(&g_check_in_progress_mutex);
+    /* TL;DR: Untrack this context and clear in-progress flag BEFORE freeing ctx.
+     * This is the single place where the worker "releases" the session state.
+     * After internal_end_check(), the destructor won't try to access ctx,
+     * and the next checkForUpdate() call will be accepted.
+     */
+    internal_end_check();
 
     /* Free per-request resources */
     free(ctx->handle_key);

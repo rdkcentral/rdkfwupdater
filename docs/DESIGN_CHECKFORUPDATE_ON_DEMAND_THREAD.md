@@ -6,6 +6,7 @@
 |---------|------------|--------|------------------------------------------|
 | 1.0     | 2026-03-16 | —      | Initial design, analysis, and migration plan |
 | 1.1     | 2026-03-16 | —      | REVISED §5.4: Block unregisterProcess() during active checkForUpdate(). Added §9.9 (SIGTERM handling). Updated §11.5 (process.c changes). Updated §15.1 resolved items. |
+| 1.2     | 2026-03-17 | —      | Encapsulated CheckForUpdate state: replaced extern globals with internal_begin_check()/internal_end_check()/internal_abort_check() accessors. All state now static in _async.c. |
 
 ---
 
