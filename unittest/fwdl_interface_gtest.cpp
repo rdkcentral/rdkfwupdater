@@ -174,6 +174,7 @@ TEST_F(InterfaceTestFixture, TestName_isDebugServicesEnableSuccess)
 TEST_F(InterfaceTestFixture, TestName_getDeviceTypeRFCNullArgs)
 {
     /* NULL buffer and zero size must not crash and must not call getRFCParameter */
+    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(0);
     char buf[16];
     memset(buf, 'X', sizeof(buf));
     getDeviceTypeRFC(NULL, sizeof(buf));

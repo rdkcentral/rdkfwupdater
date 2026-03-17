@@ -689,6 +689,9 @@ TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessStatered_Prod_DebugServi
             data[size - 1] = '\0';
             return 0;
         }));
+    EXPECT_CALL(*g_DeviceUtilsMock,
+                t2ValNotify(StrEq("SYST_INFO_FW_DbgSrv"), StrEq("true")))
+        .Times(1);
     ret = system("echo \"https://www.statered.com\" > /tmp/stateredrecovry.conf");
     ret = GetServURL(output, sizeof(output));
     EXPECT_EQ(strncmp(output,servUrl,strlen(servUrl)),0);
