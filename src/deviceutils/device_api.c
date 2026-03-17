@@ -43,7 +43,7 @@
 /* function isSecureDbgSrvUnlocked - determines whether secure debug services may be enabled for the given build type.
  *       Usage: bool isSecureDbgSrvUnlocked(BUILDTYPE eBuildType)
  *
- *       For eDEV builds, debug services are always unlocked.
+ *       For non-prod builds, debug services are always unlocked.
  *
  *       For ePROD builds, debug services are unlocked only when all of the following are true:
  *           - debug services are enabled via isDebugServicesEnabled() (RFC-controlled),
@@ -59,7 +59,7 @@ bool isSecureDbgSrvUnlocked(BUILDTYPE eBuildType)
 	char labsigned[8] = {0};
 	int ret = -1;
 
-    if (eBuildType == eDEV) {
+    if (eBuildType != ePROD) {
         isDebugServicesUnlocked = true;
     }
     else if (eBuildType == ePROD) 
