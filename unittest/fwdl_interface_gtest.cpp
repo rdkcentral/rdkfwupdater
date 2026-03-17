@@ -171,6 +171,63 @@ TEST_F(InterfaceTestFixture, TestName_isDebugServicesEnableSuccess)
     EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(1).WillOnce(Return(1));
     EXPECT_EQ(isDebugServicesEnabled(), true);
 }
+TEST_F(InterfaceTestFixture, TestName_getDeviceTypeRFCNullArgs)
+{
+    /* NULL buffer and zero size must not crash and must not call getRFCParameter */
+    char buf[16];
+    memset(buf, 'X', sizeof(buf));
+    getDeviceTypeRFC(NULL, sizeof(buf));
+    getDeviceTypeRFC(buf, 0);
+    /* buf[0] must remain 'X' because size == 0 means nothing should be written */
+    EXPECT_EQ(buf[0], 'X');
+}
+TEST_F(InterfaceTestFixture, TestName_getDeviceTypeRFCReadFailure)
+{
+    /* When RFC read fails, result must be "unknown" */
+    char deviceType[32] = {0};
+    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(1).WillOnce(Return(0));
+    getDeviceTypeRFC(deviceType, sizeof(deviceType));
+    EXPECT_STREQ(deviceType, "unknown");
+}
+TEST_F(InterfaceTestFixture, TestName_getDeviceTypeRFCProd)
+{
+    /* When RFC value is "prod", result must be "prod" */
+    char deviceType[32] = {0};
+    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _))
+        .Times(1)
+        .WillOnce(Invoke([](char* /*type*/, const char* /*key*/, RFC_ParamData_t *param) {
+            snprintf(param->value, sizeof(param->value), "%s", "prod");
+            return WDMP_SUCCESS;
+        }));
+    getDeviceTypeRFC(deviceType, sizeof(deviceType));
+    EXPECT_STREQ(deviceType, "prod");
+}
+TEST_F(InterfaceTestFixture, TestName_getDeviceTypeRFCTest)
+{
+    /* When RFC value is "test", result must be "test" */
+    char deviceType[32] = {0};
+    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _))
+        .Times(1)
+        .WillOnce(Invoke([](char* /*type*/, const char* /*key*/, RFC_ParamData_t *param) {
+            snprintf(param->value, sizeof(param->value), "%s", "test");
+            return WDMP_SUCCESS;
+        }));
+    getDeviceTypeRFC(deviceType, sizeof(deviceType));
+    EXPECT_STREQ(deviceType, "test");
+}
+TEST_F(InterfaceTestFixture, TestName_getDeviceTypeRFCUnknown)
+{
+    /* When RFC value is unrecognized, result must be "unknown" */
+    char deviceType[32] = {0};
+    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _))
+        .Times(1)
+        .WillOnce(Invoke([](char* /*type*/, const char* /*key*/, RFC_ParamData_t *param) {
+            snprintf(param->value, sizeof(param->value), "%s", "staging");
+            return WDMP_SUCCESS;
+        }));
+    getDeviceTypeRFC(deviceType, sizeof(deviceType));
+    EXPECT_STREQ(deviceType, "unknown");
+}
 TEST_F(InterfaceTestFixture, TestName_isIncremetalCDLEnableSuccess)
 {
     EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(1).WillOnce(Return(1));
