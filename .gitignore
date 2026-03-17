@@ -1,0 +1,8 @@
+# Autotools generated dependency files
+**/.deps/
+*.Po
+
+# Coverage data
+*.gcno
+*.gcda
+*.gcov

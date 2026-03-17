@@ -1,0 +1,44 @@
+# Autotools generated files
+Makefile
+Makefile.in
+aclocal.m4
+autom4te.cache/
+compile
+config.guess
+config.log
+config.status
+config.sub
+configure
+depcomp
+install-sh
+libtool
+ltmain.sh
+missing
+stamp-h1
+
+# Dependency files
+.deps/
+**/.deps/
+*.Po
+
+# Coverage data
+*.gcno
+*.gcda
+*.gcov
+coverage.info
+coverage.filtered.info
+out/
+
+# Test binaries
+rdkfw_device_status_gtest
+rdkfw_deviceutils_gtest
+rdkfw_main_gtest
+rdkfw_interface_gtest
+rdkFwupdateMgr_handlers_gtest
+rdkfwupdatemgr_main_flow_gtest
+dbus_handlers_gtest
+rdkFwupdateMgr_async_refcount_gtest
+rdkFwupdateMgr_async_stress_gtest
+rdkFwupdateMgr_async_cleanup_gtest
+rdkFwupdateMgr_async_signal_gtest
+rdkFwupdateMgr_async_threadsafety_gtest
