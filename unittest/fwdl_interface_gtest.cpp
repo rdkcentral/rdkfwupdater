@@ -171,6 +171,46 @@ TEST_F(InterfaceTestFixture, TestName_isDebugServicesEnableSuccess)
     EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(1).WillOnce(Return(1));
     EXPECT_EQ(isDebugServicesEnabled(), true);
 }
+TEST_F(InterfaceTestFixture, TestName_getDeviceTypeRFCReadFailure)
+{
+    char deviceType[32] = {0};
+    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(1).WillOnce(Return(0));
+    getDeviceTypeRFC(deviceType, sizeof(deviceType));
+    EXPECT_STREQ(deviceType, "unknown");
+}
+TEST_F(InterfaceTestFixture, TestName_getDeviceTypeRFCProd)
+{
+    char deviceType[32] = {0};
+    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(1)
+        .WillOnce(Invoke([](char* /*type*/, const char* /*key*/, RFC_ParamData_t *param) {
+            snprintf(param->value, sizeof(param->value), "%s", "prod");
+            return 1;
+        }));
+    getDeviceTypeRFC(deviceType, sizeof(deviceType));
+    EXPECT_STREQ(deviceType, "prod");
+}
+TEST_F(InterfaceTestFixture, TestName_getDeviceTypeRFCTest)
+{
+    char deviceType[32] = {0};
+    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(1)
+        .WillOnce(Invoke([](char* /*type*/, const char* /*key*/, RFC_ParamData_t *param) {
+            snprintf(param->value, sizeof(param->value), "%s", "test");
+            return 1;
+        }));
+    getDeviceTypeRFC(deviceType, sizeof(deviceType));
+    EXPECT_STREQ(deviceType, "test");
+}
+TEST_F(InterfaceTestFixture, TestName_getDeviceTypeRFCUnknown)
+{
+    char deviceType[32] = {0};
+    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(1)
+        .WillOnce(Invoke([](char* /*type*/, const char* /*key*/, RFC_ParamData_t *param) {
+            snprintf(param->value, sizeof(param->value), "%s", "staging");
+            return 1;
+        }));
+    getDeviceTypeRFC(deviceType, sizeof(deviceType));
+    EXPECT_STREQ(deviceType, "unknown");
+}
 TEST_F(InterfaceTestFixture, TestName_isIncremetalCDLEnableSuccess)
 {
     EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(1).WillOnce(Return(1));
