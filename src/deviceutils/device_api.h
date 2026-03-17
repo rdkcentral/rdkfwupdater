@@ -305,16 +305,16 @@ size_t GetServURL(char *pServURL, size_t szBufSize);
  *
  *         The decision is based on:
  *           - DbgServices RFC
- *           - DeviceType RFC
- *           - build type (Dev or Prod)
+ *           - DeviceType RFC (lowercase "test" or "prod")
+ *           - build type (non-PROD vs Prod)
  *           - LABSIGNED_ENABLED property value from /etc/device.properties
  *
  *         Usage: bool isSecureDbgSrvUnlocked(BUILDTYPE eBuildType)
  *
  *         RETURN - true if:
- *                    - the build type is Dev; or
+ *                    - the build type is non-PROD (Dev, VBN, QA, etc.); or
  *                    - the build type is Prod, DbgServices RFC is enabled,
- *                      DeviceType is "test", and LABSIGNED_ENABLED is set to true;
+ *                      DeviceType RFC is "test", and LABSIGNED_ENABLED is set to "true";
  *                  false otherwise.
  */
 bool isSecureDbgSrvUnlocked(BUILDTYPE eBuildType);
