@@ -93,7 +93,7 @@ bool isSecureDbgSrvUnlocked(BUILDTYPE eBuildType)
 		SWLOG_INFO("isSecureDbgSrvUnlocked: dbgServices=%s, deviceType=%s, LABSIGNED_ENABLED=%s\n", dbgServices ? "true" : "false", deviceType, labsigned);	
 		if(isDebugServicesUnlocked){
 			SWLOG_INFO("isSecureDbgSrvUnlocked: Enabling debug services...\n");
-			t2CountNotify("SYST_INFO_FW_DbgSrv", 1);
+			t2ValNotify("SYST_INFO_FW_DbgSrv", "true");
 		}
 	}
     return isDebugServicesUnlocked;
