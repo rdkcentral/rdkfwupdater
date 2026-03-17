@@ -1,0 +1,25 @@
+# Autotools build artifacts
+Makefile
+Makefile.in
+aclocal.m4
+autom4te.cache/
+config.guess
+config.log
+config.status
+config.sub
+configure
+depcomp
+install-sh
+libtool
+ltmain.sh
+missing
+compile
+.deps/
+.dirstamp
+*.Po
+*.Tpo
+*.o
+*.lo
+*.la
+*.a
+.libs/

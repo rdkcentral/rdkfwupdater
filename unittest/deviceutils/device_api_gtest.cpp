@@ -502,52 +502,74 @@ TEST_F(DeviceApiTestFixture, TestName_GetServURL_Nullcheck)
 }
 TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessStatered_DebugServices_Enabled)
 {
-    char output[32];
+    // VBN build: isSecureDbgSrvUnlocked returns false (VBN is neither eDEV nor ePROD),
+    // so state-red file override is skipped and GetTR181Url(eRecovery) is used instead.
+    char output[64];
     int ret;
-    char servUrl[]="https://www.statered.com";
+    char servUrl[]="https://www.recovery.rdktest.com";
     EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(true));
-    //EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _)).Times(1).WillOnce(Return(1));
     ret = system("echo \"BUILD_TYPE=vbn\" > /tmp/device_gtest.prop");
-    //EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(1));
-    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(true));
-    ret = system("echo \"https://www.statered.com\" > /tmp/stateredrecovry.conf");
+    EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _))
+                .Times(1)
+                .WillOnce(Invoke([&servUrl]( char* type, const char* key, char *out_value, size_t datasize ) {
+                strncpy(out_value, servUrl, datasize-1);
+                out_value[datasize - 1] = '\0';
+                return (int)strlen(out_value);
+                }));
     ret = GetServURL(output, sizeof(output));
-    EXPECT_EQ(strncmp(output,servUrl,strlen(servUrl)),0);
-    printf("output ====================================== %s \n",output);
-    printf("servUrl ===================================== %s \n" ,servUrl);
-    ret = system("rm -f /tmp/stateredrecovry.conf");
+    EXPECT_EQ(strncmp(output, servUrl, strlen(servUrl)), 0);
+    printf("output ====================================== %s \n", output);
+    printf("servUrl ===================================== %s \n", servUrl);
     ret = system("rm -f /tmp/device_gtest.prop");
     printf("Server URL = %s\n", output);
 }
 TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessStatered_DebugServices_Disabled)
 {
-    char output[32];
+    // VBN build: isSecureDbgSrvUnlocked returns false regardless of debug-services state,
+    // so state-red file override is skipped and GetTR181Url(eRecovery) is used instead.
+    char output[64];
     int ret;
-    char servUrl[]="https://www.statered.com";
+    char servUrl[]="https://www.recovery.rdktest.com";
     EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(true));
-    //EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _)).Times(1).WillOnce(Return(1));
     ret = system("echo \"BUILD_TYPE=vbn\" > /tmp/device_gtest.prop");
-    //EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(1));
-    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(false));
-    ret = system("echo \"https://www.statered.com\" > /tmp/stateredrecovry.conf");
+    EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _))
+                .Times(1)
+                .WillOnce(Invoke([&servUrl]( char* type, const char* key, char *out_value, size_t datasize ) {
+                strncpy(out_value, servUrl, datasize-1);
+                out_value[datasize - 1] = '\0';
+                return (int)strlen(out_value);
+                }));
     ret = GetServURL(output, sizeof(output));
-    EXPECT_EQ(strncmp(output,servUrl,strlen(servUrl)),0);
-    printf("output ====================================== %s \n",output);
-    printf("servUrl ===================================== %s \n" ,servUrl);
-    ret = system("rm -f /tmp/stateredrecovry.conf");
+    EXPECT_EQ(strncmp(output, servUrl, strlen(servUrl)), 0);
+    printf("output ====================================== %s \n", output);
+    printf("servUrl ===================================== %s \n", servUrl);
     ret = system("rm -f /tmp/device_gtest.prop");
     printf("Server URL = %s\n", output);
 }
 TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessStatered_Prod_DebugServices_Enabled)
 {
+    // PROD build with full unlock conditions (dbgServices=true, deviceType="test",
+    // LABSIGNED_ENABLED=true): isSecureDbgSrvUnlocked returns true, so the
+    // state-red file override is used.
     char output[32];
     int ret;
     char servUrl[]="https://www.statered.com";
     EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(true));
-    //EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _)).Times(1).WillOnce(Return(1));
     ret = system("echo \"BUILD_TYPE=PROD\" > /tmp/device_gtest.prop");
-    //EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(1));
     EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(true));
+    EXPECT_CALL(*g_DeviceUtilsMock, getDeviceTypeRFC(_, _))
+                .Times(1)
+                .WillOnce(Invoke([](char* deviceType, size_t datasize) {
+                strncpy(deviceType, "test", datasize - 1);
+                deviceType[datasize - 1] = '\0';
+                }));
+    EXPECT_CALL(*g_DeviceUtilsMock, getDevicePropertyData(_, _, _))
+                .Times(1)
+                .WillOnce(Invoke([](const char *model, char *data, int size) {
+                strncpy(data, "true", size - 1);
+                data[size - 1] = '\0';
+                return 0;
+                }));
     ret = system("echo \"https://www.statered.com\" > /tmp/stateredrecovry.conf");
     ret = GetServURL(output, sizeof(output));
     EXPECT_EQ(strncmp(output,servUrl,strlen(servUrl)),0);
@@ -559,16 +581,17 @@ TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessStatered_Prod_DebugServi
 }
 TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessStatered_Prod_DebugServices_Disabled)
 {
+    // PROD build with debug services disabled: isSecureDbgSrvUnlocked returns false
+    // (dbgServices is false, so the condition fails even if deviceType and LABSIGNED_ENABLED
+    // would otherwise qualify), and GetTR181Url(eRecovery) is used.
     char output[64];
     int ret;
     char servUrl[]="https://www.tr181Rfc.com";
     EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(true));
-    //EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _)).Times(1).WillOnce(Return(1));
     ret = system("echo \"BUILD_TYPE=PROD\" > /tmp/device_gtest.prop");
-    //EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(1));
     EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(false));
-    ret = system("echo \"https://www.statered.com\" > /tmp/stateredrecovry.conf");
-    ret = system("echo \"https://www.autotool.com\" > /tmp/swupdate.conf");
+    EXPECT_CALL(*g_DeviceUtilsMock, getDeviceTypeRFC(_, _)).Times(1);
+    EXPECT_CALL(*g_DeviceUtilsMock, getDevicePropertyData(_, _, _)).Times(1).WillOnce(Return(0));
     EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _))
                 .Times(1)
                 .WillOnce(Invoke([&servUrl]( char* type, const char* key, char *out_value, size_t datasize ) {
@@ -587,46 +610,58 @@ TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessStatered_Prod_DebugServi
 }
 TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessSwupdate_DebugServices_Enabled)
 {
-    char output[32];
+    // VBN build (not state-red): isSecureDbgSrvUnlocked returns false (VBN is neither
+    // eDEV nor ePROD), so the swupdate.conf override is never checked. Falls through to
+    // GetTR181Url(eAutoExclude).
+    char output[64];
     int ret;
-    char servUrl[]="https://www.rdkautotool.com";
+    char servUrl[]="https://www.autoexclude.rdktest.com";
     EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(false));
-    EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(0));
-    //EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _)).Times(1).WillOnce(Return(1));
     ret = system("echo \"BUILD_TYPE=vbn\" > /tmp/device_gtest.prop");
-    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(true));
-    ret = system("echo \"https://www.rdkautotool.com\" > /tmp/swupdate.conf");
+    EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _))
+                .Times(1)
+                .WillOnce(Invoke([&servUrl]( char* type, const char* key, char *out_value, size_t datasize ) {
+                strncpy(out_value, servUrl, datasize-1);
+                out_value[datasize - 1] = '\0';
+                return (int)strlen(out_value);
+                }));
     ret=GetServURL(output , sizeof(output));
     EXPECT_EQ(strncmp(output , servUrl , strlen(servUrl)),0);
     printf("Output ========================= %s\n ", output);
     printf("servUrl ======================== %s \n ",servUrl);
-    ret = system("rm -f /tmp/swupdate.conf");
     ret = system("rm -f /tmp/device_gtest.prop");
     printf("Server URL = %s\n", output);
 }
 
 TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessSwupdate_DebugServices_Disabled)
 {
-    char output[32];
+    // VBN build (not state-red): isSecureDbgSrvUnlocked returns false regardless of
+    // debug-services state, so swupdate.conf override is skipped. Falls through to
+    // GetTR181Url(eAutoExclude).
+    char output[64];
     int ret;
-    char servUrl[]="https://www.rdkautotool.com";
+    char servUrl[]="https://www.autoexclude.rdktest.com";
     EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(false));
-    EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(0));
-    //EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _)).Times(1).WillOnce(Return(1));
     ret = system("echo \"BUILD_TYPE=vbn\" > /tmp/device_gtest.prop");
-    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(false));
-    ret = system("echo \"https://www.rdkautotool.com\" > /tmp/swupdate.conf");
+    EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _))
+                .Times(1)
+                .WillOnce(Invoke([&servUrl]( char* type, const char* key, char *out_value, size_t datasize ) {
+                strncpy(out_value, servUrl, datasize-1);
+                out_value[datasize - 1] = '\0';
+                return (int)strlen(out_value);
+                }));
     ret=GetServURL(output , sizeof(output));
     EXPECT_EQ(strncmp(output , servUrl , strlen(servUrl)),0);
     printf("Output ========================= %s\n ", output);
     printf("servUrl ======================== %s \n ",servUrl);
-    ret = system("rm -f /tmp/swupdate.conf");
     ret = system("rm -f /tmp/device_gtest.prop");
     printf("Server URL = %s\n", output);
 }
 
 TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessSwupdate_Prod_DebugServices_Enabled)
 {
+    // PROD build (not state-red) with full unlock conditions: isSecureDbgSrvUnlocked
+    // returns true, swupdate.conf is present, so its URL is used.
     char output[32];
     int ret;
     char servUrl[]="https://www.rdkautotool.com";
@@ -634,6 +669,19 @@ TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessSwupdate_Prod_DebugServi
     EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(0));
     ret = system("echo \"BUILD_TYPE=PROD\" > /tmp/device_gtest.prop");
     EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(true));
+    EXPECT_CALL(*g_DeviceUtilsMock, getDeviceTypeRFC(_, _))
+                .Times(1)
+                .WillOnce(Invoke([](char* deviceType, size_t datasize) {
+                strncpy(deviceType, "test", datasize - 1);
+                deviceType[datasize - 1] = '\0';
+                }));
+    EXPECT_CALL(*g_DeviceUtilsMock, getDevicePropertyData(_, _, _))
+                .Times(1)
+                .WillOnce(Invoke([](const char *model, char *data, int size) {
+                strncpy(data, "true", size - 1);
+                data[size - 1] = '\0';
+                return 0;
+                }));
     ret = system("echo \"https://www.rdkautotool.com\" > /tmp/swupdate.conf");
     ret=GetServURL(output , sizeof(output));
     EXPECT_EQ(strncmp(output , servUrl , strlen(servUrl)),0);
@@ -646,12 +694,16 @@ TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessSwupdate_Prod_DebugServi
 
 TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessSwupdate_Prod_DebugServices_Disabled)
 {
+    // PROD build (not state-red) with debug services disabled: isSecureDbgSrvUnlocked
+    // returns false, swupdate.conf is ignored. Falls through to bootstrap/xconf URL.
     char output[64];
     int ret;
     char servUrl[]= "https://www.tr181Rfc.com";
     EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(false));
     ret = system("echo \"BUILD_TYPE=PROD\" > /tmp/device_gtest.prop");
     EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(false));
+    EXPECT_CALL(*g_DeviceUtilsMock, getDeviceTypeRFC(_, _)).Times(1);
+    EXPECT_CALL(*g_DeviceUtilsMock, getDevicePropertyData(_, _, _)).Times(1).WillOnce(Return(0));
     ret = system("echo \"https://www.rdkautotool.com\" > /tmp/swupdate.conf");
     EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _))
 	        .Times(1)
@@ -666,6 +718,174 @@ TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessSwupdate_Prod_DebugServi
     printf("Output ========================= %s\n ", output);
     printf("servUrl ======================== %s \n ",servUrl);
     ret = system("rm -f /tmp/swupdate.conf");
+    ret = system("rm -f /tmp/device_gtest.prop");
+    printf("Server URL = %s\n", output);
+}
+
+TEST_F(DeviceApiTestFixture, TestName_GetServURL_Dev_StateredURL)
+{
+    // DEV build: isSecureDbgSrvUnlocked always returns true (no RFC checks needed),
+    // so the state-red file override is used directly.
+    char output[32];
+    int ret;
+    char servUrl[]="https://www.statered.com";
+    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(true));
+    ret = system("echo \"BUILD_TYPE=dev\" > /tmp/device_gtest.prop");
+    ret = system("echo \"https://www.statered.com\" > /tmp/stateredrecovry.conf");
+    ret = GetServURL(output, sizeof(output));
+    EXPECT_EQ(strncmp(output, servUrl, strlen(servUrl)), 0);
+    printf("output ====================================== %s \n", output);
+    printf("servUrl ===================================== %s \n", servUrl);
+    ret = system("rm -f /tmp/stateredrecovry.conf");
+    ret = system("rm -f /tmp/device_gtest.prop");
+    printf("Server URL = %s\n", output);
+}
+
+TEST_F(DeviceApiTestFixture, TestName_GetServURL_Dev_SwupdateURL)
+{
+    // DEV build: isSecureDbgSrvUnlocked always returns true (no RFC checks needed),
+    // so the swupdate.conf override is used when present.
+    char output[32];
+    int ret;
+    char servUrl[]="https://www.rdkautotool.com";
+    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(false));
+    EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(0));
+    ret = system("echo \"BUILD_TYPE=dev\" > /tmp/device_gtest.prop");
+    ret = system("echo \"https://www.rdkautotool.com\" > /tmp/swupdate.conf");
+    ret = GetServURL(output, sizeof(output));
+    EXPECT_EQ(strncmp(output, servUrl, strlen(servUrl)), 0);
+    printf("Output ========================= %s\n ", output);
+    printf("servUrl ======================== %s \n ", servUrl);
+    ret = system("rm -f /tmp/swupdate.conf");
+    ret = system("rm -f /tmp/device_gtest.prop");
+    printf("Server URL = %s\n", output);
+}
+
+TEST_F(DeviceApiTestFixture, TestName_GetServURL_Prod_NoLabsigned_StateredFallback)
+{
+    // PROD build with dbgServices=true and deviceType="test" but LABSIGNED_ENABLED=false:
+    // isSecureDbgSrvUnlocked returns false (labsigned check fails), so the state-red file
+    // override is skipped and GetTR181Url(eRecovery) is used.
+    char output[64];
+    int ret;
+    char servUrl[]="https://www.recovery.rdktest.com";
+    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(true));
+    ret = system("echo \"BUILD_TYPE=PROD\" > /tmp/device_gtest.prop");
+    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(true));
+    EXPECT_CALL(*g_DeviceUtilsMock, getDeviceTypeRFC(_, _))
+                .Times(1)
+                .WillOnce(Invoke([](char* deviceType, size_t datasize) {
+                strncpy(deviceType, "test", datasize - 1);
+                deviceType[datasize - 1] = '\0';
+                }));
+    EXPECT_CALL(*g_DeviceUtilsMock, getDevicePropertyData(_, _, _))
+                .Times(1)
+                .WillOnce(Invoke([](const char *model, char *data, int size) {
+                strncpy(data, "false", size - 1);
+                data[size - 1] = '\0';
+                return 0;
+                }));
+    EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _))
+                .Times(1)
+                .WillOnce(Invoke([&servUrl]( char* type, const char* key, char *out_value, size_t datasize ) {
+                strncpy(out_value, servUrl, datasize-1);
+                out_value[datasize - 1] = '\0';
+                return (int)strlen(out_value);
+                }));
+    ret = system("echo \"https://www.statered.com\" > /tmp/stateredrecovry.conf");
+    ret = GetServURL(output, sizeof(output));
+    EXPECT_EQ(strncmp(output, servUrl, strlen(servUrl)), 0);
+    printf("Output ========================= %s\n ", output);
+    ret = system("rm -f /tmp/stateredrecovry.conf");
+    ret = system("rm -f /tmp/device_gtest.prop");
+    printf("Server URL = %s\n", output);
+}
+
+TEST_F(DeviceApiTestFixture, TestName_GetServURL_Prod_WrongDeviceType_StateredFallback)
+{
+    // PROD build with dbgServices=true and LABSIGNED_ENABLED=true but deviceType != "test":
+    // isSecureDbgSrvUnlocked returns false (device type check fails), so the state-red
+    // file override is skipped and GetTR181Url(eRecovery) is used.
+    char output[64];
+    int ret;
+    char servUrl[]="https://www.recovery.rdktest.com";
+    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(true));
+    ret = system("echo \"BUILD_TYPE=PROD\" > /tmp/device_gtest.prop");
+    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(true));
+    EXPECT_CALL(*g_DeviceUtilsMock, getDeviceTypeRFC(_, _))
+                .Times(1)
+                .WillOnce(Invoke([](char* deviceType, size_t datasize) {
+                strncpy(deviceType, "production", datasize - 1);
+                deviceType[datasize - 1] = '\0';
+                }));
+    EXPECT_CALL(*g_DeviceUtilsMock, getDevicePropertyData(_, _, _))
+                .Times(1)
+                .WillOnce(Invoke([](const char *model, char *data, int size) {
+                strncpy(data, "true", size - 1);
+                data[size - 1] = '\0';
+                return 0;
+                }));
+    EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _))
+                .Times(1)
+                .WillOnce(Invoke([&servUrl]( char* type, const char* key, char *out_value, size_t datasize ) {
+                strncpy(out_value, servUrl, datasize-1);
+                out_value[datasize - 1] = '\0';
+                return (int)strlen(out_value);
+                }));
+    ret = system("echo \"https://www.statered.com\" > /tmp/stateredrecovry.conf");
+    ret = GetServURL(output, sizeof(output));
+    EXPECT_EQ(strncmp(output, servUrl, strlen(servUrl)), 0);
+    printf("Output ========================= %s\n ", output);
+    ret = system("rm -f /tmp/stateredrecovry.conf");
+    ret = system("rm -f /tmp/device_gtest.prop");
+    printf("Server URL = %s\n", output);
+}
+
+TEST_F(DeviceApiTestFixture, TestName_GetServURL_Prod_PropertyDataFail_StateredFallback)
+{
+    // PROD build: getDevicePropertyData fails (returns non-zero error), so
+    // isSecureDbgSrvUnlocked returns false and GetTR181Url(eRecovery) is used.
+    char output[64];
+    int ret;
+    char servUrl[]="https://www.recovery.rdktest.com";
+    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(true));
+    ret = system("echo \"BUILD_TYPE=PROD\" > /tmp/device_gtest.prop");
+    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(true));
+    EXPECT_CALL(*g_DeviceUtilsMock, getDeviceTypeRFC(_, _)).Times(1);
+    EXPECT_CALL(*g_DeviceUtilsMock, getDevicePropertyData(_, _, _)).Times(1).WillOnce(Return(-1));
+    EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _))
+                .Times(1)
+                .WillOnce(Invoke([&servUrl]( char* type, const char* key, char *out_value, size_t datasize ) {
+                strncpy(out_value, servUrl, datasize-1);
+                out_value[datasize - 1] = '\0';
+                return (int)strlen(out_value);
+                }));
+    ret = GetServURL(output, sizeof(output));
+    EXPECT_EQ(strncmp(output, servUrl, strlen(servUrl)), 0);
+    printf("Output ========================= %s\n ", output);
+    ret = system("rm -f /tmp/device_gtest.prop");
+    printf("Server URL = %s\n", output);
+}
+
+TEST_F(DeviceApiTestFixture, TestName_GetServURL_QA_SwupdateFallback)
+{
+    // QA build: isSecureDbgSrvUnlocked returns false (QA is neither eDEV nor ePROD),
+    // swupdate.conf override is skipped, and GetTR181Url(eAutoExclude) is used.
+    char output[64];
+    int ret;
+    char servUrl[]="https://www.autoexclude.rdktest.com";
+    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(false));
+    ret = system("echo \"BUILD_TYPE=qa\" > /tmp/device_gtest.prop");
+    EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _))
+                .Times(1)
+                .WillOnce(Invoke([&servUrl]( char* type, const char* key, char *out_value, size_t datasize ) {
+                strncpy(out_value, servUrl, datasize-1);
+                out_value[datasize - 1] = '\0';
+                return (int)strlen(out_value);
+                }));
+    ret = GetServURL(output, sizeof(output));
+    EXPECT_EQ(strncmp(output, servUrl, strlen(servUrl)), 0);
+    printf("Output ========================= %s\n ", output);
     ret = system("rm -f /tmp/device_gtest.prop");
     printf("Server URL = %s\n", output);
 }
