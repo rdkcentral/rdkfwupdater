@@ -76,7 +76,7 @@ extern "C" size_t getContentLength(const char *file)
         cout << "getContentLength g_InterfaceMock object is NULL" << endl;
         return 0;
     }
-    printf("Inside Mock Function getContentLength\n");
+    printf("Inside Mock Function  getContentLength\n");
     return g_InterfaceMock->getContentLength(file);
 }
 extern "C" int getDevicePropertyData(const char *model, char *data, int size)
