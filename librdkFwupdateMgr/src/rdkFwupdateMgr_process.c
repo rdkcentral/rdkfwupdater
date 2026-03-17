@@ -70,6 +70,7 @@
 
 #include "rdkFwupdateMgr_client.h"
 #include "rdkFwupdateMgr_log.h"
+#include "rdkFwupdateMgr_async_internal.h"  /* for internal_is_check_in_progress() */
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -96,7 +97,7 @@
 #define MAX_LIB_VERSION_LEN     64
 
 /** Default D-Bus call timeout in milliseconds (10 seconds) */
-#define DBUS_TIMEOUT_MS         10000
+#define DBUS_TIMEOUT_MSEC         10000
 
 /* ========================================================================
  * INTERNAL CONTEXT STRUCTURE
@@ -248,7 +249,7 @@ static bool validate_lib_version(const char *libVersion)
  * IMPLEMENTATION NOTES:
  * - Creates D-Bus proxy on-demand (no persistent connection)
  * - Synchronous D-Bus call (blocks until daemon responds)
- * - Timeout: 10 seconds (configurable via DBUS_TIMEOUT_MS)
+ * - Timeout: 10 seconds (configurable via DBUS_TIMEOUT_MSEC)
  * - Returns string handle (handler_id as decimal string)
  *
  * ERROR HANDLING:
@@ -297,7 +298,7 @@ FirmwareInterfaceHandle registerProcess(const char *processName, const char *lib
         "RegisterProcess",
         g_variant_new("(ss)", processName, libVersion),
         G_DBUS_CALL_FLAGS_NONE,
-        DBUS_TIMEOUT_MS,
+        DBUS_TIMEOUT_MSEC,
         NULL,                       // GCancellable
         &error
     );
@@ -337,7 +338,7 @@ FirmwareInterfaceHandle registerProcess(const char *processName, const char *lib
                 "UnregisterProcess",
                 g_variant_new("(t)", handler_id),
                 G_DBUS_CALL_FLAGS_NONE,
-                DBUS_TIMEOUT_MS,
+                DBUS_TIMEOUT_MSEC,
                 NULL,
                 &cleanup_error
             );
@@ -389,6 +390,28 @@ void unregisterProcess(FirmwareInterfaceHandle handler)
     GVariant *result = NULL;
     guint64 handler_id = 0;
     gboolean success = FALSE;
+
+    /* Session state validation: reject if checkForUpdate() is active.
+     *
+     * You can't hang up the phone while waiting for an answer.
+     * registerProcess() = start session, checkForUpdate() = ask a question,
+     * unregisterProcess() = end session. If we let the app end the session
+     * while the daemon is still processing the firmware check, the daemon-
+     * client relationship enters an undefined state. So we reject the call
+     * and tell the app to wait for the callback first, then unregister.
+     *
+     * We return without freeing the handle - caller still owns it and can
+     * retry after the checkForUpdate callback fires (bounded by 120s timeout).
+     *
+     * Note: void return type means we can't return an error code. The app
+     * must check logs. A future API revision will add a return type.
+     */
+    if (internal_is_check_in_progress()) {
+        FWUPMGR_ERROR("unregisterProcess: REJECTED - checkForUpdate() is in "
+                      "progress. Wait for the callback to fire, then retry "
+                      "unregisterProcess().\n");
+        return;
+    }
 
     // NULL check: Safe to unregister NULL handle (no-op)
     if (!handler) {
@@ -457,7 +480,7 @@ void unregisterProcess(FirmwareInterfaceHandle handler)
         "UnregisterProcess",
         g_variant_new("(t)", handler_id),
         G_DBUS_CALL_FLAGS_NONE,
-        DBUS_TIMEOUT_MS,
+        DBUS_TIMEOUT_MSEC,
         NULL,                       // GCancellable
         &error
     );

@@ -14,31 +14,24 @@
  * @file rdkFwupdateMgr_api.c
  * @brief Public API implementations: checkForUpdate, downloadFirmware, updateFirmware
  *
- * ALL THREE APIS USE THE SAME ASYNC PATTERN:
- * ===========================================
- * All APIs are NON-BLOCKING fire-and-forget calls that return immediately.
- * Results are delivered asynchronously via D-Bus signals to registered callbacks.
- *
- * CHECKFORUPDATE:
- * ---------------
+ * CHECKFORUPDATE (Phase 1 - on-demand worker thread):
+ * ====================================================
  * 1. Validate handle and callback
- * 2. Register callback in registry (BEFORE D-Bus call to avoid race)
- * 3. Fire CheckForUpdate D-Bus method call (fire-and-forget)
- * 4. Return CHECK_FOR_UPDATE_SUCCESS immediately
- * 
- * [Later - typically 5-30 seconds]
- * Daemon queries XConf server and emits CheckForUpdateComplete signal
- * → on_check_complete_signal() fires in background thread
- * → dispatch_all_pending() calls registered UpdateEventCallback
- * → Callback receives FwInfoData with version info and update details
+ * 2. Reject if another checkForUpdate is already in progress
+ * 3. Allocate CheckRequestContext on heap
+ * 4. Spawn worker thread (internal_check_worker_thread)
+ * 5. Wait for worker to signal "ready" via condvar (~10-100ms)
+ * 6. Return SUCCESS or FAIL immediately
  *
- * DOWNLOAD / UPDATE FIRMWARE:
- * ============================
- * Same pattern but with progress signals:
- * - DownloadFirmware → DownloadProgress signals (multiple, 0%-100%)
- * - UpdateFirmware   → UpdateProgress signals (multiple, 0%-100%)
- * 
- * Callbacks fire repeatedly until COMPLETED or ERROR status.
+ * [Later - typically 5-30 seconds, max 120 seconds]
+ * Worker thread receives CheckForUpdateComplete signal from daemon
+ * → Parses payload → Fires client callback with FwInfoData
+ * → Cleans up all resources → Thread exits
+ *
+ * DOWNLOAD / UPDATE FIRMWARE (unchanged — persistent BG thread):
+ * ===============================================================
+ * Same fire-and-forget pattern as before.
+ * Callbacks registered in registry, dispatched from background thread.
  */
 
 #include "rdkFwupdateMgr_client.h"
@@ -49,24 +42,37 @@
 #include <stdlib.h>
 #include <inttypes.h>
 
+/* ---- Extern references to CheckForUpdate on-demand thread state ----
+ *
+ * These live in rdkFwupdateMgr_async.c. We access them here to:
+ * (1) check/set g_check_in_progress -  enforce one-at-a-time per process
+ * (2) track g_active_check_ctx - so the destructor can cancel/join the worker
+ *
+ * All access is protected by g_check_in_progress_mutex.
+ */
+extern pthread_mutex_t g_check_in_progress_mutex;
+extern bool            g_check_in_progress;
+extern CheckRequestContext *g_active_check_ctx;
+
 /* ========================================================================
- * checkForUpdate — SYNCHRONOUS implementation
+ * checkForUpdate - ON-DEMAND WORKER THREAD implementation (Phase 1)
  * ======================================================================== */
 
 /**
- * @brief Check for firmware update — non-blocking, returns immediately
+ * @brief Check for firmware update - spawns on-demand worker thread
  *
- * Sends CheckForUpdate(handle) to the daemon and returns immediately.
- * The daemon will query the XConf server in the background (5-30 seconds)
- * and emit a CheckForUpdateComplete signal when done.
+ * Allocates a CheckRequestContext, spawns a worker thread that connects
+ * to D-Bus, subscribes to CheckForUpdateComplete signal, sends the
+ * CheckForUpdate method call, and waits for the response. The caller
+ * blocks briefly (typically <100ms) until the worker signals "ready",
+ * then returns immediately. The callback fires asynchronously in the
+ * worker thread when the daemon responds (5s to 2min+).
  *
- * The callback fires ONCE when the signal arrives with complete firmware info:
- *   - FwInfoData.status:        FIRMWARE_AVAILABLE, FIRMWARE_NOT_AVAILABLE, etc.
- *   - FwInfoData.CurrFWVersion: Current firmware version
- *   - FwInfoData.UpdateDetails: Details about available update (if any)
- *
- * The callback is registered in the async registry before sending the D-Bus call
- * to ensure the signal doesn't arrive before we're ready to receive it.
+ * INVARIANTS:
+ *   - At most one checkForUpdate() in progress per process
+ *   - Callback fires exactly once (on signal) or zero times (on timeout/error)
+ *   - Worker thread is self-contained: creates and destroys all its resources
+ *   - No interaction with the persistent background thread
  *
  * @param handle    Valid FirmwareInterfaceHandle from registerProcess()
  * @param callback  Invoked when CheckForUpdateComplete signal arrives
@@ -75,11 +81,13 @@
 CheckForUpdateResult checkForUpdate(FirmwareInterfaceHandle handle,
                                     UpdateEventCallback callback)
 {
-    /* [1] Validate */
+    /* [1] Validate handle - must be non-NULL and non-empty (daemon would reject it anyway) */
     if (handle == NULL || handle[0] == '\0') {
         FWUPMGR_ERROR("checkForUpdate: invalid handle (NULL or empty)\n");
         return CHECK_FOR_UPDATE_FAIL;
     }
+
+    /* [2] Validate callback - NULL callback means we'd have no way to deliver results */
     if (callback == NULL) {
         FWUPMGR_ERROR("checkForUpdate: callback is NULL\n");
         return CHECK_FOR_UPDATE_FAIL;
@@ -87,66 +95,146 @@ CheckForUpdateResult checkForUpdate(FirmwareInterfaceHandle handle,
 
     FWUPMGR_INFO("checkForUpdate: handle='%s'\n", handle);
 
-    /* [2] Connect to D-Bus FIRST before registering callback
+    /* [3] Reject duplicate: only one checkForUpdate at a time per process.
      *
-     * This prevents stale registry entries if D-Bus connection fails.
-     * We only register the callback if we can successfully send the request.
+     * If a worker thread is already running, a second checkForUpdate()
+     * would create two threads both listening for the same D-Bus signal.
+     * wasteful and confusing (the app would get duplicate callbacks with
+     * identical data). So we reject it immediately.
      */
-    GError *error = NULL;
-    GDBusConnection *conn = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
+    pthread_mutex_lock(&g_check_in_progress_mutex);
+    if (g_check_in_progress) {
+        pthread_mutex_unlock(&g_check_in_progress_mutex);
+        FWUPMGR_WARN("checkForUpdate: already in progress, rejecting. "
+                     "handle='%s'\n", handle);
+        return CHECK_FOR_UPDATE_FAIL;
+    }
+    g_check_in_progress = true;
+    pthread_mutex_unlock(&g_check_in_progress_mutex);
 
-    if (conn == NULL) {
-        FWUPMGR_ERROR("checkForUpdate: D-Bus connect failed: %s\n",
-                      error ? error->message : "unknown");
-        if (error) g_error_free(error);
+    /* [4] Allocate per-request context on heap
+     *
+     * The context struct holds everything the worker thread needs:
+     * the handle, callback pointer, condvar for handshake, and GLib objects.
+     * It's heap-allocated so it survives after checkForUpdate() returns.
+     * Ownership transfers to the worker thread after the condvar handshake.
+     */
+    CheckRequestContext *ctx = calloc(1, sizeof(CheckRequestContext));
+    if (ctx == NULL) {
+        FWUPMGR_ERROR("checkForUpdate: calloc failed for ctx\n");
+        pthread_mutex_lock(&g_check_in_progress_mutex);
+        g_check_in_progress = false;
+        pthread_mutex_unlock(&g_check_in_progress_mutex);
         return CHECK_FOR_UPDATE_FAIL;
     }
 
-    /* [3] Register callback AFTER D-Bus connection succeeds
-     *
-     * Register immediately before sending to avoid race condition where
-     * the daemon responds before we're ready to receive the signal.
-     */
-    if (!internal_register_callback(handle, callback)) {
-        FWUPMGR_ERROR("checkForUpdate: registry full, handle='%s'\n", handle);
-        g_object_unref(conn);
+    ctx->handle_key = strdup(handle);
+    if (ctx->handle_key == NULL) {
+        FWUPMGR_ERROR("checkForUpdate: strdup failed for handle\n");
+        free(ctx);
+        pthread_mutex_lock(&g_check_in_progress_mutex);
+        g_check_in_progress = false;
+        pthread_mutex_unlock(&g_check_in_progress_mutex);
         return CHECK_FOR_UPDATE_FAIL;
     }
 
-    /* [4] Fire-and-forget D-Bus CheckForUpdate method call
+    ctx->callback    = callback;
+    ctx->is_ready    = false;
+    ctx->init_failed = false;
+
+    if (pthread_mutex_init(&ctx->ready_mutex, NULL) != 0) {
+        FWUPMGR_ERROR("checkForUpdate: ready_mutex init failed\n");
+        free(ctx->handle_key);
+        free(ctx);
+        pthread_mutex_lock(&g_check_in_progress_mutex);
+        g_check_in_progress = false;
+        pthread_mutex_unlock(&g_check_in_progress_mutex);
+        return CHECK_FOR_UPDATE_FAIL;
+    }
+
+    if (pthread_cond_init(&ctx->ready_cond, NULL) != 0) {
+        FWUPMGR_ERROR("checkForUpdate: ready_cond init failed\n");
+        pthread_mutex_destroy(&ctx->ready_mutex);
+        free(ctx->handle_key);
+        free(ctx);
+        pthread_mutex_lock(&g_check_in_progress_mutex);
+        g_check_in_progress = false;
+        pthread_mutex_unlock(&g_check_in_progress_mutex);
+        return CHECK_FOR_UPDATE_FAIL;
+    }
+
+    /* [6] Track context for library-unload safety
      *
-     * Arguments: (s)
-     *   s handle  — identifies this app to the daemon
-     *
-     * Three trailing NULLs = fire and forget (no reply waited for).
-     * g_dbus_connection_call() returns immediately.
-     * Daemon will emit CheckForUpdateComplete signal when XConf query finishes.
+     * Store the ctx pointer in g_active_check_ctx so the library
+     * destructor can find and cancel/join the worker thread. Without this,
+     * dlclose() would unmap our code while the worker is still running - might lead to crash.
      */
-    FWUPMGR_INFO("checkForUpdate: calling CheckForUpdate on daemon, handle='%s'\n",
+    pthread_mutex_lock(&g_check_in_progress_mutex);
+    g_active_check_ctx = ctx;
+    pthread_mutex_unlock(&g_check_in_progress_mutex);
+
+    /* [7] Spawn worker thread - ownership of ctx transfers to worker
+     *
+     * The worker thread will set up D-Bus, subscribe to signals,
+     * send the CheckForUpdate request, and wait for the daemon's response.
+     * If pthread_create fails, we undo everything and return FAIL.
+     */
+    if (pthread_create(&ctx->thread, NULL, internal_check_worker_thread, ctx) != 0) {
+        FWUPMGR_ERROR("checkForUpdate: pthread_create failed\n");
+        pthread_mutex_lock(&g_check_in_progress_mutex);
+        g_check_in_progress = false;
+        g_active_check_ctx = NULL;
+        pthread_mutex_unlock(&g_check_in_progress_mutex);
+        pthread_cond_destroy(&ctx->ready_cond);
+        pthread_mutex_destroy(&ctx->ready_mutex);
+        free(ctx->handle_key);
+        free(ctx);
+        return CHECK_FOR_UPDATE_FAIL;
+    }
+
+    /* [8] Wait for worker to signal ready (no timeout — see §5.1)
+     *
+     * This blocks the caller for ~10-100ms while the worker sets up
+     * its D-Bus connection and signal subscription. The worker signals
+     * is_ready=true when it's either ready or has failed to init.
+     */
+    pthread_mutex_lock(&ctx->ready_mutex);
+    while (!ctx->is_ready) {
+        pthread_cond_wait(&ctx->ready_cond, &ctx->ready_mutex);
+    }
+    bool failed = ctx->init_failed;
+    pthread_mutex_unlock(&ctx->ready_mutex);
+
+    /* [9] Check if worker failed to initialize
+     *
+     * The worker tried to connect to D-Bus and subscribe to signals.
+     * If that failed (D-Bus dead, system error), init_failed is true.
+     * We join the worker (it's already exiting) and return FAIL to the app.
+     * The worker handles its own cleanup - we just wait for it to finish.
+     */
+    if (failed) {
+        FWUPMGR_ERROR("checkForUpdate: worker thread failed to initialize. "
+                     "handle='%s'\n", handle);
+        /*
+         * Worker thread will clean itself up (free ctx, reset g_check_in_progress).
+         * We just need to join it to avoid a zombie thread.
+         * But the worker signals ready BEFORE going to cleanup, so we must
+         * wait for it to actually exit.
+         */
+        pthread_join(ctx->thread, NULL);
+        return CHECK_FOR_UPDATE_FAIL;
+    }
+
+    /* [10] Worker is running and listening. Return success to caller.
+     *
+     * From this point, the caller NEVER touches ctx again.
+     * The worker thread is the sole owner and will free it after
+     * the callback fires or the timeout expires.
+     */
+    FWUPMGR_INFO("checkForUpdate: worker thread started, returning SUCCESS. "
+                 "Callback will fire when daemon responds. handle='%s'\n",
                  handle);
 
-    g_dbus_connection_call(
-        conn,
-        DBUS_SERVICE_NAME,
-        DBUS_OBJECT_PATH,
-        DBUS_INTERFACE_NAME,
-        DBUS_METHOD_CHECK,                      /* method: CheckForUpdate     */
-        g_variant_new("(s)", handle),           /* app's handler_id string    */
-        NULL,                                   /* expected reply type: none  */
-        G_DBUS_CALL_FLAGS_NONE,
-        DBUS_TIMEOUT_MS,
-        NULL,                                   /* GCancellable: none         */
-        NULL,                                   /* reply callback: none       */
-        NULL                                    /* user_data: none            */
-    );
-
-    g_object_unref(conn);
-
-    FWUPMGR_INFO("checkForUpdate: D-Bus call sent, returning SUCCESS. "
-                 "Callback will fire when CheckForUpdateComplete signal arrives. "
-                 "handle='%s'\n", handle);
-
-    /* [5] Return immediately — app is unblocked */
     return CHECK_FOR_UPDATE_SUCCESS;
 }
 
@@ -173,12 +261,23 @@ static void rdkFwupdateMgr_lib_init(void)
 /**
  * @brief Library destructor — auto-called when .so is unloaded
  *
- * Stops background thread and frees all resources cleanly.
+ * Stops any active checkForUpdate worker thread, then stops the
+ * persistent background thread and frees all resources cleanly.
  */
 __attribute__((destructor))
 static void rdkFwupdateMgr_lib_deinit(void)
 {
     FWUPMGR_INFO("=== rdkFwupdateMgr library unloading ===\n");
+
+    /* Cancel and join any active CheckForUpdate worker thread first.
+     *
+     * TL;DR: Must happen BEFORE internal_system_deinit() because the worker
+     * may be using the shared D-Bus connection. If we tore down the BG thread
+     * first, the worker could be left with a dangling connection reference.
+     * Order: (1) stop worker → (2) stop BG thread → (3) free resources.
+     */
+    internal_cancel_all_active_check_threads();
+
     internal_system_deinit();
     FWUPMGR_INFO("=== rdkFwupdateMgr library unloaded ===\n");
 }
