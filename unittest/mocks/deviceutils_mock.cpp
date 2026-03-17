@@ -67,7 +67,15 @@ extern "C" void getDeviceTypeRFC(char *deviceType, size_t size)
         cout << "getDeviceTypeRFC g_DeviceUtilsMock object is NULL" << endl;
         if (deviceType != nullptr && size > 0)
         {
-            deviceType[0] = '\0';
+            const char *defaultType = "unknown";
+            size_t i = 0;
+            /* Copy up to size - 1 characters from defaultType, then NUL-terminate */
+            while (i + 1 < size && defaultType[i] != '\0')
+            {
+                deviceType[i] = defaultType[i];
+                ++i;
+            }
+            deviceType[i] = '\0';
         }
     }
 }
