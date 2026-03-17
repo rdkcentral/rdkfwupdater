@@ -607,6 +607,9 @@ bool isDebugServicesEnabled(void) {
     return false;  // Debug services not enabled by default
 }
 
+void getDeviceTypeRFC(char *deviceType, size_t size) {
+    return NULL;  // Stub
+}
 int isInStateRed(void) {
     return 0;  // Not in RED state by default
 }
