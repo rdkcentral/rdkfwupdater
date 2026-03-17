@@ -613,7 +613,12 @@ TEST_F(DeviceApiTestFixture, TestName_isSecureDbgSrvUnlocked_Prod_Labsigned_Devi
 TEST_F(DeviceApiTestFixture, TestName_isSecureDbgSrvUnlocked_Prod_LabsignedPropertyFails_Locked)
 {
     EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(true));
-    EXPECT_CALL(*g_DeviceUtilsMock, getDeviceTypeRFC(_, _)).Times(1);
+    EXPECT_CALL(*g_DeviceUtilsMock, getDeviceTypeRFC(_, _))
+        .Times(1)
+        .WillOnce(Invoke([](char* deviceType, size_t size) {
+            strncpy(deviceType, "test", size - 1);
+            deviceType[size - 1] = '\0';
+        }));
     EXPECT_CALL(*g_DeviceUtilsMock, getDevicePropertyData(StrEq("LABSIGNED_ENABLED"), _, _))
         .Times(1)
         .WillOnce(Return(-1));
