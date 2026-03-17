@@ -40,11 +40,18 @@
 
 #define MAC_ADDRESS_LEN 17
 
-/* function isSecureDbgSrvUnlocked - checks the buildtype, deviceType from RFC and enables secure debug services accordingly 
-        Usage: bool isSecureDbgSrvUnlocked <BUILDTYPE eBuildType>
- 
-        RETURN - True (Enables Debug Services) if buildtype is dev or buildtype is labsigned and deviceType is test
-*/
+/* function isSecureDbgSrvUnlocked - determines whether secure debug services may be enabled for the given build type.
+ *       Usage: bool isSecureDbgSrvUnlocked(BUILDTYPE eBuildType)
+ *
+ *       For eDEV builds, debug services are always unlocked.
+ *
+ *       For ePROD builds, debug services are unlocked only when all of the following are true:
+ *           - debug services are enabled via isDebugServicesEnabled() (RFC-controlled),
+ *           - the LABSIGNED_ENABLED device property indicates a labsigned image, and
+ *           - the deviceType value from RFC allows test devices (for example "test").
+ *
+ *       RETURN - true if secure debug services are allowed to run for the given build type; false otherwise.
+ */
 bool isSecureDbgSrvUnlocked(BUILDTYPE eBuildType)
 { 
 	char deviceType[16] = {0};
@@ -68,14 +75,14 @@ bool isSecureDbgSrvUnlocked(BUILDTYPE eBuildType)
 		        if ((strcmp(deviceType, "test") == 0) && dbgServices)
 		        {
 		             SWLOG_INFO("isSecureDbgSrvUnlocked: Enabling debug services...\n");
-		             SWLOG_INFO("isSecureDbgSrvUnlocked: dbgServices=%s, deviceType=%s, LABSIGNED_ENABLED=%s\n",dbgServices ? "true" : "false", deviceType, labsigned);
                      isDebugServicesUnlocked = true;
                 }   
 		        else
 		        {
 		             SWLOG_INFO("isSecureDbgSrvUnlocked: unable to enable debug services...\n");
-		             SWLOG_INFO("isSecureDbgSrvUnlocked: dbgServices=%s, deviceType=%s, LABSIGNED_ENABLED=%s\n",dbgServices ? "true" : "false", deviceType, labsigned);
                 }
+                SWLOG_INFO("isSecureDbgSrvUnlocked: dbgServices=%s, deviceType=%s, LABSIGNED_ENABLED=%s\n",
+                           dbgServices ? "true" : "false", deviceType, labsigned);
             }
             else
             {

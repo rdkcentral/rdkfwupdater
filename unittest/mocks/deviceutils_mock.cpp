@@ -59,7 +59,17 @@ extern "C" FILE* v_secure_popen(const char *mode, ...)
 extern "C" void getDeviceTypeRFC(char *deviceType, size_t size)
 {
     if (g_DeviceUtilsMock)
+    {
         g_DeviceUtilsMock->getDeviceTypeRFC(deviceType, size);
+    }
+    else
+    {
+        cout << "getDeviceTypeRFC g_DeviceUtilsMock object is NULL" << endl;
+        if (deviceType != nullptr && size > 0)
+        {
+            deviceType[0] = '\0';
+        }
+    }
 }
 
 extern "C" int v_secure_pclose(FILE *fp)
