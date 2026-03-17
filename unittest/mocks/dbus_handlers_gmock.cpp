@@ -607,6 +607,7 @@ bool isDebugServicesEnabled(void) {
     return false;  // Debug services not enabled by default
 }
 
+extern "C" {
 void getDeviceTypeRFC(char *deviceType, size_t size) {
     if (deviceType && size > 0) {
         const char defaultType[] = "unknown";
@@ -614,6 +615,7 @@ void getDeviceTypeRFC(char *deviceType, size_t size) {
         deviceType[size - 1] = '\0';
     }
     return;
+}
 }
 int isInStateRed(void) {
     return 0;  // Not in RED state by default
