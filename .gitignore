@@ -1,0 +1,52 @@
+# Build artifacts
+*.o
+*.lo
+*.a
+*.la
+*.Po
+*.Tpo
+*.gcno
+*.gcda
+*.gcov
+
+# Autotools build artifacts
+/unittest/Makefile
+/unittest/Makefile.in
+/unittest/aclocal.m4
+/unittest/autom4te.cache/
+/unittest/compile
+/unittest/config.guess
+/unittest/config.log
+/unittest/config.status
+/unittest/config.sub
+/unittest/configure
+/unittest/depcomp
+/unittest/install-sh
+/unittest/libtool
+/unittest/ltmain.sh
+/unittest/missing
+/unittest/.deps/
+/unittest/mocks/.deps/
+/unittest/deviceutils/.deps/
+
+# Dependency tracking directories
+**/.deps/
+
+# Build binaries
+/unittest/rdkfw_device_status_gtest
+/unittest/rdkfw_deviceutils_gtest
+/unittest/rdkfw_main_gtest
+/unittest/rdkfw_interface_gtest
+/unittest/rdkfwupdatemgr_main_flow_gtest
+/unittest/rdkFwupdateMgr_handlers_gtest
+/unittest/dbus_handlers_gtest
+/unittest/rdkFwupdateMgr_async_refcount_gtest
+/unittest/rdkFwupdateMgr_async_stress_gtest
+/unittest/rdkFwupdateMgr_async_cleanup_gtest
+/unittest/rdkFwupdateMgr_async_signal_gtest
+/unittest/rdkFwupdateMgr_async_threadsafety_gtest
+
+# Coverage reports
+/src/coverage.info
+/src/coverage.filtered.info
+/src/out/
