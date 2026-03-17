@@ -525,6 +525,8 @@ TEST_F(DeviceApiTestFixture, TestName_isSecureDbgSrvUnlocked_Prod_Labsigned_Devi
             data[size - 1] = '\0';
             return 0;
         }));
+    EXPECT_CALL(*g_DeviceUtilsMock,
+                t2ValNotify(StrEq("SYST_INFO_FW_DbgSrv"), StrEq("true")));
     EXPECT_TRUE(isSecureDbgSrvUnlocked(ePROD));
 }
 
