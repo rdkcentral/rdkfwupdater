@@ -36,7 +36,6 @@ using namespace std;
 using ::testing::Return;
 using ::testing::StrEq;
 using ::testing::Invoke;
-using ::testing::DoAll;
 
 
 //DeviceUtilsMock *g_DeviceApiMock = NULL;
