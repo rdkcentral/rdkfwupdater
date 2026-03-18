@@ -1,0 +1,31 @@
+# Build artifacts
+*.o
+*.a
+*.so
+*.gcno
+*.gcda
+*.gcov
+*.Po
+*.la
+*.lo
+
+# Autotools generated files
+aclocal.m4
+autom4te.cache/
+config.guess
+config.log
+config.status
+config.sub
+compile
+configure
+depcomp
+install-sh
+libtool
+ltmain.sh
+missing
+Makefile
+Makefile.in
+.deps/
+
+# Coverage reports
+coverage/
