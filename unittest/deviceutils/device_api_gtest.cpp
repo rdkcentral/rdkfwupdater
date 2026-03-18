@@ -694,7 +694,6 @@ TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessStatered_DebugServices_E
     //EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _)).Times(1).WillOnce(Return(1));
     ret = system("echo \"BUILD_TYPE=vbn\" > /tmp/device_gtest.prop");
     //EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(1));
-    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(true));
     ret = system("echo \"https://www.statered.com\" > /tmp/stateredrecovry.conf");
     ret = GetServURL(output, sizeof(output));
     EXPECT_EQ(strncmp(output,servUrl,strlen(servUrl)),0);
@@ -713,7 +712,6 @@ TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessStatered_DebugServices_D
     //EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _)).Times(1).WillOnce(Return(1));
     ret = system("echo \"BUILD_TYPE=vbn\" > /tmp/device_gtest.prop");
     //EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(1));
-    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(false));
     ret = system("echo \"https://www.statered.com\" > /tmp/stateredrecovry.conf");
     ret = GetServURL(output, sizeof(output));
     EXPECT_EQ(strncmp(output,servUrl,strlen(servUrl)),0);
@@ -808,7 +806,6 @@ TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessSwupdate_DebugServices_E
     EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(0));
     //EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _)).Times(1).WillOnce(Return(1));
     ret = system("echo \"BUILD_TYPE=vbn\" > /tmp/device_gtest.prop");
-    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(true));
     ret = system("echo \"https://www.rdkautotool.com\" > /tmp/swupdate.conf");
     ret=GetServURL(output , sizeof(output));
     EXPECT_EQ(strncmp(output , servUrl , strlen(servUrl)),0);
@@ -828,7 +825,6 @@ TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessSwupdate_DebugServices_D
     EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(0));
     //EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _)).Times(1).WillOnce(Return(1));
     ret = system("echo \"BUILD_TYPE=vbn\" > /tmp/device_gtest.prop");
-    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(false));
     ret = system("echo \"https://www.rdkautotool.com\" > /tmp/swupdate.conf");
     ret=GetServURL(output , sizeof(output));
     EXPECT_EQ(strncmp(output , servUrl , strlen(servUrl)),0);
