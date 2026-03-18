@@ -91,10 +91,10 @@ bool isSecureDbgSrvUnlocked(BUILDTYPE eBuildType)
             SWLOG_ERROR("%s: getDevicePropertyData() for LABSIGNED_ENABLED failed\n", __FUNCTION__);
         }
 		SWLOG_INFO("isSecureDbgSrvUnlocked: dbgServices=%s, deviceType=%s, LABSIGNED_ENABLED=%s\n", dbgServices ? "true" : "false", deviceType, labsigned);	
-		if(isDebugServicesUnlocked){
-			SWLOG_INFO("isSecureDbgSrvUnlocked: Enabling debug services...\n");
-			t2ValNotify("SYST_INFO_FW_DbgSrv", "true");
-		}
+	}
+	if(isDebugServicesUnlocked){
+		SWLOG_INFO("isSecureDbgSrvUnlocked: Enabling debug services...\n");
+		t2ValNotify("SYST_INFO_FW_DbgSrv", "true");
 	}
     return isDebugServicesUnlocked;
 }
