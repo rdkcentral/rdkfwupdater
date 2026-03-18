@@ -626,6 +626,63 @@ TEST_F(DeviceApiTestFixture, TestName_isSecureDbgSrvUnlocked_Prod_LabsignedPrope
     EXPECT_FALSE(isSecureDbgSrvUnlocked(ePROD));
 }
 
+/* eUNKNOWN build type → false (neither non-prod nor ePROD path triggers unlock) */
+TEST_F(DeviceApiTestFixture, TestName_isSecureDbgSrvUnlocked_Unknown_Locked)
+{
+    EXPECT_FALSE(isSecureDbgSrvUnlocked(eUNKNOWN));
+}
+
+/* eDEV build type → true (non-prod, always unlocked) */
+TEST_F(DeviceApiTestFixture, TestName_isSecureDbgSrvUnlocked_Dev_Unlocked)
+{
+    EXPECT_TRUE(isSecureDbgSrvUnlocked(eDEV));
+}
+
+/* eQA build type → true (non-prod, always unlocked) */
+TEST_F(DeviceApiTestFixture, TestName_isSecureDbgSrvUnlocked_QA_Unlocked)
+{
+    EXPECT_TRUE(isSecureDbgSrvUnlocked(eQA));
+}
+
+/* ePROD + labsigned=true + deviceType=prod + dbgServices=false → locked ("unable to enable debug services") */
+TEST_F(DeviceApiTestFixture, TestName_isSecureDbgSrvUnlocked_Prod_Labsigned_DeviceTypeProd_Locked)
+{
+    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(false));
+    EXPECT_CALL(*g_DeviceUtilsMock, getDeviceTypeRFC(_, _))
+        .Times(1)
+        .WillOnce(Invoke([](char* deviceType, size_t size) {
+            strncpy(deviceType, "prod", size - 1);
+            deviceType[size - 1] = '\0';
+        }));
+    EXPECT_CALL(*g_DeviceUtilsMock, getDevicePropertyData(StrEq("LABSIGNED_ENABLED"), _, _))
+        .Times(1)
+        .WillOnce(Invoke([](const char* /*model*/, char* data, int size) {
+            strncpy(data, "true", size - 1);
+            data[size - 1] = '\0';
+            return 0;
+        }));
+    EXPECT_FALSE(isSecureDbgSrvUnlocked(ePROD));
+}
+
+/* ePROD + labsigned empty string → locked ("LABSIGNED_ENABLED not enabled" log path) */
+TEST_F(DeviceApiTestFixture, TestName_isSecureDbgSrvUnlocked_Prod_LabsignedEmpty_Locked)
+{
+    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(true));
+    EXPECT_CALL(*g_DeviceUtilsMock, getDeviceTypeRFC(_, _))
+        .Times(1)
+        .WillOnce(Invoke([](char* deviceType, size_t size) {
+            strncpy(deviceType, "test", size - 1);
+            deviceType[size - 1] = '\0';
+        }));
+    EXPECT_CALL(*g_DeviceUtilsMock, getDevicePropertyData(StrEq("LABSIGNED_ENABLED"), _, _))
+        .Times(1)
+        .WillOnce(Invoke([](const char* /*model*/, char* data, int /*size*/) {
+            data[0] = '\0';
+            return 0;
+        }));
+    EXPECT_FALSE(isSecureDbgSrvUnlocked(ePROD));
+}
+
 TEST_F(DeviceApiTestFixture, TestName_GetServURL_Nullcheck)
 {
     EXPECT_EQ(GetServURL(NULL, 0), 0);
