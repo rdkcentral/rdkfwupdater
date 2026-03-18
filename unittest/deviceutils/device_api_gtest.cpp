@@ -644,7 +644,7 @@ TEST_F(DeviceApiTestFixture, TestName_isSecureDbgSrvUnlocked_QA_Unlocked)
 }
 
 /* ePROD + labsigned=true + deviceType=prod + dbgServices=false → locked ("unable to enable debug services") */
-TEST_F(DeviceApiTestFixture, TestName_isSecureDbgSrvUnlocked_Prod_Labsigned_DeviceTypeProd_Locked)
+TEST_F(DeviceApiTestFixture, TestName_isSecureDbgSrvUnlocked_Prod_Labsigned_DeviceTypeProd_DbgDisabled_Locked)
 {
     EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(false));
     EXPECT_CALL(*g_DeviceUtilsMock, getDeviceTypeRFC(_, _))
