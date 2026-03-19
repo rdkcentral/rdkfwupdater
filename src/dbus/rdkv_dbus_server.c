@@ -586,119 +586,6 @@ static void free_task_context(TaskContext *ctx)
 }
 
 /**
- * @brief Complete all waiting CheckForUpdate tasks and send responses.
- *
- * Called after XConf query completes. Iterates through waiting_checkUpdate_ids list,
- * sends D-Bus method responses with cached result data, emits CheckForUpdateComplete
- * signals, and cleans up task contexts. Resets XConf status flag.
- *
- * @param ctx Task context (currently unused, kept for API consistency)
- */
-#if 0
-void complete_CheckUpdate_waiting_tasks(TaskContext *ctx) 
-{
-	SWLOG_INFO("Completing %d waiting CheckUpdate tasks\n", g_slist_length(waiting_checkUpdate_ids));
-	// Iterate through each task_id in waiting_checkUpdate_ids
-	GSList *current = waiting_checkUpdate_ids;
-	while (current != NULL) {
-		guint task_id = GPOINTER_TO_UINT(current->data);
-		SWLOG_INFO("current task Id %d will get cleared after sending response to the app\n", task_id);
-		if (active_tasks == NULL) {
-			SWLOG_INFO("ERROR: tasks table is NULL\n");
-			return;
-		}
-		// Lookup task_id in active_task
-		//TaskContext *context = g_hash_table_lookup(active_tasks, GUINT_TO_POINTER(task_id));
-		TaskContext *context = g_hash_table_lookup(active_tasks, GUINT_TO_POINTER(task_id));
-		if (context != NULL) {
-			SWLOG_INFO("[Waiting task_id in -%d] Sending response to app_id : %s\n",task_id, context->process_name);
-			
-			// Send D-Bus response using the stored result data
-			const gchar *version = context->data.check_update.client_fwdata_version ? 
-			                      context->data.check_update.client_fwdata_version : "";
-			const gchar *available = context->data.check_update.client_fwdata_availableVersion ? 
-			                        context->data.check_update.client_fwdata_availableVersion : "";
-			const gchar *details = context->data.check_update.client_fwdata_updateDetails ? 
-			                      context->data.check_update.client_fwdata_updateDetails : "";
-			const gchar *status_str = context->data.check_update.client_fwdata_status ? 
-			                         context->data.check_update.client_fwdata_status : "";
-			
-			SWLOG_INFO("[CHECK_UPDATE] Task Completion - Sending Response\n");
-			SWLOG_INFO("[CHECK_UPDATE] Task ID: %d\n", task_id);
-			SWLOG_INFO("[CHECK_UPDATE] Response data:\n");
-			SWLOG_INFO("[CHECK_UPDATE]   - Current FW Version: '%s'\n", version);
-			SWLOG_INFO("[CHECK_UPDATE]   - Available Version: '%s'\n", available);
-			SWLOG_INFO("[CHECK_UPDATE]   - Update Details: '%s'\n", details);
-			SWLOG_INFO("[CHECK_UPDATE]   - Status String: '%s'\n", status_str);
-			SWLOG_INFO("[CHECK_UPDATE]   - Status Code: %d ", (gint32)context->data.check_update.result_code);
-			
-			// Log status meaning
-			switch(context->data.check_update.result_code) {
-				case 0: SWLOG_INFO("(FIRMWARE_AVAILABLE)\n"); break;
-				case 1: SWLOG_INFO("(FIRMWARE_NOT_AVAILABLE)\n"); break;
-				case 2: SWLOG_INFO("(UPDATE_NOT_ALLOWED)\n"); break;
-				case 3: SWLOG_INFO("(FIRMWARE_CHECK_ERROR)\n"); break;
-				case 4: SWLOG_INFO("(IGNORE_OPTOUT)\n"); break;
-				case 5: SWLOG_INFO("(BYPASS_OPTOUT)\n"); break;
-				default: SWLOG_INFO("(UNKNOWN_STATUS)\n"); break;
-			}
-					SWLOG_INFO("[CHECK_UPDATE] Sending D-Bus response to client...\n");
-		g_dbus_method_invocation_return_value(context->invocation,
-			g_variant_new("(issssi)",
-				0,           // result: CHECK_FOR_UPDATE_SUCCESS (API call succeeded)
-				version,     // Current/Detected Fw Version (from server)
-				available,   // Available Version (from XConf)
-				details,     // Update Details (from XConf)
-				status_str,  // Status string from FwData structure (optional field)
-				(gint32)context->data.check_update.result_code));    // Status Code (0=FIRMWARE_AVAILABLE, 1=FIRMWARE_NOT_AVAILABLE, 2=UPDATE_NOT_ALLOWED, 3=FIRMWARE_CHECK_ERROR, 4=IGNORE_OPTOUT, 5=BYPASS_OPTOUT)
-
-			SWLOG_INFO("[CHECK_UPDATE] Response sent successfully to client\n");
-			
-			// ALSO emit D-Bus signal for callback mechanism (NEW ADDITION)
-			SWLOG_INFO("[CHECK_UPDATE] Emitting D-Bus signal for callback...\n");
-			GError *signal_error = NULL;
-			gboolean signal_result = g_dbus_connection_emit_signal(connection,
-				NULL,  // Broadcast to all listeners
-				"/org/rdkfwupdater/Service",
-				"org.rdkfwupdater.Interface",
-				"CheckForUpdateComplete",
-				g_variant_new("(tiissss)",
-					g_ascii_strtoull(context->process_name, NULL, 10),  // handler_id (uint64)
-					(gint32)CHECK_FOR_UPDATE_SUCCESS,                   // result (API call result)
-					(gint32)context->data.check_update.result_code,     // status_code (firmware status)
-					version,                                            // current_version
-					available,                                          // available_version
-					details,                                            // update_details
-					status_str                                          // status_message
-				),
-				&signal_error);
-				
-			if (signal_result) {
-				SWLOG_INFO("[CHECK_UPDATE] D-Bus signal emitted successfully for handler '%s'\n", context->process_name);
-			} else {
-				SWLOG_ERROR("[CHECK_UPDATE] Failed to emit D-Bus signal: %s\n", 
-				           signal_error ? signal_error->message : "Unknown error");
-				if (signal_error) g_error_free(signal_error);
-			}
-			// Remove task_id from active_tasks
-			g_hash_table_remove(active_tasks, GUINT_TO_POINTER(task_id));
-			SWLOG_INFO("[CHECK_UPDATE] Task-%d removed from active tasks\n", task_id);
-			SWLOG_INFO("[CHECK_UPDATE] Task Completion - SUCCESS\n");
-		} else {
-			SWLOG_INFO("Task-%d not found in active_tasks\n", task_id);
-		}
-		current = current->next;
-	}
-	// Clear waiting_CheckUpdatr_ids list
-	g_slist_free(waiting_checkUpdate_ids);
-	waiting_checkUpdate_ids = NULL;
-	setXConfCommStatus(FALSE);
-	SWLOG_INFO("All CheckUpdate waiting tasks completed !!\n");
-}
-
-#endif
-
-/**
  * @brief Complete all waiting DownloadFirmware tasks and send responses.
  *
  * Similar to complete_CheckUpdate_waiting_tasks but for download operations.
@@ -772,7 +659,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 
 	/* CHECK UPDATE REQUEST*/
 	//extract process handler_id and FwData from the payload -  inputs provided by client app
-	/* CHECK FOR UPDATE REQUEST - CACHE-FIRST, NON-BLOCKING */
+	/* CHECK FOR UPDATE REQUEST - NON-BLOCKING */
 	if (g_strcmp0(rdkv_req_method, "CheckForUpdate") == 0) {
 		gchar *handler_process_name = NULL;
 		g_variant_get(rdkv_req_payload, "(s)", &handler_process_name);
@@ -827,94 +714,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		return;
 	}
 		
-		// 3. CHECK CACHE (FAST, NON-BLOCKING)
-		SWLOG_INFO("\n[STEP 3] Cache Check\n");
-		SWLOG_INFO("  Calling: xconf_cache_exists()\n");
-		gboolean cache_exists = xconf_cache_exists();
-		SWLOG_INFO("[CHECK_UPDATE] Result: %s\n", cache_exists ? "CACHE HIT" : "CACHE MISS");
 		
-		if (cache_exists) {
-			// CACHE HIT PATH
-			SWLOG_INFO("[CHECK_UPDATE] CACHE HIT PATH - Immediate Response\n");
-			SWLOG_INFO("[CHECK_UPDATE] Action: Loading firmware data from cache\n");
-			
-			CheckUpdateResponse response = rdkFwupdateMgr_checkForUpdate(handler_process_name);
-			
-			SWLOG_INFO("[CHECK_UPDATE] Cache data loaded successfully\n");
-			SWLOG_INFO("[CHECK_UPDATE] Cached Firmware Data:\n");
-			SWLOG_INFO("[CHECK_UPDATE]   API Result: %d ", response.result);
-			switch(response.result) {
-				case 0: SWLOG_INFO(" (CHECK_FOR_UPDATE_SUCCESS)\n"); break;
-				case 1: SWLOG_INFO(" (CHECK_FOR_UPDATE_FAIL)\n"); break;
-				default: SWLOG_INFO(" (UNKNOWN)\n"); break;
-			}
-			SWLOG_INFO("[CHECK_UPDATE]   Firmware Status Code: %d ", response.status_code);
-			switch(response.status_code) {
-				case 0: SWLOG_INFO(" (FIRMWARE_AVAILABLE)\n"); break;
-				case 1: SWLOG_INFO(" (FIRMWARE_NOT_AVAILABLE)\n"); break;
-				case 2: SWLOG_INFO(" (UPDATE_NOT_ALLOWED)\n"); break;
-				case 3: SWLOG_INFO(" (FIRMWARE_CHECK_ERROR)\n"); break;
-				case 4: SWLOG_INFO(" (IGNORE_OPTOUT)\n"); break;
-				case 5: SWLOG_INFO(" (BYPASS_OPTOUT)\n"); break;
-				default: SWLOG_INFO(" (UNKNOWN)\n"); break;
-			}
-			SWLOG_INFO("[CHECK_UPDATE]   - Current Version: '%s'\n", 
-			           response.current_img_version ? response.current_img_version : "N/A");
-			SWLOG_INFO("[CHECK_UPDATE]   - Available Version: '%s'\n", 
-			           response.available_version ? response.available_version : "N/A");
-			SWLOG_INFO("[CHECK_UPDATE]   - Status Message: '%s'\n", 
-			           response.status_message ? response.status_message : "N/A");
-					SWLOG_INFO("[CHECK_UPDATE] Sending immediate D-Bus method response\n");
-		// Send immediate D-Bus response (issssi): result + 4 strings + status_code
-		g_dbus_method_invocation_return_value(resp_ctx,
-			g_variant_new("(issssi)",
-				response.result,  // API call result (SUCCESS/FAIL)
-				response.current_img_version ? response.current_img_version : "",
-				response.available_version ? response.available_version : "",
-				response.update_details ? response.update_details : "",
-				response.status_message ? response.status_message : "",
-				response.status_code));  // Firmware status (0-5)
-			
-			SWLOG_INFO("[CHECK_UPDATE] D-Bus method response sent successfully\n");
-			
-			// Also emit signal for consistency (so clients can use either method or signal)
-			SWLOG_INFO("[CHECK_UPDATE] Emitting CheckForUpdateComplete signal for consistency...\n");
-			GError *signal_error = NULL;
-			gboolean signal_sent = g_dbus_connection_emit_signal(connection,
-				NULL, "/org/rdkfwupdater/Service",
-				"org.rdkfwupdater.Interface",
-				"CheckForUpdateComplete",
-				g_variant_new("(tiissss)",
-					g_ascii_strtoull(handler_process_name, NULL, 10),   // handler_id (uint64)
-					(gint32)response.result,                            // result (API call result)
-					(gint32)response.status_code,                       // status_code (firmware status)
-					response.current_img_version ? response.current_img_version : "",
-					response.available_version ? response.available_version : "",
-					response.update_details ? response.update_details : "",
-					response.status_message ? response.status_message : ""
-				),
-				&signal_error);
-			
-			if (signal_sent) {
-				SWLOG_INFO("[CHECK_UPDATE] Signal emitted successfully\n");
-			} else {
-				SWLOG_ERROR("[CHECK_UPDATE] Signal emission failed: %s\n",
-				           signal_error ? signal_error->message : "Unknown");
-				if (signal_error) g_error_free(signal_error);
-			}
-			
-			checkupdate_response_free(&response);
-			g_free(handler_process_name);
-			
-			SWLOG_INFO("[CHECK_UPDATE] CACHE HIT PATH COMPLETE\n");
-			SWLOG_INFO("[CHECK_UPDATE] Total processing: Immediate (no async operation)\n");
-			SWLOG_INFO("[CHECK_UPDATE] Client received: Real firmware data\n");
-			return;
-		}
-		
-		// CACHE MISS PATH
-		SWLOG_INFO("CACHE MISS PATH - Async Background Fetch\n");
-		SWLOG_INFO("  XConf cache not available\n");
 		SWLOG_INFO("  Async non-blocking fetch required\n");
 		SWLOG_INFO("  Client flow:\n");
 		SWLOG_INFO("    1. Gets FIRMWARE_CHECK_ERROR (status=3) immediately (check in progress)\n");
@@ -1189,7 +989,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		
 		SWLOG_INFO("[DOWNLOADFIRMWARE] Starting validation...\n");
 	
-	        if (!handler_id_str || !strlen(handler_id_str) || !firmware_name   || !strlen(firmware_name)   || !download_url    || !strlen(download_url)|| !type_of_firmware || !strlen(type_of_firmware)) {
+	        if (!handler_id_str || !strlen(handler_id_str) || !firmware_name   || !strlen(firmware_name)   || !type_of_firmware || !strlen(type_of_firmware)) {
 			SWLOG_ERROR("[DOWNLOADFIRMWARE] Invalid input. One or more fields are empty or NULL\n");
 			g_dbus_method_invocation_return_value(resp_ctx,
                                 g_variant_new("(sss)",
@@ -1331,7 +1131,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		// ========== CHECK FOR CACHED FILE (Scenario 8) ==========
 		
 		SWLOG_INFO("[DOWNLOADFIRMWARE] Checking for cached file...\n");
-		gchar *cache_path = g_strdup_printf("/opt/CDL/%s", firmware_name);  // MADHU - check if this is the path always to download image
+		gchar *cache_path = g_strdup_printf("/opt/CDL/%s", firmware_name);  // TODO - check if this is the path always to download image
 		SWLOG_INFO("[DOWNLOADFIRMWARE]   Cache path: %s\n", cache_path);
 		
 		if (g_file_test(cache_path, G_FILE_TEST_EXISTS)) {
@@ -2689,87 +2489,6 @@ static void rdkfw_xconf_fetch_done(GObject *source_object, GAsyncResult *res, gp
  */
 
 /**
- * @brief Progress callback invoked by curl during firmware download
- * 
- * Thread Context: WORKER THREAD (called by libcurl via xferinfo)
- * Thread Safety: Uses g_idle_add() to marshal signals to main loop
- * 
- * Call Chain:
- *   libcurl (worker thread) → xferinfo() [urlHelper.c]
- *     → download_progress_callback() [HERE]
- *       → g_idle_add(rdkfw_emit_download_progress, ...)
- *         → rdkfw_emit_download_progress() [main loop thread]
- *           → g_dbus_connection_emit_signal()
- * 
- * Signature matches RdkUpgradeContext_t.progress_callback:
- *   void (*)(unsigned long long current_bytes, unsigned long long total_bytes, void* user_data)
- * 
- * @param current_bytes Bytes downloaded so far
- * @param total_bytes Total file size in bytes
- * @param user_data AsyncDownloadContext* pointer
- */
-#if 0
-static void download_progress_callback(unsigned long long current_bytes, 
-                                       unsigned long long total_bytes, 
-                                       void* user_data) {
-    AsyncDownloadContext *ctx = (AsyncDownloadContext *)user_data;
-    
-    SWLOG_DEBUG("[PROGRESS_CB] Invoked from worker thread (Thread ID: %lu)\n", (unsigned long)pthread_self());
-    
-    // NULL CHECK: Validate context
-    if (!ctx) {
-        SWLOG_ERROR("[PROGRESS_CB] ERROR: NULL context received!\n");
-        return;
-    }
-    
-    // NULL CHECK: Validate D-Bus connection
-    if (!ctx->connection) {
-        SWLOG_ERROR("[PROGRESS_CB] ERROR: NULL D-Bus connection in context!\n");
-        return;
-    }
-    
-    // Calculate percentage from bytes
-    int progress_int = 0;
-    if (total_bytes > 0) {
-        double percent = ((double)current_bytes / (double)total_bytes) * 100.0;
-        progress_int = (int)percent;
-        if (progress_int > 100) progress_int = 100;
-        if (progress_int < 0) progress_int = 0;
-    }
-    
-    // Throttle logging (only log on change)
-    static int last_logged = -1;
-    if (progress_int != last_logged) {
-        SWLOG_INFO("[PROGRESS_CB] Download progress: %d%% (%llu/%llu bytes)\n", 
-                   progress_int, current_bytes, total_bytes);
-        SWLOG_INFO("[PROGRESS_CB]   Firmware: %s\n", ctx->firmware_name ? ctx->firmware_name : "NULL");
-        last_logged = progress_int;
-    }
-    
-    // Update global state
-    if (current_download) {
-        current_download->current_progress = progress_int;
-    }
-    
-    // Create progress update for D-Bus signal
-    ProgressUpdate *update = g_new0(ProgressUpdate, 1);
-    if (!update) {
-        SWLOG_ERROR("[PROGRESS_CB] ERROR: Failed to allocate ProgressUpdate!\n");
-        return;
-    }
-    
-    update->progress = progress_int;
-    update->status = FW_DWNL_INPROGRESS;
-    update->handler_id = ctx->handler_id ? g_strdup(ctx->handler_id) : NULL;
-    update->firmware_name = ctx->firmware_name ? g_strdup(ctx->firmware_name) : NULL;
-    update->connection = ctx->connection;
-    
-    // Schedule signal emission on main loop (thread-safe!)
-    SWLOG_DEBUG("[PROGRESS_CB] Scheduling D-Bus signal emission via g_idle_add\n");
-    g_idle_add(rdkfw_emit_download_progress, update);
-}
-#endif
-/**
  * @brief Emit DownloadProgress signal on main loop (called via g_idle_add)
  * 
  * This function runs on the MAIN LOOP thread (scheduled via g_idle_add from worker thread).
@@ -2994,8 +2713,120 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
         return;
     }
     
-    if (!ctx->download_url || strlen(ctx->download_url) == 0) {
-        SWLOG_ERROR("[DOWNLOAD_WORKER] CRITICAL: Invalid download URL!\n");
+    // ========== STEP 1.5: DETERMINE EFFECTIVE DOWNLOAD URL ==========
+    // If download_url is provided, use it
+    // If download_url is NULL/empty, try to load from XConf cache
+    
+    gchar *effective_download_url = NULL;
+    
+    if (ctx->download_url && strlen(ctx->download_url) > 0) {
+        // Use custom URL provided by client
+        SWLOG_INFO("[DOWNLOAD_WORKER] Using custom download URL: %s\n", ctx->download_url);
+        effective_download_url = g_strdup(ctx->download_url);
+    } else {
+        // Load URL from XConf cache (try in-memory first, then file cache)
+        SWLOG_INFO("[DOWNLOAD_WORKER] No custom URL, attempting to load from XConf cache\n");
+        
+        XCONFRES xconf_response;
+        memset(&xconf_response, 0, sizeof(XCONFRES));
+        int http_code = 0;
+        gboolean cache_loaded = FALSE;
+        
+        // Try in-memory cache first (fastest - no file I/O)
+        SWLOG_INFO("[DOWNLOAD_WORKER] Attempting to load from in-memory cache...\n");
+        if (get_cached_xconf_data(&xconf_response, &http_code)) {
+            SWLOG_INFO("[DOWNLOAD_WORKER] SUCCESS: Loaded from in-memory cache\n");
+            SWLOG_INFO("[DOWNLOAD_WORKER]   - Version: %s\n", xconf_response.cloudFWVersion);
+            SWLOG_INFO("[DOWNLOAD_WORKER]   - Location: %s\n", xconf_response.cloudFWLocation);
+            SWLOG_INFO("[DOWNLOAD_WORKER]   - HTTP Code: %d\n", http_code);
+            cache_loaded = TRUE;
+        } else {
+            SWLOG_INFO("[DOWNLOAD_WORKER] In-memory cache miss, trying file cache...\n");
+            
+            // Fallback: Check if file cache exists
+            if (!xconf_cache_exists()) {
+                SWLOG_ERROR("[DOWNLOAD_WORKER] ERROR: No XConf cache found (neither memory nor file)\n");
+                SWLOG_ERROR("[DOWNLOAD_WORKER] Client must call CheckForUpdate first\n");
+                
+                // Emit error signal
+                ProgressUpdate *error_update = g_new0(ProgressUpdate, 1);
+                error_update->progress = -1;
+                error_update->status = FW_DWNL_ERROR;
+                error_update->handler_id = ctx->handler_id ? g_strdup(ctx->handler_id) : NULL;
+                error_update->firmware_name = ctx->firmware_name ? g_strdup(ctx->firmware_name) : NULL;
+                error_update->connection = ctx->connection;
+                g_idle_add(rdkfw_emit_download_progress, error_update);
+                
+                g_task_return_boolean(task, FALSE);
+                return;
+            }
+            
+            // Load from file cache
+            if (!load_xconf_from_cache(&xconf_response)) {
+                SWLOG_ERROR("[DOWNLOAD_WORKER] ERROR: Failed to load XConf file cache\n");
+                
+                // Emit error signal
+                ProgressUpdate *error_update = g_new0(ProgressUpdate, 1);
+                error_update->progress = -1;
+                error_update->status = FW_DWNL_ERROR;
+                error_update->handler_id = ctx->handler_id ? g_strdup(ctx->handler_id) : NULL;
+                error_update->firmware_name = ctx->firmware_name ? g_strdup(ctx->firmware_name) : NULL;
+                error_update->connection = ctx->connection;
+                g_idle_add(rdkfw_emit_download_progress, error_update);
+                
+                g_task_return_boolean(task, FALSE);
+                return;
+            }
+            
+            SWLOG_INFO("[DOWNLOAD_WORKER] SUCCESS: Loaded from file cache\n");
+            cache_loaded = TRUE;
+        }
+        
+        if (!cache_loaded) {
+            SWLOG_ERROR("[DOWNLOAD_WORKER] ERROR: Failed to load XConf cache from any source\n");
+            
+            // Emit error signal
+            ProgressUpdate *error_update = g_new0(ProgressUpdate, 1);
+            error_update->progress = -1;
+            error_update->status = FW_DWNL_ERROR;
+            error_update->handler_id = ctx->handler_id ? g_strdup(ctx->handler_id) : NULL;
+            error_update->firmware_name = ctx->firmware_name ? g_strdup(ctx->firmware_name) : NULL;
+            error_update->connection = ctx->connection;
+            g_idle_add(rdkfw_emit_download_progress, error_update);
+            
+            g_task_return_boolean(task, FALSE);
+            return;
+        }
+        
+        // Extract download URL from XConf response
+        const char *download_location = xconf_response.cloudFWLocation[0] ? 
+                                        xconf_response.cloudFWLocation : NULL;
+        
+        // Validate URL
+        if (download_location == NULL || strlen(download_location) == 0) {
+            SWLOG_ERROR("[DOWNLOAD_WORKER] ERROR: XConf cache has no firmware download URL\n");
+            SWLOG_ERROR("[DOWNLOAD_WORKER]   - cloudFWLocation is empty or NULL\n");
+            
+            // Emit error signal
+            ProgressUpdate *error_update = g_new0(ProgressUpdate, 1);
+            error_update->progress = -1;
+            error_update->status = FW_DWNL_ERROR;
+            error_update->handler_id = ctx->handler_id ? g_strdup(ctx->handler_id) : NULL;
+            error_update->firmware_name = ctx->firmware_name ? g_strdup(ctx->firmware_name) : NULL;
+            error_update->connection = ctx->connection;
+            g_idle_add(rdkfw_emit_download_progress, error_update);
+            
+            g_task_return_boolean(task, FALSE);
+            return;
+        }
+        
+        effective_download_url = g_strdup(download_location);
+        SWLOG_INFO("[DOWNLOAD_WORKER] Using firmware download URL from XConf: %s\n", effective_download_url);
+    }
+    
+    // Validate effective URL
+    if (!effective_download_url || strlen(effective_download_url) == 0) {
+        SWLOG_ERROR("[DOWNLOAD_WORKER] CRITICAL: No download URL available after resolution!\n");
         
         // Emit error signal
         ProgressUpdate *error_update = g_new0(ProgressUpdate, 1);
@@ -3006,9 +2837,12 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
         error_update->connection = ctx->connection;
         g_idle_add(rdkfw_emit_download_progress, error_update);
         
+        if (effective_download_url) g_free(effective_download_url);
         g_task_return_boolean(task, FALSE);
         return;
     }
+    
+    SWLOG_INFO("[DOWNLOAD_WORKER] Effective download URL resolved: %s\n", effective_download_url);
     
     // ========== STEP 2: BUILD DOWNLOAD PATH ==========
     SWLOG_INFO("[DOWNLOAD_WORKER] Building download path...\n");
@@ -3033,9 +2867,6 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
         difw_path = NULL;
     }
  // ========== STEP 3: LOAD DEVICE PROPERTIES  ==========
-    SWLOG_INFO("[DOWNLOAD_WORKER] ========================================\n");
-    SWLOG_INFO("[DOWNLOAD_WORKER] LOADING DEVICE PROPERTIES\n");
-    SWLOG_INFO("[DOWNLOAD_WORKER] ========================================\n");
     
     DeviceProperty_t device_info;
     memset(&device_info, 0, sizeof(DeviceProperty_t));
@@ -3048,9 +2879,6 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     }
     
     // ========== STEP 4: LOAD RFC SETTINGS ==========
-    SWLOG_INFO("[DOWNLOAD_WORKER] ========================================\n");
-    SWLOG_INFO("[DOWNLOAD_WORKER] LOADING RFC SETTINGS\n");
-    SWLOG_INFO("[DOWNLOAD_WORKER] ========================================\n");
     
     Rfc_t rfc_list;
     memset(&rfc_list, 0, sizeof(Rfc_t));
@@ -3076,7 +2904,7 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     SWLOG_INFO("[DOWNLOAD_WORKER] trigger_type = 4 (app-initiated via D-Bus)\n");
     
     // Initialize lastrun as empty string 
-    // In rdkv_main.c: char lastrun[64] = { 0 };  // Store last run time
+    // In rdkv_main.c: char lastrun[64] = { 0 };  
     char lastrun[64] = { 0 };
     SWLOG_INFO("[DOWNLOAD_WORKER] lastrun = \"\" (empty string, as in  rdkv_main.c)\n");
     
@@ -3112,16 +2940,21 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     upgrade_ctx.server_type = HTTP_SSR_DIRECT;
     SWLOG_INFO("[DOWNLOAD_WORKER]   server_type = HTTP_SSR_DIRECT\n");
     
-    int url_len = snprintf(imageHTTPURL, sizeof(imageHTTPURL), "%s/%s", ctx->download_url, ctx->firmware_name);
+    int url_len = snprintf(imageHTTPURL, sizeof(imageHTTPURL), "%s/%s", effective_download_url, ctx->firmware_name);
     if (url_len < 0 || url_len >= sizeof(imageHTTPURL)) {
 	    SWLOG_ERROR("[DOWNLOAD_WORKER] ERROR: URL too long or snprintf failed (len=%d, max=%zu)\n",
 			    url_len, sizeof(imageHTTPURL));
-	    SWLOG_ERROR("[DOWNLOAD_WORKER] URL would be: %s/%s\n", ctx->download_url, ctx->firmware_name);
+	    SWLOG_ERROR("[DOWNLOAD_WORKER] URL would be: %s/%s\n", effective_download_url, ctx->firmware_name);
+	    g_free(effective_download_url);
 	    g_task_return_boolean(task, FALSE);
-    return;
+	    return;
     }
     upgrade_ctx.artifactLocationUrl = imageHTTPURL;
     SWLOG_INFO("[DOWNLOAD_WORKER]   artifactLocationUrl = %s\n", upgrade_ctx.artifactLocationUrl);
+    
+    // Free effective_download_url after building the final URL
+    g_free(effective_download_url);
+    effective_download_url = NULL;
     
     upgrade_ctx.dwlloc = download_path;
     SWLOG_INFO("[DOWNLOAD_WORKER]   dwlloc = %s\n", (const char*)upgrade_ctx.dwlloc);
@@ -3285,6 +3118,13 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     SWLOG_INFO("[DOWNLOAD_WORKER] ========== rdkv_upgrade_request() RETURNED ==========\n");
     SWLOG_INFO("[DOWNLOAD_WORKER] Return value: %d\n", curl_ret_code);
     SWLOG_INFO("[DOWNLOAD_WORKER] HTTP code: %d\n", http_code);
+    
+    // Handle library-specific errors (negative values) - Daemon NEVER exits
+    if (curl_ret_code < 0) {
+        SWLOG_ERROR("[DOWNLOAD_WORKER] Library error: %s (code: %d)\n",
+                   rdkv_upgrade_strerror(curl_ret_code), curl_ret_code);
+        // Daemon continues - error will be propagated to D-Bus client via existing error handling
+    }
     
     // ========== STEP 9: STOP PROGRESS MONITOR THREAD ==========
     if (monitor_thread != NULL) {

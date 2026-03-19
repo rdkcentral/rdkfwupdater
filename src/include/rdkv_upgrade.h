@@ -30,6 +30,24 @@ extern "C" {
 #ifdef GTEST_ENABLE
 #include "miscellaneous.h"
 #endif
+
+/**
+ * @brief Library error codes for upgrade operations
+ * NOTE: All values are negative to distinguish from CURL error codes (positive)
+ */
+typedef enum {
+    RDKV_UPGRADE_SUCCESS = 0,
+    RDKV_UPGRADE_ERROR_THROTTLE_ZERO = -100,  // Throttle speed = 0
+    RDKV_UPGRADE_ERROR_FORCE_EXIT = -101,      // Force exit (curl 23)
+} rdkv_upgrade_error_t;
+
+/**
+ * @brief Convert error code to human-readable string
+ * @param error Error code (can be library error or CURL error)
+ * @return Human-readable error message
+ */
+const char* rdkv_upgrade_strerror(int error);
+
 /**
  * @brief Input context structure for rdkv_upgrade_request function
  * Contains all input parameters passed to the upgrade request function

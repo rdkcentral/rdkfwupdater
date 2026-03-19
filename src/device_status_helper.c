@@ -73,7 +73,7 @@ bool CurrentRunningInst(const char *file)
                 while(getdelim(&arg, &size, 0,fp) != -1){
                     if (arg != NULL) {
                         SWLOG_INFO("proc entry process name:%s\n",arg);
-		        /* Checking process name is same as rdkvfwupgrader, rdkFwupdateMgr(deamon), or deviceInitiatedFWDnld*/
+		        /* Checking process name is same as rdkvfwupgrader, rdkFwupdateMgr(daemon), or deviceInitiatedFWDnld*/
 		        if (strstr(arg, "rdkvfwupgrader") || strstr(arg, "rdkFwupdateMgr") || strstr(arg, "deviceInitiatedFWDnld")) {
 		            SWLOG_INFO("proc entry cmdline and process name matched.\nDevice initiated CDL is in progress..\n");
 		            SWLOG_INFO("Exiting without triggering device initiated firmware download.\n");
@@ -353,20 +353,22 @@ void unsetStateRed(void)
 
 /* Description: If state red support is present eneter to state red
  * @param curlret: Receving curl status from Caller
+ * @return: 0 on success (no state red entry needed or flag already set)
+ *         -1 on TLS/SSL error (state red entered, process should terminate in CLI mode)
  * */
-void checkAndEnterStateRed(int curlret, const char *disableStatsUpdate) {
+int checkAndEnterStateRed(int curlret, const char *disableStatsUpdate) {
     int ret = -1;
     FILE *fp = NULL;
     struct FWDownloadStatus fwdls;
     ret = isStateRedSupported();
     if(ret == 0) {
-        return;
+        return 0;
     }
     ret = isInStateRed();
     if(ret == 1) {
         SWLOG_INFO("RED checkAndEnterStateRed: device state red recovery flag already set\n");
         t2CountNotify("SYST_INFO_RedstateSet", 1);
-        return;
+        return 0;
     }
     if((curlret == 35) || (curlret == 51) || (curlret == 53) || (curlret == 54) || (curlret == 58) || (curlret == 59) || (curlret == 60)
             || (curlret == 64) || (curlret == 66) || (curlret == 77) || (curlret == 80) || (curlret == 82) || (curlret == 83) || (curlret == 90)
@@ -405,7 +407,8 @@ void checkAndEnterStateRed(int curlret, const char *disableStatsUpdate) {
         if(fp != NULL) {
             fclose(fp);
         }
-        exit(1);
+        SWLOG_ERROR("RED checkAndEnterStateRed: State red entered due to TLS/SSL error %d. Returning error to caller.\n", curlret);
+        return -1;
     } else {
         //Recovery completed event send for the failure case but not due to fatal error
         if( (filePresentCheck( RED_STATE_REBOOT ) == RDK_API_SUCCESS) ) {
@@ -414,6 +417,7 @@ void checkAndEnterStateRed(int curlret, const char *disableStatsUpdate) {
              unlink(RED_STATE_REBOOT);
         }
     }
+    return 0;
 }
 
 

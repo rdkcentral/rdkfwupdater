@@ -752,9 +752,23 @@ void SetupCoverageTestMocks() {
         .WillByDefault(Return(0));
 }
 
+extern "C" int rdkFwupdateMgr_downloadFirmware(...)
+{
+    return 0;
+}
 
+extern "C" const char* rdkv_upgrade_strerror(int err)
+{
+    return "mock_error";
+}
+
+extern "C" int getOPTOUTValue()
+{
+    return 0;
+}
 // ============================================================================
 // NOTE: SWLOG_* macros are already defined in rdkv_cdl_log_wrapper.h
 // We don't provide function implementations to avoid conflicts with printf()
 
 // ============================================================================
+
