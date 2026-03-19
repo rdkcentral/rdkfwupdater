@@ -1,4 +1,4 @@
-# Copyright 2026 RDK Management
+# Copyright 2026 Comcast Cable Communications Management, LLC
 # Licensed under the Apache License, Version 2.0
 # SPDX-License-Identifier: Apache-2.0
 """
