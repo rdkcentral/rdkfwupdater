@@ -18,6 +18,7 @@
 
 #include "rfcinterface.h"
 
+#include <unistd.h>
 #include "rdkv_cdl_log_wrapper.h"
 #include "rdkv_upgrade.h"
 #ifndef GTEST_ENABLE
