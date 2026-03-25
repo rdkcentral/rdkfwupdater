@@ -867,7 +867,7 @@ static int MakeXconfComms( XCONFRES *pResponse, int server_type, int *pHttp_code
                              SWLOG_INFO("%s : RED Recovery completed\n", __FUNCTION__);
                              eventManager(RED_STATE_EVENT, RED_RECOVERY_COMPLETED);
 			     int rfc_ret = write_RFCProperty("REDRECV", RFC_RED_RECV, "COMPLETED", RFC_STRING);
-			     if(rfc_ret == -1) {
+			     if (rfc_ret == WRITE_RFC_FAILURE) {
 				     SWLOG_ERROR("write_RFCProperty() return failed Status %d\n", rfc_ret);
 			     }
                              unlink(RED_STATE_REBOOT);
@@ -1149,7 +1149,7 @@ int main(int argc, char *argv[]) {
 	if( isInStateRed() ) {
           eventManager(RED_STATE_EVENT, RED_RECOVERY_STARTED);
 	  int rfc_ret = write_RFCProperty("REDRECV", RFC_RED_RECV, "STARTED", RFC_STRING);
-	  if(rfc_ret == -1) {
+	  if (rfc_ret == WRITE_RFC_FAILURE) {
 		  SWLOG_ERROR("write_RFCProperty() return failed Status %d\n", rfc_ret);
 	  }
         }

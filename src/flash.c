@@ -308,7 +308,7 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
     if( isInStateRed() ) {
 	    eventManager(RED_STATE_EVENT, RED_RECOVERY_PROGRAMMED);
 	    int rfc_ret = write_RFCProperty("REDRECV", RFC_RED_RECV, "PROGRAMMED", RFC_STRING);
-	    if(rfc_ret == -1) {
+	    if (rfc_ret == WRITE_RFC_FAILURE) {
 		    SWLOG_ERROR("write_RFCProperty() return failed Status %d\n", rfc_ret);
 	    }
 	    SWLOG_INFO("Creating red_state_reboot file\n");
