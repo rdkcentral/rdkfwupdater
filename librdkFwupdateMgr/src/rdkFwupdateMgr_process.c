@@ -413,6 +413,24 @@ void unregisterProcess(FirmwareInterfaceHandle handler)
         return;
     }
 
+    /* Session state validation: reject if downloadFirmware() is active.
+     *
+     * Same rationale as checkForUpdate: you can't end the session while a
+     * firmware download is in progress. Downloads can take 1-30 minutes,
+     * but the app should wait for the DWNL_COMPLETED or DWNL_ERROR callback
+     * before unregistering. If the app receives SIGTERM, it should just exit()
+     * — the daemon detects the D-Bus peer disconnect and cleans up.
+     *
+     * We return without freeing the handle — caller still owns it and can
+     * retry after the download callback fires with a terminal status.
+     */
+    if (internal_is_dwnl_in_progress()) {
+        FWUPMGR_ERROR("unregisterProcess: REJECTED - downloadFirmware() is in "
+                      "progress. Wait for the DWNL_COMPLETED or DWNL_ERROR "
+                      "callback, then retry unregisterProcess().\n");
+        return;
+    }
+
     // NULL check: Safe to unregister NULL handle (no-op)
     if (!handler) {
         FWUPMGR_INFO("unregisterProcess() called with NULL handle (no-op)\n");

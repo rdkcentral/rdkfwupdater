@@ -12,21 +12,28 @@
 
 /**
  * @file rdkFwupdateMgr_async.c
- * @brief Internal engine: CheckForUpdate worker thread, Download/Update registries,
- *        background thread, signal dispatch
+ * @brief Internal engine: CheckForUpdate worker thread, DownloadFirmware worker thread,
+ *        Update registry, background thread, signal dispatch
  *
- * PHASE 1 ARCHITECTURE:
+ * PHASE 1+2 ARCHITECTURE:
  *
- * CheckForUpdate — ON-DEMAND WORKER THREAD:
+ * CheckForUpdate — ON-DEMAND WORKER THREAD (Phase 1):
  *   - internal_check_worker_thread(): spawned per checkForUpdate() call
  *   - on_check_signal_handler(): fires client callback directly
  *   - on_check_timeout(): 120s safety net
  *   - internal_is_check_in_progress(): query for session-state enforcement
  *   - internal_cancel_all_active_check_threads(): destructor cleanup
  *
- * Download / Update — PERSISTENT BG THREAD (unchanged):
- *   - background_thread_func(): subscribes to DownloadProgress + UpdateProgress
- *   - Registry-based dispatch (dispatch_all_dwnl_active, dispatch_all_update_active)
+ * DownloadFirmware — ON-DEMAND WORKER THREAD (Phase 2):
+ *   - internal_download_worker_thread(): spawned per downloadFirmware() call
+ *   - on_download_signal_handler(): fires client callback, quits on terminal
+ *   - on_download_timeout(): 3600s safety net, fires DWNL_ERROR callback
+ *   - internal_is_dwnl_in_progress(): query for session-state enforcement
+ *   - internal_cancel_all_active_download_threads(): destructor cleanup
+ *
+ * Update — PERSISTENT BG THREAD (unchanged, Phase 3):
+ *   - background_thread_func(): subscribes to UpdateProgress only
+ *   - Registry-based dispatch (dispatch_all_update_active)
  *
  * Apps never interact with this file directly.
  * All entry points are through rdkFwupdateMgr_api.c.
@@ -46,7 +53,6 @@
  * ======================================================================== */
 
 static BackgroundThread g_bg_thread;
-static DwnlCallbackRegistry g_dwnl_registry;
 static UpdateCbRegistry g_update_registry;
 
 /* ---- CheckForUpdate on-demand thread state ---- */
@@ -63,19 +69,24 @@ static pthread_mutex_t g_check_in_progress_mutex = PTHREAD_MUTEX_INITIALIZER;
 static bool            g_check_in_progress = false;
 static CheckRequestContext *g_active_check_ctx = NULL;
 
+/* ---- DownloadFirmware on-demand thread state (Phase 2) ---- */
+/*
+ * Same encapsulation pattern as CheckForUpdate. All access goes through:
+ *   internal_is_dwnl_in_progress()         — query
+ *   internal_begin_download()              — set in-progress, track ctx
+ *   internal_end_download()                — clear in-progress, untrack ctx
+ *   internal_abort_download()              — clear on error paths in downloadFirmware()
+ *   internal_cancel_all_active_download_threads() — destructor cleanup
+ */
+static pthread_mutex_t g_dwnl_in_progress_mutex = PTHREAD_MUTEX_INITIALIZER;
+static bool            g_dwnl_in_progress = false;
+static DownloadRequestContext *g_active_dwnl_ctx = NULL;
+
 /* ========================================================================
  * FORWARD DECLARATIONS
  * ======================================================================== */
 
 static void *background_thread_func(void *arg);
-
-static void  on_download_progress_signal(GDBusConnection *conn,
-                                         const gchar *sender,
-                                         const gchar *object_path,
-                                         const gchar *interface_name,
-                                         const gchar *signal_name,
-                                         GVariant *parameters,
-                                         gpointer user_data);
 
 static void  on_update_progress_signal(GDBusConnection *conn,
                                        const gchar *sender,
@@ -98,11 +109,18 @@ static void  on_check_signal_handler(GDBusConnection *conn,
                                      gpointer user_data);
 static gboolean on_check_timeout(gpointer user_data);
 
-/* Forward declaration for download status mapping function */
+/* Forward declarations — DownloadFirmware on-demand worker thread (Phase 2) */
+static void  on_download_signal_handler(GDBusConnection *conn,
+                                        const gchar *sender,
+                                        const gchar *object_path,
+                                        const gchar *interface_name,
+                                        const gchar *signal_name,
+                                        GVariant *parameters,
+                                        gpointer user_data);
+static gboolean on_download_timeout(gpointer user_data);
 static DownloadStatus map_dwnl_status_string(const char *status_str);
 
 /* Forward declarations for cleanup functions */
-static void internal_dwnl_system_deinit(void);
 static void internal_update_system_deinit(void);
 
 /* ========================================================================
@@ -162,18 +180,10 @@ int internal_system_init(void)
         nanosleep(&ts, NULL);
     }
 
-    /* Initialize download and update registries */
-    memset(&g_dwnl_registry, 0, sizeof(g_dwnl_registry));
-    if (pthread_mutex_init(&g_dwnl_registry.mutex, NULL) != 0) {
-        FWUPMGR_ERROR("internal_system_init: dwnl mutex init failed\n");
-        return -1;
-    }
-    g_dwnl_registry.initialized = true;
-
+    /* Initialize update registry (Download uses on-demand thread now — no registry) */
     memset(&g_update_registry, 0, sizeof(g_update_registry));
     if (pthread_mutex_init(&g_update_registry.mutex, NULL) != 0) {
         FWUPMGR_ERROR("internal_system_init: update mutex init failed\n");
-        pthread_mutex_destroy(&g_dwnl_registry.mutex);
         return -1;
     }
     g_update_registry.initialized = true;
@@ -206,8 +216,7 @@ void internal_system_deinit(void)
     if (g_bg_thread.context)   g_main_context_unref(g_bg_thread.context);
     pthread_mutex_destroy(&g_bg_thread.mutex);
 
-    /* Cleanup download and update registries */
-    internal_dwnl_system_deinit();
+    /* Cleanup update registry (Download uses on-demand thread — no registry to clean) */
     internal_update_system_deinit();
 
     FWUPMGR_INFO("internal_system_deinit: done\n");
@@ -247,27 +256,13 @@ static void *background_thread_func(void *arg)
     }
 
     /*
-     * Subscribe to DownloadProgress and UpdateProgress signals.
+     * Subscribe to UpdateProgress signal ONLY.
      *
-     * TL;DR: The BG thread ONLY handles Download and Update signals now.
+     * TL;DR: The BG thread ONLY handles Update signals now.
      * CheckForUpdateComplete is handled by the on-demand worker thread (Phase 1).
-     * Previously, this thread also subscribed to CheckForUpdateComplete and
-     * used a registry to dispatch it — that code has been removed.
+     * DownloadProgress is handled by the on-demand worker thread (Phase 2).
+     * Previously, this thread also handled both — that code has been removed.
      */
-    guint dwnl_sub_id = g_dbus_connection_signal_subscribe(
-        g_bg_thread.connection,
-        NULL,                           /* sender: any                        */
-        DBUS_INTERFACE_NAME,            /* interface                          */
-        DBUS_SIGNAL_DWNL_PROGRESS,     /* signal: DownloadProgress           */
-        DBUS_OBJECT_PATH,              /* object path                         */
-        NULL,                          /* arg0 filter: none                   */
-        G_DBUS_SIGNAL_FLAGS_NONE,
-        on_download_progress_signal,   /* handler                             */
-        NULL,
-        NULL
-    );
-    FWUPMGR_INFO("background_thread: subscribed to DownloadProgress (id=%u)\n", dwnl_sub_id);
-
     guint update_sub_id = g_dbus_connection_signal_subscribe(
         g_bg_thread.connection,
         NULL,                           /* sender: any                        */
@@ -297,9 +292,6 @@ static void *background_thread_func(void *arg)
      * first, the subscription callback could fire on a freed connection → crash.
      * Order matters: unsubscribe → unref → pop context.
      */
-    if (dwnl_sub_id != 0) {
-        g_dbus_connection_signal_unsubscribe(g_bg_thread.connection, dwnl_sub_id);
-    }
     if (update_sub_id != 0) {
         g_dbus_connection_signal_unsubscribe(g_bg_thread.connection, update_sub_id);
     }
@@ -800,272 +792,452 @@ CheckForUpdateStatus internal_map_status_code(int32_t status_code)
 
 
 /* ========================================================================
- * DOWNLOAD FIRMWARE — INTERNAL ENGINE
+ * DOWNLOAD FIRMWARE — ON-DEMAND WORKER THREAD ENGINE (Phase 2)
  * ========================================================================
  *
- * Everything below is the DownloadFirmware equivalent of the
- * CheckForUpdate engine above. Same patterns, different registry and signal.
+ * Replaces the old registry-based signal dispatch for DownloadFirmware.
+ * Each downloadFirmware() call spawns a worker thread that:
+ *   1. Creates isolated GLib event loop
+ *   2. Subscribes to DownloadProgress signal
+ *   3. Sends DownloadFirmware D-Bus method call SYNCHRONOUSLY
+ *   4. Reads daemon's (sss) reply: accept or reject
+ *   5. If accepted: runs event loop, fires callback on each progress signal
+ *   6. Quits loop on COMPLETED/ERROR/timeout
+ *   7. Cleans up and exits
  *
- * KEY DIFFERENCE:
- *   CheckForUpdate slot fires ONCE then goes IDLE.
- *   Download slot stays ACTIVE and fires on EVERY DownloadProgress signal
- *   until the daemon sends DWNL_COMPLETED or DWNL_ERROR.
- * ======================================================================== */
-
-/* ---- Forward declarations for helper functions ---- */
-static void dispatch_all_dwnl_active(const InternalDwnlSignalData *signal_data);
-static void dwnl_registry_reset_slot(DwnlCallbackEntry *entry);
-
-/* ========================================================================
- * DOWNLOAD REGISTRY CLEANUP
- *
- * Called from internal_system_deinit() to free download registry resources.
- * Signal unsubscription is handled by the background thread.
+ * At most ONE download worker thread per process (enforced by g_dwnl_in_progress).
  * ======================================================================== */
 
 /**
- * @brief Cleanup download registry — called from internal_system_deinit()
- */
-static void internal_dwnl_system_deinit(void)
-{
-    pthread_mutex_lock(&g_dwnl_registry.mutex);
-    for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
-        if (g_dwnl_registry.entries[i].handle_key != NULL) {
-            free(g_dwnl_registry.entries[i].handle_key);
-            g_dwnl_registry.entries[i].handle_key = NULL;
-        }
-    }
-    pthread_mutex_unlock(&g_dwnl_registry.mutex);
-    pthread_mutex_destroy(&g_dwnl_registry.mutex);
-
-    FWUPMGR_INFO("internal_dwnl_system_deinit: done\n");
-}
-
-/* ========================================================================
- * DOWNLOAD SIGNAL HANDLER
- * ======================================================================== */
-
-/**
- * @brief Called by GLib when DownloadProgress signal arrives
+ * @brief Query whether a downloadFirmware() is currently in progress.
  *
- * Runs in the background thread — same thread as on_check_complete_signal().
- *
- * FLOW:
- *   1. Parse GVariant payload → InternalDwnlSignalData
- *   2. Dispatch to ALL ACTIVE download callbacks
- *   3. If status is COMPLETED or ERROR → remove finished slots from registry
+ * Thread-safe: protected by g_dwnl_in_progress_mutex.
  */
-static void on_download_progress_signal(GDBusConnection *conn,
-                                        const gchar *sender,
-                                        const gchar *object_path,
-                                        const gchar *interface_name,
-                                        const gchar *signal_name,
-                                        GVariant *parameters,
-                                        gpointer user_data)
+bool internal_is_dwnl_in_progress(void)
 {
-    (void)conn; (void)sender; (void)object_path;
-    (void)interface_name; (void)signal_name; (void)user_data;
-
-    FWUPMGR_INFO("on_download_progress_signal: received\n");
-
-    InternalDwnlSignalData signal_data;
-    memset(&signal_data, 0, sizeof(signal_data));
-
-    if (!internal_parse_dwnl_signal_data(parameters, &signal_data)) {
-        FWUPMGR_ERROR("on_download_progress_signal: parse failed\n");
-        return;
-    }
-
-    FWUPMGR_INFO("on_download_progress_signal: handler=%" PRIu64 " firmware='%s' progress=%u%% status='%s'\n",
-                 signal_data.handler_id,
-                 signal_data.firmware_name ? signal_data.firmware_name : "(null)",
-                 signal_data.progress_percent,
-                 signal_data.status_string ? signal_data.status_string : "(null)");
-
-    dispatch_all_dwnl_active(&signal_data);
-
-    // Free allocated strings from g_variant_get
-    g_free(signal_data.firmware_name);
-    g_free(signal_data.status_string);
-    g_free(signal_data.message);
+    pthread_mutex_lock(&g_dwnl_in_progress_mutex);
+    bool result = g_dwnl_in_progress;
+    pthread_mutex_unlock(&g_dwnl_in_progress_mutex);
+    return result;
 }
 
 /**
- * @brief Dispatch DownloadProgress signal to every ACTIVE download callback
- *
- * SAME TWO-PHASE DESIGN as CheckForUpdate dispatch:
- *
- *   PHASE 1 (mutex held):
- *     Snapshot all ACTIVE entries.
- *     Do NOT change state yet — slot must stay ACTIVE for future signals.
- *     EXCEPTION: if status is COMPLETED or ERROR, mark slot for removal.
- *     Release mutex.
- *
- *   PHASE 2 (mutex released):
- *     Invoke each callback: callback(progress_per, status)
- *     Re-acquire mutex to reset completed/errored slots to IDLE.
- *
- * WHY KEEP SLOTS ACTIVE ACROSS MULTIPLE SIGNALS?
- *   Download progress fires many times: 1%, 5%, 20%...100%.
- *   If we reset to IDLE after the first callback, subsequent signals
- *   would find no registered callback and be silently dropped.
- *   The slot only becomes IDLE when the download ends.
+ * @brief Atomically try to begin a downloadFirmware session and track the context.
  */
-static void dispatch_all_dwnl_active(const InternalDwnlSignalData *signal_data)
+bool internal_begin_download(DownloadRequestContext *ctx)
 {
-    typedef struct {
-        DownloadCallback  callback;
-        char              handle_copy[256];
-        int               slot_index;
-        bool              is_final;   /* true if COMPLETED or ERROR — remove after firing */
-    } DwnlSnapshot;
-
-    DwnlSnapshot snapshots[MAX_PENDING_CALLBACKS];
-    int          count = 0;
-
-    DownloadStatus status = map_dwnl_status_string(signal_data->status_string);
-    bool           is_final = (status == DWNL_COMPLETED || status == DWNL_ERROR);
-
-    /* ---- PHASE 1: snapshot under mutex ---- */
-    pthread_mutex_lock(&g_dwnl_registry.mutex);
-
-    for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
-        DwnlCallbackEntry *e = &g_dwnl_registry.entries[i];
-        if (e->state != DWNL_CB_STATE_ACTIVE) continue;
-
-        snapshots[count].callback   = e->callback;
-        snapshots[count].slot_index = i;
-        snapshots[count].is_final   = is_final;
-        snprintf(snapshots[count].handle_copy,
-                 sizeof(snapshots[count].handle_copy),
-                 "%s", e->handle_key ? e->handle_key : "");
-
-        /*
-         * If this is the final signal (completed/error), mark the slot
-         * so we reset it to IDLE after the callback fires.
-         * For in-progress signals, leave the slot ACTIVE.
-         */
-        count++;
-
-        FWUPMGR_INFO("dispatch_all_dwnl_active: queued handle='%s' progress=%d%% final=%d\n",
-                     e->handle_key ? e->handle_key : "(null)",
-                     signal_data->progress_percent, is_final);
+    pthread_mutex_lock(&g_dwnl_in_progress_mutex);
+    if (g_dwnl_in_progress) {
+        pthread_mutex_unlock(&g_dwnl_in_progress_mutex);
+        return false;  /* already in progress — reject */
     }
-
-    pthread_mutex_unlock(&g_dwnl_registry.mutex);
-
-    FWUPMGR_INFO("dispatch_all_dwnl_active: %d callback(s) to fire\n", count);
-
-    /* ---- PHASE 2: invoke callbacks, no mutex held ---- */
-    for (int i = 0; i < count; i++) {
-        DwnlSnapshot *s = &snapshots[i];
-
-        FWUPMGR_INFO("dispatch_all_dwnl_active: invoking callback for handle='%s'\n",
-                     s->handle_copy);
-
-        /*
-         * Callback signature: void fn(int progress_per, DownloadStatus status)
-         * No handle parameter — matches the DownloadCallback typedef exactly.
-         */
-        s->callback(signal_data->progress_percent, status);
-
-        /*
-         * If download is done (COMPLETED or ERROR), reset slot to IDLE.
-         * This frees the handle_key and makes the slot available for reuse.
-         * For in-progress signals, leave slot ACTIVE for next signal.
-         */
-        if (s->is_final) {
-            pthread_mutex_lock(&g_dwnl_registry.mutex);
-            dwnl_registry_reset_slot(&g_dwnl_registry.entries[s->slot_index]);
-            pthread_mutex_unlock(&g_dwnl_registry.mutex);
-
-            FWUPMGR_INFO("dispatch_all_dwnl_active: slot %d reset to IDLE (download ended)\n",
-                         s->slot_index);
-        }
-    }
-}
-
-/* ========================================================================
- * DOWNLOAD REGISTRY OPERATIONS
- * ======================================================================== */
-
-/**
- * @brief Register a download callback keyed by handle
- *
- * Sets slot state to ACTIVE. Slot will receive ALL subsequent
- * DownloadProgress signals until DWNL_COMPLETED or DWNL_ERROR.
- *
- * SAME HANDLE TWICE:
- *   Overwrites existing ACTIVE slot for the same handle.
- *   Prevents stale callbacks from a previous download session.
- *
- * @param handle    App's FirmwareInterfaceHandle (strdup'd internally)
- * @param callback  App's DownloadCallback
- * @return true on success, false if registry full
- */
-bool internal_dwnl_register_callback(FirmwareInterfaceHandle handle,
-                                      DownloadCallback callback)
-{
-    pthread_mutex_lock(&g_dwnl_registry.mutex);
-
-    DwnlCallbackEntry *free_slot     = NULL;
-    DwnlCallbackEntry *existing_slot = NULL;
-
-    for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
-        DwnlCallbackEntry *e = &g_dwnl_registry.entries[i];
-
-        if (e->state == DWNL_CB_STATE_ACTIVE &&
-            e->handle_key != NULL &&
-            strcmp(e->handle_key, handle) == 0) {
-            existing_slot = e;
-            break;
-        }
-
-        if (free_slot == NULL && e->state == DWNL_CB_STATE_IDLE) {
-            free_slot = e;
-        }
-    }
-
-    DwnlCallbackEntry *target = existing_slot ? existing_slot : free_slot;
-
-    if (target == NULL) {
-        FWUPMGR_ERROR("internal_dwnl_register_callback: registry full (max=%d)\n",
-                      MAX_PENDING_CALLBACKS);
-        pthread_mutex_unlock(&g_dwnl_registry.mutex);
-        return false;
-    }
-
-    if (existing_slot) {
-        FWUPMGR_INFO("internal_dwnl_register_callback: overwriting existing for handle='%s'\n",
-                     handle);
-        free(target->handle_key);
-        target->handle_key = NULL;
-    }
-
-    target->handle_key      = strdup(handle);
-    target->callback        = callback;
-    target->state           = DWNL_CB_STATE_ACTIVE;
-    target->registered_time = time(NULL);
-
-    pthread_mutex_unlock(&g_dwnl_registry.mutex);
-
-    FWUPMGR_INFO("internal_dwnl_register_callback: registered handle='%s'\n", handle);
+    g_dwnl_in_progress = true;
+    g_active_dwnl_ctx = ctx;
+    pthread_mutex_unlock(&g_dwnl_in_progress_mutex);
     return true;
 }
 
 /**
- * @brief Reset a download registry slot to IDLE
- * MUST be called with g_dwnl_registry.mutex held.
+ * @brief Atomically end the downloadFirmware session and untrack the context.
+ *
+ * Called by worker thread in cleanup, BEFORE freeing ctx.
  */
-static void dwnl_registry_reset_slot(DwnlCallbackEntry *entry)
+void internal_end_download(void)
 {
-    if (entry->handle_key != NULL) {
-        free(entry->handle_key);
-        entry->handle_key = NULL;
+    pthread_mutex_lock(&g_dwnl_in_progress_mutex);
+    g_dwnl_in_progress = false;
+    g_active_dwnl_ctx = NULL;
+    pthread_mutex_unlock(&g_dwnl_in_progress_mutex);
+}
+
+/**
+ * @brief Atomically clear download in-progress state on error paths.
+ */
+void internal_abort_download(void)
+{
+    pthread_mutex_lock(&g_dwnl_in_progress_mutex);
+    g_dwnl_in_progress = false;
+    g_active_dwnl_ctx = NULL;
+    pthread_mutex_unlock(&g_dwnl_in_progress_mutex);
+}
+
+/**
+ * @brief Cancel all active download worker threads and join them.
+ *
+ * Called from library destructor. Quits the worker's event loop so it
+ * exits cleanly, then joins the thread to ensure no code is executing
+ * in library memory when dlclose() unmaps us.
+ */
+void internal_cancel_all_active_download_threads(void)
+{
+    pthread_mutex_lock(&g_dwnl_in_progress_mutex);
+    DownloadRequestContext *ctx = g_active_dwnl_ctx;
+    pthread_mutex_unlock(&g_dwnl_in_progress_mutex);
+
+    if (ctx == NULL) {
+        FWUPMGR_INFO("internal_cancel_all_active_download_threads: no active worker\n");
+        return;
     }
-    entry->callback        = NULL;
-    entry->registered_time = 0;
-    entry->state           = DWNL_CB_STATE_IDLE;
+
+    FWUPMGR_INFO("internal_cancel_all_active_download_threads: "
+                 "stopping active worker thread\n");
+
+    /* Quit the worker's event loop — this causes g_main_loop_run() to return */
+    if (ctx->main_loop != NULL) {
+        g_main_loop_quit(ctx->main_loop);
+    }
+
+    /* Wait for worker thread to finish cleanup and exit */
+    pthread_join(ctx->thread, NULL);
+
+    FWUPMGR_INFO("internal_cancel_all_active_download_threads: "
+                 "worker thread joined\n");
+}
+
+/**
+ * @brief Timeout handler for the download worker thread's GMainLoop.
+ *
+ * Fires after DWNL_SIGNAL_TIMEOUT_SECONDS (3600s) if the download never
+ * completes or errors. Fires DWNL_ERROR callback so the client knows,
+ * then quits the event loop.
+ */
+static gboolean on_download_timeout(gpointer user_data)
+{
+    DownloadRequestContext *ctx = (DownloadRequestContext *)user_data;
+
+    FWUPMGR_ERROR("on_download_timeout: %ds timeout expired, "
+                  "download did not complete. handle='%s'\n",
+                  DWNL_SIGNAL_TIMEOUT_SECONDS,
+                  ctx->handle_key ? ctx->handle_key : "(null)");
+
+    /* Fire error callback so client knows the download failed/stalled */
+    if (ctx->callback != NULL) {
+        ctx->callback(0, DWNL_ERROR);
+    }
+
+    if (ctx->main_loop != NULL) {
+        g_main_loop_quit(ctx->main_loop);
+    }
+
+    return G_SOURCE_REMOVE;
+}
+
+/**
+ * @brief Signal handler for DownloadProgress — fires client callback.
+ *
+ * Called by GLib in the worker thread's GMainContext when the daemon emits
+ * a DownloadProgress signal. Parses the payload, maps status, invokes
+ * the client's callback. Quits the event loop ONLY on terminal status
+ * (COMPLETED or ERROR).
+ *
+ * KEY DIFFERENCE FROM CheckForUpdate:
+ *   CheckForUpdate: one signal → callback → quit loop → thread exits
+ *   DownloadFirmware: many signals → callback each time → quit only on terminal
+ */
+static void on_download_signal_handler(GDBusConnection *conn,
+                                       const gchar *sender,
+                                       const gchar *object_path,
+                                       const gchar *interface_name,
+                                       const gchar *signal_name,
+                                       GVariant *parameters,
+                                       gpointer user_data)
+{
+    (void)conn; (void)sender; (void)object_path;
+    (void)interface_name; (void)signal_name;
+
+    DownloadRequestContext *ctx = (DownloadRequestContext *)user_data;
+
+    /* Parse signal payload */
+    InternalDwnlSignalData signal_data;
+    memset(&signal_data, 0, sizeof(signal_data));
+
+    if (!internal_parse_dwnl_signal_data(parameters, &signal_data)) {
+        FWUPMGR_ERROR("on_download_signal_handler: parse failed\n");
+        return;  /* Don't quit loop on parse failure — wait for next signal */
+    }
+
+    FWUPMGR_INFO("on_download_signal_handler: handler=%" PRIu64
+                 " firmware='%s' progress=%u%% status='%s' handle='%s'\n",
+                 signal_data.handler_id,
+                 signal_data.firmware_name ? signal_data.firmware_name : "(null)",
+                 signal_data.progress_percent,
+                 signal_data.status_string ? signal_data.status_string : "(null)",
+                 ctx->handle_key ? ctx->handle_key : "(null)");
+
+    /* Map status string to enum */
+    DownloadStatus status = map_dwnl_status_string(signal_data.status_string);
+
+    /* Fire the client's callback with progress and status */
+    if (ctx->callback != NULL) {
+        ctx->callback((int)signal_data.progress_percent, status);
+    }
+
+    /* Free parsed signal data strings (allocated by g_variant_get) */
+    g_free(signal_data.firmware_name);
+    g_free(signal_data.status_string);
+    g_free(signal_data.message);
+
+    /* Quit loop ONLY on terminal status — otherwise wait for next signal */
+    if (status == DWNL_COMPLETED || status == DWNL_ERROR) {
+        FWUPMGR_INFO("on_download_signal_handler: terminal status (%s), "
+                     "quitting loop. handle='%s'\n",
+                     (status == DWNL_COMPLETED) ? "COMPLETED" : "ERROR",
+                     ctx->handle_key ? ctx->handle_key : "(null)");
+
+        if (ctx->main_loop != NULL) {
+            g_main_loop_quit(ctx->main_loop);
+        }
+    }
+}
+
+/**
+ * @brief Worker thread entry point for on-demand DownloadFirmware.
+ *
+ * LIFECYCLE:
+ *   [A-C] Create isolated GLib event loop
+ *   [D]   Connect to D-Bus
+ *   [E]   Subscribe to DownloadProgress signal
+ *   [F]   Send DownloadFirmware D-Bus method call SYNCHRONOUSLY
+ *         → Read daemon's (sss) reply: result, status, message
+ *         → If daemon rejected: set init_failed, signal ready, cleanup
+ *   [G]   Add 3600s timeout source
+ *   [H]   Signal caller "ready" via condvar
+ *   [I]   g_main_loop_run() — wait for progress signals or timeout
+ *   [J-L] Signals arrive → handler fires callback → quit on terminal
+ *   [M-O] Cleanup: unsubscribe, unref GLib objects, free ctx, thread exits
+ *
+ * OWNERSHIP: After condvar handshake, this thread solely owns ctx.
+ *            Caller never touches ctx again.
+ *
+ * @param arg  DownloadRequestContext* (ownership transferred)
+ * @return NULL
+ */
+void *internal_download_worker_thread(void *arg)
+{
+    DownloadRequestContext *ctx = (DownloadRequestContext *)arg;
+    GError *error = NULL;
+
+    FWUPMGR_INFO("download_worker: starting for handle='%s' firmware='%s'\n",
+                 ctx->handle_key ? ctx->handle_key : "(null)",
+                 ctx->firmware_name ? ctx->firmware_name : "(null)");
+
+    /* [A] Create isolated GMainContext for this thread */
+    ctx->context = g_main_context_new();
+    if (ctx->context == NULL) {
+        FWUPMGR_ERROR("download_worker: g_main_context_new failed\n");
+        goto init_failed;
+    }
+
+    /* [B] Create GMainLoop bound to our context */
+    ctx->main_loop = g_main_loop_new(ctx->context, FALSE);
+    if (ctx->main_loop == NULL) {
+        FWUPMGR_ERROR("download_worker: g_main_loop_new failed\n");
+        goto init_failed;
+    }
+
+    /* [C] Push as this thread's default context */
+    g_main_context_push_thread_default(ctx->context);
+
+    /* [D] Connect to D-Bus */
+    ctx->connection = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
+    if (ctx->connection == NULL) {
+        FWUPMGR_ERROR("download_worker: D-Bus connect failed: %s\n",
+                      error ? error->message : "unknown");
+        if (error) g_error_free(error);
+        error = NULL;
+        goto init_failed_with_context;
+    }
+
+    /* [E] Subscribe to DownloadProgress signal BEFORE sending the method call.
+     *
+     * This guarantees no signal can be missed: subscribe first, then call daemon.
+     * The daemon may emit progress signals immediately after accepting the request
+     * (e.g., cached firmware → immediate COMPLETED signal).
+     */
+    ctx->subscription_id = g_dbus_connection_signal_subscribe(
+        ctx->connection,
+        NULL,                            /* sender: any                       */
+        DBUS_INTERFACE_NAME,             /* interface                         */
+        DBUS_SIGNAL_DWNL_PROGRESS,       /* signal: DownloadProgress          */
+        DBUS_OBJECT_PATH,                /* object path                       */
+        NULL,                            /* arg0 filter: none                 */
+        G_DBUS_SIGNAL_FLAGS_NONE,
+        on_download_signal_handler,      /* handler                           */
+        ctx,                             /* user_data: per-request context    */
+        NULL                             /* user_data destroy notify          */
+    );
+
+    if (ctx->subscription_id == 0) {
+        FWUPMGR_ERROR("download_worker: signal subscribe failed\n");
+        goto init_failed_with_connection;
+    }
+
+    FWUPMGR_INFO("download_worker: subscribed to DownloadProgress (id=%u)\n",
+                 ctx->subscription_id);
+
+    /* [F] Send DownloadFirmware D-Bus method call SYNCHRONOUSLY.
+     *
+     * This is the KEY difference from CheckForUpdate: we read the daemon's reply
+     * to determine whether the download was accepted or rejected.
+     *
+     * Daemon replies with (sss):
+     *   s result  — "RDKFW_DWNL_SUCCESS" or "RDKFW_DWNL_FAILED"
+     *   s status  — "INPROGRESS", "COMPLETED", or "DWNL_ERROR"
+     *   s message — human-readable message
+     */
+    FWUPMGR_INFO("download_worker: calling DownloadFirmware on daemon, "
+                 "handle='%s' firmware='%s'\n",
+                 ctx->handle_key, ctx->firmware_name);
+
+    GVariant *reply = g_dbus_connection_call_sync(
+        ctx->connection,
+        DBUS_SERVICE_NAME,
+        DBUS_OBJECT_PATH,
+        DBUS_INTERFACE_NAME,
+        DBUS_METHOD_DOWNLOAD,
+        g_variant_new("(ssss)",
+                      ctx->handle_key,
+                      ctx->firmware_name,
+                      ctx->firmware_url  ? ctx->firmware_url  : "",
+                      ctx->firmware_type ? ctx->firmware_type : ""),
+        G_VARIANT_TYPE("(sss)"),         /* expected reply type               */
+        G_DBUS_CALL_FLAGS_NONE,
+        DBUS_TIMEOUT_MS,
+        NULL,                            /* GCancellable: none                */
+        &error
+    );
+
+    if (reply == NULL) {
+        /* D-Bus call itself failed (timeout, daemon not running, etc.) */
+        FWUPMGR_ERROR("download_worker: D-Bus call_sync failed: %s\n",
+                      error ? error->message : "unknown");
+        if (error) g_error_free(error);
+        error = NULL;
+        goto init_failed_with_subscription;
+    }
+
+    /* Parse the (sss) reply from the daemon */
+    const gchar *result_str = NULL;
+    const gchar *status_str = NULL;
+    const gchar *message_str = NULL;
+    g_variant_get(reply, "(&s&s&s)", &result_str, &status_str, &message_str);
+
+    FWUPMGR_INFO("download_worker: daemon replied: result='%s' status='%s' "
+                 "message='%s'\n",
+                 result_str ? result_str : "(null)",
+                 status_str ? status_str : "(null)",
+                 message_str ? message_str : "(null)");
+
+    /* Check daemon's decision */
+    if (result_str != NULL && strcmp(result_str, "RDKFW_DWNL_FAILED") == 0) {
+        /* Daemon REJECTED the download */
+        FWUPMGR_ERROR("download_worker: daemon REJECTED download: '%s'\n",
+                      message_str ? message_str : "(no message)");
+
+        ctx->daemon_accepted = false;
+        ctx->daemon_reject_message = (message_str != NULL) ? strdup(message_str) : NULL;
+        g_variant_unref(reply);
+        goto init_failed_with_subscription;
+    }
+
+    /* Daemon ACCEPTED the download */
+    ctx->daemon_accepted = true;
+    g_variant_unref(reply);
+
+    FWUPMGR_INFO("download_worker: daemon accepted download\n");
+
+    /* [G] Add timeout source: DWNL_SIGNAL_TIMEOUT_SECONDS (3600s) */
+    ctx->timeout_source = g_timeout_source_new_seconds(DWNL_SIGNAL_TIMEOUT_SECONDS);
+    g_source_set_callback(ctx->timeout_source, on_download_timeout, ctx, NULL);
+    g_source_attach(ctx->timeout_source, ctx->context);
+    g_source_unref(ctx->timeout_source);  /* context holds a ref now */
+
+    /* [H] Signal caller: "I'm ready — daemon accepted" */
+    pthread_mutex_lock(&ctx->ready_mutex);
+    ctx->init_failed = false;
+    ctx->is_ready = true;
+    pthread_cond_signal(&ctx->ready_cond);
+    pthread_mutex_unlock(&ctx->ready_mutex);
+
+    /* [I] Run event loop — blocks until COMPLETED/ERROR signal or timeout */
+    FWUPMGR_INFO("download_worker: entering event loop\n");
+    g_main_loop_run(ctx->main_loop);
+    FWUPMGR_INFO("download_worker: event loop exited\n");
+
+    /* [M-N] Cleanup: normal exit path */
+    if (ctx->subscription_id != 0) {
+        g_dbus_connection_signal_unsubscribe(ctx->connection,
+                                             ctx->subscription_id);
+    }
+    g_object_unref(ctx->connection);
+    ctx->connection = NULL;
+
+    g_main_context_pop_thread_default(ctx->context);
+    g_main_loop_unref(ctx->main_loop);
+    g_main_context_unref(ctx->context);
+    ctx->main_loop = NULL;
+    ctx->context = NULL;
+
+    goto cleanup_common;
+
+/* ---- Error paths ---- */
+init_failed_with_subscription:
+    if (ctx->subscription_id != 0) {
+        g_dbus_connection_signal_unsubscribe(ctx->connection,
+                                             ctx->subscription_id);
+        ctx->subscription_id = 0;
+    }
+
+init_failed_with_connection:
+    g_object_unref(ctx->connection);
+    ctx->connection = NULL;
+
+init_failed_with_context:
+    g_main_context_pop_thread_default(ctx->context);
+    if (ctx->main_loop) {
+        g_main_loop_unref(ctx->main_loop);
+        ctx->main_loop = NULL;
+    }
+    if (ctx->context) {
+        g_main_context_unref(ctx->context);
+        ctx->context = NULL;
+    }
+
+init_failed:
+    /* Signal caller: "I failed to init" or "daemon rejected" */
+    pthread_mutex_lock(&ctx->ready_mutex);
+    ctx->init_failed = true;
+    ctx->is_ready = true;
+    pthread_cond_signal(&ctx->ready_cond);
+    pthread_mutex_unlock(&ctx->ready_mutex);
+
+cleanup_common:
+    /* Untrack context and clear in-progress flag BEFORE freeing ctx.
+     * After internal_end_download(), the destructor won't try to access ctx,
+     * and the next downloadFirmware() call will be accepted.
+     */
+    internal_end_download();
+
+    /* Free per-request resources */
+    free(ctx->handle_key);
+    ctx->handle_key = NULL;
+    free(ctx->firmware_name);
+    ctx->firmware_name = NULL;
+    free(ctx->firmware_url);
+    ctx->firmware_url = NULL;
+    free(ctx->firmware_type);
+    ctx->firmware_type = NULL;
+    free(ctx->daemon_reject_message);
+    ctx->daemon_reject_message = NULL;
+
+    pthread_mutex_destroy(&ctx->ready_mutex);
+    pthread_cond_destroy(&ctx->ready_cond);
+    free(ctx);
+
+    FWUPMGR_INFO("download_worker: thread exiting\n");
+
+    /* [O] Thread exits */
+    return NULL;
 }
 
 /* ========================================================================

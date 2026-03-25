@@ -14,10 +14,10 @@
  * @file rdkFwupdateMgr_async_internal.h
  * @brief Internal types and declarations — NOT part of public API
  *
- * ARCHITECTURE OVERVIEW (Phase 1 — CheckForUpdate on-demand thread):
- * ==================================================================
+ * ARCHITECTURE OVERVIEW (Phase 1+2 — CheckForUpdate + DownloadFirmware on-demand threads):
+ * ========================================================================================
  *
- * CheckForUpdate (ON-DEMAND WORKER THREAD — new):
+ * CheckForUpdate (ON-DEMAND WORKER THREAD — Phase 1):
  *
  *  App calls checkForUpdate(handle, callback)
  *        │
@@ -36,20 +36,41 @@
  *        ├─ pthread_cond_wait() for ready signal
  *        └─ Return SUCCESS or FAIL
  *
- * Download / Update (PERSISTENT BG THREAD — unchanged):
+ * DownloadFirmware (ON-DEMAND WORKER THREAD — Phase 2):
  *
- *  App ──downloadFirmware(hdl, req, cb)──► DwnlRegistry ─┐
- *  App ──updateFirmware(hdl, req, cb)───► UpdateRegistry ─┼─► BG thread
- *                                                          │   watches D-Bus
- *                                                          ▼
- *                Daemon emits DownloadProgress / UpdateProgress
+ *  App calls downloadFirmware(handle, request, callback)
+ *        │
+ *        ├─ Allocate DownloadRequestContext on heap
+ *        ├─ pthread_create(internal_download_worker_thread, ctx)
+ *        │        │
+ *        │        ├─ New GMainContext + GMainLoop (isolated)
+ *        │        ├─ g_bus_get_sync() → D-Bus connection
+ *        │        ├─ Subscribe to DownloadProgress signal
+ *        │        ├─ g_dbus_connection_call_sync("DownloadFirmware") — SYNCHRONOUS
+ *        │        │   → reads daemon's (sss) reply: accept or reject
+ *        │        ├─ Signal caller "ready" via condvar
+ *        │        ├─ g_main_loop_run() — waits for DownloadProgress signals
+ *        │        │   → callback fires MULTIPLE times (per progress signal)
+ *        │        │   → quits loop ONLY on COMPLETED/ERROR (terminal status)
+ *        │        └─ Cleanup everything, free(ctx), thread exits
+ *        │
+ *        ├─ pthread_cond_wait() for ready signal (includes daemon reply)
+ *        └─ Return SUCCESS or FAIL (accurate — reflects daemon's accept/reject)
+ *
+ * Update (PERSISTENT BG THREAD — unchanged, Phase 3):
+ *
+ *  App ──updateFirmware(hdl, req, cb)───► UpdateRegistry ──► BG thread
+ *                                                             watches D-Bus
+ *                Daemon emits UpdateProgress
  *                        → dispatch to all ACTIVE callbacks
  *
  * THREAD SAFETY:
  * ==============
  *   CheckForUpdate: per-request ctx protected by ctx->ready_mutex (handshake),
  *                   g_check_in_progress protected by g_check_in_progress_mutex.
- *   Download/Update: registries protected by their own pthread_mutex.
+ *   DownloadFirmware: per-request ctx protected by ctx->ready_mutex (handshake),
+ *                     g_dwnl_in_progress protected by g_dwnl_in_progress_mutex.
+ *   Update: registry protected by its own pthread_mutex.
  *   Callbacks invoked with mutex RELEASED (deadlock prevention).
  */
 
@@ -268,52 +289,46 @@ void internal_cleanup_signal_data(InternalSignalData *data);
 CheckForUpdateStatus internal_map_status_code(int32_t status_code);
 
 /* ========================================================================
- * DOWNLOAD FIRMWARE — INTERNAL TYPES AND DECLARATIONS
+ * DOWNLOAD FIRMWARE — ON-DEMAND WORKER THREAD (Phase 2)
  * ========================================================================
  *
  * ARCHITECTURE:
  *
- *  App A ──downloadFirmware(hdl_A, req_A, cb_A)──┐
- *  App B ──downloadFirmware(hdl_B, req_B, cb_B)──┼──► DwnlRegistry (keyed by handle)
- *  App C ──downloadFirmware(hdl_C, req_C, cb_C)──┘          │
- *                                                            │  same background thread
- *                                                            │  now also subscribed to
- *                                                            │  DownloadProgress signal
- *                                                            ▼
- *                   Daemon emits DownloadProgress(progress%, status) REPEATEDLY
- *                                                            │
- *                                      on_download_progress_signal()
- *                                                            │
- *                                    dispatch_all_dwnl_pending() │
- *                                      ├── cb_A(progress%, status)
- *                                      ├── cb_B(progress%, status)
- *                                      └── cb_C(progress%, status)
+ *  App calls downloadFirmware(handle, request, callback)
+ *        │
+ *        ├─ Allocate DownloadRequestContext on heap
+ *        ├─ internal_begin_download(ctx) — reject if already active
+ *        ├─ pthread_create(internal_download_worker_thread, ctx)
+ *        │        │
+ *        │        ├─ New GMainContext + GMainLoop (isolated)
+ *        │        ├─ g_bus_get_sync() → D-Bus connection
+ *        │        ├─ Subscribe to DownloadProgress signal
+ *        │        ├─ g_dbus_connection_call_sync("DownloadFirmware")
+ *        │        │   → daemon reply (sss): result, status, message
+ *        │        │   → if FAILED: set init_failed, signal ready, cleanup
+ *        │        │   → if SUCCESS: set daemon_accepted
+ *        │        ├─ Add 3600s timeout
+ *        │        ├─ Signal caller "ready" via condvar
+ *        │        ├─ g_main_loop_run() — receives DownloadProgress signals
+ *        │        │   → callback fires MULTIPLE times (per-signal)
+ *        │        │   → quits loop ONLY on COMPLETED/ERROR
+ *        │        └─ Cleanup everything, free(ctx), thread exits
+ *        │
+ *        ├─ pthread_cond_wait() for ready signal
+ *        └─ Return SUCCESS or FAIL (accurate — reflects daemon reply)
  *
  * KEY DIFFERENCE FROM CheckForUpdate:
- *   CheckForUpdate registry: slot goes PENDING → DISPATCHED → IDLE  (fires ONCE)
- *   Download registry:       slot stays ACTIVE until DWNL_COMPLETED or DWNL_ERROR
- *                            (fires MULTIPLE TIMES — once per progress signal)
+ *   CheckForUpdate: callback fires ONCE, then thread exits.
+ *   DownloadFirmware: callback fires MULTIPLE TIMES (per progress signal),
+ *                     thread exits only on terminal status (COMPLETED/ERROR).
  *
  * ======================================================================== */
 
-#define DBUS_METHOD_DOWNLOAD        "DownloadFirmware"
-#define DBUS_SIGNAL_DWNL_PROGRESS   "DownloadProgress"
+#define DBUS_METHOD_DOWNLOAD         "DownloadFirmware"
+#define DBUS_SIGNAL_DWNL_PROGRESS    "DownloadProgress"
 
-/**
- * @brief Lifecycle state of one download callback registry slot
- *
- *   IDLE ──(register)──► ACTIVE ──(COMPLETED/ERROR signal)──► IDLE
- *                            │
- *                            │  (fires callback on EVERY DownloadProgress signal
- *                            │   while in ACTIVE state)
- *                            │
- *                            └──(timeout)──► TIMED_OUT ──► IDLE
- */
-typedef enum {
-    DWNL_CB_STATE_IDLE      = 0,  /**< Slot free and reusable              */
-    DWNL_CB_STATE_ACTIVE    = 1,  /**< Receiving progress signals          */
-    DWNL_CB_STATE_TIMED_OUT = 2   /**< Timed out waiting for completion    */
-} DwnlCallbackState;
+/* Timeout for download worker thread (seconds) — 1 hour */
+#define DWNL_SIGNAL_TIMEOUT_SECONDS  3600
 
 /**
  * @brief Parsed payload from DownloadProgress D-Bus signal
@@ -323,7 +338,7 @@ typedef enum {
  *   t  handlerId         (uint64 - handler ID)
  *   s  firmwareName      (string - firmware filename)
  *   u  progress          (uint32 - 0-100 percent)
- *   s  status            (string - "INPROGRESS", "COMPLETED", "NOTSTARTED")
+ *   s  status            (string - "INPROGRESS", "COMPLETED", "ERROR")
  *   s  message           (string - human-readable message)
  */
 typedef struct {
@@ -335,53 +350,117 @@ typedef struct {
 } InternalDwnlSignalData;
 
 /**
- * @brief One slot in the download callback registry
+ * @brief Per-request context for on-demand DownloadFirmware worker thread.
  *
- * Keyed by handle_key (strdup of FirmwareInterfaceHandle).
- * Stays ACTIVE across multiple DownloadProgress signal deliveries.
- * Reset to IDLE only when DWNL_COMPLETED or DWNL_ERROR is received.
+ * Lifecycle:
+ *   - Allocated in downloadFirmware() (caller thread) via calloc
+ *   - Ownership transferred to worker thread after condvar handshake
+ *   - Freed by worker thread after download completes/fails (or timeout)
+ *
+ * Key differences from CheckRequestContext:
+ *   - callback fires MULTIPLE times (per-progress-signal), not just once
+ *   - worker quits loop ONLY on terminal status (COMPLETED/ERROR)
+ *   - daemon_accepted: worker reads daemon's synchronous reply
+ *   - longer timeout (3600s vs 120s)
+ *
+ * Memory: ~200 bytes (excluding GLib objects)
  */
 typedef struct {
-    DwnlCallbackState  state;            /**< IDLE or ACTIVE                */
-    char              *handle_key;       /**< strdup of app's handle        */
-    DownloadCallback   callback;         /**< App's progress callback       */
-    time_t             registered_time;  /**< For timeout detection         */
-} DwnlCallbackEntry;
+    /* Condvar handshake: worker signals "I'm ready" to caller */
+    pthread_mutex_t   ready_mutex;
+    pthread_cond_t    ready_cond;
+    bool              is_ready;          /**< true = worker finished setup           */
+    bool              init_failed;       /**< true = D-Bus failed or daemon rejected */
 
-/**
- * @brief Global registry for all active download callbacks
- *
- * Separate from the CheckForUpdate registry — different lifecycle.
- * Protected by its own mutex.
- */
-typedef struct {
-    DwnlCallbackEntry  entries[MAX_PENDING_CALLBACKS];
-    pthread_mutex_t    mutex;
-    bool               initialized;
-} DwnlCallbackRegistry;
+    /* GLib event loop (isolated, per-thread) */
+    GMainContext     *context;
+    GMainLoop        *main_loop;
+    GDBusConnection  *connection;
+    guint             subscription_id;
+
+    /* Request data (all strdup'd — owned by worker thread) */
+    char             *handle_key;        /**< strdup of FirmwareInterfaceHandle      */
+    char             *firmware_name;     /**< strdup of request->firmwareName         */
+    char             *firmware_url;      /**< strdup of request->downloadUrl          */
+    char             *firmware_type;     /**< strdup of request->TypeOfFirmware       */
+    DownloadCallback  callback;          /**< Client's callback function ptr          */
+
+    /* Daemon reply (from synchronous D-Bus method return) */
+    bool              daemon_accepted;   /**< true if daemon returned RDKFW_DWNL_SUCCESS */
+    char             *daemon_reject_message; /**< strdup of daemon's error message (if rejected) */
+
+    /* Timeout tracking */
+    GSource          *timeout_source;    /**< For cancellation in cleanup             */
+
+    /* Thread handle (for join in destructor) */
+    pthread_t         thread;
+} DownloadRequestContext;
 
 /* ---- Download internal function declarations ---- */
 
-/* ========================================================================
- * DOWNLOAD CALLBACK REGISTRATION
- * ======================================================================== */
+/**
+ * @brief Worker thread entry point for on-demand DownloadFirmware.
+ *
+ * Creates an isolated GLib event loop, connects to D-Bus, subscribes to
+ * DownloadProgress signal, sends DownloadFirmware D-Bus method call
+ * synchronously, then waits for progress signals (with 3600s timeout).
+ * Fires the client's callback on every progress signal, quits loop on
+ * COMPLETED or ERROR, then cleans up all resources and exits.
+ *
+ * @param arg  DownloadRequestContext* (ownership transferred from caller)
+ * @return NULL
+ */
+void *internal_download_worker_thread(void *arg);
 
 /**
- * @brief Register a download callback keyed by handle
+ * @brief Atomically begin a downloadFirmware session and track the context.
  *
- * @param handle    App's FirmwareInterfaceHandle (strdup'd internally)
- * @param callback  App's DownloadCallback
- * @return true on success, false if registry full
+ * Sets g_dwnl_in_progress = true and stores ctx in g_active_dwnl_ctx.
+ * If a download is already in progress, returns false without modifying state.
+ *
+ * @param ctx  The newly allocated DownloadRequestContext to track.
+ * @return true if session started, false if another download is already active.
  */
-bool internal_dwnl_register_callback(FirmwareInterfaceHandle handle,
-                                      DownloadCallback callback);
+bool internal_begin_download(DownloadRequestContext *ctx);
+
+/**
+ * @brief Atomically end the downloadFirmware session and untrack the context.
+ *
+ * Sets g_dwnl_in_progress = false and g_active_dwnl_ctx = NULL.
+ * Called by the worker thread in cleanup, BEFORE freeing ctx.
+ */
+void internal_end_download(void);
+
+/**
+ * @brief Atomically clear download in-progress state on error paths.
+ *
+ * Same as internal_end_download() but used when downloadFirmware() itself
+ * fails (e.g., pthread_create fails after internal_begin_download succeeded).
+ */
+void internal_abort_download(void);
+
+/**
+ * @brief Query whether a downloadFirmware() operation is currently in progress.
+ *
+ * Used by unregisterProcess() to enforce the session-state invariant.
+ * Thread-safe: protected by internal mutex.
+ *
+ * @return true if a download worker thread is active, false otherwise.
+ */
+bool internal_is_dwnl_in_progress(void);
+
+/**
+ * @brief Cancel all active download worker threads and join them.
+ *
+ * Called from library destructor to ensure no threads are running
+ * when library code is unmapped.
+ */
+void internal_cancel_all_active_download_threads(void);
 
 /**
  * @brief Parse GVariant DownloadProgress signal payload
  *
- * Expected GVariant signature: (ii)
- *   i  progress_percent
- *   i  status_code
+ * Expected GVariant signature: (tsuss)
  *
  * @param parameters  GVariant from D-Bus signal
  * @param out_data    Output (must be zeroed before call)

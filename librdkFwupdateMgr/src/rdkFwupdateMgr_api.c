@@ -28,8 +28,22 @@
  * → Parses payload → Fires client callback with FwInfoData
  * → Cleans up all resources → Thread exits
  *
- * DOWNLOAD / UPDATE FIRMWARE (unchanged — persistent BG thread):
- * ===============================================================
+ * DOWNLOAD FIRMWARE (Phase 2 - on-demand worker thread):
+ * =======================================================
+ * 1. Validate handle, request, and callback
+ * 2. Reject if another downloadFirmware is already in progress
+ * 3. Allocate DownloadRequestContext on heap
+ * 4. Spawn worker thread (internal_download_worker_thread)
+ * 5. Wait for worker to signal "ready" via condvar (~50-200ms, includes daemon reply)
+ * 6. Return SUCCESS or FAIL (accurate — reflects daemon's accept/reject)
+ *
+ * [Later - typically 1-30 minutes, max 3600 seconds]
+ * Worker thread receives DownloadProgress signals from daemon
+ * → Fires client callback MULTIPLE TIMES (per progress signal)
+ * → Quits loop on COMPLETED/ERROR → Cleans up → Thread exits
+ *
+ * UPDATE FIRMWARE (unchanged — persistent BG thread):
+ * =====================================================
  * Same fire-and-forget pattern as before.
  * Callbacks registered in registry, dispatched from background thread.
  */
@@ -238,55 +252,78 @@ static void rdkFwupdateMgr_lib_init(void)
 /**
  * @brief Library destructor — auto-called when .so is unloaded
  *
- * Stops any active checkForUpdate worker thread, then stops the
- * persistent background thread and frees all resources cleanly.
+ * Stops any active CheckForUpdate and DownloadFirmware worker threads,
+ * then stops the persistent background thread and frees all resources cleanly.
  */
 __attribute__((destructor))
 static void rdkFwupdateMgr_lib_deinit(void)
 {
     FWUPMGR_INFO("=== rdkFwupdateMgr library unloading ===\n");
 
-    /* Cancel and join any active CheckForUpdate worker thread first.
+    /* Phase 1: Cancel and join any active CheckForUpdate worker thread.
      *
-     * TL;DR: Must happen BEFORE internal_system_deinit() because the worker
-     * may be using the shared D-Bus connection. If we tore down the BG thread
-     * first, the worker could be left with a dangling connection reference.
-     * Order: (1) stop worker → (2) stop BG thread → (3) free resources.
+     * Must happen BEFORE internal_system_deinit() because the worker
+     * may be using a D-Bus connection. If we tore down the BG thread
+     * first, ordering issues could arise.
      */
     internal_cancel_all_active_check_threads();
 
+    /* Phase 2: Cancel and join any active DownloadFirmware worker thread.
+     *
+     * Same rationale — must join before library code is unmapped.
+     * Download workers can be long-lived (up to 1 hour) so this may
+     * block briefly while the worker cleans up after g_main_loop_quit().
+     */
+    internal_cancel_all_active_download_threads();
+
+    /* Phase 3 (future): Cancel active UpdateFirmware worker */
+    /* internal_cancel_all_active_update_threads(); */
+
+    /* Persistent BG thread cleanup (still needed for Update in Phase 2) */
     internal_system_deinit();
     FWUPMGR_INFO("=== rdkFwupdateMgr library unloaded ===\n");
 }
 
 /* ========================================================================
- * DOWNLOAD FIRMWARE PUBLIC API
+ * DOWNLOAD FIRMWARE PUBLIC API — ON-DEMAND WORKER THREAD (Phase 2)
  * ========================================================================
  *
  * Implements:
  *   DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,
- *                                   FwDwnlReq fwdwnlreq,
+ *                                   const FwDwnlReq *fwdwnlreq,
  *                                   DownloadCallback callback);
  *
  * FLOW:
- *   1. Validate: handle not NULL/empty, firmwareName not empty, callback not NULL
- *   2. Connect to D-Bus (fail early if connection fails)
- *   3. Register callback in download registry (AFTER D-Bus connection succeeds)
- *   4. Fire DownloadFirmware D-Bus method call to daemon (fire-and-forget)
- *   5. Return RDKFW_DWNL_SUCCESS immediately
+ *   1. Validate: handle, request fields, callback
+ *   2. Allocate DownloadRequestContext on heap
+ *   3. internal_begin_download(ctx) — reject if already active
+ *   4. Spawn worker thread (internal_download_worker_thread)
+ *   5. Wait for condvar — worker sets up D-Bus + calls daemon synchronously
+ *   6. Check daemon reply: accepted → SUCCESS, rejected → FAIL
  *
- *   [later — fires multiple times as download progresses]
- *   Daemon emits DownloadProgress(progress%, status) signal repeatedly
- *   → on_download_progress_signal() fires in background thread
- *   → dispatch_all_dwnl_active() calls every ACTIVE DownloadCallback
- *   → slot stays ACTIVE until DWNL_COMPLETED or DWNL_ERROR
+ *   [later — fires multiple times over 1-30 minutes]
+ *   Worker receives DownloadProgress signals → fires callback each time
+ *   → quits loop on COMPLETED/ERROR → cleanup → thread exits
  * ======================================================================== */
 
 /**
- * @brief Initiate firmware download — non-blocking, returns immediately
+ * @brief Initiate firmware download — spawns on-demand worker thread
+ *
+ * Allocates a DownloadRequestContext, spawns a worker thread that connects
+ * to D-Bus, subscribes to DownloadProgress signal, sends DownloadFirmware
+ * method call SYNCHRONOUSLY, and reads the daemon's reply. The caller
+ * blocks briefly (~50-200ms) until the worker signals "ready", then
+ * returns immediately with an ACCURATE result reflecting the daemon's
+ * accept/reject decision.
+ *
+ * INVARIANTS:
+ *   - At most one downloadFirmware() in progress per process
+ *   - Callback fires N times (per progress signal) or 0 times (on error)
+ *   - Worker thread is self-contained: creates and destroys all its resources
+ *   - No interaction with the persistent background thread
  *
  * @param handle      Valid FirmwareInterfaceHandle from registerProcess()
- * @param fwdwnlreq   Download request (passed by value, library copies it)
+ * @param fwdwnlreq   Download request details (firmware name, URL, type)
  * @param callback    Invoked on each DownloadProgress signal
  * @return RDKFW_DWNL_SUCCESS or RDKFW_DWNL_FAILED
  */
@@ -294,12 +331,13 @@ DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,
                                 const FwDwnlReq *fwdwnlreq,
                                 DownloadCallback callback)
 {
-    /* [1] Validate */
+    /* [1] Validate handle */
     if (handle == NULL || handle[0] == '\0') {
         FWUPMGR_ERROR("downloadFirmware: invalid handle (NULL or empty)\n");
         return RDKFW_DWNL_FAILED;
     }
 
+    /* [2] Validate request */
     if (fwdwnlreq == NULL) {
         FWUPMGR_ERROR("downloadFirmware: fwdwnlreq is NULL\n");
         return RDKFW_DWNL_FAILED;
@@ -315,79 +353,144 @@ DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,
         return RDKFW_DWNL_FAILED;
     }
 
+    /* [3] Validate callback */
     if (callback == NULL) {
         FWUPMGR_ERROR("downloadFirmware: callback is NULL\n");
         return RDKFW_DWNL_FAILED;
     }
 
     FWUPMGR_INFO("downloadFirmware: handle='%s' firmware='%s' type='%s' url='%s'\n",
-                 handle, 
+                 handle,
                  fwdwnlreq->firmwareName,
                  (fwdwnlreq->TypeOfFirmware && fwdwnlreq->TypeOfFirmware[0]) ? fwdwnlreq->TypeOfFirmware : "(none)",
                  (fwdwnlreq->downloadUrl && fwdwnlreq->downloadUrl[0]) ? fwdwnlreq->downloadUrl : "(use XConf)");
 
-    /* [2] Connect to D-Bus FIRST before registering callback
+    /* [4] Allocate per-request context on heap
      *
-     * This prevents stale registry entries if D-Bus connection fails.
+     * We allocate FIRST, then call internal_begin_download() to atomically
+     * set in-progress + track ctx. This way there's no window where in-progress
+     * is true but ctx isn't ready.
      */
-    GError *error = NULL;
-    GDBusConnection *conn = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
-
-    if (conn == NULL) {
-        FWUPMGR_ERROR("downloadFirmware: D-Bus connect failed: %s\n",
-                      error ? error->message : "unknown");
-        if (error) g_error_free(error);
+    DownloadRequestContext *ctx = calloc(1, sizeof(DownloadRequestContext));
+    if (ctx == NULL) {
+        FWUPMGR_ERROR("downloadFirmware: calloc failed for ctx\n");
         return RDKFW_DWNL_FAILED;
     }
 
-    /* [3] Register callback AFTER D-Bus connection succeeds, BEFORE sending
-     *
-     * Register immediately before sending to avoid race condition where
-     * the daemon responds before we're ready to receive the signal.
-     */
-    if (!internal_dwnl_register_callback(handle, callback)) {
-        FWUPMGR_ERROR("downloadFirmware: registry full, handle='%s'\n", handle);
-        g_object_unref(conn);
+    ctx->handle_key = strdup(handle);
+    if (ctx->handle_key == NULL) {
+        FWUPMGR_ERROR("downloadFirmware: strdup failed for handle\n");
+        free(ctx);
         return RDKFW_DWNL_FAILED;
     }
 
-    /* [4] Fire-and-forget D-Bus DownloadFirmware method call
+    ctx->firmware_name = strdup(fwdwnlreq->firmwareName);
+    ctx->firmware_url  = (fwdwnlreq->downloadUrl != NULL) ? strdup(fwdwnlreq->downloadUrl) : NULL;
+    ctx->firmware_type = (fwdwnlreq->TypeOfFirmware != NULL) ? strdup(fwdwnlreq->TypeOfFirmware) : NULL;
+    ctx->callback      = callback;
+    ctx->is_ready      = false;
+    ctx->init_failed   = false;
+    ctx->daemon_accepted = false;
+    ctx->daemon_reject_message = NULL;
+
+    if (pthread_mutex_init(&ctx->ready_mutex, NULL) != 0) {
+        FWUPMGR_ERROR("downloadFirmware: ready_mutex init failed\n");
+        free(ctx->handle_key);
+        free(ctx->firmware_name);
+        free(ctx->firmware_url);
+        free(ctx->firmware_type);
+        free(ctx);
+        return RDKFW_DWNL_FAILED;
+    }
+
+    if (pthread_cond_init(&ctx->ready_cond, NULL) != 0) {
+        FWUPMGR_ERROR("downloadFirmware: ready_cond init failed\n");
+        pthread_mutex_destroy(&ctx->ready_mutex);
+        free(ctx->handle_key);
+        free(ctx->firmware_name);
+        free(ctx->firmware_url);
+        free(ctx->firmware_type);
+        free(ctx);
+        return RDKFW_DWNL_FAILED;
+    }
+
+    /* [5] Atomically begin the download session: set in-progress + track ctx.
      *
-     * Arguments: (ssss)
-     *   s handle          — identifies this app to the daemon
-     *   s firmwareName    — firmware image filename
-     *   s downloadUrl     — override URL or "" for XConf URL
-     *   s TypeOfFirmware  — "PCI" | "PDRI" | "PERIPHERAL"
-     *
-     * Three trailing NULLs = fire and forget (no reply waited for).
-     * g_dbus_connection_call() returns immediately.
+     * internal_begin_download() does the duplicate rejection AND the
+     * context tracking in one mutex-protected operation. If another download
+     * is already active, it returns false and we clean up locally.
      */
+    if (!internal_begin_download(ctx)) {
+        FWUPMGR_WARN("downloadFirmware: already in progress, rejecting. "
+                     "handle='%s'\n", handle);
+        pthread_cond_destroy(&ctx->ready_cond);
+        pthread_mutex_destroy(&ctx->ready_mutex);
+        free(ctx->handle_key);
+        free(ctx->firmware_name);
+        free(ctx->firmware_url);
+        free(ctx->firmware_type);
+        free(ctx);
+        return RDKFW_DWNL_FAILED;
+    }
 
-    g_dbus_connection_call(
-        conn,
-        DBUS_SERVICE_NAME,
-        DBUS_OBJECT_PATH,
-        DBUS_INTERFACE_NAME,
-        DBUS_METHOD_DOWNLOAD,                      /* method: DownloadFirmware   */
-        g_variant_new("(ssss)",
-                      handle,                                     /* app's handler_id string    */
-                      fwdwnlreq->firmwareName,                     /* firmware image name        */
-                      fwdwnlreq->downloadUrl ? fwdwnlreq->downloadUrl : "",  /* override URL or ""  */
-                      fwdwnlreq->TypeOfFirmware ? fwdwnlreq->TypeOfFirmware : ""),  /* PCI / PDRI / PERIPHERAL */
-        NULL,                                      /* expected reply type: none  */
-        G_DBUS_CALL_FLAGS_NONE,
-        DBUS_TIMEOUT_MS,
-        NULL,                                      /* GCancellable: none         */
-        NULL,                                      /* reply callback: none       */
-        NULL                                       /* user_data: none            */
-    );
+    /* [6] Spawn worker thread — ownership of ctx transfers to worker
+     *
+     * The worker thread will set up D-Bus, subscribe to signals,
+     * call daemon synchronously, and wait for progress signals.
+     * Thread is joinable (NOT detached) so destructor can join it.
+     */
+    if (pthread_create(&ctx->thread, NULL, internal_download_worker_thread, ctx) != 0) {
+        FWUPMGR_ERROR("downloadFirmware: pthread_create failed\n");
+        internal_abort_download();
+        pthread_cond_destroy(&ctx->ready_cond);
+        pthread_mutex_destroy(&ctx->ready_mutex);
+        free(ctx->handle_key);
+        free(ctx->firmware_name);
+        free(ctx->firmware_url);
+        free(ctx->firmware_type);
+        free(ctx);
+        return RDKFW_DWNL_FAILED;
+    }
 
-    g_object_unref(conn);
+    /* [7] Wait for worker to signal ready (includes daemon reply)
+     *
+     * This blocks the caller for ~50-200ms while the worker sets up
+     * its D-Bus connection, subscribes to signals, and calls the daemon
+     * synchronously. The worker signals is_ready=true when it's either
+     * ready (daemon accepted) or has failed (D-Bus error or daemon rejected).
+     */
+    pthread_mutex_lock(&ctx->ready_mutex);
+    while (!ctx->is_ready) {
+        pthread_cond_wait(&ctx->ready_cond, &ctx->ready_mutex);
+    }
+    bool failed = ctx->init_failed;
+    pthread_mutex_unlock(&ctx->ready_mutex);
 
-    FWUPMGR_INFO("downloadFirmware: D-Bus call sent, returning SUCCESS. handle='%s'\n",
+    /* [8] Check if worker failed to initialize or daemon rejected
+     *
+     * If init_failed is true, either D-Bus setup failed or the daemon
+     * rejected the download request. The worker thread is already
+     * cleaning itself up. We join it to avoid a zombie thread.
+     */
+    if (failed) {
+        FWUPMGR_ERROR("downloadFirmware: worker init failed or daemon rejected. "
+                     "handle='%s'\n", handle);
+        /* Worker thread will clean itself up (free ctx, reset g_dwnl_in_progress).
+         * We just need to join it to wait for cleanup to finish. */
+        pthread_join(ctx->thread, NULL);
+        return RDKFW_DWNL_FAILED;
+    }
+
+    /* [9] Worker is running and listening for DownloadProgress signals.
+     *
+     * From this point, the caller NEVER touches ctx again.
+     * The worker thread is the sole owner and will free it after
+     * the download completes, errors, or times out.
+     */
+    FWUPMGR_INFO("downloadFirmware: worker thread started, returning SUCCESS. "
+                 "Callback will fire as download progresses. handle='%s'\n",
                  handle);
 
-    /* [4] Return immediately — app is unblocked */
     return RDKFW_DWNL_SUCCESS;
 }
 
