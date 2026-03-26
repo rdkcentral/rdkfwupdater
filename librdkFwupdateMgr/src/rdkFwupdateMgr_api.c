@@ -42,10 +42,19 @@
  * → Fires client callback MULTIPLE TIMES (per progress signal)
  * → Quits loop on COMPLETED/ERROR → Cleans up → Thread exits
  *
- * UPDATE FIRMWARE (unchanged — persistent BG thread):
+ * UPDATE FIRMWARE (Phase 3 - on-demand worker thread):
  * =====================================================
- * Same fire-and-forget pattern as before.
- * Callbacks registered in registry, dispatched from background thread.
+ * 1. Validate handle, request, and callback
+ * 2. Reject if another updateFirmware is already in progress
+ * 3. Allocate UpdateRequestContext on heap
+ * 4. Spawn worker thread (internal_update_worker_thread)
+ * 5. Wait for worker to signal "ready" via condvar (~50-200ms, includes daemon reply)
+ * 6. Return SUCCESS or FAIL (accurate — reflects daemon's accept/reject)
+ *
+ * [Later - typically 5-60 minutes, max 3600 seconds]
+ * Worker thread receives UpdateProgress signals from daemon
+ * → Fires client callback MULTIPLE TIMES (per progress signal)
+ * → Quits loop on COMPLETED/ERROR → Cleans up → Thread exits
  */
 
 #include "rdkFwupdateMgr_client.h"
@@ -56,9 +65,9 @@
 #include <stdlib.h>
 #include <inttypes.h>
 
-/* No extern globals needed — all CheckForUpdate state is accessed through
- * internal_begin_check() / internal_end_check() / internal_abort_check()
- * / internal_is_check_in_progress() declared in rdkFwupdateMgr_async_internal.h.
+/* No extern globals needed — all state is accessed through
+ * internal_begin_*() / internal_end_*() / internal_abort_*()
+ * / internal_is_*_in_progress() declared in rdkFwupdateMgr_async_internal.h.
  * The mutex and state variables are static inside rdkFwupdateMgr_async.c.
  */
 
@@ -80,7 +89,6 @@
  *   - At most one checkForUpdate() in progress per process
  *   - Callback fires exactly once (on signal) or zero times (on timeout/error)
  *   - Worker thread is self-contained: creates and destroys all its resources
- *   - No interaction with the persistent background thread
  *
  * @param handle    Valid FirmwareInterfaceHandle from registerProcess()
  * @param callback  Invoked when CheckForUpdateComplete signal arrives
@@ -236,51 +244,43 @@ CheckForUpdateResult checkForUpdate(FirmwareInterfaceHandle handle,
 /**
  * @brief Library constructor — auto-called when .so is loaded
  *
- * Initializes the internal async engine (registry + background thread)
- * before any app code runs.
+ * Phase 3: No async infrastructure init needed. All three APIs use on-demand
+ * worker threads that create and destroy their own resources. The library is
+ * ready to use immediately after loading.
  */
 __attribute__((constructor))
 static void rdkFwupdateMgr_lib_init(void)
 {
     FWUPMGR_INFO("=== rdkFwupdateMgr library loading ===\n");
-    if (internal_system_init() != 0) {
-        FWUPMGR_ERROR("rdkFwupdateMgr_lib_init: internal_system_init FAILED\n");
-    }
+    /* No internal_system_init() needed — all APIs use on-demand worker threads.
+     * Zero resource cost when idle: no background thread, no registries,
+     * no D-Bus connections until an API is actually called.
+     */
     FWUPMGR_INFO("=== rdkFwupdateMgr library ready ===\n");
 }
 
 /**
  * @brief Library destructor — auto-called when .so is unloaded
  *
- * Stops any active CheckForUpdate and DownloadFirmware worker threads,
- * then stops the persistent background thread and frees all resources cleanly.
+ * Stops any active CheckForUpdate, DownloadFirmware, and UpdateFirmware
+ * worker threads. No persistent background thread to stop (removed in Phase 3).
  */
 __attribute__((destructor))
 static void rdkFwupdateMgr_lib_deinit(void)
 {
     FWUPMGR_INFO("=== rdkFwupdateMgr library unloading ===\n");
 
-    /* Phase 1: Cancel and join any active CheckForUpdate worker thread.
-     *
-     * Must happen BEFORE internal_system_deinit() because the worker
-     * may be using a D-Bus connection. If we tore down the BG thread
-     * first, ordering issues could arise.
-     */
+    /* Phase 1: Cancel and join any active CheckForUpdate worker thread. */
     internal_cancel_all_active_check_threads();
 
-    /* Phase 2: Cancel and join any active DownloadFirmware worker thread.
-     *
-     * Same rationale — must join before library code is unmapped.
-     * Download workers can be long-lived (up to 1 hour) so this may
-     * block briefly while the worker cleans up after g_main_loop_quit().
-     */
+    /* Phase 2: Cancel and join any active DownloadFirmware worker thread. */
     internal_cancel_all_active_download_threads();
 
-    /* Phase 3 (future): Cancel active UpdateFirmware worker */
-    /* internal_cancel_all_active_update_threads(); */
+    /* Phase 3: Cancel and join any active UpdateFirmware worker thread. */
+    internal_cancel_all_active_update_threads();
 
-    /* Persistent BG thread cleanup (still needed for Update in Phase 2) */
-    internal_system_deinit();
+    /* No internal_system_deinit() needed — no persistent BG thread or registry. */
+
     FWUPMGR_INFO("=== rdkFwupdateMgr library unloaded ===\n");
 }
 
@@ -320,7 +320,6 @@ static void rdkFwupdateMgr_lib_deinit(void)
  *   - At most one downloadFirmware() in progress per process
  *   - Callback fires N times (per progress signal) or 0 times (on error)
  *   - Worker thread is self-contained: creates and destroys all its resources
- *   - No interaction with the persistent background thread
  *
  * @param handle      Valid FirmwareInterfaceHandle from registerProcess()
  * @param fwdwnlreq   Download request details (firmware name, URL, type)
@@ -495,31 +494,36 @@ DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,
 }
 
 /* ========================================================================
- * UPDATE FIRMWARE PUBLIC API
+ * UPDATE FIRMWARE PUBLIC API — ON-DEMAND WORKER THREAD (Phase 3)
  * ========================================================================
  *
  * Implements:
  *   UpdateResult updateFirmware(FirmwareInterfaceHandle handle,
- *                               FwUpdateReq fwupdatereq,
+ *                               const FwUpdateReq *fwupdatereq,
  *                               UpdateCallback callback);
  *
  * FLOW:
- *   1. Validate: handle not NULL/empty, firmwareName not empty,
- *                TypeOfFirmware not empty, callback not NULL
- *   2. Connect to D-Bus (fail early if connection fails)
- *   3. Register callback in update registry (AFTER D-Bus connection succeeds)
- *   4. Fire UpdateFirmware D-Bus method call to daemon (fire-and-forget)
- *   5. Return RDKFW_UPDATE_SUCCESS immediately
+ *   1. Validate: handle, request fields, callback
+ *   2. Allocate UpdateRequestContext on heap
+ *   3. internal_begin_update(ctx) — reject if already active
+ *   4. Spawn worker thread (internal_update_worker_thread)
+ *   5. Wait for condvar — worker sets up D-Bus + calls daemon synchronously
+ *   6. Check daemon reply: accepted → SUCCESS, rejected → FAIL
  *
- *   [later — fires multiple times as flashing progresses]
- *   Daemon emits UpdateProgress(progress%, status) signal repeatedly
- *   → on_update_progress_signal() fires in background thread
- *   → dispatch_all_update_active() calls every ACTIVE UpdateCallback
- *   → slot stays ACTIVE until UPDATE_COMPLETED or UPDATE_ERROR
+ *   [later — fires multiple times over 5-60 minutes]
+ *   Worker receives UpdateProgress signals → fires callback each time
+ *   → quits loop on COMPLETED/ERROR → cleanup → thread exits
  * ======================================================================== */
 
 /**
- * @brief Initiate firmware flashing — non-blocking, returns immediately
+ * @brief Initiate firmware flashing — spawns on-demand worker thread
+ *
+ * Allocates an UpdateRequestContext, spawns a worker thread that connects
+ * to D-Bus, subscribes to UpdateProgress signal, sends UpdateFirmware
+ * method call SYNCHRONOUSLY, and reads the daemon's reply. The caller
+ * blocks briefly (~50-200ms) until the worker signals "ready", then
+ * returns immediately with an ACCURATE result reflecting the daemon's
+ * accept/reject decision.
  *
  * D-Bus arguments sent to daemon: (sssss)
  *   s  handle               — identifies this app
@@ -528,8 +532,13 @@ DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,
  *   s  TypeOfFirmware       — "PCI" | "PDRI" | "PERIPHERAL"
  *   s  rebootImmediately    — "true" or "false" (daemon expects string)
  *
+ * INVARIANTS:
+ *   - At most one updateFirmware() in progress per process
+ *   - Callback fires N times (per progress signal) or 0 times (on error)
+ *   - Worker thread is self-contained: creates and destroys all its resources
+ *
  * @param handle        Valid FirmwareInterfaceHandle from registerProcess()
- * @param fwupdatereq   Update request (passed by value, library copies it)
+ * @param fwupdatereq   Update request (firmware name, type, location, reboot flag)
  * @param callback      Invoked on each UpdateProgress signal
  * @return RDKFW_UPDATE_SUCCESS or RDKFW_UPDATE_FAILED
  */
@@ -537,12 +546,13 @@ UpdateResult updateFirmware(FirmwareInterfaceHandle handle,
                              const FwUpdateReq *fwupdatereq,
                              UpdateCallback callback)
 {
-    /* [1] Validate */
+    /* [1] Validate handle */
     if (handle == NULL || handle[0] == '\0') {
         FWUPMGR_ERROR("updateFirmware: invalid handle (NULL or empty)\n");
         return RDKFW_UPDATE_FAILED;
     }
 
+    /* [2] Validate request */
     if (fwupdatereq == NULL) {
         FWUPMGR_ERROR("updateFirmware: fwupdatereq is NULL\n");
         return RDKFW_UPDATE_FAILED;
@@ -568,6 +578,7 @@ UpdateResult updateFirmware(FirmwareInterfaceHandle handle,
         return RDKFW_UPDATE_FAILED;
     }
 
+    /* [3] Validate callback */
     if (callback == NULL) {
         FWUPMGR_ERROR("updateFirmware: callback is NULL\n");
         return RDKFW_UPDATE_FAILED;
@@ -583,68 +594,145 @@ UpdateResult updateFirmware(FirmwareInterfaceHandle handle,
                      : "(use device.properties path)",
                  fwupdatereq->rebootImmediately ? "yes" : "no");
 
-    /* [2] Connect to D-Bus FIRST before registering callback
+    /* [4] Allocate per-request context on heap
      *
-     * This prevents stale registry entries if D-Bus connection fails.
+     * We allocate FIRST, then call internal_begin_update() to atomically
+     * set in-progress + track ctx. This way there's no window where in-progress
+     * is true but ctx isn't ready.
      */
-    GError *error = NULL;
-    GDBusConnection *conn = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
-
-    if (conn == NULL) {
-        FWUPMGR_ERROR("updateFirmware: D-Bus connect failed: %s\n",
-                      error ? error->message : "unknown");
-        if (error) g_error_free(error);
+    UpdateRequestContext *ctx = calloc(1, sizeof(UpdateRequestContext));
+    if (ctx == NULL) {
+        FWUPMGR_ERROR("updateFirmware: calloc failed for ctx\n");
         return RDKFW_UPDATE_FAILED;
     }
 
-    /* [3] Register callback AFTER D-Bus connection succeeds, BEFORE sending
-     *
-     * Register immediately before sending to avoid race condition where
-     * the daemon responds before we're ready to receive the signal.
-     */
-    if (!internal_update_register_callback(handle, callback)) {
-        FWUPMGR_ERROR("updateFirmware: registry full, handle='%s'\n", handle);
-        g_object_unref(conn);
+    ctx->handle_key = strdup(handle);
+    if (ctx->handle_key == NULL) {
+        FWUPMGR_ERROR("updateFirmware: strdup failed for handle\n");
+        free(ctx);
         return RDKFW_UPDATE_FAILED;
     }
 
-    /* [4] Fire-and-forget D-Bus UpdateFirmware method call
+    ctx->firmware_name = strdup(fwupdatereq->firmwareName);
+    if (ctx->firmware_name == NULL) {
+        FWUPMGR_ERROR("updateFirmware: strdup failed for firmwareName\n");
+        free(ctx->handle_key);
+        free(ctx);
+        return RDKFW_UPDATE_FAILED;
+    }
+
+    ctx->firmware_location = (fwupdatereq->LocationOfFirmware != NULL)
+                             ? strdup(fwupdatereq->LocationOfFirmware) : NULL;
+    ctx->firmware_type     = (fwupdatereq->TypeOfFirmware != NULL)
+                             ? strdup(fwupdatereq->TypeOfFirmware) : NULL;
+    ctx->reboot_flag       = strdup(fwupdatereq->rebootImmediately ? "true" : "false");
+    ctx->callback          = callback;
+    ctx->is_ready          = false;
+    ctx->init_failed       = false;
+    ctx->daemon_accepted   = false;
+    ctx->daemon_reject_message = NULL;
+
+    if (pthread_mutex_init(&ctx->ready_mutex, NULL) != 0) {
+        FWUPMGR_ERROR("updateFirmware: ready_mutex init failed\n");
+        free(ctx->handle_key);
+        free(ctx->firmware_name);
+        free(ctx->firmware_location);
+        free(ctx->firmware_type);
+        free(ctx->reboot_flag);
+        free(ctx);
+        return RDKFW_UPDATE_FAILED;
+    }
+
+    if (pthread_cond_init(&ctx->ready_cond, NULL) != 0) {
+        FWUPMGR_ERROR("updateFirmware: ready_cond init failed\n");
+        pthread_mutex_destroy(&ctx->ready_mutex);
+        free(ctx->handle_key);
+        free(ctx->firmware_name);
+        free(ctx->firmware_location);
+        free(ctx->firmware_type);
+        free(ctx->reboot_flag);
+        free(ctx);
+        return RDKFW_UPDATE_FAILED;
+    }
+
+    /* [5] Atomically begin the update session: set in-progress + track ctx.
      *
-     * Arguments: (sssss)
-     *   s handle                — app's handler_id string
-     *   s firmwareName          — image to flash
-     *   s LocationOfFirmware    — path or "" for device.properties default
-     *   s TypeOfFirmware        — PCI / PDRI / PERIPHERAL
-     *   s rebootImmediately     — "true" or "false" (daemon expects string)
-     *
-     * Three trailing NULLs = fire and forget.
+     * internal_begin_update() does the duplicate rejection AND the
+     * context tracking in one mutex-protected operation. If another update
+     * is already active, it returns false and we clean up locally.
      */
+    if (!internal_begin_update(ctx)) {
+        FWUPMGR_WARN("updateFirmware: already in progress, rejecting. "
+                     "handle='%s'\n", handle);
+        pthread_cond_destroy(&ctx->ready_cond);
+        pthread_mutex_destroy(&ctx->ready_mutex);
+        free(ctx->handle_key);
+        free(ctx->firmware_name);
+        free(ctx->firmware_location);
+        free(ctx->firmware_type);
+        free(ctx->reboot_flag);
+        free(ctx);
+        return RDKFW_UPDATE_FAILED;
+    }
 
-    g_dbus_connection_call(
-        conn,
-        DBUS_SERVICE_NAME,
-        DBUS_OBJECT_PATH,
-        DBUS_INTERFACE_NAME,
-        DBUS_METHOD_UPDATE,                         /* method: UpdateFirmware     */
-        g_variant_new("(sssss)",                                  /* ✅ 5 strings now! */
-                      handle,                                     /* app's handler_id string    */
-                      fwupdatereq->firmwareName,                  /* image to flash             */
-                      fwupdatereq->LocationOfFirmware ? fwupdatereq->LocationOfFirmware : "", /* path or "" */
-                      fwupdatereq->TypeOfFirmware,                /* PCI / PDRI / PERIPHERAL    */
-                      fwupdatereq->rebootImmediately ? "true" : "false"), /* reboot flag sent to daemon */
-        NULL,                                       /* expected reply: none       */
-        G_DBUS_CALL_FLAGS_NONE,
-        DBUS_TIMEOUT_MS,
-        NULL,                                       /* GCancellable: none         */
-        NULL,                                       /* reply callback: none       */
-        NULL                                        /* user_data: none            */
-    );
+    /* [6] Spawn worker thread — ownership of ctx transfers to worker
+     *
+     * The worker thread will set up D-Bus, subscribe to signals,
+     * call daemon synchronously, and wait for progress signals.
+     * Thread is joinable (NOT detached) so destructor can join it.
+     */
+    if (pthread_create(&ctx->thread, NULL, internal_update_worker_thread, ctx) != 0) {
+        FWUPMGR_ERROR("updateFirmware: pthread_create failed\n");
+        internal_abort_update();
+        pthread_cond_destroy(&ctx->ready_cond);
+        pthread_mutex_destroy(&ctx->ready_mutex);
+        free(ctx->handle_key);
+        free(ctx->firmware_name);
+        free(ctx->firmware_location);
+        free(ctx->firmware_type);
+        free(ctx->reboot_flag);
+        free(ctx);
+        return RDKFW_UPDATE_FAILED;
+    }
 
-    g_object_unref(conn);
+    /* [7] Wait for worker to signal ready (includes daemon reply)
+     *
+     * This blocks the caller for ~50-200ms while the worker sets up
+     * its D-Bus connection, subscribes to signals, and calls the daemon
+     * synchronously. The worker signals is_ready=true when it's either
+     * ready (daemon accepted) or has failed (D-Bus error or daemon rejected).
+     */
+    pthread_mutex_lock(&ctx->ready_mutex);
+    while (!ctx->is_ready) {
+        pthread_cond_wait(&ctx->ready_cond, &ctx->ready_mutex);
+    }
+    bool failed = ctx->init_failed;
+    pthread_mutex_unlock(&ctx->ready_mutex);
 
-    FWUPMGR_INFO("updateFirmware: D-Bus call sent, returning SUCCESS. "
-                 "handle='%s'\n", handle);
+    /* [8] Check if worker failed to initialize or daemon rejected
+     *
+     * If init_failed is true, either D-Bus setup failed or the daemon
+     * rejected the update request. The worker thread is already
+     * cleaning itself up. We join it to avoid a zombie thread.
+     */
+    if (failed) {
+        FWUPMGR_ERROR("updateFirmware: worker init failed or daemon rejected. "
+                     "handle='%s'\n", handle);
+        /* Worker thread will clean itself up (free ctx, reset g_update_in_progress).
+         * We just need to join it to wait for cleanup to finish. */
+        pthread_join(ctx->thread, NULL);
+        return RDKFW_UPDATE_FAILED;
+    }
 
-    /* [4] Return immediately — app is unblocked */
+    /* [9] Worker is running and listening for UpdateProgress signals.
+     *
+     * From this point, the caller NEVER touches ctx again.
+     * The worker thread is the sole owner and will free it after
+     * the update completes, errors, or times out.
+     */
+    FWUPMGR_INFO("updateFirmware: worker thread started, returning SUCCESS. "
+                 "Callback will fire as update progresses. handle='%s'\n",
+                 handle);
+
     return RDKFW_UPDATE_SUCCESS;
 }

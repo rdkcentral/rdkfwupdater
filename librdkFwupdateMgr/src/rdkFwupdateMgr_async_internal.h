@@ -14,8 +14,8 @@
  * @file rdkFwupdateMgr_async_internal.h
  * @brief Internal types and declarations — NOT part of public API
  *
- * ARCHITECTURE OVERVIEW (Phase 1+2 — CheckForUpdate + DownloadFirmware on-demand threads):
- * ========================================================================================
+ * ARCHITECTURE OVERVIEW (Phase 1+2+3 — All APIs use on-demand worker threads):
+ * ==============================================================================
  *
  * CheckForUpdate (ON-DEMAND WORKER THREAD — Phase 1):
  *
@@ -57,12 +57,26 @@
  *        ├─ pthread_cond_wait() for ready signal (includes daemon reply)
  *        └─ Return SUCCESS or FAIL (accurate — reflects daemon's accept/reject)
  *
- * Update (PERSISTENT BG THREAD — unchanged, Phase 3):
+ * UpdateFirmware (ON-DEMAND WORKER THREAD — Phase 3):
  *
- *  App ──updateFirmware(hdl, req, cb)───► UpdateRegistry ──► BG thread
- *                                                             watches D-Bus
- *                Daemon emits UpdateProgress
- *                        → dispatch to all ACTIVE callbacks
+ *  App calls updateFirmware(handle, request, callback)
+ *        │
+ *        ├─ Allocate UpdateRequestContext on heap
+ *        ├─ pthread_create(internal_update_worker_thread, ctx)
+ *        │        │
+ *        │        ├─ New GMainContext + GMainLoop (isolated)
+ *        │        ├─ g_bus_get_sync() → D-Bus connection
+ *        │        ├─ Subscribe to UpdateProgress signal
+ *        │        ├─ g_dbus_connection_call_sync("UpdateFirmware") — SYNCHRONOUS
+ *        │        │   → reads daemon's (sss) reply: accept or reject
+ *        │        ├─ Signal caller "ready" via condvar
+ *        │        ├─ g_main_loop_run() — waits for UpdateProgress signals
+ *        │        │   → callback fires MULTIPLE times (per progress signal)
+ *        │        │   → quits loop ONLY on COMPLETED/ERROR (terminal status)
+ *        │        └─ Cleanup everything, free(ctx), thread exits
+ *        │
+ *        ├─ pthread_cond_wait() for ready signal (includes daemon reply)
+ *        └─ Return SUCCESS or FAIL (accurate — reflects daemon's accept/reject)
  *
  * THREAD SAFETY:
  * ==============
@@ -70,7 +84,8 @@
  *                   g_check_in_progress protected by g_check_in_progress_mutex.
  *   DownloadFirmware: per-request ctx protected by ctx->ready_mutex (handshake),
  *                     g_dwnl_in_progress protected by g_dwnl_in_progress_mutex.
- *   Update: registry protected by its own pthread_mutex.
+ *   UpdateFirmware: per-request ctx protected by ctx->ready_mutex (handshake),
+ *                   g_update_in_progress protected by g_update_in_progress_mutex.
  *   Callbacks invoked with mutex RELEASED (deadlock prevention).
  */
 
@@ -91,8 +106,6 @@ extern "C" {
 /* ========================================================================
  * CONSTANTS
  * ======================================================================== */
-
-#define MAX_PENDING_CALLBACKS    30  /* Reduced from 64 to keep stack usage < 10KB - Need to discuss the max number ; for now kept to 30 to resolve coverity issues*/
 
 #define DBUS_SERVICE_NAME        "org.rdkfwupdater.Service"
 #define DBUS_OBJECT_PATH         "/org/rdkfwupdater/Service"
@@ -159,41 +172,8 @@ typedef struct {
 } InternalSignalData;
 
 /* ========================================================================
- * BACKGROUND THREAD (for Download/Update only — Phase 1)
+ * INTERNAL FUNCTION DECLARATIONS — CheckForUpdate
  * ======================================================================== */
-
-/**
- * @brief State for the background GLib event loop thread
- *
- * Started at library load. Subscribes to CheckForUpdateComplete signal.
- * Runs until library unload.
- */
-typedef struct {
-    pthread_t         thread;
-    GMainLoop        *main_loop;
-    GMainContext     *context;
-    GDBusConnection  *connection;
-    guint             subscription_id;
-    bool              running;
-    pthread_mutex_t   mutex;
-} BackgroundThread;
-
-/* ========================================================================
- * INTERNAL FUNCTION DECLARATIONS
- * ======================================================================== */
-
-/**
- * @brief Initialize download/update registries and start background thread
- * Called from library __attribute__((constructor)).
- * @return 0 on success, -1 on error
- */
-int  internal_system_init(void);
-
-/**
- * @brief Stop background thread and free all resources
- * Called from library __attribute__((destructor)).
- */
-void internal_system_deinit(void);
 
 /**
  * @brief Worker thread entry point for on-demand CheckForUpdate.
@@ -475,47 +455,46 @@ bool internal_parse_dwnl_signal_data(GVariant *parameters,
 DownloadStatus internal_map_dwnl_status_code(int32_t status_code);
 
 /* ========================================================================
- * UPDATE FIRMWARE — INTERNAL TYPES AND DECLARATIONS
+ * UPDATE FIRMWARE — ON-DEMAND WORKER THREAD (Phase 3)
  * ========================================================================
  *
  * ARCHITECTURE:
  *
- *  App A ──updateFirmware(hdl_A, req_A, cb_A)──┐
- *  App B ──updateFirmware(hdl_B, req_B, cb_B)──┼──► UpdateRegistry (keyed by handle)
- *  App C ──updateFirmware(hdl_C, req_C, cb_C)──┘          │
- *                                                          │  same background thread
- *                                                          │  subscribed to UpdateProgress
- *                                                          ▼
- *                Daemon emits UpdateProgress(progress%, status) REPEATEDLY
- *                                                          │
- *                                  on_update_progress_signal()
- *                                                          │
- *                                dispatch_all_update_active() │
- *                                  ├── cb_A(progress%, status)
- *                                  ├── cb_B(progress%, status)
- *                                  └── cb_C(progress%, status)
+ *  App calls updateFirmware(handle, request, callback)
+ *        │
+ *        ├─ Allocate UpdateRequestContext on heap
+ *        ├─ internal_begin_update(ctx) — reject if already active
+ *        ├─ pthread_create(internal_update_worker_thread, ctx)
+ *        │        │
+ *        │        ├─ New GMainContext + GMainLoop (isolated)
+ *        │        ├─ g_bus_get_sync() → D-Bus connection
+ *        │        ├─ Subscribe to UpdateProgress signal
+ *        │        ├─ g_dbus_connection_call_sync("UpdateFirmware")
+ *        │        │   → daemon reply (sss): result, status, message
+ *        │        │   → if FAILED: set init_failed, signal ready, cleanup
+ *        │        │   → if SUCCESS: set daemon_accepted
+ *        │        ├─ Add 3600s timeout
+ *        │        ├─ Signal caller "ready" via condvar
+ *        │        ├─ g_main_loop_run() — receives UpdateProgress signals
+ *        │        │   → callback fires MULTIPLE times (per-signal)
+ *        │        │   → quits loop ONLY on COMPLETED/ERROR
+ *        │        └─ Cleanup everything, free(ctx), thread exits
+ *        │
+ *        ├─ pthread_cond_wait() for ready signal
+ *        └─ Return SUCCESS or FAIL (accurate — reflects daemon reply)
  *
- * IDENTICAL LIFECYCLE TO DOWNLOAD:
- *   Slot stays ACTIVE across multiple signals.
- *   Reset to IDLE only on UPDATE_COMPLETED or UPDATE_ERROR.
+ * KEY SIMILARITY TO DownloadFirmware:
+ *   Both APIs: callback fires MULTIPLE TIMES (per progress signal),
+ *              thread exits only on terminal status (COMPLETED/ERROR).
+ *   Both use condvar handshake with daemon synchronous reply for accurate return.
+ *
  * ======================================================================== */
 
-#define DBUS_METHOD_UPDATE          "UpdateFirmware"
-#define DBUS_SIGNAL_UPDATE_PROGRESS "UpdateProgress"
+#define DBUS_METHOD_UPDATE              "UpdateFirmware"
+#define DBUS_SIGNAL_UPDATE_PROGRESS     "UpdateProgress"
 
-/**
- * @brief Lifecycle state of one update callback registry slot
- *
- *   IDLE ──(register)──► ACTIVE ──(COMPLETED/ERROR signal)──► IDLE
- *                            │
- *                            │  (fires callback on EVERY UpdateProgress signal)
- *                            └──(timeout)──► TIMED_OUT ──► IDLE
- */
-typedef enum {
-    UPDATE_CB_STATE_IDLE      = 0,  /**< Slot free and reusable              */
-    UPDATE_CB_STATE_ACTIVE    = 1,  /**< Receiving update progress signals   */
-    UPDATE_CB_STATE_TIMED_OUT = 2   /**< Timed out waiting for completion    */
-} UpdateCbState;
+/* Timeout for update worker thread (seconds) — 1 hour */
+#define UPDATE_SIGNAL_TIMEOUT_SECONDS   3600
 
 /**
  * @brief Parsed payload from UpdateProgress D-Bus signal
@@ -537,48 +516,123 @@ typedef struct {
 } InternalUpdateSignalData;
 
 /**
- * @brief One slot in the update callback registry
+ * @brief Per-request context for on-demand UpdateFirmware worker thread.
  *
- * Keyed by handle_key. Stays ACTIVE until UPDATE_COMPLETED or UPDATE_ERROR.
+ * Lifecycle:
+ *   - Allocated in updateFirmware() (caller thread) via calloc
+ *   - Ownership transferred to worker thread after condvar handshake
+ *   - Freed by worker thread after update completes/fails (or timeout)
+ *
+ * Same pattern as DownloadRequestContext:
+ *   - callback fires MULTIPLE times (per-progress-signal)
+ *   - worker quits loop ONLY on terminal status (COMPLETED/ERROR)
+ *   - daemon_accepted: worker reads daemon's synchronous reply
+ *   - 3600s timeout
+ *
+ * Memory: ~200 bytes (excluding GLib objects)
  */
 typedef struct {
-    UpdateCbState   state;            /**< IDLE or ACTIVE                    */
-    char           *handle_key;       /**< strdup of app's handle            */
-    UpdateCallback  callback;         /**< App's progress callback           */
-    time_t          registered_time;  /**< For timeout detection             */
-} UpdateCbEntry;
+    /* Condvar handshake: worker signals "I'm ready" to caller */
+    pthread_mutex_t   ready_mutex;
+    pthread_cond_t    ready_cond;
+    bool              is_ready;          /**< true = worker finished setup           */
+    bool              init_failed;       /**< true = D-Bus failed or daemon rejected */
 
-/**
- * @brief Global registry for all active update callbacks
- */
-typedef struct {
-    UpdateCbEntry    entries[MAX_PENDING_CALLBACKS];
-    pthread_mutex_t  mutex;
-    bool             initialized;
-} UpdateCbRegistry;
+    /* GLib event loop (isolated, per-thread) */
+    GMainContext     *context;
+    GMainLoop        *main_loop;
+    GDBusConnection  *connection;
+    guint             subscription_id;
+
+    /* Request data (all strdup'd — owned by worker thread) */
+    char             *handle_key;        /**< strdup of FirmwareInterfaceHandle      */
+    char             *firmware_name;     /**< strdup of request->firmwareName         */
+    char             *firmware_location; /**< strdup of request->LocationOfFirmware   */
+    char             *firmware_type;     /**< strdup of request->TypeOfFirmware       */
+    char             *reboot_flag;       /**< "true" or "false" string                */
+    UpdateCallback    callback;          /**< Client's callback function ptr          */
+
+    /* Daemon reply (from synchronous D-Bus method return) */
+    bool              daemon_accepted;   /**< true if daemon returned RDKFW_UPDATE_SUCCESS */
+    char             *daemon_reject_message; /**< strdup of daemon's error message (if rejected) */
+
+    /* Timeout tracking */
+    GSource          *timeout_source;    /**< For cancellation in cleanup             */
+
+    /* Thread handle (for join in destructor) */
+    pthread_t         thread;
+} UpdateRequestContext;
 
 /* ---- Update internal function declarations ---- */
 
-/* ========================================================================
- * UPDATE CALLBACK REGISTRATION
- * ======================================================================== */
+/**
+ * @brief Worker thread entry point for on-demand UpdateFirmware.
+ *
+ * Creates an isolated GLib event loop, connects to D-Bus, subscribes to
+ * UpdateProgress signal, sends UpdateFirmware D-Bus method call
+ * synchronously, then waits for progress signals (with 3600s timeout).
+ * Fires the client's callback on every progress signal, quits loop on
+ * COMPLETED or ERROR, then cleans up all resources and exits.
+ *
+ * @param arg  UpdateRequestContext* (ownership transferred from caller)
+ * @return NULL
+ */
+void *internal_update_worker_thread(void *arg);
 
 /**
- * @brief Register an update callback keyed by handle
+ * @brief Atomically begin an updateFirmware session and track the context.
  *
- * @param handle    App's FirmwareInterfaceHandle (strdup'd internally)
- * @param callback  App's UpdateCallback
- * @return true on success, false if registry full
+ * Sets g_update_in_progress = true and stores ctx in g_active_update_ctx.
+ * If an update is already in progress, returns false without modifying state.
+ *
+ * @param ctx  The newly allocated UpdateRequestContext to track.
+ * @return true if session started, false if another update is already active.
  */
-bool internal_update_register_callback(FirmwareInterfaceHandle handle,
-                                        UpdateCallback callback);
+bool internal_begin_update(UpdateRequestContext *ctx);
+
+/**
+ * @brief Atomically end the updateFirmware session and untrack the context.
+ *
+ * Sets g_update_in_progress = false and g_active_update_ctx = NULL.
+ * Called by the worker thread in cleanup, BEFORE freeing ctx.
+ */
+void internal_end_update(void);
+
+/**
+ * @brief Atomically clear update in-progress state on error paths.
+ *
+ * Same as internal_end_update() but used when updateFirmware() itself
+ * fails (e.g., pthread_create fails after internal_begin_update succeeded).
+ */
+void internal_abort_update(void);
+
+/**
+ * @brief Query whether an updateFirmware() operation is currently in progress.
+ *
+ * Used by unregisterProcess() to enforce the session-state invariant.
+ * Thread-safe: protected by internal mutex.
+ *
+ * @return true if an update worker thread is active, false otherwise.
+ */
+bool internal_is_update_in_progress(void);
+
+/**
+ * @brief Cancel all active update worker threads and join them.
+ *
+ * Called from library destructor to ensure no threads are running
+ * when library code is unmapped.
+ */
+void internal_cancel_all_active_update_threads(void);
 
 /**
  * @brief Parse GVariant UpdateProgress signal payload
  *
- * Expected GVariant signature: (ii)
- *   i  progress_percent
- *   i  status_code
+ * Expected GVariant signature: (tsiis)
+ *   t  handlerId         (uint64)
+ *   s  firmwareName      (string)
+ *   i  progressPercent   (int32)
+ *   i  statusCode        (int32)
+ *   s  message           (string)
  *
  * @param parameters  GVariant from D-Bus signal
  * @param out_data    Output (must be zeroed before call)

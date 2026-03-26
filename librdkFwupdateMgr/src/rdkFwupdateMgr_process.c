@@ -431,6 +431,24 @@ void unregisterProcess(FirmwareInterfaceHandle handler)
         return;
     }
 
+    /* Session state validation: reject if updateFirmware() is active.
+     *
+     * Same rationale as downloadFirmware: you can't end the session while a
+     * firmware flash is in progress. Flashing can take 5-60 minutes,
+     * but the app should wait for the UPDATE_COMPLETED or UPDATE_ERROR callback
+     * before unregistering. If the app receives SIGTERM, it should just exit()
+     * — the daemon detects the D-Bus peer disconnect and cleans up.
+     *
+     * We return without freeing the handle — caller still owns it and can
+     * retry after the update callback fires with a terminal status.
+     */
+    if (internal_is_update_in_progress()) {
+        FWUPMGR_ERROR("unregisterProcess: REJECTED - updateFirmware() is in "
+                      "progress. Wait for the UPDATE_COMPLETED or UPDATE_ERROR "
+                      "callback, then retry unregisterProcess().\n");
+        return;
+    }
+
     // NULL check: Safe to unregister NULL handle (no-op)
     if (!handler) {
         FWUPMGR_INFO("unregisterProcess() called with NULL handle (no-op)\n");
