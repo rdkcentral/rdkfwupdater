@@ -657,12 +657,9 @@ TEST(MainHelperFunctionTest,chunkDownloadgetfilesizeTestFail){
 /* Test: Verify that when getFileSize() returns -1 (error), chunkDownload()
  * cleans up both the partial image file and its .header file via unlink(). */
 TEST(MainHelperFunctionTest,chunkDownloadgetfilesizeFailCleansUpFiles){
-    MockExternal mockexternal;
-    global_mockexternal_ptr = &mockexternal;
     DeviceUtilsMock DeviceMock;
     g_DeviceUtilsMock = &DeviceMock;
     MockExternal mock;
-    g_DeviceUtilsMock = &DeviceMock;
     global_mockexternal_ptr = &mock;
 
     int httpcode = -1;
@@ -697,12 +694,9 @@ TEST(MainHelperFunctionTest,chunkDownloadgetfilesizeFailCleansUpFiles){
 /* Test: Verify that when content_len is 0 (no Content-Length in header)
  * and the partial file is present, chunkDownload() cleans up both files. */
 TEST(MainHelperFunctionTest,chunkDownloadNoContentLenCleansUpFiles){
-    MockExternal mockexternal;
-    global_mockexternal_ptr = &mockexternal;
     DeviceUtilsMock DeviceMock;
     g_DeviceUtilsMock = &DeviceMock;
     MockExternal mock;
-    g_DeviceUtilsMock = &DeviceMock;
     global_mockexternal_ptr = &mock;
 
     int httpcode = -1;
