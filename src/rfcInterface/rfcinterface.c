@@ -246,10 +246,12 @@ int isIncremetalCDLEnable(const char *file_name)
                     SWLOG_INFO("%s: File=%s is present. IncrementalCDL enable=%d\n",__FUNCTION__, file_name, chunk_dwld);
                 } else {
                     /* Invalid or missing Content-Length: remove partial download */
+                    SWLOG_INFO("Invalid or missing Content-Length: remove partial download\n");
                     unlink(file_name);
                     unlink(headerfile);
                 }
             } else {
+                SWLOG_INFO("Invalid or missing header: remove partial download\n");
                 unlink(file_name);
                 if ((filePresentCheck(headerfile)) == 0) {
                     unlink(headerfile);
