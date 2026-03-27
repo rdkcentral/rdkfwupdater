@@ -142,6 +142,7 @@ void dwnlError(int curl_code, int http_code, int server_type,const DevicePropert
 void saveHTTPCode(int http_code, const char *lastrun);
 void Upgradet2CountNotify(char *marker, int val); 
 void Upgradet2ValNotify( char *marker, char *val );
+size_t getContentLength(const char *file);
 #ifdef __cplusplus
 }
 #endif

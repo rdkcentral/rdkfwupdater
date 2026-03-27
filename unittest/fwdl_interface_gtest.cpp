@@ -298,7 +298,9 @@ TEST_F(InterfaceTestFixture, TestName_isIncremetalCDLEnableSuccess)
 {
     EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(1).WillOnce(Return(1));
     //EXPECT_CALL(*g_InterfaceMock, getDevicePropertyData(_, _, _)).Times(1).WillOnce(Return(0));
-    EXPECT_CALL(*g_InterfaceMock, filePresentCheck(_)).WillOnce(Return(0));
+    EXPECT_CALL(*g_InterfaceMock, filePresentCheck(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(*g_InterfaceMock, getFileSize(_)).WillOnce(Return(100));
+    EXPECT_CALL(*g_InterfaceMock, getContentLength(_)).WillOnce(Return(1234));
     EXPECT_EQ(isIncremetalCDLEnable("/tmp/123.bin"), 1);
 }
 TEST_F(InterfaceTestFixture, TestName_isIncremetalCDLEnableFailrfc)
