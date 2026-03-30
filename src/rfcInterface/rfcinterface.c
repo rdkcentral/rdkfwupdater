@@ -25,6 +25,7 @@
 #include "rdk_fwdl_utils.h"
 #include "system_utils.h"
 #endif
+#include <strings.h>
 
 /*
  * Description: Get RFC data and store inside structure.
@@ -307,4 +308,37 @@ bool isDebugServicesEnabled(void)
         }
     }
     return status;
+}
+
+
+/* Description: Reads the device type RFC value and copies it into the provided buffer.
+ * @param deviceType Output buffer that receives the device type string ("test", "prod", or "unknown").
+ * @param size       Size of the deviceType buffer in bytes; must be greater than 0. The string is always NUL-terminated.
+ * @return void. On error or unrecognized RFC value, "unknown" is written to deviceType (if size > 0).
+ */
+void getDeviceTypeRFC(char *deviceType, size_t size ){
+
+	if (deviceType == NULL || size == 0){
+        SWLOG_ERROR("%s: Invalid Arguments Passed...\n", __FUNCTION__);
+		return;
+	}
+
+	const char* type = "unknown";
+    char rfc_data[RFC_VALUE_BUF_SIZE] = {0};
+    int ret = read_RFCProperty("DEVICETYPE", RFC_DEVICETYPE, rfc_data, sizeof(rfc_data));
+
+    if (ret == -1) {
+        SWLOG_ERROR("%s: Failed to read device type\n", __FUNCTION__);
+	}
+
+    SWLOG_INFO("%s: RFC device type = %s\n", __FUNCTION__, rfc_data);
+
+    if (strncasecmp(rfc_data, "prod", 4) == 0) {
+        type = "prod";
+    } else if (strncasecmp(rfc_data, "test", 4) == 0) {
+        type = "test";
+    } 
+
+	strncpy(deviceType, type, size - 1);
+    deviceType[size - 1] = '\0';
 }
