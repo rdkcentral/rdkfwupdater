@@ -276,7 +276,7 @@ example_plugin_LDFLAGS = \
 bin_PROGRAMS += kwib_test_utility
 
 kwib_test_utility_SOURCES = \
-    ${top_srcdir}/KnowWhereItBreaks/KnowWhereItBreaks.c
+    ${top_srcdir}/kwib_src/KnowWhereItBreaks.c
 
 kwib_test_utility_CFLAGS = \
     -I${top_srcdir}/librdkFwupdateMgr/include \
