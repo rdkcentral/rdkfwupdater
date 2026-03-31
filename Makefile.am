@@ -272,7 +272,7 @@ example_plugin_LDFLAGS = \
 
 # Build and install the KnowWhereItBreaks developer test utility
 # Binary is named kwib_test_utility to avoid collision with the
-# KnowWhereItBreaks/ source directory during the build.
+# kwib_src/ source directory (KnowWhereItBreaks sources) during the build.
 bin_PROGRAMS += kwib_test_utility
 
 kwib_test_utility_SOURCES = \
