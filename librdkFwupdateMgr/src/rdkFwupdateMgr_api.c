@@ -191,7 +191,20 @@ CheckForUpdateResult checkForUpdate(FirmwareInterfaceHandle handle,
         return CHECK_FOR_UPDATE_FAIL;
     }
 
-    /* [8] Wait for worker to signal ready (no timeout — see §5.1)
+    /* [8] Save thread handle locally BEFORE condvar wait.
+     *
+     * CRITICAL: On the init-failure path, the worker signals is_ready=true
+     * and then immediately proceeds to cleanup (which destroys ready_mutex,
+     * ready_cond, and free(ctx)). If we read ctx->thread AFTER the condvar
+     * wake, ctx may already be freed → use-after-free.
+     *
+     * By copying pthread_t here (right after pthread_create, before any
+     * race can occur), our join on the failure path uses the local copy
+     * and never touches ctx again.
+     */
+    pthread_t worker_thread = ctx->thread;
+
+    /* [8b] Wait for worker to signal ready (no timeout — see §5.1)
      *
      * This blocks the caller for ~10-100ms while the worker sets up
      * its D-Bus connection and signal subscription. The worker signals
@@ -209,18 +222,15 @@ CheckForUpdateResult checkForUpdate(FirmwareInterfaceHandle handle,
      * The worker tried to connect to D-Bus and subscribe to signals.
      * If that failed (D-Bus dead, system error), init_failed is true.
      * We join the worker (it's already exiting) and return FAIL to the app.
-     * The worker handles its own cleanup - we just wait for it to finish.
+     * The worker handles its own cleanup — we just wait for it to finish.
+     *
+     * IMPORTANT: We use worker_thread (local copy), NOT ctx->thread.
+     * After the condvar wake, the worker may have already freed ctx.
      */
     if (failed) {
         FWUPMGR_ERROR("checkForUpdate: worker thread failed to initialize. "
                      "handle='%s'\n", handle);
-        /*
-         * Worker thread will clean itself up (free ctx, reset g_check_in_progress).
-         * We just need to join it to avoid a zombie thread.
-         * But the worker signals ready BEFORE going to cleanup, so we must
-         * wait for it to actually exit.
-         */
-        pthread_join(ctx->thread, NULL);
+        pthread_join(worker_thread, NULL);
         return CHECK_FOR_UPDATE_FAIL;
     }
 
@@ -451,7 +461,15 @@ DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,
         return RDKFW_DWNL_FAILED;
     }
 
-    /* [7] Wait for worker to signal ready (includes daemon reply)
+    /* [7] Save thread handle locally BEFORE condvar wait.
+     *
+     * CRITICAL: Same UAF prevention as checkForUpdate — on init failure,
+     * the worker frees ctx after signaling ready. We must not read
+     * ctx->thread after the condvar wake. Save it now.
+     */
+    pthread_t worker_thread = ctx->thread;
+
+    /* [7b] Wait for worker to signal ready (includes daemon reply)
      *
      * This blocks the caller for ~50-200ms while the worker sets up
      * its D-Bus connection, subscribes to signals, and calls the daemon
@@ -470,13 +488,14 @@ DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,
      * If init_failed is true, either D-Bus setup failed or the daemon
      * rejected the download request. The worker thread is already
      * cleaning itself up. We join it to avoid a zombie thread.
+     *
+     * IMPORTANT: We use worker_thread (local copy), NOT ctx->thread.
+     * After the condvar wake, the worker may have already freed ctx.
      */
     if (failed) {
         FWUPMGR_ERROR("downloadFirmware: worker init failed or daemon rejected. "
                      "handle='%s'\n", handle);
-        /* Worker thread will clean itself up (free ctx, reset g_dwnl_in_progress).
-         * We just need to join it to wait for cleanup to finish. */
-        pthread_join(ctx->thread, NULL);
+        pthread_join(worker_thread, NULL);
         return RDKFW_DWNL_FAILED;
     }
 
@@ -695,7 +714,15 @@ UpdateResult updateFirmware(FirmwareInterfaceHandle handle,
         return RDKFW_UPDATE_FAILED;
     }
 
-    /* [7] Wait for worker to signal ready (includes daemon reply)
+    /* [7] Save thread handle locally BEFORE condvar wait.
+     *
+     * CRITICAL: Same UAF prevention as checkForUpdate/downloadFirmware —
+     * on init failure, the worker frees ctx after signaling ready.
+     * We must not read ctx->thread after the condvar wake. Save it now.
+     */
+    pthread_t worker_thread = ctx->thread;
+
+    /* [7b] Wait for worker to signal ready (includes daemon reply)
      *
      * This blocks the caller for ~50-200ms while the worker sets up
      * its D-Bus connection, subscribes to signals, and calls the daemon
@@ -714,13 +741,14 @@ UpdateResult updateFirmware(FirmwareInterfaceHandle handle,
      * If init_failed is true, either D-Bus setup failed or the daemon
      * rejected the update request. The worker thread is already
      * cleaning itself up. We join it to avoid a zombie thread.
+     *
+     * IMPORTANT: We use worker_thread (local copy), NOT ctx->thread.
+     * After the condvar wake, the worker may have already freed ctx.
      */
     if (failed) {
         FWUPMGR_ERROR("updateFirmware: worker init failed or daemon rejected. "
                      "handle='%s'\n", handle);
-        /* Worker thread will clean itself up (free ctx, reset g_update_in_progress).
-         * We just need to join it to wait for cleanup to finish. */
-        pthread_join(ctx->thread, NULL);
+        pthread_join(worker_thread, NULL);
         return RDKFW_UPDATE_FAILED;
     }
 
