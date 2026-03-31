@@ -658,8 +658,10 @@ int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const
         } else {
             setDwnlState(RDKV_FWDNLD_DOWNLOAD_INIT);
         }
-        // Use the passed curl handle instead of creating a new one
-        if (curl != NULL && *curl != NULL) {
+		if (curl != NULL) {
+			*curl = doCurlInit();
+		}
+		if (curl != NULL && *curl != NULL) {
             if (server_type == HTTP_XCONF_CODEBIG) {
                 setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_INPROGRESS);
             } else {
@@ -672,8 +674,7 @@ int codebigdownloadFile( int server_type, const char* artifactLocationUrl, const
                 setDwnlState(RDKV_FWDNLD_DOWNLOAD_EXIT);
             }
             doStopDownload(*curl);
-            // Don't set curl = NULL here - preserve the handle for reuse
-            /* Stop the donwload if Throttle speed rfc is set to zero */
+            *curl = NULL;
             if (*force_exit == 1 && (curl_ret_code == 23)) {
                 uninitialize(INITIAL_VALIDATION_SUCCESS);
                 exit(1);
