@@ -138,6 +138,24 @@ typedef struct {
     bool              is_ready;       /**< true = worker finished setup      */
     bool              init_failed;    /**< true = D-Bus connect/subscribe failed */
 
+    /**
+     * Handshake lifetime ownership flag.
+     *
+     * When true, the CALLER (API function) owns cleanup of the sync primitives
+     * (ready_mutex, ready_cond) and the ctx allocation itself. The worker thread
+     * must NOT destroy the mutex/cond or free(ctx) — it only cleans up GLib
+     * resources and strdup'd strings.
+     *
+     * Set to true by the worker BEFORE signaling ready on init-failure paths.
+     * This prevents the race where the worker destroys the mutex/cond/ctx while
+     * the caller is still inside pthread_cond_timedwait or about to call
+     * pthread_mutex_unlock.
+     *
+     * On success paths, this remains false — the worker owns everything after
+     * the handshake completes and the caller never touches ctx again.
+     */
+    bool              caller_owns_cleanup;
+
     /* GLib event loop (isolated, per-thread) */
     GMainContext     *context;
     GMainLoop        *main_loop;
@@ -352,6 +370,21 @@ typedef struct {
     bool              is_ready;          /**< true = worker finished setup           */
     bool              init_failed;       /**< true = D-Bus failed or daemon rejected */
 
+    /**
+     * Handshake lifetime ownership flag.
+     *
+     * When true, the CALLER (API function) owns cleanup of the sync primitives
+     * (ready_mutex, ready_cond) and the ctx allocation itself. The worker thread
+     * must NOT destroy the mutex/cond or free(ctx).
+     *
+     * Set to true by the worker BEFORE signaling ready on init-failure paths.
+     * This prevents the race where the worker destroys the mutex/cond/ctx while
+     * the caller is still inside pthread_cond_timedwait or pthread_mutex_unlock.
+     *
+     * On success paths, this remains false — the worker owns everything.
+     */
+    bool              caller_owns_cleanup;
+
     /* GLib event loop (isolated, per-thread) */
     GMainContext     *context;
     GMainLoop        *main_loop;
@@ -537,6 +570,21 @@ typedef struct {
     pthread_cond_t    ready_cond;
     bool              is_ready;          /**< true = worker finished setup           */
     bool              init_failed;       /**< true = D-Bus failed or daemon rejected */
+
+    /**
+     * Handshake lifetime ownership flag.
+     *
+     * When true, the CALLER (API function) owns cleanup of the sync primitives
+     * (ready_mutex, ready_cond) and the ctx allocation itself. The worker thread
+     * must NOT destroy the mutex/cond or free(ctx).
+     *
+     * Set to true by the worker BEFORE signaling ready on init-failure paths.
+     * This prevents the race where the worker destroys the mutex/cond/ctx while
+     * the caller is still inside pthread_cond_timedwait or pthread_mutex_unlock.
+     *
+     * On success paths, this remains false — the worker owns everything.
+     */
+    bool              caller_owns_cleanup;
 
     /* GLib event loop (isolated, per-thread) */
     GMainContext     *context;

@@ -907,8 +907,15 @@ void *internal_check_worker_thread(void *arg)
                       error ? error->message : "unknown");
         if (error) g_error_free(error);
 
-        /* Signal caller: init failed */
+        /* Signal caller: init failed.
+         * CRITICAL: Set caller_owns_cleanup BEFORE signaling. After the signal,
+         * the caller may wake up, read init_failed, unlock the mutex, and
+         * pthread_join us. If we were to destroy the mutex/cond in cleanup,
+         * we'd race with the caller who is still holding/using them.
+         * By setting caller_owns_cleanup=true, we tell cleanup to skip
+         * mutex/cond destroy and free(ctx) — the caller does it after join. */
         pthread_mutex_lock(&ctx->ready_mutex);
+        ctx->caller_owns_cleanup = true;
         ctx->init_failed = true;
         ctx->is_ready = true;
         pthread_cond_signal(&ctx->ready_cond);
@@ -1010,15 +1017,28 @@ cleanup:
     /* Clear in-progress flag BEFORE freeing ctx */
     internal_end_check();
 
-    /* Destroy synchronization primitives */
-    pthread_mutex_destroy(&ctx->ready_mutex);
-    pthread_cond_destroy(&ctx->ready_cond);
+    /* Destroy synchronization primitives and free ctx — BUT only if the worker
+     * owns cleanup. On init-failure paths, the caller (API function) owns these
+     * because it may still be inside pthread_cond_timedwait or about to call
+     * pthread_mutex_unlock on the same mutex. The caller will destroy/free
+     * after pthread_join returns. */
+    if (!ctx->caller_owns_cleanup) {
+        pthread_mutex_destroy(&ctx->ready_mutex);
+        pthread_cond_destroy(&ctx->ready_cond);
 
-    /* Free strdup'd strings */
-    free(ctx->handle_key);
+        /* Free strdup'd strings */
+        free(ctx->handle_key);
 
-    /* Free context */
-    free(ctx);
+        /* Free context */
+        free(ctx);
+    } else {
+        /* Worker does NOT own the sync primitives or ctx on init-failure.
+         * But we still need to free any GLib/strdup resources that we allocated
+         * in the worker thread before the failure. handle_key was allocated by
+         * the caller, so it will be freed by the caller after join. */
+        FWUPMGR_INFO("internal_check_worker_thread: caller_owns_cleanup=true, "
+                     "skipping mutex/cond destroy and free(ctx)\n");
+    }
 
     FWUPMGR_INFO("internal_check_worker_thread: thread exiting\n");
     return NULL;
@@ -1052,6 +1072,7 @@ void *internal_download_worker_thread(void *arg)
         if (error) g_error_free(error);
 
         pthread_mutex_lock(&ctx->ready_mutex);
+        ctx->caller_owns_cleanup = true;
         ctx->init_failed = true;
         ctx->is_ready = true;
         pthread_cond_signal(&ctx->ready_cond);
@@ -1112,6 +1133,7 @@ void *internal_download_worker_thread(void *arg)
         if (error) g_error_free(error);
 
         pthread_mutex_lock(&ctx->ready_mutex);
+        ctx->caller_owns_cleanup = true;
         ctx->init_failed = true;
         ctx->is_ready = true;
         pthread_cond_signal(&ctx->ready_cond);
@@ -1149,6 +1171,7 @@ void *internal_download_worker_thread(void *arg)
     /* If daemon rejected, signal caller with failure and exit */
     if (!ctx->daemon_accepted) {
         pthread_mutex_lock(&ctx->ready_mutex);
+        ctx->caller_owns_cleanup = true;
         ctx->init_failed = true;
         ctx->is_ready = true;
         pthread_cond_signal(&ctx->ready_cond);
@@ -1211,19 +1234,34 @@ cleanup:
     /* Clear in-progress flag BEFORE freeing ctx */
     internal_end_download();
 
-    /* Destroy synchronization primitives */
-    pthread_mutex_destroy(&ctx->ready_mutex);
-    pthread_cond_destroy(&ctx->ready_cond);
+    /* Destroy synchronization primitives and free ctx — BUT only if the worker
+     * owns cleanup. On init-failure paths, the caller (API function) owns these
+     * because it may still be inside pthread_cond_timedwait or about to call
+     * pthread_mutex_unlock on the same mutex. The caller will destroy/free
+     * after pthread_join returns. */
+    if (!ctx->caller_owns_cleanup) {
+        pthread_mutex_destroy(&ctx->ready_mutex);
+        pthread_cond_destroy(&ctx->ready_cond);
 
-    /* Free strdup'd strings */
-    free(ctx->handle_key);
-    free(ctx->firmware_name);
-    free(ctx->firmware_url);
-    free(ctx->firmware_type);
-    free(ctx->daemon_reject_message);
+        /* Free strdup'd strings */
+        free(ctx->handle_key);
+        free(ctx->firmware_name);
+        free(ctx->firmware_url);
+        free(ctx->firmware_type);
+        free(ctx->daemon_reject_message);
 
-    /* Free context */
-    free(ctx);
+        /* Free context */
+        free(ctx);
+    } else {
+        /* Worker does NOT own the sync primitives or ctx on init-failure.
+         * The caller will free everything after pthread_join.
+         * We still need to free any worker-allocated resources (like
+         * daemon_reject_message which was strdup'd in the worker). */
+        free(ctx->daemon_reject_message);
+        ctx->daemon_reject_message = NULL;
+        FWUPMGR_INFO("internal_download_worker_thread: caller_owns_cleanup=true, "
+                     "skipping mutex/cond destroy and free(ctx)\n");
+    }
 
     FWUPMGR_INFO("internal_download_worker_thread: thread exiting\n");
     return NULL;
@@ -1259,7 +1297,14 @@ void *internal_update_worker_thread(void *arg)
                       error ? error->message : "unknown");
         if (error) g_error_free(error);
 
+        /* CRITICAL: Set caller_owns_cleanup BEFORE signaling. After the signal,
+         * the caller may wake up, read init_failed, unlock the mutex, and
+         * pthread_join us. If we were to destroy the mutex/cond in cleanup,
+         * we'd race with the caller who is still holding/using them.
+         * By setting caller_owns_cleanup=true, we tell cleanup to skip
+         * mutex/cond destroy and free(ctx) — the caller does it after join. */
         pthread_mutex_lock(&ctx->ready_mutex);
+        ctx->caller_owns_cleanup = true;
         ctx->init_failed = true;
         ctx->is_ready = true;
         pthread_cond_signal(&ctx->ready_cond);
@@ -1322,6 +1367,7 @@ void *internal_update_worker_thread(void *arg)
         if (error) g_error_free(error);
 
         pthread_mutex_lock(&ctx->ready_mutex);
+        ctx->caller_owns_cleanup = true;
         ctx->init_failed = true;
         ctx->is_ready = true;
         pthread_cond_signal(&ctx->ready_cond);
@@ -1359,6 +1405,7 @@ void *internal_update_worker_thread(void *arg)
     /* If daemon rejected, signal caller with failure and exit */
     if (!ctx->daemon_accepted) {
         pthread_mutex_lock(&ctx->ready_mutex);
+        ctx->caller_owns_cleanup = true;
         ctx->init_failed = true;
         ctx->is_ready = true;
         pthread_cond_signal(&ctx->ready_cond);
@@ -1421,20 +1468,35 @@ cleanup:
     /* Clear in-progress flag BEFORE freeing ctx */
     internal_end_update();
 
-    /* Destroy synchronization primitives */
-    pthread_mutex_destroy(&ctx->ready_mutex);
-    pthread_cond_destroy(&ctx->ready_cond);
+    /* Destroy synchronization primitives and free ctx — BUT only if the worker
+     * owns cleanup. On init-failure paths, the caller (API function) owns these
+     * because it may still be inside pthread_cond_timedwait or about to call
+     * pthread_mutex_unlock on the same mutex. The caller will destroy/free
+     * after pthread_join returns. */
+    if (!ctx->caller_owns_cleanup) {
+        pthread_mutex_destroy(&ctx->ready_mutex);
+        pthread_cond_destroy(&ctx->ready_cond);
 
-    /* Free strdup'd strings */
-    free(ctx->handle_key);
-    free(ctx->firmware_name);
-    free(ctx->firmware_location);
-    free(ctx->firmware_type);
-    free(ctx->reboot_flag);
-    free(ctx->daemon_reject_message);
+        /* Free strdup'd strings */
+        free(ctx->handle_key);
+        free(ctx->firmware_name);
+        free(ctx->firmware_location);
+        free(ctx->firmware_type);
+        free(ctx->reboot_flag);
+        free(ctx->daemon_reject_message);
 
-    /* Free context */
-    free(ctx);
+        /* Free context */
+        free(ctx);
+    } else {
+        /* Worker does NOT own the sync primitives or ctx on init-failure.
+         * The caller will free everything after pthread_join.
+         * We still need to free any worker-allocated resources (like
+         * daemon_reject_message which was strdup'd in the worker). */
+        free(ctx->daemon_reject_message);
+        ctx->daemon_reject_message = NULL;
+        FWUPMGR_INFO("internal_update_worker_thread: caller_owns_cleanup=true, "
+                     "skipping mutex/cond destroy and free(ctx)\n");
+    }
 
     FWUPMGR_INFO("internal_update_worker_thread: thread exiting\n");
     return NULL;

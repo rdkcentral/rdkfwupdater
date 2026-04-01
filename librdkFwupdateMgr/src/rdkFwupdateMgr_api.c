@@ -257,6 +257,17 @@ CheckForUpdateResult checkForUpdate(FirmwareInterfaceHandle handle,
         FWUPMGR_ERROR("checkForUpdate: worker thread failed to initialize. "
                      "handle='%s'\n", handle);
         pthread_join(worker_thread, NULL);
+
+        /* After join, the worker has exited. If caller_owns_cleanup is set,
+         * the worker left the mutex/cond/ctx alive for us to clean up safely.
+         * If not set (e.g., timeout case where worker is still running),
+         * the worker will eventually clean up itself — but since we joined,
+         * the worker has already exited so ctx is safe to access. */
+        pthread_mutex_destroy(&ctx->ready_mutex);
+        pthread_cond_destroy(&ctx->ready_cond);
+        free(ctx->handle_key);
+        free(ctx);
+
         return CHECK_FOR_UPDATE_FAIL;
     }
 
@@ -567,6 +578,19 @@ DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,
         FWUPMGR_ERROR("downloadFirmware: worker init failed or daemon rejected. "
                      "handle='%s'\n", handle);
         pthread_join(worker_thread, NULL);
+
+        /* After join, the worker has exited. If caller_owns_cleanup is set,
+         * the worker left the mutex/cond/ctx alive for us to clean up safely.
+         * The worker already freed its own resources (daemon_reject_message, etc.)
+         * but left our strdup'd strings, mutex/cond, and ctx for us. */
+        pthread_mutex_destroy(&ctx->ready_mutex);
+        pthread_cond_destroy(&ctx->ready_cond);
+        free(ctx->handle_key);
+        free(ctx->firmware_name);
+        free(ctx->firmware_url);
+        free(ctx->firmware_type);
+        free(ctx);
+
         return RDKFW_DWNL_FAILED;
     }
 
@@ -863,6 +887,20 @@ UpdateResult updateFirmware(FirmwareInterfaceHandle handle,
         FWUPMGR_ERROR("updateFirmware: worker init failed or daemon rejected. "
                      "handle='%s'\n", handle);
         pthread_join(worker_thread, NULL);
+
+        /* After join, the worker has exited. If caller_owns_cleanup is set,
+         * the worker left the mutex/cond/ctx alive for us to clean up safely.
+         * The worker already freed its own resources (daemon_reject_message, etc.)
+         * but left our strdup'd strings, mutex/cond, and ctx for us. */
+        pthread_mutex_destroy(&ctx->ready_mutex);
+        pthread_cond_destroy(&ctx->ready_cond);
+        free(ctx->handle_key);
+        free(ctx->firmware_name);
+        free(ctx->firmware_location);
+        free(ctx->firmware_type);
+        free(ctx->reboot_flag);
+        free(ctx);
+
         return RDKFW_UPDATE_FAILED;
     }
 
