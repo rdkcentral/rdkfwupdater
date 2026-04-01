@@ -56,6 +56,30 @@ extern "C" FILE* v_secure_popen(const char *mode, ...)
     return g_DeviceUtilsMock->v_secure_popen(mode, cmd);
 }*/
 
+extern "C" void getDeviceTypeRFC(char *deviceType, size_t size)
+{
+    if (g_DeviceUtilsMock)
+    {
+        g_DeviceUtilsMock->getDeviceTypeRFC(deviceType, size);
+    }
+    else
+    {
+        cout << "getDeviceTypeRFC g_DeviceUtilsMock object is NULL" << endl;
+        if (deviceType != nullptr && size > 0)
+        {
+            const char *defaultType = "unknown";
+            size_t i = 0;
+            /* Copy up to size - 1 characters from defaultType, then NUL-terminate */
+            while (i + 1 < size && defaultType[i] != '\0')
+            {
+                deviceType[i] = defaultType[i];
+                ++i;
+            }
+            deviceType[i] = '\0';
+        }
+    }
+}
+
 extern "C" int v_secure_pclose(FILE *fp)
 {
     if (!g_DeviceUtilsMock)

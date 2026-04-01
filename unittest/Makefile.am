@@ -18,8 +18,7 @@
 AUTOMAKE_OPTIONS = subdir-objects
 
 # Define the program name and the source files
-bin_PROGRAMS = rdkfw_device_status_gtest rdkfw_deviceutils_gtest rdkfw_main_gtest rdkfw_interface_gtest rdkfwupdatemgr_main_flow_gtest rdkFwupdateMgr_handlers_gtest dbus_handlers_gtest rdkFwupdateMgr_async_refcount_gtest rdkFwupdateMgr_async_stress_gtest rdkFwupdateMgr_async_cleanup_gtest rdkFwupdateMgr_async_signal_gtest rdkFwupdateMgr_async_threadsafety_gtest
-#bin_PROGRAMS = rdkfw_device_status_gtest rdkfw_deviceutils_gtest rdkfw_main_gtest rdkfw_interface_gtest  dbus_handlers_gtest
+bin_PROGRAMS = rdkfw_device_status_gtest rdkfw_deviceutils_gtest rdkfw_main_gtest rdkfw_interface_gtest rdkfwupdatemgr_main_flow_gtest rdkFwupdateMgr_handlers_gtest rdkFwupdateMgr_async_main_flow_gtest rdkFwupdateMgr_async_handlers_gtest dbus_handlers_gtest
 # Define the include directories
 # NOTE: We explicitly use -I. to prioritize local test headers over system headers
 # This prevents conflicts with external library headers in /usr/local/include/
