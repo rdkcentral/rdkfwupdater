@@ -64,6 +64,17 @@
 #include <string.h>
 #include <stdlib.h>
 #include <inttypes.h>
+#include <time.h>
+#include <errno.h>
+
+/**
+ * Maximum time (seconds) to wait for the worker thread to signal readiness.
+ *
+ * The worker normally signals in <200ms (D-Bus connect + subscribe + optional
+ * sync method call). 10 seconds is extremely generous. If the worker hasn't
+ * signaled by then, it's dead or wedged — treat it as init failure.
+ */
+#define WORKER_READY_TIMEOUT_SEC 10
 
 /* No extern globals needed — all state is accessed through
  * internal_begin_*() / internal_end_*() / internal_abort_*()
@@ -204,18 +215,33 @@ CheckForUpdateResult checkForUpdate(FirmwareInterfaceHandle handle,
      */
     pthread_t worker_thread = ctx->thread;
 
-    /* [8b] Wait for worker to signal ready (no timeout — see §5.1)
+    /* [8b] Wait for worker to signal ready (bounded timeout)
      *
      * This blocks the caller for ~10-100ms while the worker sets up
      * its D-Bus connection and signal subscription. The worker signals
      * is_ready=true when it's either ready or has failed to init.
+     *
+     * We use pthread_cond_timedwait to prevent infinite hang if the
+     * worker crashes or exits without signaling.
      */
+    struct timespec deadline;
+    clock_gettime(CLOCK_REALTIME, &deadline);
+    deadline.tv_sec += WORKER_READY_TIMEOUT_SEC;
+
     pthread_mutex_lock(&ctx->ready_mutex);
-    while (!ctx->is_ready) {
-        pthread_cond_wait(&ctx->ready_cond, &ctx->ready_mutex);
+    int wait_rc = 0;
+    while (!ctx->is_ready && wait_rc == 0) {
+        wait_rc = pthread_cond_timedwait(&ctx->ready_cond, &ctx->ready_mutex,
+                                         &deadline);
     }
-    bool failed = ctx->init_failed;
+    bool failed = ctx->init_failed || (wait_rc == ETIMEDOUT);
     pthread_mutex_unlock(&ctx->ready_mutex);
+
+    if (wait_rc == ETIMEDOUT) {
+        FWUPMGR_ERROR("checkForUpdate: worker thread did not signal ready "
+                     "within %ds — treating as init failure. handle='%s'\n",
+                     WORKER_READY_TIMEOUT_SEC, handle);
+    }
 
     /* [9] Check if worker failed to initialize
      *
@@ -394,8 +420,38 @@ DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,
     }
 
     ctx->firmware_name = strdup(fwdwnlreq->firmwareName);
-    ctx->firmware_url  = (fwdwnlreq->downloadUrl != NULL) ? strdup(fwdwnlreq->downloadUrl) : NULL;
-    ctx->firmware_type = (fwdwnlreq->TypeOfFirmware != NULL) ? strdup(fwdwnlreq->TypeOfFirmware) : NULL;
+    if (ctx->firmware_name == NULL) {
+        FWUPMGR_ERROR("downloadFirmware: strdup failed for firmwareName\n");
+        free(ctx->handle_key);
+        free(ctx);
+        return RDKFW_DWNL_FAILED;
+    }
+
+    ctx->firmware_url = NULL;
+    if (fwdwnlreq->downloadUrl != NULL) {
+        ctx->firmware_url = strdup(fwdwnlreq->downloadUrl);
+        if (ctx->firmware_url == NULL) {
+            FWUPMGR_ERROR("downloadFirmware: strdup failed for downloadUrl\n");
+            free(ctx->firmware_name);
+            free(ctx->handle_key);
+            free(ctx);
+            return RDKFW_DWNL_FAILED;
+        }
+    }
+
+    ctx->firmware_type = NULL;
+    if (fwdwnlreq->TypeOfFirmware != NULL) {
+        ctx->firmware_type = strdup(fwdwnlreq->TypeOfFirmware);
+        if (ctx->firmware_type == NULL) {
+            FWUPMGR_ERROR("downloadFirmware: strdup failed for TypeOfFirmware\n");
+            free(ctx->firmware_url);
+            free(ctx->firmware_name);
+            free(ctx->handle_key);
+            free(ctx);
+            return RDKFW_DWNL_FAILED;
+        }
+    }
+
     ctx->callback      = callback;
     ctx->is_ready      = false;
     ctx->init_failed   = false;
@@ -469,19 +525,34 @@ DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,
      */
     pthread_t worker_thread = ctx->thread;
 
-    /* [7b] Wait for worker to signal ready (includes daemon reply)
+    /* [7b] Wait for worker to signal ready (bounded timeout)
      *
      * This blocks the caller for ~50-200ms while the worker sets up
      * its D-Bus connection, subscribes to signals, and calls the daemon
      * synchronously. The worker signals is_ready=true when it's either
      * ready (daemon accepted) or has failed (D-Bus error or daemon rejected).
+     *
+     * We use pthread_cond_timedwait to prevent infinite hang if the
+     * worker crashes or exits without signaling.
      */
+    struct timespec deadline;
+    clock_gettime(CLOCK_REALTIME, &deadline);
+    deadline.tv_sec += WORKER_READY_TIMEOUT_SEC;
+
     pthread_mutex_lock(&ctx->ready_mutex);
-    while (!ctx->is_ready) {
-        pthread_cond_wait(&ctx->ready_cond, &ctx->ready_mutex);
+    int wait_rc = 0;
+    while (!ctx->is_ready && wait_rc == 0) {
+        wait_rc = pthread_cond_timedwait(&ctx->ready_cond, &ctx->ready_mutex,
+                                         &deadline);
     }
-    bool failed = ctx->init_failed;
+    bool failed = ctx->init_failed || (wait_rc == ETIMEDOUT);
     pthread_mutex_unlock(&ctx->ready_mutex);
+
+    if (wait_rc == ETIMEDOUT) {
+        FWUPMGR_ERROR("downloadFirmware: worker thread did not signal ready "
+                     "within %ds — treating as init failure. handle='%s'\n",
+                     WORKER_READY_TIMEOUT_SEC, handle);
+    }
 
     /* [8] Check if worker failed to initialize or daemon rejected
      *
@@ -640,11 +711,39 @@ UpdateResult updateFirmware(FirmwareInterfaceHandle handle,
         return RDKFW_UPDATE_FAILED;
     }
 
-    ctx->firmware_location = (fwupdatereq->LocationOfFirmware != NULL)
-                             ? strdup(fwupdatereq->LocationOfFirmware) : NULL;
-    ctx->firmware_type     = (fwupdatereq->TypeOfFirmware != NULL)
-                             ? strdup(fwupdatereq->TypeOfFirmware) : NULL;
-    ctx->reboot_flag       = strdup(fwupdatereq->rebootImmediately ? "true" : "false");
+    ctx->firmware_location = NULL;
+    if (fwupdatereq->LocationOfFirmware != NULL) {
+        ctx->firmware_location = strdup(fwupdatereq->LocationOfFirmware);
+        if (ctx->firmware_location == NULL) {
+            FWUPMGR_ERROR("updateFirmware: strdup failed for LocationOfFirmware\n");
+            free(ctx->firmware_name);
+            free(ctx->handle_key);
+            free(ctx);
+            return RDKFW_UPDATE_FAILED;
+        }
+    }
+
+    ctx->firmware_type = strdup(fwupdatereq->TypeOfFirmware);
+    if (ctx->firmware_type == NULL) {
+        FWUPMGR_ERROR("updateFirmware: strdup failed for TypeOfFirmware\n");
+        free(ctx->firmware_location);
+        free(ctx->firmware_name);
+        free(ctx->handle_key);
+        free(ctx);
+        return RDKFW_UPDATE_FAILED;
+    }
+
+    ctx->reboot_flag = strdup(fwupdatereq->rebootImmediately ? "true" : "false");
+    if (ctx->reboot_flag == NULL) {
+        FWUPMGR_ERROR("updateFirmware: strdup failed for reboot_flag\n");
+        free(ctx->firmware_type);
+        free(ctx->firmware_location);
+        free(ctx->firmware_name);
+        free(ctx->handle_key);
+        free(ctx);
+        return RDKFW_UPDATE_FAILED;
+    }
+
     ctx->callback          = callback;
     ctx->is_ready          = false;
     ctx->init_failed       = false;
@@ -722,19 +821,34 @@ UpdateResult updateFirmware(FirmwareInterfaceHandle handle,
      */
     pthread_t worker_thread = ctx->thread;
 
-    /* [7b] Wait for worker to signal ready (includes daemon reply)
+    /* [7b] Wait for worker to signal ready (bounded timeout)
      *
      * This blocks the caller for ~50-200ms while the worker sets up
      * its D-Bus connection, subscribes to signals, and calls the daemon
      * synchronously. The worker signals is_ready=true when it's either
      * ready (daemon accepted) or has failed (D-Bus error or daemon rejected).
+     *
+     * We use pthread_cond_timedwait to prevent infinite hang if the
+     * worker crashes or exits without signaling.
      */
+    struct timespec deadline;
+    clock_gettime(CLOCK_REALTIME, &deadline);
+    deadline.tv_sec += WORKER_READY_TIMEOUT_SEC;
+
     pthread_mutex_lock(&ctx->ready_mutex);
-    while (!ctx->is_ready) {
-        pthread_cond_wait(&ctx->ready_cond, &ctx->ready_mutex);
+    int wait_rc = 0;
+    while (!ctx->is_ready && wait_rc == 0) {
+        wait_rc = pthread_cond_timedwait(&ctx->ready_cond, &ctx->ready_mutex,
+                                         &deadline);
     }
-    bool failed = ctx->init_failed;
+    bool failed = ctx->init_failed || (wait_rc == ETIMEDOUT);
     pthread_mutex_unlock(&ctx->ready_mutex);
+
+    if (wait_rc == ETIMEDOUT) {
+        FWUPMGR_ERROR("updateFirmware: worker thread did not signal ready "
+                     "within %ds — treating as init failure. handle='%s'\n",
+                     WORKER_READY_TIMEOUT_SEC, handle);
+    }
 
     /* [8] Check if worker failed to initialize or daemon rejected
      *

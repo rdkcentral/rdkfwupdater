@@ -230,28 +230,54 @@ void internal_abort_check(void)
  * Called from library destructor. Quits the worker's event loop so it
  * exits cleanly, then joins the thread to ensure no code is executing
  * in library memory when dlclose() unmaps us.
+ *
+ * RACE-SAFETY: We snapshot ctx, thread, and take a GMainLoop ref all
+ * under the mutex, then clear the global pointer (so the worker's
+ * internal_end_check() becomes a benign no-op). After unlock we can
+ * safely quit the loop and join the thread — even if the worker is
+ * concurrently in cleanup, because:
+ *   - The GMainLoop ref we hold prevents premature destruction
+ *   - The pthread_t is a value copy, valid until pthread_join returns
+ *   - The worker still frees ctx (it owns the allocation)
  */
 void internal_cancel_all_active_check_threads(void)
 {
-    pthread_mutex_lock(&g_check_in_progress_mutex);
-    CheckRequestContext *ctx = g_active_check_ctx;
-    pthread_mutex_unlock(&g_check_in_progress_mutex);
+    pthread_t saved_thread;
+    GMainLoop *saved_loop = NULL;
 
-    if (ctx == NULL) {
+    pthread_mutex_lock(&g_check_in_progress_mutex);
+
+    if (g_active_check_ctx == NULL) {
+        pthread_mutex_unlock(&g_check_in_progress_mutex);
         FWUPMGR_INFO("internal_cancel_all_active_check_threads: no active worker\n");
         return;
     }
 
+    /* Snapshot what we need under the lock */
+    saved_thread = g_active_check_ctx->thread;
+    if (g_active_check_ctx->main_loop != NULL) {
+        saved_loop = g_main_loop_ref(g_active_check_ctx->main_loop);
+    }
+
+    /* Take ownership: clear global so worker's internal_end_check() is a no-op */
+    g_check_in_progress = false;
+    g_active_check_ctx = NULL;
+
+    pthread_mutex_unlock(&g_check_in_progress_mutex);
+
     FWUPMGR_INFO("internal_cancel_all_active_check_threads: "
                  "stopping active worker thread\n");
 
-    /* Quit the worker's event loop — this causes g_main_loop_run() to return */
-    if (ctx->main_loop != NULL) {
-        g_main_loop_quit(ctx->main_loop);
+    /* Quit the worker's event loop — this causes g_main_loop_run() to return.
+     * Safe: we hold an extra ref, so the loop object is valid even if the
+     * worker concurrently unrefs it. */
+    if (saved_loop != NULL) {
+        g_main_loop_quit(saved_loop);
+        g_main_loop_unref(saved_loop);
     }
 
     /* Wait for worker thread to finish cleanup and exit */
-    pthread_join(ctx->thread, NULL);
+    pthread_join(saved_thread, NULL);
 
     FWUPMGR_INFO("internal_cancel_all_active_check_threads: "
                  "worker thread joined\n");
@@ -452,28 +478,48 @@ void internal_abort_download(void)
  * Called from library destructor. Quits the worker's event loop so it
  * exits cleanly, then joins the thread to ensure no code is executing
  * in library memory when dlclose() unmaps us.
+ *
+ * RACE-SAFETY: Same pattern as internal_cancel_all_active_check_threads().
+ * We snapshot the thread handle and take a GMainLoop ref under the mutex,
+ * then clear the global pointer so the worker's internal_end_download()
+ * becomes a benign no-op. The worker still owns ctx and frees it.
  */
 void internal_cancel_all_active_download_threads(void)
 {
-    pthread_mutex_lock(&g_dwnl_in_progress_mutex);
-    DownloadRequestContext *ctx = g_active_dwnl_ctx;
-    pthread_mutex_unlock(&g_dwnl_in_progress_mutex);
+    pthread_t saved_thread;
+    GMainLoop *saved_loop = NULL;
 
-    if (ctx == NULL) {
+    pthread_mutex_lock(&g_dwnl_in_progress_mutex);
+
+    if (g_active_dwnl_ctx == NULL) {
+        pthread_mutex_unlock(&g_dwnl_in_progress_mutex);
         FWUPMGR_INFO("internal_cancel_all_active_download_threads: no active worker\n");
         return;
     }
 
+    /* Snapshot what we need under the lock */
+    saved_thread = g_active_dwnl_ctx->thread;
+    if (g_active_dwnl_ctx->main_loop != NULL) {
+        saved_loop = g_main_loop_ref(g_active_dwnl_ctx->main_loop);
+    }
+
+    /* Take ownership: clear global so worker's internal_end_download() is a no-op */
+    g_dwnl_in_progress = false;
+    g_active_dwnl_ctx = NULL;
+
+    pthread_mutex_unlock(&g_dwnl_in_progress_mutex);
+
     FWUPMGR_INFO("internal_cancel_all_active_download_threads: "
                  "stopping active worker thread\n");
 
-    /* Quit the worker's event loop — this causes g_main_loop_run() to return */
-    if (ctx->main_loop != NULL) {
-        g_main_loop_quit(ctx->main_loop);
+    /* Quit the worker's event loop — safe via extra ref */
+    if (saved_loop != NULL) {
+        g_main_loop_quit(saved_loop);
+        g_main_loop_unref(saved_loop);
     }
 
     /* Wait for worker thread to finish cleanup and exit */
-    pthread_join(ctx->thread, NULL);
+    pthread_join(saved_thread, NULL);
 
     FWUPMGR_INFO("internal_cancel_all_active_download_threads: "
                  "worker thread joined\n");
@@ -664,28 +710,48 @@ void internal_abort_update(void)
  * Called from library destructor. Quits the worker's event loop so it
  * exits cleanly, then joins the thread to ensure no code is executing
  * in library memory when dlclose() unmaps us.
+ *
+ * RACE-SAFETY: Same pattern as internal_cancel_all_active_check_threads().
+ * We snapshot the thread handle and take a GMainLoop ref under the mutex,
+ * then clear the global pointer so the worker's internal_end_update()
+ * becomes a benign no-op. The worker still owns ctx and frees it.
  */
 void internal_cancel_all_active_update_threads(void)
 {
-    pthread_mutex_lock(&g_update_in_progress_mutex);
-    UpdateRequestContext *ctx = g_active_update_ctx;
-    pthread_mutex_unlock(&g_update_in_progress_mutex);
+    pthread_t saved_thread;
+    GMainLoop *saved_loop = NULL;
 
-    if (ctx == NULL) {
+    pthread_mutex_lock(&g_update_in_progress_mutex);
+
+    if (g_active_update_ctx == NULL) {
+        pthread_mutex_unlock(&g_update_in_progress_mutex);
         FWUPMGR_INFO("internal_cancel_all_active_update_threads: no active worker\n");
         return;
     }
 
+    /* Snapshot what we need under the lock */
+    saved_thread = g_active_update_ctx->thread;
+    if (g_active_update_ctx->main_loop != NULL) {
+        saved_loop = g_main_loop_ref(g_active_update_ctx->main_loop);
+    }
+
+    /* Take ownership: clear global so worker's internal_end_update() is a no-op */
+    g_update_in_progress = false;
+    g_active_update_ctx = NULL;
+
+    pthread_mutex_unlock(&g_update_in_progress_mutex);
+
     FWUPMGR_INFO("internal_cancel_all_active_update_threads: "
                  "stopping active worker thread\n");
 
-    /* Quit the worker's event loop — this causes g_main_loop_run() to return */
-    if (ctx->main_loop != NULL) {
-        g_main_loop_quit(ctx->main_loop);
+    /* Quit the worker's event loop — safe via extra ref */
+    if (saved_loop != NULL) {
+        g_main_loop_quit(saved_loop);
+        g_main_loop_unref(saved_loop);
     }
 
     /* Wait for worker thread to finish cleanup and exit */
-    pthread_join(ctx->thread, NULL);
+    pthread_join(saved_thread, NULL);
 
     FWUPMGR_INFO("internal_cancel_all_active_update_threads: "
                  "worker thread joined\n");

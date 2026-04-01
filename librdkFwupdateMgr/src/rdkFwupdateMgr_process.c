@@ -391,6 +391,18 @@ void unregisterProcess(FirmwareInterfaceHandle handler)
     guint64 handler_id = 0;
     gboolean success = FALSE;
 
+    /* NULL check first: always a no-op, regardless of in-progress state.
+     *
+     * The public API contract says "Safe to call with NULL handle (no-op)".
+     * This must be honored unconditionally — even during active operations.
+     * A NULL handle means there's nothing to unregister; the in-progress
+     * guards below only apply when the caller has a real handle.
+     */
+    if (!handler) {
+        FWUPMGR_INFO("unregisterProcess() called with NULL handle (no-op)\n");
+        return;
+    }
+
     /* Session state validation: reject if checkForUpdate() is active.
      *
      * You can't hang up the phone while waiting for an answer.
@@ -446,12 +458,6 @@ void unregisterProcess(FirmwareInterfaceHandle handler)
         FWUPMGR_ERROR("unregisterProcess: REJECTED - updateFirmware() is in "
                       "progress. Wait for the UPDATE_COMPLETED or UPDATE_ERROR "
                       "callback, then retry unregisterProcess().\n");
-        return;
-    }
-
-    // NULL check: Safe to unregister NULL handle (no-op)
-    if (!handler) {
-        FWUPMGR_INFO("unregisterProcess() called with NULL handle (no-op)\n");
         return;
     }
 
