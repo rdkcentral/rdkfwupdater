@@ -225,7 +225,12 @@ CheckForUpdateResult checkForUpdate(FirmwareInterfaceHandle handle,
      * worker crashes or exits without signaling.
      */
     struct timespec deadline;
-    clock_gettime(CLOCK_REALTIME, &deadline);
+    if (clock_gettime(CLOCK_REALTIME, &deadline) != 0) {
+        FWUPMGR_ERROR("checkForUpdate: clock_gettime failed (errno=%d), "
+                       "using fallback deadline\n", errno);
+        deadline.tv_sec = time(NULL);
+        deadline.tv_nsec = 0;
+    }
     deadline.tv_sec += WORKER_READY_TIMEOUT_SEC;
 
     pthread_mutex_lock(&ctx->ready_mutex);
@@ -547,7 +552,12 @@ DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,
      * worker crashes or exits without signaling.
      */
     struct timespec deadline;
-    clock_gettime(CLOCK_REALTIME, &deadline);
+    if (clock_gettime(CLOCK_REALTIME, &deadline) != 0) {
+        FWUPMGR_ERROR("downloadFirmware: clock_gettime failed (errno=%d), "
+                       "using fallback deadline\n", errno);
+        deadline.tv_sec = time(NULL);
+        deadline.tv_nsec = 0;
+    }
     deadline.tv_sec += WORKER_READY_TIMEOUT_SEC;
 
     pthread_mutex_lock(&ctx->ready_mutex);
@@ -856,7 +866,12 @@ UpdateResult updateFirmware(FirmwareInterfaceHandle handle,
      * worker crashes or exits without signaling.
      */
     struct timespec deadline;
-    clock_gettime(CLOCK_REALTIME, &deadline);
+    if (clock_gettime(CLOCK_REALTIME, &deadline) != 0) {
+        FWUPMGR_ERROR("updateFirmware: clock_gettime failed (errno=%d), "
+                       "using fallback deadline\n", errno);
+        deadline.tv_sec = time(NULL);
+        deadline.tv_nsec = 0;
+    }
     deadline.tv_sec += WORKER_READY_TIMEOUT_SEC;
 
     pthread_mutex_lock(&ctx->ready_mutex);

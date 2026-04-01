@@ -305,8 +305,8 @@ FirmwareInterfaceHandle registerProcess(const char *processName, const char *lib
 
     if (!result) {
         FWUPMGR_ERROR("RegisterProcess D-Bus call failed: %s\n",
-                error->message);
-        g_error_free(error);
+                error ? error->message : "unknown error (GError not set)");
+        if (error) g_error_free(error);
         g_object_unref(proxy);
         return NULL;
     }
@@ -529,9 +529,9 @@ void unregisterProcess(FirmwareInterfaceHandle handler)
 
     if (!result) {
         FWUPMGR_WARN("UnregisterProcess D-Bus call failed: %s\n",
-                error->message);
+                error ? error->message : "unknown error (GError not set)");
         FWUPMGR_WARN("  (This is OK if daemon already cleaned up)\n");
-        g_error_free(error);
+        if (error) g_error_free(error);
         g_object_unref(proxy);
         // Continue with local cleanup
         free(handler);
