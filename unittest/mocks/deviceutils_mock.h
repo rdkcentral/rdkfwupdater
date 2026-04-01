@@ -50,6 +50,7 @@ class DeviceUtilsInterface
 	virtual int getDevicePropertyData(const char *model, char *data, int size) = 0;
 	virtual int read_RFCProperty(char* type, const char* key, char *out_value, size_t datasize) = 0;
 	virtual int write_RFCProperty(char* type, const char* key, const char *value, RFCVALDATATYPE datatype) = 0;
+	virtual void getDeviceTypeRFC(char* deviceType, size_t datasize) = 0;
 	virtual int filePresentCheck(const char *filename) = 0;
 	virtual int getFileSize(const char *filename) = 0;
 	virtual bool isInStateRed() = 0;
@@ -77,6 +78,7 @@ class DeviceUtilsMock: public DeviceUtilsInterface
 	MOCK_METHOD(int, getFileSize, (const char *filename ), ());
 	MOCK_METHOD(bool, isInStateRed, (), ());
 	MOCK_METHOD(bool, isDebugServicesEnabled, (), ());
+	MOCK_METHOD(void, getDeviceTypeRFC, (char*, size_t), ());
 	MOCK_METHOD(size_t, GetHwMacAddress, (char *iface, char *pMac, size_t szBufSize), ());
 	MOCK_METHOD(size_t, GetModelNum, ( char *pModelNum, size_t szBufSize ), ());
         MOCK_METHOD(void, t2CountNotify, (char *marker), ());
