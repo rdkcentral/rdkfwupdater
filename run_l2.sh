@@ -24,11 +24,32 @@ export ROOT=/usr
 export INSTALL_DIR=${ROOT}/local
 mkdir -p $INSTALL_DIR
 
+git clone https://github.com/rdkcentral/common_utilities.git
+cd common_utilities
+git checkout develop
+autoreconf -i
+./configure  --enable-rdkcertselector --prefix=${INSTALL_DIR} CFLAGS=" -DRDK_LOGGER "
+make && make install
+
+cd ../
+
 #Build rdkfwupdater
 autoreconf -i
 ./configure --prefix=${INSTALL_DIR} --enable-rdkcertselector=yes --enable-mountutils=yes --enable-rfcapi=yes CFLAGS="-DRDK_LOGGER"
+make clean
 make && make install
 
+# Verify daemon binary was installed
+echo ""
+echo "Verifying rdkFwupdateMgr installation..."
+if [ -f "/usr/local/bin/rdkFwupdateMgr" ]; then
+    echo "Daemon binary found: /usr/local/bin/rdkFwupdateMgr"
+    ls -lh /usr/local/bin/rdkFwupdateMgr
+else
+    echo "ERROR: Daemon binary NOT found at /usr/local/bin/rdkFwupdateMgr"
+    echo "  Tests will fail - build may have failed"
+    exit 1
+fi
 
 #./cov_build.sh
 
@@ -40,4 +61,107 @@ rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLSpLimit.TopSpeed
 rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Identity.DbgServices.Enable boolean true
 cp test/functional-tests/tests/rc-proxy-params.json /tmp/rc-proxy-params.json
 
-pytest --json-report  --json-report-file $RESULT_DIR/rdkfwupdater_report.json test/functional-tests/tests/
+# ========================================
+# Start D-Bus System Daemon (Required for D-Bus tests)
+# ========================================
+
+mkdir -p /etc/dbus-1/system.d
+cp test/functional-tests/tests/org.rdkfwupdater.Service.conf /etc/dbus-1/system.d/
+pkill -HUP dbus-daemon 2>/dev/null || true
+sleep 1
+
+echo ""
+echo "Starting D-Bus system daemon..."
+
+# Check if D-Bus is already running
+if ! pgrep -x "dbus-daemon" > /dev/null; then
+    # Ensure D-Bus runtime directory exists
+    mkdir -p /run/dbus
+    
+    # Start D-Bus system daemon
+    dbus-daemon --system --fork
+    
+    # Wait for D-Bus to be ready
+    sleep 2
+    
+    # Verify D-Bus started successfully
+    if pgrep -x "dbus-daemon" > /dev/null; then
+        echo " D-Bus daemon started successfully"
+    else
+        echo "ERROR: Failed to start D-Bus daemon"
+        echo "  D-Bus tests will fail!"
+    fi
+else
+    echo "D-Bus daemon already running"
+fi
+
+echo ""
+echo "=========================================="
+echo "Running L2 Integration Tests"
+echo "=========================================="
+echo ""
+
+# ========================================
+# PHASE 1: Standard Certificate Tests (client.p12)
+# ========================================
+
+echo "[Phase 1/3] Running standard tests with normal certificates..."
+# Run all existing tests
+echo "Running existing image download tests..."
+pytest --json-report --json-report-file $RESULT_DIR/rdkfwupdater_image_tests.json \
+       test/functional-tests/tests/test_imagedwnl.py \
+       test/functional-tests/tests/test_imagedwnl_error.py \
+       test/functional-tests/tests/test_certbundle_dwnl.py \
+       test/functional-tests/tests/test_peripheral_imagedwnl.py
+
+# ========================================
+# PHASE 2: D-Bus Handler and Cache Tests
+# ========================================
+
+# Run new D-Bus handler and cache tests
+echo ""
+echo "[Phase 2/3] Running D-Bus handler and cache tests..."
+pytest -v -s --json-report --json-report-file $RESULT_DIR/rdkfwupdater_dbus_tests.json \
+	test/functional-tests/tests/test_dbus_DownloadFirmware.py \
+	test/functional-tests/tests/test_dbus_UnregisterProcess.py  \
+	test/functional-tests/tests/test_dbus_CheckForUpdate.py \
+	test/functional-tests/tests/test_dbus_RegisterProcess.py \
+	test/functional-tests/tests/test_dbus_UpdateFirmware.py
+
+# ========================================
+# PHASE 3: PKCS#11 Certificate Fallback Test (if enabled)
+# ========================================
+
+if [ "$ENABLE_PKCS11" = "true" ]; then
+    echo ""
+    echo "=========================================="
+    echo "[Phase 3/3] PKCS#11 Certificate Fallback Test"
+    echo "=========================================="
+    echo ""
+    echo "Note: This phase tests PKCS#11 behavior when reference.p12 is not available."
+    echo "      It validates certselector fallback to client.p12/client.pem"
+    echo "      when reference.p12 is missing or unavailable."
+    echo ""
+    
+    # Run PKCS#11 fallback test (removes reference.p12, verifies fallback to client.p12/client.pem)
+    echo "Running certificate fallback test..."
+    pytest -v -s --json-report --json-report-file $RESULT_DIR/rdkfwupdater_pkcs11_fallback_tests.json \
+           test/functional-tests/tests/test_pkcs11_fallback.py
+    
+    echo ""
+    echo "PKCS#11 fallback test report: $RESULT_DIR/rdkfwupdater_pkcs11_fallback_tests.json"
+else
+    echo ""
+    echo "=========================================="
+    echo "PKCS#11 fallback test skipped (ENABLE_PKCS11 not set)"
+    echo "To enable: export ENABLE_PKCS11=true"
+    echo "=========================================="
+fi
+
+echo ""
+echo "=========================================="
+echo "L2 Test Results"
+echo "=========================================="
+echo "Image tests report: $RESULT_DIR/rdkfwupdater_image_tests.json"
+echo "D-Bus tests report: $RESULT_DIR/rdkfwupdater_dbus_tests.json"
+echo "=========================================="

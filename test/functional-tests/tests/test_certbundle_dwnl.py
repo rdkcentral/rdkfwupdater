@@ -47,3 +47,9 @@ def test_dwnl_certbundle():
 def test_dwnl_certbundle_verify():
     ERROR_MSG1 = "Calling rdm Versioned_app download to process bundle update"
     assert grep_log_file("/opt/logs/swupdate.txt.0", ERROR_MSG1), f"Expected '{ERROR_MSG1}' in log file."
+
+
+@pytest.mark.run(order=21)
+def test_dwnl_appbundle_verify():
+    APPBUNDLE_MSG = "dlAppBundle: RDK-RRD-Test:1.0"
+    assert grep_log_file("/opt/logs/swupdate.txt.0", APPBUNDLE_MSG), f"Expected '{APPBUNDLE_MSG}' in log file."

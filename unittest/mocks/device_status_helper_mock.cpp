@@ -205,7 +205,7 @@ extern "C" size_t GetUTCTime( char *pUTCTime, size_t szBufSize )
     return g_DeviceStatusMock->GetUTCTime(pUTCTime, szBufSize);
 }
 
-extern "C" size_t GetInstalledBundles(char *pBundles, size_t szBufSize)
+extern "C" size_t GetInstalledBundles(char *pBundles, size_t szBufSize, const char *bundleType)
 {
     if (!g_DeviceStatusMock)
     {
@@ -214,7 +214,7 @@ extern "C" size_t GetInstalledBundles(char *pBundles, size_t szBufSize)
     }
     printf("Inside Mock Function GetInstalledBundles\n");
     snprintf(pBundles, szBufSize, "%s", "castore");
-    return g_DeviceStatusMock->GetInstalledBundles(pBundles, szBufSize);
+    return g_DeviceStatusMock->GetInstalledBundles(pBundles, szBufSize, bundleType);
 }
 extern "C" size_t GetRdmManifestVersion( char *pRdmManifestVersion, size_t szBufSize ) 
 {

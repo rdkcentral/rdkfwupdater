@@ -32,6 +32,8 @@ class FwDlInterface
     public:
         virtual ~FwDlInterface() {}
         virtual int filePresentCheck(const char *filename) = 0;
+        virtual int getFileSize(const char *filename) = 0;
+        virtual size_t getContentLength(const char *file) = 0;
         virtual int getRFCParameter(char* type, const char* key, RFC_ParamData_t *param) = 0;
         virtual int setRFCParameter(char* type, const char* key, const char *value, int datatype) = 0;
         virtual int getDevicePropertyData(const char *model, char *data, int size) = 0;
@@ -55,6 +57,8 @@ class FwDlInterfaceMock: public FwDlInterface
     public:
         virtual ~FwDlInterfaceMock() {}
         MOCK_METHOD(int, filePresentCheck, (const char *filename ), ());
+        MOCK_METHOD(int, getFileSize, (const char *filename ), ());
+        MOCK_METHOD(size_t, getContentLength, (const char *file ), ());
         MOCK_METHOD(int, getRFCParameter, (char* type, const char* key, RFC_ParamData_t *param), ());
         MOCK_METHOD(int, setRFCParameter, (char* type, const char* key, const char *value, int datatype), ());
         MOCK_METHOD(int, getDevicePropertyData, (const char *model, char *data, int size), ());

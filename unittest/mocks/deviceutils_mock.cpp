@@ -21,7 +21,8 @@
 
 using namespace std;
 
-extern DeviceUtilsMock *g_DeviceUtilsMock;
+// Define the global mock pointer (can be set by test suites)
+DeviceUtilsMock *g_DeviceUtilsMock = nullptr;
 
 extern "C" int v_secure_system(const char *mode, ...)
 {
@@ -54,6 +55,30 @@ extern "C" FILE* v_secure_popen(const char *mode, ...)
     printf("Inside Mock Function v_secure_popen\n");
     return g_DeviceUtilsMock->v_secure_popen(mode, cmd);
 }*/
+
+extern "C" void getDeviceTypeRFC(char *deviceType, size_t size)
+{
+    if (g_DeviceUtilsMock)
+    {
+        g_DeviceUtilsMock->getDeviceTypeRFC(deviceType, size);
+    }
+    else
+    {
+        cout << "getDeviceTypeRFC g_DeviceUtilsMock object is NULL" << endl;
+        if (deviceType != nullptr && size > 0)
+        {
+            const char *defaultType = "unknown";
+            size_t i = 0;
+            /* Copy up to size - 1 characters from defaultType, then NUL-terminate */
+            while (i + 1 < size && defaultType[i] != '\0')
+            {
+                deviceType[i] = defaultType[i];
+                ++i;
+            }
+            deviceType[i] = '\0';
+        }
+    }
+}
 
 extern "C" int v_secure_pclose(FILE *fp)
 {
@@ -141,6 +166,17 @@ extern "C" int read_RFCProperty(char* type, const char* key, char *out_value, si
         snprintf(out_value, datasize, "%s", "default.com");
     }
     return g_DeviceUtilsMock->read_RFCProperty(type, key, out_value, datasize);
+}
+
+extern "C" int write_RFCProperty(char* type, const char* key, const char *value, RFCVALDATATYPE datatype)
+{
+    if (!g_DeviceUtilsMock)
+    {
+        cout << "write_RFCProperty g_DeviceUtilsMock object is NULL" << endl;
+        return -1;
+    }
+    printf("Inside Mock Function write_RFCProperty\n");
+    return g_DeviceUtilsMock->write_RFCProperty(type, key, value, datatype);
 }
 
 extern "C" int filePresentCheck(const char *filename)

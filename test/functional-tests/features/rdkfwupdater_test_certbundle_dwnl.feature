@@ -18,9 +18,15 @@
 ####################################################################################
 
 
-Feature: Cert Bundle Download
+Feature: Cert and App Bundle Download
 
   Scenario: Download Cert Bundle
     Given When device received xconf response and certbundle details available
     Then download the cert 
     Then Install the cert
+
+  Scenario: Download App Bundle
+    Given When device received xconf response and appbundle details available
+    Then download the app
+    Then Install the app
+    

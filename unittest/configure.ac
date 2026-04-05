@@ -17,9 +17,10 @@
 
 # Initialize Autoconf
 AC_INIT([rdkfw_device_status_gtest], [1.0])
+AC_CONFIG_SRCDIR([device_status_helper_gtest.cpp])
 LT_INIT
 # Initialize Automake
-AM_INIT_AUTOMAKE([-Wall -Werror foreign])
+AM_INIT_AUTOMAKE([-Wall -Wno-portability foreign])
 # Check for necessary headers
 #AC_CHECK_HEADERS([jsoncpp/json/json.h gtest/gtest.h gmock/gmock.h])
 # Check for necessary libraries
@@ -27,6 +28,7 @@ AM_INIT_AUTOMAKE([-Wall -Werror foreign])
 #AC_CHECK_LIB([gtest], [main])
 #AC_CHECK_LIB([gmock], [main])
 # Checks for programs.
+AC_PROG_CC
 AC_PROG_CXX
 # Checks for libraries.
 AC_CHECK_LIB([stdc++], [main])
