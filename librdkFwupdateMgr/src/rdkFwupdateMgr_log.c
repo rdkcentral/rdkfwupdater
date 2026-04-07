@@ -19,141 +19,134 @@
 /**
  * @file rdkFwupdateMgr_log.c
  * @brief Logging implementation for librdkFwupdateMgr client library
+ *
+ * Init/cleanup:
+ *   fwupmgr_log_init()  → calls log_init() from common_utilities
+ *                          (same as rdkv_main.c / rdkFwupdateMgr.c)
+ *                        → opens /opt/logs/rdkFwupdateMgr.log for FWUPMGR_* output
+ *
+ *   fwupmgr_log_close() → closes the log file
+ *                        → calls log_exit() from common_utilities
+ *
+ * Logging:
+ *   FWUPMGR_* macros → fwupmgr_write_log() → /opt/logs/rdkFwupdateMgr.log
+ *   (does NOT go to stdout, so it stays separate from daemon's swupdate.log)
  */
 
 #include "rdkFwupdateMgr_log.h"
 #include <stdio.h>
+#include <string.h>
 #include <stdarg.h>
 #include <time.h>
-#include <string.h>
 #include <pthread.h>
-#include <sys/stat.h>
-#include <errno.h>
+
+/** Log file path for the library (separate from daemon's swupdate.log) */
+#define FWUPMGR_LOG_FILE "/opt/logs/rdkFwupdateMgr.log"
 
 /* ========================================================================
  * INTERNAL STATE
  * ======================================================================== */
 
-static FILE *g_log_file = NULL;
-static pthread_mutex_t g_log_mutex = PTHREAD_MUTEX_INITIALIZER;
-static int g_log_initialized = 0;
+static FILE *g_fwupmgr_log_fp = NULL;
+static pthread_mutex_t g_fwupmgr_log_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /* ========================================================================
- * LOGGING IMPLEMENTATION
+ * fwupmgr_write_log() — writes to /opt/logs/rdkFwupdateMgr.log
+ *
+ * Called by all FWUPMGR_* macros. Thread-safe via mutex.
+ * Auto-opens the log file on first call (lazy init).
+ *
+ * Log format:
+ *   YYMMDD-HH:MM:SS [LOG.RDK.FWUPMGR] LEVEL: file:line message
  * ======================================================================== */
 
-/**
- * @brief Initialize logging
- */
-void fwupmgr_log_init(void)
-{
-    pthread_mutex_lock(&g_log_mutex);
-    
-    if (g_log_initialized) {
-        pthread_mutex_unlock(&g_log_mutex);
-        return;  // Already initialized
-    }
-    
-    // Create log directory if it doesn't exist
-    mkdir("/opt/logs", 0755);  // Ignore error if exists
-    
-    // Open log file in append mode
-    g_log_file = fopen(FWUPMGR_LOG_FILE, "a");
-    if (!g_log_file) {
-        // Fallback to stderr if log file can't be opened
-        fprintf(stderr, "[%s] WARNING: Cannot open log file %s: %s\n",
-                FWUPMGR_LOG_MODULE, FWUPMGR_LOG_FILE, strerror(errno));
-        fprintf(stderr, "[%s] Logging will go to stderr\n", FWUPMGR_LOG_MODULE);
-    } else {
-        // Make log file line-buffered for immediate writes
-        setlinebuf(g_log_file);
-    }
-    
-    g_log_initialized = 1;
-    pthread_mutex_unlock(&g_log_mutex);
-    
-    // Log initialization message
-    fwupmgr_log_internal("INFO", "Logging initialized\n");
-}
-
-/**
- * @brief Close logging
- */
-void fwupmgr_log_close(void)
-{
-    pthread_mutex_lock(&g_log_mutex);
-    
-    if (!g_log_initialized) {
-        pthread_mutex_unlock(&g_log_mutex);
-        return;  // Not initialized
-    }
-    
-    if (g_log_file) {
-        // Write shutdown message directly to avoid deadlock
-        // (fwupmgr_log_internal would try to lock g_log_mutex again)
-        time_t now;
-        struct tm *tm_info;
-        char timestamp[64];
-        
-        time(&now);
-        tm_info = localtime(&now);
-        if (strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", tm_info) == 0) {
-            snprintf(timestamp, sizeof(timestamp), "UNKNOWN-TIME");
-        }
-        
-        fprintf(g_log_file, "%s [%s] INFO: Logging shutdown\n", 
-                timestamp, FWUPMGR_LOG_MODULE);
-        fflush(g_log_file);
-        
-        fclose(g_log_file);
-        g_log_file = NULL;
-    }
-    
-    g_log_initialized = 0;
-    pthread_mutex_unlock(&g_log_mutex);
-}
-
-/**
- * @brief Internal logging function with timestamp and thread-safety
- */
-void fwupmgr_log_internal(const char *level, const char *format, ...)
+void fwupmgr_write_log(const char *level, const char *file, int line,
+                        const char *format, ...)
 {
     time_t now;
     struct tm *tm_info;
     char timestamp[64];
     va_list args;
-    FILE *output;
-    
-    pthread_mutex_lock(&g_log_mutex);
-    
-    // Auto-initialize if not done
-    if (!g_log_initialized) {
-        pthread_mutex_unlock(&g_log_mutex);
-        fwupmgr_log_init();
-        pthread_mutex_lock(&g_log_mutex);
+
+    pthread_mutex_lock(&g_fwupmgr_log_mutex);
+
+    /* Open log file on first use (lazy init) */
+    if (!g_fwupmgr_log_fp) {
+        g_fwupmgr_log_fp = fopen(FWUPMGR_LOG_FILE, "a");
+        if (g_fwupmgr_log_fp) {
+            setlinebuf(g_fwupmgr_log_fp);  /* Line-buffered for immediate writes */
+        }
     }
-    
-    // Determine output stream (log file or stderr fallback)
-    output = g_log_file ? g_log_file : stderr;
-    
-    // Get current timestamp
+
+    FILE *out = g_fwupmgr_log_fp ? g_fwupmgr_log_fp : stderr;
+
+    /* Timestamp */
     time(&now);
     tm_info = localtime(&now);
-    if (strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", tm_info) == 0) {
-        snprintf(timestamp, sizeof(timestamp), "UNKNOWN-TIME");
+    if (!tm_info || strftime(timestamp, sizeof(timestamp), "%y%m%d-%H:%M:%S", tm_info) == 0) {
+        snprintf(timestamp, sizeof(timestamp), "UNKNOWN");
     }
-    
-    // Write log header: timestamp [MODULE] LEVEL:
-    fprintf(output, "%s [%s] %s: ", timestamp, FWUPMGR_LOG_MODULE, level);
-    
-    // Write log message
+
+    /* Write: timestamp [MODULE] LEVEL: file:line message */
+    fprintf(out, "%s [%s] %s: %s:%d ", timestamp, FWUPMGR_LOG_MODULE, level, file, line);
+
     va_start(args, format);
-    vfprintf(output, format, args);
+    vfprintf(out, format, args);
     va_end(args);
-    
-    // Ensure immediate write
-    fflush(output);
-    
-    pthread_mutex_unlock(&g_log_mutex);
+
+    fflush(out);
+
+    pthread_mutex_unlock(&g_fwupmgr_log_mutex);
+}
+
+/* ========================================================================
+ * INIT / CLEANUP
+ * ======================================================================== */
+
+/**
+ * @brief Initialize logging for the library
+ *
+ * 1. Calls log_init() from common_utilities — same as rdkv_main.c and
+ *    rdkFwupdateMgr.c. This sets up the common logging infrastructure.
+ * 2. Opens /opt/logs/rdkFwupdateMgr.log for FWUPMGR_* macro output.
+ */
+void fwupmgr_log_init(void)
+{
+    /* Same log_init() as daemon — sets up common_utilities logging */
+    log_init();
+
+    /* Open our own log file for FWUPMGR_* output */
+    pthread_mutex_lock(&g_fwupmgr_log_mutex);
+    if (!g_fwupmgr_log_fp) {
+        g_fwupmgr_log_fp = fopen(FWUPMGR_LOG_FILE, "a");
+        if (g_fwupmgr_log_fp) {
+            setlinebuf(g_fwupmgr_log_fp);
+        }
+    }
+    pthread_mutex_unlock(&g_fwupmgr_log_mutex);
+
+    FWUPMGR_INFO("librdkFwupdateMgr logging initialized (output: %s)\n", FWUPMGR_LOG_FILE);
+}
+
+/**
+ * @brief Close logging resources
+ *
+ * 1. Closes /opt/logs/rdkFwupdateMgr.log
+ * 2. Calls log_exit() from common_utilities
+ */
+void fwupmgr_log_close(void)
+{
+    FWUPMGR_INFO("librdkFwupdateMgr logging shutdown\n");
+
+    pthread_mutex_lock(&g_fwupmgr_log_mutex);
+    if (g_fwupmgr_log_fp) {
+        fflush(g_fwupmgr_log_fp);
+        fclose(g_fwupmgr_log_fp);
+        g_fwupmgr_log_fp = NULL;
+    }
+    pthread_mutex_unlock(&g_fwupmgr_log_mutex);
+
+    /* Same log_exit() as daemon */
+    log_exit();
 }
 

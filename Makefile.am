@@ -188,7 +188,7 @@ librdkFwupdateMgr_la_SOURCES = \
 librdkFwupdateMgr_la_CFLAGS = -fPIC -I${top_srcdir}/librdkFwupdateMgr/include -I${top_srcdir}/librdkFwupdateMgr/src $(AM_CFLAGS) $(GLIB_CFLAGS)
 librdkFwupdateMgr_la_CPPFLAGS = -fPIC -I${top_srcdir}/librdkFwupdateMgr/include -I${top_srcdir}/librdkFwupdateMgr/src $(GLIB_CFLAGS)
 librdkFwupdateMgr_la_LDFLAGS = -shared -version-info 1:0:0
-librdkFwupdateMgr_la_LIBADD = $(GLIB_LIBS) -lpthread
+librdkFwupdateMgr_la_LIBADD = $(GLIB_LIBS) -lpthread -lfwutils
 
 librdkFwupdateMgr_include_HEADERS = \
     ${top_srcdir}/librdkFwupdateMgr/include/rdkFwupdateMgr_client.h 
