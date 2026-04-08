@@ -107,11 +107,21 @@ int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_li
             SWLOG_INFO("chunkDownload() file size=%d and range=%s\n", file_size, range);
         }   else {
             SWLOG_ERROR( "chunkDownload() error getFileSize=%s\n", pfile_dwnl->pathname);
+            unlink(pfile_dwnl->pathname);
+            if ((filePresentCheck(headerfile)) == 0) {
+                unlink(headerfile);
+            }
             return -1;
         }
     }else {
         SWLOG_ERROR( "chunkDownload() Error to proceed for chunk download due to below reason.\nContent length not present=%zu or Partial image file not present.\n", content_len);
         t2CountNotify("SYST_ERR_FWCTNFetch", 1);
+        if ((filePresentCheck(pfile_dwnl->pathname)) == 0) {
+            unlink(pfile_dwnl->pathname);
+        }
+        if ((filePresentCheck(headerfile)) == 0) {
+            unlink(headerfile);
+        }
         return curl_code_header_req;
     }
     if (httpcode != NULL) {
