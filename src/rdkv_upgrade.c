@@ -787,10 +787,10 @@ int codebigdownloadFile(
         } else {
             setDwnlState(RDKV_FWDNLD_DOWNLOAD_INIT);
         }
-	if (curl != NULL) {
-		*curl = doCurlInit();
-	}
-	if (curl != NULL && *curl != NULL) {
+		if (curl != NULL) {
+			*curl = doCurlInit();
+		}
+		if (curl != NULL && *curl != NULL) {
             if (server_type == HTTP_XCONF_CODEBIG) {
                 setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_INPROGRESS);
             } else {
@@ -803,10 +803,10 @@ int codebigdownloadFile(
                 setDwnlState(RDKV_FWDNLD_DOWNLOAD_EXIT);
             }
             doStopDownload(*curl);
-	    *curl = NULL;
-            if (force_exit != NULL && *force_exit == 1 && (curl_ret_code == 23)) {
-                SWLOG_INFO("%s : Force exit after codebig download (curl error 23)\n", __FUNCTION__);
-                return RDKV_UPGRADE_ERROR_FORCE_EXIT;
+            *curl = NULL;
+            if (*force_exit == 1 && (curl_ret_code == 23)) {
+                uninitialize(INITIAL_VALIDATION_SUCCESS);
+                exit(1);
             }
         }
 
