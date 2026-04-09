@@ -270,6 +270,28 @@ example_plugin_LDFLAGS = \
     -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
 
 
+# Build and install the KnowWhereItBreaks developer test utility
+# Binary is named kwib_test_utility to avoid collision with the
+# kwib_src/ source directory (KnowWhereItBreaks sources) during the build.
+bin_PROGRAMS += kwib_test_utility
+
+kwib_test_utility_SOURCES = \
+    ${top_srcdir}/kwib_src/KnowWhereItBreaks.c
+
+kwib_test_utility_CFLAGS = \
+    -I${top_srcdir}/librdkFwupdateMgr/include \
+    $(AM_CFLAGS) \
+    $(GLIB_CFLAGS)
+
+kwib_test_utility_LDADD = \
+    librdkFwupdateMgr.la \
+    $(GLIB_LIBS) \
+    -lpthread
+
+kwib_test_utility_LDFLAGS = \
+    -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)
+
+
 if INSTALL_TEST_FWUPGRADER
 bin_PROGRAMS += testrdkvfwupgrader
 

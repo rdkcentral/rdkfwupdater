@@ -70,6 +70,7 @@
 
 #include "rdkFwupdateMgr_client.h"
 #include "rdkFwupdateMgr_log.h"
+#include "rdkFwupdateMgr_async_internal.h"  /* for internal_is_check_in_progress() */
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -96,7 +97,7 @@
 #define MAX_LIB_VERSION_LEN     64
 
 /** Default D-Bus call timeout in milliseconds (10 seconds) */
-#define DBUS_TIMEOUT_MS         10000
+#define DBUS_TIMEOUT_MSEC         10000
 
 /* ========================================================================
  * INTERNAL CONTEXT STRUCTURE
@@ -248,7 +249,7 @@ static bool validate_lib_version(const char *libVersion)
  * IMPLEMENTATION NOTES:
  * - Creates D-Bus proxy on-demand (no persistent connection)
  * - Synchronous D-Bus call (blocks until daemon responds)
- * - Timeout: 10 seconds (configurable via DBUS_TIMEOUT_MS)
+ * - Timeout: 10 seconds (configurable via DBUS_TIMEOUT_MSEC)
  * - Returns string handle (handler_id as decimal string)
  *
  * ERROR HANDLING:
@@ -297,15 +298,15 @@ FirmwareInterfaceHandle registerProcess(const char *processName, const char *lib
         "RegisterProcess",
         g_variant_new("(ss)", processName, libVersion),
         G_DBUS_CALL_FLAGS_NONE,
-        DBUS_TIMEOUT_MS,
+        DBUS_TIMEOUT_MSEC,
         NULL,                       // GCancellable
         &error
     );
 
     if (!result) {
         FWUPMGR_ERROR("RegisterProcess D-Bus call failed: %s\n",
-                error->message);
-        g_error_free(error);
+                error ? error->message : "unknown error (GError not set)");
+        if (error) g_error_free(error);
         g_object_unref(proxy);
         return NULL;
     }
@@ -337,7 +338,7 @@ FirmwareInterfaceHandle registerProcess(const char *processName, const char *lib
                 "UnregisterProcess",
                 g_variant_new("(t)", handler_id),
                 G_DBUS_CALL_FLAGS_NONE,
-                DBUS_TIMEOUT_MS,
+                DBUS_TIMEOUT_MSEC,
                 NULL,
                 &cleanup_error
             );
@@ -390,9 +391,73 @@ void unregisterProcess(FirmwareInterfaceHandle handler)
     guint64 handler_id = 0;
     gboolean success = FALSE;
 
-    // NULL check: Safe to unregister NULL handle (no-op)
+    /* NULL check first: always a no-op, regardless of in-progress state.
+     *
+     * The public API contract says "Safe to call with NULL handle (no-op)".
+     * This must be honored unconditionally — even during active operations.
+     * A NULL handle means there's nothing to unregister; the in-progress
+     * guards below only apply when the caller has a real handle.
+     */
     if (!handler) {
         FWUPMGR_INFO("unregisterProcess() called with NULL handle (no-op)\n");
+        return;
+    }
+
+    /* Session state validation: reject if checkForUpdate() is active.
+     *
+     * You can't hang up the phone while waiting for an answer.
+     * registerProcess() = start session, checkForUpdate() = ask a question,
+     * unregisterProcess() = end session. If we let the app end the session
+     * while the daemon is still processing the firmware check, the daemon-
+     * client relationship enters an undefined state. So we reject the call
+     * and tell the app to wait for the callback first, then unregister.
+     *
+     * We return without freeing the handle - caller still owns it and can
+     * retry after the checkForUpdate callback fires (bounded by 120s timeout).
+     *
+     * Note: void return type means we can't return an error code. The app
+     * must check logs. A future API revision will add a return type.
+     */
+    if (internal_is_check_in_progress()) {
+        FWUPMGR_ERROR("unregisterProcess: REJECTED - checkForUpdate() is in "
+                      "progress. Wait for the callback to fire, then retry "
+                      "unregisterProcess().\n");
+        return;
+    }
+
+    /* Session state validation: reject if downloadFirmware() is active.
+     *
+     * Same rationale as checkForUpdate: you can't end the session while a
+     * firmware download is in progress. Downloads can take 1-30 minutes,
+     * but the app should wait for the DWNL_COMPLETED or DWNL_ERROR callback
+     * before unregistering. If the app receives SIGTERM, it should just exit()
+     * — the daemon detects the D-Bus peer disconnect and cleans up.
+     *
+     * We return without freeing the handle — caller still owns it and can
+     * retry after the download callback fires with a terminal status.
+     */
+    if (internal_is_dwnl_in_progress()) {
+        FWUPMGR_ERROR("unregisterProcess: REJECTED - downloadFirmware() is in "
+                      "progress. Wait for the DWNL_COMPLETED or DWNL_ERROR "
+                      "callback, then retry unregisterProcess().\n");
+        return;
+    }
+
+    /* Session state validation: reject if updateFirmware() is active.
+     *
+     * Same rationale as downloadFirmware: you can't end the session while a
+     * firmware flash is in progress. Flashing can take 5-60 minutes,
+     * but the app should wait for the UPDATE_COMPLETED or UPDATE_ERROR callback
+     * before unregistering. If the app receives SIGTERM, it should just exit()
+     * — the daemon detects the D-Bus peer disconnect and cleans up.
+     *
+     * We return without freeing the handle — caller still owns it and can
+     * retry after the update callback fires with a terminal status.
+     */
+    if (internal_is_update_in_progress()) {
+        FWUPMGR_ERROR("unregisterProcess: REJECTED - updateFirmware() is in "
+                      "progress. Wait for the UPDATE_COMPLETED or UPDATE_ERROR "
+                      "callback, then retry unregisterProcess().\n");
         return;
     }
 
@@ -457,16 +522,16 @@ void unregisterProcess(FirmwareInterfaceHandle handler)
         "UnregisterProcess",
         g_variant_new("(t)", handler_id),
         G_DBUS_CALL_FLAGS_NONE,
-        DBUS_TIMEOUT_MS,
+        DBUS_TIMEOUT_MSEC,
         NULL,                       // GCancellable
         &error
     );
 
     if (!result) {
         FWUPMGR_WARN("UnregisterProcess D-Bus call failed: %s\n",
-                error->message);
+                error ? error->message : "unknown error (GError not set)");
         FWUPMGR_WARN("  (This is OK if daemon already cleaned up)\n");
-        g_error_free(error);
+        if (error) g_error_free(error);
         g_object_unref(proxy);
         // Continue with local cleanup
         free(handler);
