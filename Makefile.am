@@ -181,12 +181,11 @@ include_HEADERS = \
 
 librdkFwupdateMgr_la_SOURCES = \
     ${top_srcdir}/librdkFwupdateMgr/src/rdkFwupdateMgr_process.c \
-    ${top_srcdir}/librdkFwupdateMgr/src/rdkFwupdateMgr_log.c \
     ${top_srcdir}/librdkFwupdateMgr/src/rdkFwupdateMgr_async.c \
     ${top_srcdir}/librdkFwupdateMgr/src/rdkFwupdateMgr_api.c
 
-librdkFwupdateMgr_la_CFLAGS = -fPIC -I${top_srcdir}/librdkFwupdateMgr/include -I${top_srcdir}/librdkFwupdateMgr/src $(AM_CFLAGS) $(GLIB_CFLAGS)
-librdkFwupdateMgr_la_CPPFLAGS = -fPIC -I${top_srcdir}/librdkFwupdateMgr/include -I${top_srcdir}/librdkFwupdateMgr/src $(GLIB_CFLAGS)
+librdkFwupdateMgr_la_CFLAGS = -fPIC -I${top_srcdir}/librdkFwupdateMgr/include -I${top_srcdir}/librdkFwupdateMgr/src -I${top_srcdir}/common_utilities/utils $(AM_CFLAGS) $(GLIB_CFLAGS)
+librdkFwupdateMgr_la_CPPFLAGS = -fPIC -I${top_srcdir}/librdkFwupdateMgr/include -I${top_srcdir}/librdkFwupdateMgr/src -I${top_srcdir}/common_utilities/utils $(GLIB_CFLAGS)
 librdkFwupdateMgr_la_LDFLAGS = -shared -version-info 1:0:0
 librdkFwupdateMgr_la_LIBADD = $(GLIB_LIBS) -lpthread -lfwutils
 
@@ -258,13 +257,16 @@ example_plugin_SOURCES = \
 
 example_plugin_CFLAGS = \
     -I${top_srcdir}/librdkFwupdateMgr/include \
+    -I${top_srcdir}/common_utilities/utils \
     $(AM_CFLAGS) \
     $(GLIB_CFLAGS)
 
 example_plugin_LDADD = \
     librdkFwupdateMgr.la \
     $(GLIB_LIBS) \
-    -lpthread
+    -lpthread \
+    -lfwutils \
+    -lrdkloggers
 
 example_plugin_LDFLAGS = \
     -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)

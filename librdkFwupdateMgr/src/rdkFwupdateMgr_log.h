@@ -20,81 +20,57 @@
  * @file rdkFwupdateMgr_log.h
  * @brief Logging macros for librdkFwupdateMgr client library
  *
- * Logging init uses log_init() from common_utilities (rdkv_cdl_log_wrapper)
- * — the same init as the daemon (rdkv_main.c / rdkFwupdateMgr.c).
+ * FWUPMGR_* macros are thin wrappers around the common SWLOG_* macros
+ * from rdkv_cdl_log_wrapper.h.  Each macro prepends the "[FWUPMGR] "
+ * component tag so that library log lines are easily distinguishable
+ * from daemon (SWLOG_*) and application (EXAMPLE_*) log lines when
+ * they share the same stdout/stderr stream.
  *
- * FWUPMGR_* macros write to /opt/logs/rdkFwupdateMgr.log via
- * fwupmgr_write_log(), which is a simple file-based logger.
- * This keeps library logs separate from the daemon's /opt/logs/swupdate.log.
+ * The hosting application (example_plugin, unit-test harness, etc.)
+ * is responsible for calling log_init() before using this library
+ * and log_exit() on shutdown.  The library does NOT own the log
+ * lifecycle.
+ *
+ * Usage:
+ *   FWUPMGR_INFO("Registered with handler: %s\n", handler_id);
+ *   FWUPMGR_ERROR("Registration failed: %s\n", error_msg);
+ *   FWUPMGR_DEBUG("D-Bus proxy created: %p\n", proxy);
  */
 
 #ifndef RDKFWUPDATEMGR_LOG_H
 #define RDKFWUPDATEMGR_LOG_H
 
-#include "rdkv_cdl_log_wrapper.h"  /* For log_init(), log_exit() */
+#include "rdkv_cdl_log_wrapper.h"  /* SWLOG_*, log_init(), log_exit() */
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /* ========================================================================
- * MODULE TAG
- *
- * Daemon (SWLOG_*) → "LOG.RDK.FWUPG"  → /opt/logs/swupdate.log
- * Library (FWUPMGR_*) → "LOG.RDK.FWUPMGR" → /opt/logs/rdkFwupdateMgr.log
- * ======================================================================== */
-
-#define FWUPMGR_LOG_MODULE "LOG.RDK.FWUPMGR"
-
-/* ========================================================================
- * LOGGING INIT / CLEANUP
- *
- * fwupmgr_log_init()  — calls log_init() (same as daemon) + opens log file
- * fwupmgr_log_close() — closes log file + calls log_exit()
- * ======================================================================== */
-
-void fwupmgr_log_init(void);
-void fwupmgr_log_close(void);
-
-/* ========================================================================
- * INTERNAL LOG WRITER
- *
- * Writes directly to /opt/logs/rdkFwupdateMgr.log.
- * Thread-safe (internal mutex). Auto-opens file on first call.
- * ======================================================================== */
-
-void fwupmgr_write_log(const char *level, const char *file, int line,
-                        const char *format, ...);
-
-/* ========================================================================
  * LOGGING MACROS — FWUPMGR_*
  *
- * Always route to fwupmgr_write_log() → /opt/logs/rdkFwupdateMgr.log
- * Regardless of whether RDK_LOGGER is defined or not.
- *
- * Usage:
- *   FWUPMGR_INFO("Registered with handler: %s\n", handler_id);
- *   FWUPMGR_ERROR("Registration failed: %s\n", error_msg);
- *   FWUPMGR_DEBUG("D-Bus proxy created: %p\n", proxy);
+ * Thin wrappers around SWLOG_* with a "[FWUPMGR] " component prefix.
+ * FWUPMGR_TRACE maps to SWLOG_DEBUG (no TRACE level in SWLOG).
+ * FWUPMGR_FATAL maps to SWLOG_ERROR (no FATAL level in SWLOG).
  * ======================================================================== */
 
 #define FWUPMGR_TRACE(format, ...) \
-    fwupmgr_write_log("TRACE", __FILE__, __LINE__, format, ##__VA_ARGS__)
+    SWLOG_DEBUG("[FWUPMGR] " format, ##__VA_ARGS__)
 
 #define FWUPMGR_DEBUG(format, ...) \
-    fwupmgr_write_log("DEBUG", __FILE__, __LINE__, format, ##__VA_ARGS__)
+    SWLOG_DEBUG("[FWUPMGR] " format, ##__VA_ARGS__)
 
 #define FWUPMGR_INFO(format, ...) \
-    fwupmgr_write_log("INFO", __FILE__, __LINE__, format, ##__VA_ARGS__)
+    SWLOG_INFO("[FWUPMGR] " format, ##__VA_ARGS__)
 
 #define FWUPMGR_WARN(format, ...) \
-    fwupmgr_write_log("WARN", __FILE__, __LINE__, format, ##__VA_ARGS__)
+    SWLOG_WARN("[FWUPMGR] " format, ##__VA_ARGS__)
 
 #define FWUPMGR_ERROR(format, ...) \
-    fwupmgr_write_log("ERROR", __FILE__, __LINE__, format, ##__VA_ARGS__)
+    SWLOG_ERROR("[FWUPMGR] " format, ##__VA_ARGS__)
 
 #define FWUPMGR_FATAL(format, ...) \
-    fwupmgr_write_log("FATAL", __FILE__, __LINE__, format, ##__VA_ARGS__)
+    SWLOG_ERROR("[FWUPMGR][FATAL] " format, ##__VA_ARGS__)
 
 #ifdef __cplusplus
 }

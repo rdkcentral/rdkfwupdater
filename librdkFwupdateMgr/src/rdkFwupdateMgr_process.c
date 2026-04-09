@@ -61,7 +61,7 @@
  *
  * ERROR HANDLING:
  * ===============
- * - All errors logged via fprintf(stderr) for visibility
+ * - All errors logged via FWUPMGR_* macros (rdkv_cdl_log_wrapper backend)
  * - NULL checks on all pointer parameters
  * - D-Bus errors caught and handled gracefully
  * - Registration failures return NULL (safe to check)
@@ -289,10 +289,10 @@ FirmwareInterfaceHandle registerProcess(const char *processName, const char *lib
         return NULL;
     }
 
-    fprintf(stderr, "[rdkFwupdateMgr] D-Bus proxy created successfully\n");
+    FWUPMGR_INFO("D-Bus proxy created successfully\n");
 
     // Call RegisterProcess D-Bus method
-    fprintf(stderr, "[rdkFwupdateMgr] Calling RegisterProcess D-Bus method...\n");
+    FWUPMGR_INFO("Calling RegisterProcess D-Bus method...\n");
     result = g_dbus_proxy_call_sync(
         proxy,
         "RegisterProcess",
