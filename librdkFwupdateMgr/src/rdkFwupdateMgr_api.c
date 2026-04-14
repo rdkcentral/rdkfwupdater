@@ -149,7 +149,7 @@ CheckForUpdateResult checkForUpdate(FirmwareInterfaceHandle handle,
     /* [5] Return immediately — app is unblocked */
     return CHECK_FOR_UPDATE_SUCCESS;
 }
-
+#if 0
 /* ========================================================================
  * LIBRARY LIFECYCLE
  * ======================================================================== */
@@ -182,7 +182,7 @@ static void rdkFwupdateMgr_lib_deinit(void)
     internal_system_deinit();
     FWUPMGR_INFO("=== rdkFwupdateMgr library unloaded ===\n");
 }
-
+#endif
 /* ========================================================================
  * DOWNLOAD FIRMWARE PUBLIC API
  * ========================================================================
