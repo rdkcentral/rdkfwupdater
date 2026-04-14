@@ -363,6 +363,12 @@ FirmwareInterfaceHandle registerProcess(const char *processName, const char *lib
     snprintf(handle_str, 32, "%" PRIu64, handler_id);
     FWUPMGR_INFO("Handle created: '%s'\n", handle_str);
 
+    FWUPMGR_INFO("=== rdkFwupdateMgr Creating thread for listen ===\n");
+    if (internal_system_init() != 0) {
+        FWUPMGR_ERROR("rdkFwupdateMgr_lib_init: internal_system_init FAILED\n");
+    }
+    FWUPMGR_INFO("=== rdkFwupdateMgr Creating thread for listen successfull ===\n");
+ 
     return (FirmwareInterfaceHandle)handle_str;
 }
 
