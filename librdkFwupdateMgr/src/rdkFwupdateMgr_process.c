@@ -442,6 +442,9 @@ void unregisterProcess(FirmwareInterfaceHandle handler)
     }
 
     FWUPMGR_INFO("  handler_id: %"G_GUINT64_FORMAT"\n", handler_id);
+    FWUPMGR_INFO("=== rdkFwupdateMgr destroy thred unloading ===\n");
+    internal_system_deinit();
+    FWUPMGR_INFO("=== rdkFwupdateMgr destory thread ===\n");
 
     // Create D-Bus proxy
     proxy = create_dbus_proxy(&error);
