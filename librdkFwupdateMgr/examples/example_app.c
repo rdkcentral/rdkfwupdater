@@ -80,8 +80,6 @@ static char             g_fw_filename[MAX_FW_FILENAME_SIZE]   = {0};
 static char             g_fw_url[MAX_FW_URL_SIZE]              = {0};
 static char             g_reboot_immediately[MAX_REBOOT_IMMEDIATELY_SIZE] = {0};
 static char             g_delay_download[MAX_DELAY_DOWNLOAD_SIZE] = {0};
-static char             g_pdri_version[MAX_PDRI_VERSION_LEN] = {0};
-static char             g_peripheral_firmwares[MAX_PERIPHERAL_VERSION_LEN] = {0};
 
 /* Download state */
 static pthread_mutex_t  g_download_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -224,20 +222,6 @@ static void on_firmware_check_callback(const FwInfoData *event_data)
             strncpy(g_delay_download, event_data->UpdateDetails->DelayDownload,
                     sizeof(g_delay_download) - 1);
             g_delay_download[sizeof(g_delay_download) - 1] = '\0';
-        }
-        
-        /* Save PDRI version (may be empty if not configured by XConf) */
-        if (event_data->UpdateDetails->PDRIVersion[0]) {
-            strncpy(g_pdri_version, event_data->UpdateDetails->PDRIVersion,
-                    sizeof(g_pdri_version) - 1);
-            g_pdri_version[sizeof(g_pdri_version) - 1] = '\0';
-        }
-        
-        /* Save Peripheral firmware versions (may be empty if not configured) */
-        if (event_data->UpdateDetails->PeripheralFirmwares[0]) {
-            strncpy(g_peripheral_firmwares, event_data->UpdateDetails->PeripheralFirmwares,
-                    sizeof(g_peripheral_firmwares) - 1);
-            g_peripheral_firmwares[sizeof(g_peripheral_firmwares) - 1] = '\0';
         }
     }
     
@@ -437,113 +421,27 @@ int main(void)
     EXAMPLE_INFO("Firmware update available!\n");
     EXAMPLE_INFO("  Current Version  : %s\n", g_fw_current_version);
     EXAMPLE_INFO("  Available Version: %s\n", g_fw_available_version);
-
-    /* ====================================================================
-     * STEP 2b: Show available firmware types and prompt user
-     * ====================================================================
-     * XConf may return PCI, PDRI, and/or Peripheral firmware info.
-     * Show the user what's available and let them choose which to download.
-     * ==================================================================== */
-    EXAMPLE_INFO("=== Available Firmware Types ===\n");
-
-    int has_pci = (g_fw_filename[0] != '\0');
-    int has_pdri = (g_pdri_version[0] != '\0');
-    int has_peripheral = (g_peripheral_firmwares[0] != '\0');
-
-    if (has_pci) {
-        EXAMPLE_INFO("  [1] PCI        — %s (version: %s)\n",
-                     g_fw_filename, g_fw_available_version);
-    }
-    if (has_pdri) {
-        EXAMPLE_INFO("  [2] PDRI       — %s\n", g_pdri_version);
-    }
-    if (has_peripheral) {
-        EXAMPLE_INFO("  [3] PERIPHERAL — %s\n", g_peripheral_firmwares);
-    }
-
-    if (!has_pci && !has_pdri && !has_peripheral) {
-        EXAMPLE_ERROR("No firmware images available for download!\n");
-        g_exit_code = EXIT_FAILURE;
-        goto cleanup_unregister;
-    }
-
-    /* Prompt user for firmware type selection */
-    int selection = 0;
-    char input_buf[16] = {0};
-
-    while (selection < 1 || selection > 3) {
-        fprintf(stdout, "\n  Select firmware type to download [1=PCI, 2=PDRI, 3=PERIPHERAL]: ");
-        fflush(stdout);
-
-        if (fgets(input_buf, sizeof(input_buf), stdin) == NULL) {
-            EXAMPLE_ERROR("Failed to read user input\n");
-            g_exit_code = EXIT_FAILURE;
-            goto cleanup_unregister;
-        }
-
-        selection = atoi(input_buf);
-
-        /* Validate selection against what's actually available */
-        if (selection == 1 && !has_pci) {
-            EXAMPLE_WARN("PCI not available from XConf. Choose another.\n");
-            selection = 0;
-        } else if (selection == 2 && !has_pdri) {
-            EXAMPLE_WARN("PDRI not available from XConf. Choose another.\n");
-            selection = 0;
-        } else if (selection == 3 && !has_peripheral) {
-            EXAMPLE_WARN("PERIPHERAL not available from XConf. Choose another.\n");
-            selection = 0;
-        } else if (selection < 1 || selection > 3) {
-            EXAMPLE_WARN("Invalid selection. Enter 1, 2, or 3.\n");
-            selection = 0;
-        }
-    }
-
-    /* Map selection to firmware type string and parameters */
-    const char *selected_type = NULL;
-    const char *selected_fw_name = NULL;
-    const char *selected_fw_url = "";
-
-    switch (selection) {
-        case 1:  /* PCI */
-            selected_type = "PCI";
-            selected_fw_name = g_fw_filename;
-            selected_fw_url = (g_fw_url[0] != '\0') ? g_fw_url : "";
-            break;
-        case 2:  /* PDRI */
-            selected_type = "PDRI";
-            selected_fw_name = g_pdri_version;
-            selected_fw_url = "";  /* Daemon resolves URL for PDRI */
-            break;
-        case 3:  /* PERIPHERAL */
-            selected_type = "PERIPHERAL";
-            selected_fw_name = g_peripheral_firmwares;
-            selected_fw_url = "";  /* Daemon resolves URL for peripherals */
-            break;
-        default:
-            EXAMPLE_ERROR("Unexpected selection %d\n", selection);
-            g_exit_code = EXIT_FAILURE;
-            goto cleanup_unregister;
-    }
-
-    EXAMPLE_INFO("Selected firmware type: %s\n", selected_type);
+    EXAMPLE_INFO("  Proceeding to download...\n");
 
     /* ====================================================================
      * STEP 3: Download Firmware (Async)
      * ==================================================================== */
-    EXAMPLE_INFO("STEP 3: Download firmware image (%s)\n", selected_type);
+    EXAMPLE_INFO("STEP 3: Download firmware image\n");
 
-    /* Prepare download request using selected firmware type */
+    /* Prepare download request using data from checkForUpdate callback */
     FwDwnlReq download_req;
     memset(&download_req, 0, sizeof(download_req));
 
-    download_req.firmwareName = selected_fw_name;
-    download_req.downloadUrl = selected_fw_url;
-    download_req.TypeOfFirmware = selected_type;
+    /* Use firmware filename from UpdateDetails if available, otherwise construct one */
+    const char *fw_name = (g_fw_filename[0] != '\0') ? g_fw_filename : "firmware_default.bin";
+    const char *fw_url = (g_fw_url[0] != '\0') ? g_fw_url : "";  /* Empty = use XConf URL */
+    
+    download_req.firmwareName = fw_name;
+    download_req.downloadUrl = fw_url;
+    download_req.TypeOfFirmware = "PCI";  /* Default to PCI type */
 
     EXAMPLE_INFO("  Firmware Name : %s\n", download_req.firmwareName);
-    EXAMPLE_INFO("  Download URL  : %s\n",
-                 download_req.downloadUrl[0] ? download_req.downloadUrl : "(daemon decides)");
+    EXAMPLE_INFO("  Download URL  : %s\n", download_req.downloadUrl[0] ? download_req.downloadUrl : "(use XConf URL)");
     EXAMPLE_INFO("  Firmware Type : %s\n", download_req.TypeOfFirmware);
 
     EXAMPLE_INFO("  Calling downloadFirmware()...\n");
@@ -588,15 +486,26 @@ int main(void)
     /* ====================================================================
      * STEP 4: Update/Flash Firmware (Async)
      * ==================================================================== */
-    EXAMPLE_INFO("STEP 4: Flash firmware to device (%s)\n", selected_type);
+    EXAMPLE_INFO("STEP 4: Flash firmware to device\n");
 
-    /* Prepare update request — must match what was downloaded */
+    /* Prepare update request */
     FwUpdateReq update_req;
     memset(&update_req, 0, sizeof(update_req));
 
+    /* Must match what was downloaded */
+    //strncpy(update_req.firmwareName, download_req.firmwareName,
+    //        sizeof(update_req.firmwareName) - 1);
     update_req.firmwareName = download_req.firmwareName;
+    
+    /* Must match download request */
+    //strncpy(update_req.TypeOfFirmware, download_req.TypeOfFirmware,
+    //        sizeof(update_req.TypeOfFirmware) - 1);
     update_req.TypeOfFirmware = download_req.TypeOfFirmware;
+    
+    /* Location: Use /opt/CDL (default firmware download directory) */
     update_req.LocationOfFirmware = "/opt/CDL";
+    
+    /* Reboot after flash: false for this example (so we can unregister cleanly) */
     update_req.rebootImmediately = false;
 
     EXAMPLE_INFO("  Firmware Name  : %s\n", update_req.firmwareName);
