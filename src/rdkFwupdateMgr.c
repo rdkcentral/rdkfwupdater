@@ -1250,13 +1250,13 @@ int main(int argc, char *argv[]) {
 				     * (/tmp/fw_preparing_to_reboot was present).
 				     * The file has been cleaned up by initialValidation().
 				     * In the daemon mode, we transition to IDLE and wait
+				     * initialValidation() is also responsible for emitting
+				     * the MAINT_FWDOWNLOAD_COMPLETE event for this case.
+				     * In the daemon mode, we transition to IDLE and wait
 				     * for the pending reboot or next D-Bus request.
 				     */
 				    SWLOG_INFO("Software Update already completed (pending reboot). "
 						    "Transitioning to IDLE.\n");
-				    if (0 == (strncmp(device_info.maint_status, "true", 4))) {
-					    eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_COMPLETE);
-				    }
 				    currentState = STATE_IDLE;
 			    }
 			    else if(init_validate_status == INITIAL_VALIDATION_DWNL_INPROGRESS){
