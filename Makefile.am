@@ -181,7 +181,6 @@ include_HEADERS = \
 
 librdkFwupdateMgr_la_SOURCES = \
     ${top_srcdir}/librdkFwupdateMgr/src/rdkFwupdateMgr_process.c \
-    ${top_srcdir}/librdkFwupdateMgr/src/rdkFwupdateMgr_log.c \
     ${top_srcdir}/librdkFwupdateMgr/src/rdkFwupdateMgr_async.c \
     ${top_srcdir}/librdkFwupdateMgr/src/rdkFwupdateMgr_api.c
 

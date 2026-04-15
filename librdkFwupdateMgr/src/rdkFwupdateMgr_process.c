@@ -69,6 +69,7 @@
  */
 
 #include "rdkFwupdateMgr_client.h"
+#include "rdkFwupdateMgr_async_internal.h"
 #include "rdkFwupdateMgr_log.h"
 #include <stdlib.h>
 #include <stdio.h>
@@ -95,8 +96,7 @@
 /** Maximum length for library version string */
 #define MAX_LIB_VERSION_LEN     64
 
-/** Default D-Bus call timeout in milliseconds (10 seconds) */
-#define DBUS_TIMEOUT_MS         10000
+/* DBUS_TIMEOUT_MS is defined in rdkFwupdateMgr_async_internal.h */
 
 /* ========================================================================
  * INTERNAL CONTEXT STRUCTURE
