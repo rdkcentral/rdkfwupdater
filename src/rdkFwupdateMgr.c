@@ -1249,7 +1249,7 @@ int main(int argc, char *argv[]) {
 				     * A previous firmware download+flash already completed
 				     * (/tmp/fw_preparing_to_reboot was present).
 				     * The file has been cleaned up by initialValidation().
-				     * In the daemon model, we transition to IDLE and wait
+				     * In the daemon mode, we transition to IDLE and wait
 				     * for the pending reboot or next D-Bus request.
 				     */
 				    SWLOG_INFO("Software Update already completed (pending reboot). "
