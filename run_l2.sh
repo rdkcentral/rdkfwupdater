@@ -24,12 +24,15 @@ export ROOT=/usr
 export INSTALL_DIR=${ROOT}/local
 mkdir -p $INSTALL_DIR
 
-git clone https://github.com/JagadheesanD/memleakutil.git
-cd memleakutil/
-ls -l
-make -f Makefile.raw
-cd ..
-ls -l
+if ! command -v memleakutil >/dev/null && [ ! -f "/usr/local/bin/memleakutil" ]; then
+    git clone https://github.com/rdkcentral/memleakutil.git
+    cd memleakutil
+    autoreconf -i
+    ./configure --prefix=${INSTALL_DIR}
+    make && make install
+    cd ..
+fi
+
 
 git clone https://github.com/rdkcentral/common_utilities.git
 cd common_utilities
@@ -108,32 +111,37 @@ echo "Running L2 Integration Tests"
 echo "=========================================="
 echo ""
 
+
 # ========================================
 # PHASE 1: Standard Certificate Tests (client.p12)
 # ========================================
 
 echo "[Phase 1/3] Running standard tests with normal certificates..."
-# Run all existing tests
 echo "Running existing image download tests..."
-pytest --json-report --json-report-file $RESULT_DIR/rdkfwupdater_image_tests.json \
-       test/functional-tests/tests/test_imagedwnl.py \
-       test/functional-tests/tests/test_imagedwnl_error.py \
-       test/functional-tests/tests/test_certbundle_dwnl.py \
-       test/functional-tests/tests/test_peripheral_imagedwnl.py
+
+MEMLEAK_LOG1="$RESULT_DIR/memleak_l2_phase1.log"
+memleakutil -- pytest --json-report --json-report-file $RESULT_DIR/rdkfwupdater_image_tests.json \
+   test/functional-tests/tests/test_imagedwnl.py \
+   test/functional-tests/tests/test_imagedwnl_error.py \
+   test/functional-tests/tests/test_certbundle_dwnl.py \
+   test/functional-tests/tests/test_peripheral_imagedwnl.py \
+   &> "$MEMLEAK_LOG1"
 
 # ========================================
 # PHASE 2: D-Bus Handler and Cache Tests
 # ========================================
 
-# Run new D-Bus handler and cache tests
 echo ""
 echo "[Phase 2/3] Running D-Bus handler and cache tests..."
-pytest -v -s --json-report --json-report-file $RESULT_DIR/rdkfwupdater_dbus_tests.json \
-	test/functional-tests/tests/test_dbus_DownloadFirmware.py \
-	test/functional-tests/tests/test_dbus_UnregisterProcess.py  \
-	test/functional-tests/tests/test_dbus_CheckForUpdate.py \
-	test/functional-tests/tests/test_dbus_RegisterProcess.py \
-	test/functional-tests/tests/test_dbus_UpdateFirmware.py
+
+MEMLEAK_LOG2="$RESULT_DIR/memleak_l2_phase2.log"
+memleakutil -- pytest -v -s --json-report --json-report-file $RESULT_DIR/rdkfwupdater_dbus_tests.json \
+   test/functional-tests/tests/test_dbus_DownloadFirmware.py \
+   test/functional-tests/tests/test_dbus_UnregisterProcess.py  \
+   test/functional-tests/tests/test_dbus_CheckForUpdate.py \
+   test/functional-tests/tests/test_dbus_RegisterProcess.py \
+   test/functional-tests/tests/test_dbus_UpdateFirmware.py \
+   &> "$MEMLEAK_LOG2"
 
 # ========================================
 # PHASE 3: PKCS#11 Certificate Fallback Test (if enabled)
@@ -149,14 +157,17 @@ if [ "$ENABLE_PKCS11" = "true" ]; then
     echo "      It validates certselector fallback to client.p12/client.pem"
     echo "      when reference.p12 is missing or unavailable."
     echo ""
-    
+
     # Run PKCS#11 fallback test (removes reference.p12, verifies fallback to client.p12/client.pem)
     echo "Running certificate fallback test..."
-    pytest -v -s --json-report --json-report-file $RESULT_DIR/rdkfwupdater_pkcs11_fallback_tests.json \
-           test/functional-tests/tests/test_pkcs11_fallback.py
-    
+    MEMLEAK_LOG3="$RESULT_DIR/memleak_l2_phase3.log"
+    memleakutil -- pytest -v -s --json-report --json-report-file $RESULT_DIR/rdkfwupdater_pkcs11_fallback_tests.json \
+       test/functional-tests/tests/test_pkcs11_fallback.py \
+       &> "$MEMLEAK_LOG3"
+
     echo ""
     echo "PKCS#11 fallback test report: $RESULT_DIR/rdkfwupdater_pkcs11_fallback_tests.json"
+    echo "PKCS#11 fallback memleakutil log: $MEMLEAK_LOG3"
 else
     echo ""
     echo "=========================================="
@@ -172,3 +183,7 @@ echo "=========================================="
 echo "Image tests report: $RESULT_DIR/rdkfwupdater_image_tests.json"
 echo "D-Bus tests report: $RESULT_DIR/rdkfwupdater_dbus_tests.json"
 echo "=========================================="
+echo "Memleakutil reports:"
+echo "Phase 1 memleak report: $MEMLEAK_LOG1"
+echo "Phase 2 memleak report: $MEMLEAK_LOG2"
+[ "$ENABLE_PKCS11" = "true" ] && echo "Phase 3 memleak report: $MEMLEAK_LOG3"
