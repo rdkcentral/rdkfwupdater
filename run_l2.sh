@@ -24,6 +24,13 @@ export ROOT=/usr
 export INSTALL_DIR=${ROOT}/local
 mkdir -p $INSTALL_DIR
 
+git clone https://github.com/JagadheesanD/memleakutil.git
+cd memleakutil/
+ls -l
+make -f Makefile.raw
+cd ..
+ls -l
+
 git clone https://github.com/rdkcentral/common_utilities.git
 cd common_utilities
 git checkout develop
