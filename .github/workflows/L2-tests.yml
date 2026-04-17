@@ -1,6 +1,8 @@
 name: L2 Integration Tests
 
 on:
+  push:
+    branches: [ topic/* ] 
   pull_request:
     branches: [ develop , main , topic/RDK-48832 , topic/*]
 
