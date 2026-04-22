@@ -22,6 +22,7 @@
 #if defined(IARM_ENABLED)
 #ifndef GTEST_ENABLE
 #include "sysMgr.h"
+#include "mfrMgr.h"
 #include "libIARMCore.h"
 #include "libIBus.h"
 #include "libIBusDaemon.h"
@@ -130,5 +131,5 @@ int term_event_handler(void);
 int init_event_handler(void);
 void interuptDwnl(int app_mode);
 bool isConnectedToInternet (void);
-
+size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize);
 #endif /* VIDEO_IARMINTERFACE_IARMINTERFACE_H_ */
