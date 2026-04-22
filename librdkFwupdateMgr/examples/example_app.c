@@ -39,17 +39,18 @@
 //#include "rdkFwupdateMgr_process.h"   /* registerProcess(), unregisterProcess() */
 #include "rdkFwupdateMgr_client.h"    /* checkForUpdate(), downloadFirmware(), 
                                          updateFirmware(), all callbacks/enums  */
-#include "rdkv_cdl_log_wrapper.h"     /* log_init(), log_exit(), SWLOG_* */
+#include "rdkFwupdateMgr_log.h"       /* FWUPMGR_LOG() generic base macro */
+#include "rdkv_cdl_log_wrapper.h"     /* log_init(), log_exit() */
 
 /* ========================================================================
- * EXAMPLE_* logging macros — thin wrappers around SWLOG_* with [EXAMPLE] tag.
- * Keeps example_plugin logs distinguishable from [FWUPMGR] library logs
- * when both land in the same redirected log file.
+ * EXAMPLE_* logging macros  use FWUPMGR_LOG with LOG.RDK.EXAMPLE module.
+ * Keeps example_plugin logs as [EXAMPLE], distinguishable from [FWUPMGR]
+ * library logs and [FWUPG] daemon logs.
  * ======================================================================== */
-#define EXAMPLE_DEBUG(format, ...) SWLOG_DEBUG("[EXAMPLE] " format, ##__VA_ARGS__)
-#define EXAMPLE_INFO(format, ...)  SWLOG_INFO("[EXAMPLE] " format, ##__VA_ARGS__)
-#define EXAMPLE_WARN(format, ...)  SWLOG_WARN("[EXAMPLE] " format, ##__VA_ARGS__)
-#define EXAMPLE_ERROR(format, ...) SWLOG_ERROR("[EXAMPLE] " format, ##__VA_ARGS__)
+#define EXAMPLE_DEBUG(format, ...) FWUPMGR_LOG(RDK_LOG_DEBUG, "LOG.RDK.EXAMPLE", format, ##__VA_ARGS__)
+#define EXAMPLE_INFO(format, ...)  FWUPMGR_LOG(RDK_LOG_INFO,  "LOG.RDK.EXAMPLE", format, ##__VA_ARGS__)
+#define EXAMPLE_WARN(format, ...)  FWUPMGR_LOG(RDK_LOG_WARN,  "LOG.RDK.EXAMPLE", format, ##__VA_ARGS__)
+#define EXAMPLE_ERROR(format, ...) FWUPMGR_LOG(RDK_LOG_ERROR, "LOG.RDK.EXAMPLE", format, ##__VA_ARGS__)
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -62,7 +63,7 @@
  * ========================================================================
  * Since callbacks don't support user_data, we use global variables to:
  *   - Store firmware info from checkForUpdate callback
- *   - Track workflow progress (check → download → flash)
+ *   - Track workflow progress (check -> download -> flash)
  *   - Synchronize main thread with callback threads
  * ======================================================================== */
 
