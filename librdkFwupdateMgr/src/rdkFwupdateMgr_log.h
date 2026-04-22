@@ -47,45 +47,35 @@ extern "C" {
 #endif
 
 /* ========================================================================
- * LOGGING MACROS  FWUPMGR_*
- *
- * Use "LOG.RDK.FWUPMGR" module directly so log lines show "[FWUPMGR]"
- * instead of "[FWUPG] [PID] [FWUPMGR]".
+ * Library code uses FWUPMGR_* macros  - logs as [FWUPMGR]
+ * Example app defines EXAMPLE_* macros - logs as [EXAMPLE]
  * ======================================================================== */
 
 #if defined(RDK_LOGGER)
 #include "rdk_debug.h"
 
-#define FWUPMGR_TRACE(format, ...) \
-    RDK_LOG(RDK_LOG_TRACE1, "LOG.RDK.FWUPMGR", format, ##__VA_ARGS__)
+/* Generic base macro callers provide their own module name */
+#define FWUPMGR_LOG(level, module, format, ...) \
+    RDK_LOG(level, module, format, ##__VA_ARGS__)
 
-#define FWUPMGR_DEBUG(format, ...) \
-    RDK_LOG(RDK_LOG_DEBUG, "LOG.RDK.FWUPMGR", format, ##__VA_ARGS__)
-
-#define FWUPMGR_INFO(format, ...) \
-    RDK_LOG(RDK_LOG_INFO, "LOG.RDK.FWUPMGR", format, ##__VA_ARGS__)
-
-#define FWUPMGR_WARN(format, ...) \
-    RDK_LOG(RDK_LOG_WARN, "LOG.RDK.FWUPMGR", format, ##__VA_ARGS__)
-
-#define FWUPMGR_ERROR(format, ...) \
-    RDK_LOG(RDK_LOG_ERROR, "LOG.RDK.FWUPMGR", format, ##__VA_ARGS__)
-
-#define FWUPMGR_FATAL(format, ...) \
-    RDK_LOG(RDK_LOG_FATAL, "LOG.RDK.FWUPMGR", format, ##__VA_ARGS__)
+/* Default library macros  use LOG.RDK.FWUPMGR */
+#define FWUPMGR_TRACE(format, ...) FWUPMGR_LOG(RDK_LOG_TRACE1, "LOG.RDK.FWUPMGR", format, ##__VA_ARGS__)
+#define FWUPMGR_DEBUG(format, ...) FWUPMGR_LOG(RDK_LOG_DEBUG,  "LOG.RDK.FWUPMGR", format, ##__VA_ARGS__)
+#define FWUPMGR_INFO(format, ...)  FWUPMGR_LOG(RDK_LOG_INFO,   "LOG.RDK.FWUPMGR", format, ##__VA_ARGS__)
+#define FWUPMGR_WARN(format, ...)  FWUPMGR_LOG(RDK_LOG_WARN,   "LOG.RDK.FWUPMGR", format, ##__VA_ARGS__)
+#define FWUPMGR_ERROR(format, ...) FWUPMGR_LOG(RDK_LOG_ERROR,  "LOG.RDK.FWUPMGR", format, ##__VA_ARGS__)
+#define FWUPMGR_FATAL(format, ...) FWUPMGR_LOG(RDK_LOG_FATAL,  "LOG.RDK.FWUPMGR", format, ##__VA_ARGS__)
 
 #else
 
-void fwupmgrLog(unsigned int level, const char *msg, ...);
 
-#define FWUPMGR_LOG_INFO (1)
-
-#define FWUPMGR_TRACE(FORMAT...) fwupmgrLog(FWUPMGR_LOG_INFO, FORMAT)
-#define FWUPMGR_DEBUG(FORMAT...) fwupmgrLog(FWUPMGR_LOG_INFO, FORMAT)
-#define FWUPMGR_INFO(FORMAT...)  fwupmgrLog(FWUPMGR_LOG_INFO, FORMAT)
-#define FWUPMGR_WARN(FORMAT...)  fwupmgrLog(FWUPMGR_LOG_INFO, FORMAT)
-#define FWUPMGR_ERROR(FORMAT...) fwupmgrLog(FWUPMGR_LOG_INFO, FORMAT)
-#define FWUPMGR_FATAL(FORMAT...) fwupmgrLog(FWUPMGR_LOG_INFO, FORMAT)
+/* Default library macros */
+#define FWUPMGR_TRACE(FORMAT...) FWUPMGR_LOG(FWUPMGR_LOG_INFO, "FWUPMGR", FORMAT)
+#define FWUPMGR_DEBUG(FORMAT...) FWUPMGR_LOG(FWUPMGR_LOG_INFO, "FWUPMGR", FORMAT)
+#define FWUPMGR_INFO(FORMAT...)  FWUPMGR_LOG(FWUPMGR_LOG_INFO, "FWUPMGR", FORMAT)
+#define FWUPMGR_WARN(FORMAT...)  FWUPMGR_LOG(FWUPMGR_LOG_INFO, "FWUPMGR", FORMAT)
+#define FWUPMGR_ERROR(FORMAT...) FWUPMGR_LOG(FWUPMGR_LOG_INFO, "FWUPMGR", FORMAT)
+#define FWUPMGR_FATAL(FORMAT...) FWUPMGR_LOG(FWUPMGR_LOG_INFO, "FWUPMGR", FORMAT)
 
 #endif
 

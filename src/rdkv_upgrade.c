@@ -983,9 +983,6 @@ int downloadFile(
     }
 
     if ((1 == (isThrottleEnabled(device_info->dev_name, immed_reboot_flag, app_mode)))) {
-        /* Coverity fix: NO_EFFECT - rfc_throttle is a char array, not a pointer.
-         * Removed redundant "!= NULL" check. Only check for non-empty string.
-         * Ensure rfc_list is valid before dereferencing. */
         if (rfc_list != NULL && rfc_list->rfc_throttle[0] != '\0' &&
             0 == (strncmp(rfc_list->rfc_throttle, "true", 4))) {
             max_dwnl_speed = atoi(rfc_list->rfc_topspeed);
