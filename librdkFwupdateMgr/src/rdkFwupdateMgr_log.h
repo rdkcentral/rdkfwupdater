@@ -22,7 +22,7 @@
  *
  * FWUPMGR_* macros log directly with the "LOG.RDK.FWUPMGR" module
  * (when RDK_LOGGER is enabled) so that library log lines appear as
- * "[FWUPMGR]" in the output  clearly distinguishable from daemon
+ * "[FWUPMGR]" in the output clearly distinguishable from daemon
  * logs ("[FWUPG]") and common-utility logs ("[COMMONUTILITIES]")
  * without any redundant double-tagging.
  *
