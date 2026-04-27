@@ -22,6 +22,7 @@
 #include <unistd.h>
 
 #include "../mocks/deviceutils_mock.h"
+#include "../mocks/iarm_interface_mock.h"
 #include "rdkv_cdl_log_wrapper.h"
 extern "C" {
 #include "device_api.h"
@@ -57,11 +58,13 @@ class DeviceApiTestFixture : public ::testing::Test {
 
          virtual void SetUp()
         {
+            iarm_interface_mock_reset();
             printf("%s\n", __func__);
         }
 
         virtual void TearDown()
         {
+            iarm_interface_mock_reset();
             printf("%s\n", __func__);
         }
 
@@ -175,26 +178,53 @@ TEST_F(DeviceApiTestFixture,TestName_getadditionfw_nullcheck)
 {
     EXPECT_EQ(GetAdditionalFwVerInfo(NULL, 0), 0);
 }
-//TODO: Need to check why v_secure_popen is not returning properly
-TEST_F(DeviceApiTestFixture,TestName_Success)
+TEST_F(DeviceApiTestFixture, TestName_GetPDRIFileNameUsingMFRMock_ResetReturnsZero)
 {
-    char data[64];
-    FILE *fp = NULL;
-    char buff[] = "1234_pdri_image.bin\n";
-    fp = fopen("/tmp/pdri.txt", "w");
-    if (fp != NULL) {
-        fwrite(buff, sizeof(buff), 1,fp);
-	fclose(fp);
-	fp = NULL;
-    }
-    //EXPECT_CALL(*g_DeviceUtilsMock, v_secure_popen(_, _, _)).Times(1).WillOnce(Return(fopen("/tmp/pdri.txt", "r")));
-    EXPECT_CALL(*g_DeviceUtilsMock, v_secure_popen(_, _, _)).Times(1).WillOnce(Return(fp));
-    EXPECT_EQ(GetAdditionalFwVerInfo(data, sizeof(data)), 0);
+    char data[64] = {0};
+
+    iarm_interface_mock_reset();
+
+    EXPECT_EQ(GetPDRIFileNameUsingMFR(data, sizeof(data)), 0);
 }
+
+TEST_F(DeviceApiTestFixture, TestName_GetPDRIFileNameUsingMFRMock_Success)
+{
+    char data[64] = {0};
+    const char expected[] = "1234_pdri_image.bin";
+    const size_t expected_len = sizeof(expected) - 1;
+
+    iarm_interface_mock_set_pdri_filename(expected);
+
+    EXPECT_EQ(GetPDRIFileNameUsingMFR(data, sizeof(data)), expected_len);
+    EXPECT_STREQ(data, expected);
+}
+
 TEST(TestGetPDRIFileName, Test_pdri_Nullcheck)
 {
     EXPECT_EQ(GetPDRIFileName(NULL, 0), 0);
 }
+
+TEST_F(DeviceApiTestFixture, Test_pdri_UsesIarmInterfaceMock)
+{
+    char data[64] = {0};
+    const char expected[] = "1234_pdri_image.bin";
+    const size_t expected_len = sizeof(expected) - 1;
+
+    iarm_interface_mock_set_pdri_filename(expected);
+
+    EXPECT_EQ(GetPDRIFileName(data, sizeof(data)), expected_len);
+    EXPECT_STREQ(data, expected);
+}
+
+TEST_F(DeviceApiTestFixture, Test_pdri_BufferTooSmall)
+{
+    char data[8] = {0};
+
+    iarm_interface_mock_set_pdri_filename("1234_pdri_image.bin");
+
+    EXPECT_EQ(GetPDRIFileNameUsingMFR(data, sizeof(data)), 0);
+}
+
 TEST_F(DeviceApiTestFixture,TestName_bundle_Nullcheck)
 {
     EXPECT_EQ(GetInstalledBundles(NULL, 0, "dlCertBundle"), 0);

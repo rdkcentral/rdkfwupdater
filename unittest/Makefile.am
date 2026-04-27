@@ -38,7 +38,7 @@ COMMON_CXXFLAGS = -frtti -fprofile-arcs -ftest-coverage -fpermissive
 # Define the source files
 rdkfw_device_status_gtest_SOURCES = device_status_helper_gtest.cpp ./mocks/device_status_helper_mock.cpp ../src/device_status_helper.c ../src/download_status_helper.c
 
-rdkfw_deviceutils_gtest_SOURCES = deviceutils/device_api_gtest.cpp deviceutils/deviceutils_gtest.cpp deviceutils/json_parse.c ./mocks/deviceutils_mock.cpp ../src/deviceutils/device_api.c ../src/deviceutils/deviceutils.c
+rdkfw_deviceutils_gtest_SOURCES = deviceutils/device_api_gtest.cpp deviceutils/deviceutils_gtest.cpp deviceutils/json_parse.c ./mocks/deviceutils_mock.cpp ./mocks/iarm_interface_mock.c ../src/deviceutils/device_api.c ../src/deviceutils/deviceutils.c
 
 # rdkfw_main_gtest: Tests core firmware upgrade logic (rdkv_main.c and rdkv_upgrade.c)
 # REFACTORED: Uses mocks instead of real helper implementations to avoid multiple definition errors
@@ -59,6 +59,7 @@ rdkfw_main_gtest_SOURCES = basic_rdkv_main_gtest.cpp \
     ../src/deviceutils/device_api.c \
     ../src/deviceutils/deviceutils.c \
     deviceutils/json_parse.c \
+    ./mocks/iarm_interface_mock.c \
     ./mocks/deviceutils_mock.cpp
 
 rdkfw_interface_gtest_SOURCES = fwdl_interface_gtest.cpp \
@@ -134,6 +135,7 @@ rdkfwupdatemgr_main_flow_gtest_SOURCES = rdkfwupdatemgr_main_flow_gtest.cpp \
     ../src/deviceutils/deviceutils.c \
     deviceutils/json_parse.c \
     miscellaneous_mock.cpp \
+    ./mocks/iarm_interface_mock.c \
     ./mocks/deviceutils_mock.cpp
 
 rdkfwupdatemgr_main_flow_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -I../src/dbus $(GLIB_CFLAGS)
@@ -153,6 +155,7 @@ dbus_handlers_gtest_SOURCES = dbus_handlers.cpp \
     ../src/json_process.c \
     ../src/deviceutils/device_api.c \
     ../src/deviceutils/deviceutils.c \
+    ./mocks/iarm_interface_mock.c \
     deviceutils/json_parse.c
 
 dbus_handlers_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -I../src/dbus -I../src/deviceutils $(GLIB_CFLAGS) -DDBUS_HANDLERS_TEST

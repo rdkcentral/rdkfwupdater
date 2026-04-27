@@ -109,6 +109,7 @@ echo "[Phase 1/3] Running standard tests with normal certificates..."
 # Run all existing tests
 echo "Running existing image download tests..."
 pytest --json-report --json-report-file $RESULT_DIR/rdkfwupdater_image_tests.json \
+    test/functional-tests/tests/test_mfr_pdri_lookup.py \
        test/functional-tests/tests/test_imagedwnl.py \
        test/functional-tests/tests/test_imagedwnl_error.py \
        test/functional-tests/tests/test_certbundle_dwnl.py \

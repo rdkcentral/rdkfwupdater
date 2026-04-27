@@ -1,0 +1,90 @@
+diff --git a/src/deviceutils/device_api.c b/src/deviceutils/device_api.c
+index cc092a4..b4002f6 100644
+--- a/src/deviceutils/device_api.c
++++ b/src/deviceutils/device_api.c
+@@ -212,7 +212,9 @@ size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
+ {
+     char *pTmp;
+     size_t len = 0;
+-
++    len = GetPDRIFileNameUsingIARM(pAdditionalFwVerInfo, szBufSize);
++    return len;
++#if 0
+     if( pPDRIFilename != NULL )
+     {
+         len = RunCommand( eMfrUtil, "--PDRIVersion", pPDRIFilename, szBufSize );
+@@ -233,6 +235,7 @@ size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
+         SWLOG_ERROR( "GetPDRIFileName: Error, input argument NULL\n" );
+     }
+     return len;
++#endif 
+ }
+ 
+ 
+diff --git a/src/iarmInterface/iarmInterface.c b/src/iarmInterface/iarmInterface.c
+index 5125535..cc8d7db 100644
+--- a/src/iarmInterface/iarmInterface.c
++++ b/src/iarmInterface/iarmInterface.c
+@@ -318,6 +318,43 @@ bool isConnectedToInternet (void)
+     return isconnected;
+ }
+ 
++
++size_t GetPDRIFileNameUsingIARM(char *pPDRIFilename, size_t szBufSize)
++{
++    size_t len = 0;
++    IARM_Result_t ret;
++    IARM_Bus_MFRLib_GetSerializedData_Param_t param;
++
++    if (pPDRIFilename == NULL) {
++        SWLOG_ERROR("GetPDRIFileName: Error, input argument NULL\n");
++        return 0;
++    }
++
++    SWLOG_INFO("GetPDRIFileName: Fetching PDRI image name via IARM_Bus_Call (MFRMgr)");
++
++    memset(&param, 0, sizeof(param));
++    param.type = mfrSERIALIZED_TYPE_PDRIVERSION;
++
++    ret = IARM_Bus_Call(
++        IARM_BUS_MFRLIB_NAME,
++        IARM_BUS_MFRLIB_API_GetSerializedData,
++        (void *)&param,
++        sizeof(param)
++    );
++
++    if (ret == IARM_RESULT_SUCCESS && param.bufLen > 0 && param.bufLen < szBufSize) {
++        memcpy(pPDRIFilename, param.buffer, param.bufLen);
++        pPDRIFilename[param.bufLen] = '\0';
++        len = param.bufLen;
++        SWLOG_INFO("GetPDRIFileName: IARM_Bus_Call OK, PDRI Version = %s", pPDRIFilename);
++    } else {
++        // Error path: be explicit
++        SWLOG_ERROR("GetPDRIFileName: IARM_Bus_Call failed (ret=%d, bufLen=%zu). Cannot retrieve PDRI image name.", ret, (size_t)param.bufLen);
++
++    }
++
++    return len;
++}
+ #else
+ 
+ // Do nothing act as pass through function .
+diff --git a/src/include/iarmInterface.h b/src/include/iarmInterface.h
+index e3b8232..21e592d 100644
+--- a/src/include/iarmInterface.h
++++ b/src/include/iarmInterface.h
+@@ -22,6 +22,7 @@
+ #if defined(IARM_ENABLED)
+ #ifndef GTEST_ENABLE
+ #include "sysMgr.h"
++#include "mfrMgr.h"
+ #include "libIARMCore.h"
+ #include "libIBus.h"
+ #include "libIBusDaemon.h"
+@@ -130,5 +131,5 @@ int term_event_handler(void);
+ int init_event_handler(void);
+ void interuptDwnl(int app_mode);
+ bool isConnectedToInternet (void);
+-
++size_t GetPDRIFileNameUsingIARM(char *pPDRIFilename, size_t szBufSize);
+ #endif /* VIDEO_IARMINTERFACE_IARMINTERFACE_H_ */

@@ -19,7 +19,7 @@ git clone https://github.com/rdkcentral/common_utilities.git
 cd common_utilities
 git checkout develop
 autoreconf -i
-./configure  --enable-rdkcertselector --prefix=${INSTALL_DIR} CFLAGS=" -DRDK_LOGGER "
+./configure  --enable-rdkcertselector --prefix=${INSTALL_DIR}
 make && make install
 
 cd ../
