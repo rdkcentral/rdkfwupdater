@@ -119,7 +119,7 @@ librdksw_jsonparse_la_LIBADD = $(AM_LDFLAGS)
 librdksw_flash_la_LDFLAGS = -shared
 librdksw_flash_la_LIBADD = $(AM_LDFLAGS)
 librdksw_fwutils_la_LDFLAGS = -shared
-librdksw_fwutils_la_LIBADD = $(AM_LDFLAGS)
+librdksw_fwutils_la_LIBADD = librdksw_iarmIntf.la $(AM_LDFLAGS)
 
 # Client Library Configuration - librdkFwupdateMgr.la
 #librdkFwupdateMgr_la_SOURCES = \
