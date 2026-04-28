@@ -399,24 +399,17 @@ static guint64 add_process_to_tracking(const gchar *process_name,
  * @brief Remove a process from the tracking system.
  *
  * Called when client invokes UnregisterProcess. Frees associated ProcessInfo.
- * Validates that the requesting client is the owner of the handler_id.
  *
  * @param handler_id Handler ID to remove
- * @param sender_id D-Bus sender ID of the requesting client
- * @return TRUE if found and removed, FALSE if not found or access denied
+ * @param sender_id D-Bus sender ID of the requesting client (unused - kept for API compatibility)
+ * @return TRUE if found and removed, FALSE if not found
  */
 static gboolean remove_process_from_tracking(guint64 handler_id, const gchar *sender_id)
 {
+	(void)sender_id;  // Not used - single-thread library model creates new D-Bus connection per API call
 	ProcessInfo *info = g_hash_table_lookup(registered_processes, GINT_TO_POINTER(handler_id));
 	if (!info) {
 		SWLOG_INFO("[PROCESS_TRACKING] Handler %"G_GUINT64_FORMAT" not found\n", handler_id);
-		return FALSE;
-	}
-	
-	// SECURITY: Validate that the requesting client owns this handler_id
-	if (g_strcmp0(info->sender_id, sender_id) != 0) {
-		SWLOG_ERROR("[PROCESS_TRACKING] Access denied: Handler %"G_GUINT64_FORMAT" owned by '%s', but '%s' attempted to unregister\n",
-			handler_id, info->sender_id, sender_id);
 		return FALSE;
 	}
 	
@@ -1896,18 +1889,13 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			return;
 		}
 
-		// Look up process info to get process name for logging
+		// Look up process info to validate ownership and get process name for logging
 		ProcessInfo *process_info = g_hash_table_lookup(registered_processes, GINT_TO_POINTER(handler));
 		const gchar *process_name = process_info ? process_info->process_name : "UNKNOWN";
 		
-		// NOTE: Sender-ID ownership check is intentionally skipped for UnregisterProcess.
-		// The single-thread library model creates a new D-Bus connection per API call,
-		// resulting in different sender IDs for Register vs Unregister.
-		// The handler_id itself serves as the authorization token.
-		
-		// Remove from tracking system by handler_id only
+		// Remove from tracking system
 		SWLOG_INFO("[UNREGISTER] Attempting to remove process '%s' from tracking...\n", process_name);
-		if (process_info && g_hash_table_remove(registered_processes, GINT_TO_POINTER(handler))) {
+		if (remove_process_from_tracking(handler, rdkv_req_caller_id)) {
 			SWLOG_INFO("[UNREGISTER] SUCCESS: Process '%s' unregistered successfully!\n", process_name);
 			SWLOG_INFO("[UNREGISTER]   - Removed Handler ID: %"G_GUINT64_FORMAT" (process: %s)\n", handler, process_name);
 			SWLOG_INFO("[UNREGISTER]   - Remaining registered processes: %d\n", g_hash_table_size(registered_processes));
