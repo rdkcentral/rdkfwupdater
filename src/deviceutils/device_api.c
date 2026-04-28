@@ -212,7 +212,7 @@ size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
 {
     char *pTmp;
     size_t len = 0;
-    len = GetPDRIFileNameUsingMFR(pAdditionalFwVerInfo, szBufSize);
+    len = GetPDRIFileNameUsingMFR(pPDRIFilename, szBufSize);
     return len;
 #if 0
     if( pPDRIFilename != NULL )
