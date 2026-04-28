@@ -1896,23 +1896,18 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 			return;
 		}
 
-		// Look up process info to validate ownership and get process name for logging
+		// Look up process info to get process name for logging
 		ProcessInfo *process_info = g_hash_table_lookup(registered_processes, GINT_TO_POINTER(handler));
 		const gchar *process_name = process_info ? process_info->process_name : "UNKNOWN";
 		
-		// Validate ownership before attempting removal
-		if (process_info && g_strcmp0(process_info->sender_id, rdkv_req_caller_id) != 0) {
-			SWLOG_ERROR("[UNREGISTER] Access denied: Handler %"G_GUINT64_FORMAT" (process: %s) owned by '%s', but '%s' attempted to unregister\n",
-				handler, process_name, process_info->sender_id, rdkv_req_caller_id);
-			g_dbus_method_invocation_return_error(resp_ctx, 
-				G_DBUS_ERROR, G_DBUS_ERROR_ACCESS_DENIED, 
-				"Unregistration denied: Handler owned by different client");
-			return;
-		}
+		// NOTE: Sender-ID ownership check is intentionally skipped for UnregisterProcess.
+		// The single-thread library model creates a new D-Bus connection per API call,
+		// resulting in different sender IDs for Register vs Unregister.
+		// The handler_id itself serves as the authorization token.
 		
-		// Remove from tracking system (this will double-check ownership)
+		// Remove from tracking system by handler_id only
 		SWLOG_INFO("[UNREGISTER] Attempting to remove process '%s' from tracking...\n", process_name);
-		if (remove_process_from_tracking(handler, rdkv_req_caller_id)) {
+		if (process_info && g_hash_table_remove(registered_processes, GINT_TO_POINTER(handler))) {
 			SWLOG_INFO("[UNREGISTER] SUCCESS: Process '%s' unregistered successfully!\n", process_name);
 			SWLOG_INFO("[UNREGISTER]   - Removed Handler ID: %"G_GUINT64_FORMAT" (process: %s)\n", handler, process_name);
 			SWLOG_INFO("[UNREGISTER]   - Remaining registered processes: %d\n", g_hash_table_size(registered_processes));
