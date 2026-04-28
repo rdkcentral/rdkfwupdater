@@ -20,11 +20,11 @@
  * @file rdkFwupdateMgr_log.h
  * @brief Logging macros for librdkFwupdateMgr client library
  *
- * FWUPMGR_* macros are thin wrappers around the common SWLOG_* macros
- * from rdkv_cdl_log_wrapper.h.  Each macro prepends the "[FWUPMGR] "
- * component tag so that library log lines are easily distinguishable
- * from daemon (SWLOG_*) and application (EXAMPLE_*) log lines when
- * they share the same stdout/stderr stream.
+ * FWUPMGR_* macros log directly with the "LOG.RDK.FWUPMGR" module
+ * (when RDK_LOGGER is enabled) so that library log lines appear as
+ * "[FWUPMGR]" in the output clearly distinguishable from daemon
+ * logs ("[FWUPG]") and common-utility logs ("[COMMONUTILITIES]")
+ * without any redundant double-tagging.
  *
  * The hosting application (example_plugin, unit-test harness, etc.)
  * is responsible for calling log_init() before using this library
@@ -47,30 +47,37 @@ extern "C" {
 #endif
 
 /* ========================================================================
- * LOGGING MACROS — FWUPMGR_*
- *
- * Thin wrappers around SWLOG_* with a "[FWUPMGR] " component prefix.
- * FWUPMGR_TRACE maps to SWLOG_DEBUG (no TRACE level in SWLOG).
- * FWUPMGR_FATAL maps to SWLOG_ERROR (no FATAL level in SWLOG).
+ * Library code uses FWUPMGR_* macros  - logs as [FWUPMGR]
+ * Example app defines EXAMPLE_* macros - logs as [EXAMPLE]
  * ======================================================================== */
 
-#define FWUPMGR_TRACE(format, ...) \
-    SWLOG_DEBUG("[FWUPMGR] " format, ##__VA_ARGS__)
+#if defined(RDK_LOGGER)
+#include "rdk_debug.h"
 
-#define FWUPMGR_DEBUG(format, ...) \
-    SWLOG_DEBUG("[FWUPMGR] " format, ##__VA_ARGS__)
+/* Generic base macro callers provide their own module name */
+#define FWUPMGR_LOG(level, module, format, ...) \
+    RDK_LOG(level, module, format, ##__VA_ARGS__)
 
-#define FWUPMGR_INFO(format, ...) \
-    SWLOG_INFO("[FWUPMGR] " format, ##__VA_ARGS__)
+/* Default library macros  use LOG.RDK.FWUPMGR */
+#define FWUPMGR_TRACE(format, ...) FWUPMGR_LOG(RDK_LOG_TRACE1, "LOG.RDK.FWUPMGR", format, ##__VA_ARGS__)
+#define FWUPMGR_DEBUG(format, ...) FWUPMGR_LOG(RDK_LOG_DEBUG,  "LOG.RDK.FWUPMGR", format, ##__VA_ARGS__)
+#define FWUPMGR_INFO(format, ...)  FWUPMGR_LOG(RDK_LOG_INFO,   "LOG.RDK.FWUPMGR", format, ##__VA_ARGS__)
+#define FWUPMGR_WARN(format, ...)  FWUPMGR_LOG(RDK_LOG_WARN,   "LOG.RDK.FWUPMGR", format, ##__VA_ARGS__)
+#define FWUPMGR_ERROR(format, ...) FWUPMGR_LOG(RDK_LOG_ERROR,  "LOG.RDK.FWUPMGR", format, ##__VA_ARGS__)
+#define FWUPMGR_FATAL(format, ...) FWUPMGR_LOG(RDK_LOG_FATAL,  "LOG.RDK.FWUPMGR", format, ##__VA_ARGS__)
 
-#define FWUPMGR_WARN(format, ...) \
-    SWLOG_WARN("[FWUPMGR] " format, ##__VA_ARGS__)
+#else
 
-#define FWUPMGR_ERROR(format, ...) \
-    SWLOG_ERROR("[FWUPMGR] " format, ##__VA_ARGS__)
 
-#define FWUPMGR_FATAL(format, ...) \
-    SWLOG_ERROR("[FWUPMGR][FATAL] " format, ##__VA_ARGS__)
+/* Default library macros */
+#define FWUPMGR_TRACE(FORMAT...) FWUPMGR_LOG(FWUPMGR_LOG_INFO, "FWUPMGR", FORMAT)
+#define FWUPMGR_DEBUG(FORMAT...) FWUPMGR_LOG(FWUPMGR_LOG_INFO, "FWUPMGR", FORMAT)
+#define FWUPMGR_INFO(FORMAT...)  FWUPMGR_LOG(FWUPMGR_LOG_INFO, "FWUPMGR", FORMAT)
+#define FWUPMGR_WARN(FORMAT...)  FWUPMGR_LOG(FWUPMGR_LOG_INFO, "FWUPMGR", FORMAT)
+#define FWUPMGR_ERROR(FORMAT...) FWUPMGR_LOG(FWUPMGR_LOG_INFO, "FWUPMGR", FORMAT)
+#define FWUPMGR_FATAL(FORMAT...) FWUPMGR_LOG(FWUPMGR_LOG_INFO, "FWUPMGR", FORMAT)
+
+#endif
 
 #ifdef __cplusplus
 }
