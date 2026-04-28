@@ -20,102 +20,64 @@
  * @file rdkFwupdateMgr_log.h
  * @brief Logging macros for librdkFwupdateMgr client library
  *
- * This header provides logging macros that write to /opt/logs/rdkFwupdateMgr.log
- * using the RDK logger infrastructure, similar to SWLOG_* macros used in the daemon.
+ * FWUPMGR_* macros log directly with the "LOG.RDK.FWUPMGR" module
+ * (when RDK_LOGGER is enabled) so that library log lines appear as
+ * "[FWUPMGR]" in the output clearly distinguishable from daemon
+ * logs ("[FWUPG]") and common-utility logs ("[COMMONUTILITIES]")
+ * without any redundant double-tagging.
+ *
+ * The hosting application (example_plugin, unit-test harness, etc.)
+ * is responsible for calling log_init() before using this library
+ * and log_exit() on shutdown.  The library does NOT own the log
+ * lifecycle.
+ *
+ * Usage:
+ *   FWUPMGR_INFO("Registered with handler: %s\n", handler_id);
+ *   FWUPMGR_ERROR("Registration failed: %s\n", error_msg);
+ *   FWUPMGR_DEBUG("D-Bus proxy created: %p\n", proxy);
  */
 
 #ifndef RDKFWUPDATEMGR_LOG_H
 #define RDKFWUPDATEMGR_LOG_H
 
-#include <stdio.h>
-#include <stdarg.h>
+#include "rdkv_cdl_log_wrapper.h"  /* SWLOG_*, log_init(), log_exit() */
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /* ========================================================================
- * LOGGING CONFIGURATION
+ * Library code uses FWUPMGR_* macros  - logs as [FWUPMGR]
+ * Example app defines EXAMPLE_* macros - logs as [EXAMPLE]
  * ======================================================================== */
 
-/** Log file path - same as daemon for consistent logging */
-#define FWUPMGR_LOG_FILE "/opt/logs/rdkFwupdateMgr.log"
+#if defined(RDK_LOGGER)
+#include "rdk_debug.h"
 
-/** Log module name for identification */
-#define FWUPMGR_LOG_MODULE "librdkFwupdateMgr"
+/* Generic base macro callers provide their own module name */
+#define FWUPMGR_LOG(level, module, format, ...) \
+    RDK_LOG(level, module, format, ##__VA_ARGS__)
 
-/* ========================================================================
- * LOGGING API
- * ======================================================================== */
+/* Default library macros  use LOG.RDK.FWUPMGR */
+#define FWUPMGR_TRACE(format, ...) FWUPMGR_LOG(RDK_LOG_TRACE1, "LOG.RDK.FWUPMGR", format, ##__VA_ARGS__)
+#define FWUPMGR_DEBUG(format, ...) FWUPMGR_LOG(RDK_LOG_DEBUG,  "LOG.RDK.FWUPMGR", format, ##__VA_ARGS__)
+#define FWUPMGR_INFO(format, ...)  FWUPMGR_LOG(RDK_LOG_INFO,   "LOG.RDK.FWUPMGR", format, ##__VA_ARGS__)
+#define FWUPMGR_WARN(format, ...)  FWUPMGR_LOG(RDK_LOG_WARN,   "LOG.RDK.FWUPMGR", format, ##__VA_ARGS__)
+#define FWUPMGR_ERROR(format, ...) FWUPMGR_LOG(RDK_LOG_ERROR,  "LOG.RDK.FWUPMGR", format, ##__VA_ARGS__)
+#define FWUPMGR_FATAL(format, ...) FWUPMGR_LOG(RDK_LOG_FATAL,  "LOG.RDK.FWUPMGR", format, ##__VA_ARGS__)
 
-/**
- * @brief Initialize logging for the library
- *
- * Opens the log file for appending. Should be called once at library init.
- * Safe to call multiple times (no-op after first call).
- */
-void fwupmgr_log_init(void);
+#else
 
-/**
- * @brief Close logging resources
- *
- * Closes the log file. Should be called at library cleanup.
- * Safe to call multiple times (no-op if already closed).
- */
-void fwupmgr_log_close(void);
 
-/**
- * @brief Internal logging function
- *
- * @param level Log level string ("INFO", "ERROR", "DEBUG", "WARN")
- * @param format Printf-style format string
- * @param ... Variable arguments for format string
- */
-void fwupmgr_log_internal(const char *level, const char *format, ...);
+/* Default library macros */
+#define FWUPMGR_TRACE(FORMAT...) FWUPMGR_LOG(FWUPMGR_LOG_INFO, "FWUPMGR", FORMAT)
+#define FWUPMGR_DEBUG(FORMAT...) FWUPMGR_LOG(FWUPMGR_LOG_INFO, "FWUPMGR", FORMAT)
+#define FWUPMGR_INFO(FORMAT...)  FWUPMGR_LOG(FWUPMGR_LOG_INFO, "FWUPMGR", FORMAT)
+#define FWUPMGR_WARN(FORMAT...)  FWUPMGR_LOG(FWUPMGR_LOG_INFO, "FWUPMGR", FORMAT)
+#define FWUPMGR_ERROR(FORMAT...) FWUPMGR_LOG(FWUPMGR_LOG_INFO, "FWUPMGR", FORMAT)
+#define FWUPMGR_FATAL(FORMAT...) FWUPMGR_LOG(FWUPMGR_LOG_INFO, "FWUPMGR", FORMAT)
 
-/* ========================================================================
- * LOGGING MACROS - Same pattern as SWLOG_* in daemon
- * ======================================================================== */
-
-/**
- * @brief Log informational message
- *
- * Usage: FWUPMGR_INFO("Registered with handler: %s\n", handler_id);
- */
-#define FWUPMGR_INFO(format, ...) \
-    fwupmgr_log_internal("INFO", "[%s:%d] " format, __FUNCTION__, __LINE__, ##__VA_ARGS__)
-
-/**
- * @brief Log error message
- *
- * Usage: FWUPMGR_ERROR("Registration failed: %s\n", error_msg);
- */
-#define FWUPMGR_ERROR(format, ...) \
-    fwupmgr_log_internal("ERROR", "[%s:%d] " format, __FUNCTION__, __LINE__, ##__VA_ARGS__)
-
-/**
- * @brief Log debug message
- *
- * Usage: FWUPMGR_DEBUG("D-Bus proxy created: %p\n", proxy);
- */
-#define FWUPMGR_DEBUG(format, ...) \
-    fwupmgr_log_internal("DEBUG", "[%s:%d] " format, __FUNCTION__, __LINE__, ##__VA_ARGS__)
-
-/**
- * @brief Log warning message
- *
- * Usage: FWUPMGR_WARN("Daemon not responding, retry recommended\n");
- */
-#define FWUPMGR_WARN(format, ...) \
-    fwupmgr_log_internal("WARN", "[%s:%d] " format, __FUNCTION__, __LINE__, ##__VA_ARGS__)
-
-/**
- * @brief Log fatal error message
- *
- * Usage: FWUPMGR_FATAL("Out of memory, cannot continue\n");
- */
-#define FWUPMGR_FATAL(format, ...) \
-    fwupmgr_log_internal("FATAL", "[%s:%d] " format, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+#endif
 
 #ifdef __cplusplus
 }

@@ -12,13 +12,34 @@
 
 /**
  * @file rdkFwupdateMgr_async.c
- * @brief Internal engine: registry, background thread, signal dispatch
+ * @brief Internal engine: CheckForUpdate, DownloadFirmware, UpdateFirmware
+ *        — all use on-demand worker threads (Phase 1+2+3)
  *
- * Owns:
- *   - Global callback registry (one slot per pending checkForUpdate call)
- *   - Background GLib event loop thread
- *   - D-Bus signal subscription and handler
- *   - Dispatch: signal arrives → find all PENDING → fire each callback
+ * ARCHITECTURE (Phase 3 — all APIs on-demand):
+ *
+ * CheckForUpdate — ON-DEMAND WORKER THREAD (Phase 1):
+ *   - internal_check_worker_thread(): spawned per checkForUpdate() call
+ *   - on_check_signal_handler(): fires client callback directly
+ *   - on_check_timeout(): 120s safety net
+ *   - internal_is_check_in_progress(): query for session-state enforcement
+ *   - internal_cancel_all_active_check_threads(): destructor cleanup
+ *
+ * DownloadFirmware — ON-DEMAND WORKER THREAD (Phase 2):
+ *   - internal_download_worker_thread(): spawned per downloadFirmware() call
+ *   - on_download_signal_handler(): fires client callback, quits on terminal
+ *   - on_download_timeout(): 3600s safety net, fires DWNL_ERROR callback
+ *   - internal_is_dwnl_in_progress(): query for session-state enforcement
+ *   - internal_cancel_all_active_download_threads(): destructor cleanup
+ *
+ * UpdateFirmware — ON-DEMAND WORKER THREAD (Phase 3):
+ *   - internal_update_worker_thread(): spawned per updateFirmware() call
+ *   - on_update_signal_handler(): fires client callback, quits on terminal
+ *   - on_update_timeout(): 3600s safety net, fires UPDATE_ERROR callback
+ *   - internal_is_update_in_progress(): query for session-state enforcement
+ *   - internal_cancel_all_active_update_threads(): destructor cleanup
+ *
+ * NO persistent background thread. NO registries.
+ * Zero resource cost when idle.
  *
  * Apps never interact with this file directly.
  * All entry points are through rdkFwupdateMgr_api.c.
@@ -37,309 +58,745 @@
  * GLOBAL STATE
  * ======================================================================== */
 
-static CallbackRegistry g_registry;
-static BackgroundThread g_bg_thread;
-static DwnlCallbackRegistry g_dwnl_registry;
-static UpdateCbRegistry g_update_registry;
+/* ---- CheckForUpdate on-demand thread state ---- */
+/*
+ * TL;DR: These are STATIC — only accessible through accessor functions below.
+ * This prevents other files from touching the mutex/flag/pointer directly,
+ * which would be fragile and race-prone. All access goes through:
+ *   internal_is_check_in_progress()        — query
+ *   internal_begin_check()                 — set in-progress, track ctx
+ *   internal_end_check()                   — clear in-progress, untrack ctx
+ *   internal_cancel_all_active_check_threads() — destructor cleanup
+ */
+static pthread_mutex_t g_check_in_progress_mutex = PTHREAD_MUTEX_INITIALIZER;
+static bool            g_check_in_progress = false;
+static CheckRequestContext *g_active_check_ctx = NULL;
+
+/* ---- DownloadFirmware on-demand thread state (Phase 2) ---- */
+/*
+ * Same encapsulation pattern as CheckForUpdate. All access goes through:
+ *   internal_is_dwnl_in_progress()         — query
+ *   internal_begin_download()              — set in-progress, track ctx
+ *   internal_end_download()                — clear in-progress, untrack ctx
+ *   internal_abort_download()              — clear on error paths in downloadFirmware()
+ *   internal_cancel_all_active_download_threads() — destructor cleanup
+ */
+static pthread_mutex_t g_dwnl_in_progress_mutex = PTHREAD_MUTEX_INITIALIZER;
+static bool            g_dwnl_in_progress = false;
+static DownloadRequestContext *g_active_dwnl_ctx = NULL;
+
+/* ---- UpdateFirmware on-demand thread state (Phase 3) ---- */
+/*
+ * Same encapsulation pattern as Check and Download. All access goes through:
+ *   internal_is_update_in_progress()       — query
+ *   internal_begin_update()                — set in-progress, track ctx
+ *   internal_end_update()                  — clear in-progress, untrack ctx
+ *   internal_abort_update()                — clear on error paths in updateFirmware()
+ *   internal_cancel_all_active_update_threads() — destructor cleanup
+ */
+static pthread_mutex_t g_update_in_progress_mutex = PTHREAD_MUTEX_INITIALIZER;
+static bool            g_update_in_progress = false;
+static UpdateRequestContext *g_active_update_ctx = NULL;
 
 /* ========================================================================
  * FORWARD DECLARATIONS
  * ======================================================================== */
 
-static void *background_thread_func(void *arg);
+/* Forward declarations — CheckForUpdate on-demand worker thread */
+static void  on_check_signal_handler(GDBusConnection *conn,
+                                     const gchar *sender,
+                                     const gchar *object_path,
+                                     const gchar *interface_name,
+                                     const gchar *signal_name,
+                                     GVariant *parameters,
+                                     gpointer user_data);
+static gboolean on_check_timeout(gpointer user_data);
 
-static void  on_check_complete_signal(GDBusConnection *conn,
+/* Forward declarations — DownloadFirmware on-demand worker thread (Phase 2) */
+static void  on_download_signal_handler(GDBusConnection *conn,
+                                        const gchar *sender,
+                                        const gchar *object_path,
+                                        const gchar *interface_name,
+                                        const gchar *signal_name,
+                                        GVariant *parameters,
+                                        gpointer user_data);
+static gboolean on_download_timeout(gpointer user_data);
+static DownloadStatus map_dwnl_status_string(const char *status_str);
+
+/* Forward declarations — UpdateFirmware on-demand worker thread (Phase 3) */
+static void  on_update_signal_handler(GDBusConnection *conn,
                                       const gchar *sender,
                                       const gchar *object_path,
                                       const gchar *interface_name,
                                       const gchar *signal_name,
                                       GVariant *parameters,
                                       gpointer user_data);
+static gboolean on_update_timeout(gpointer user_data);
 
-static void  on_download_progress_signal(GDBusConnection *conn,
-                                         const gchar *sender,
-                                         const gchar *object_path,
-                                         const gchar *interface_name,
-                                         const gchar *signal_name,
-                                         GVariant *parameters,
-                                         gpointer user_data);
+static bool  parse_update_details(const char *update_details_str,
+                                   UpdateDetails *out_details);
 
-static void  on_update_progress_signal(GDBusConnection *conn,
+/* ========================================================================
+ * CHECKFORUPDATE — ON-DEMAND WORKER THREAD ENGINE (Phase 1)
+ * ========================================================================
+ *
+ * Replaces the old registry-based signal dispatch for CheckForUpdate.
+ * Each checkForUpdate() call spawns a short-lived worker thread that:
+ *   1. Creates isolated GLib event loop
+ *   2. Subscribes to CheckForUpdateComplete signal
+ *   3. Sends CheckForUpdate D-Bus method call
+ *   4. Waits for signal (with 120s timeout)
+ *   5. Fires client callback directly
+ *   6. Cleans up and exits
+ *
+ * At most ONE worker thread per process (enforced by g_check_in_progress).
+ * ======================================================================== */
+
+/**
+ * @brief Query whether a checkForUpdate() is currently in progress.
+ *
+ * Thread-safe: protected by g_check_in_progress_mutex.
+ */
+bool internal_is_check_in_progress(void)
+{
+    pthread_mutex_lock(&g_check_in_progress_mutex);
+    bool result = g_check_in_progress;
+    pthread_mutex_unlock(&g_check_in_progress_mutex);
+    return result;
+}
+
+/**
+ * @brief Atomically try to begin a checkForUpdate session and track the context.
+ *
+ * TL;DR: This is the single entry point for transitioning from "idle" to
+ * "check in progress." It combines the duplicate-rejection check, the flag
+ * set, and the context tracking into ONE mutex-protected operation. The caller
+ * (checkForUpdate in _api.c) never touches the mutex or globals directly.
+ *
+ * @param ctx  The newly allocated CheckRequestContext to track.
+ * @return true if the check was started (no other check was active),
+ *         false if a check was already in progress (caller should return FAIL).
+ */
+bool internal_begin_check(CheckRequestContext *ctx)
+{
+    pthread_mutex_lock(&g_check_in_progress_mutex);
+    if (g_check_in_progress) {
+        pthread_mutex_unlock(&g_check_in_progress_mutex);
+        return false;  /* already in progress — reject */
+    }
+    g_check_in_progress = true;
+    g_active_check_ctx = ctx;
+    pthread_mutex_unlock(&g_check_in_progress_mutex);
+    return true;
+}
+
+/**
+ * @brief Atomically end the checkForUpdate session and untrack the context.
+ *
+ * TL;DR: Called by the worker thread in cleanup_common, right before freeing
+ * ctx. After this returns, g_active_check_ctx is NULL and g_check_in_progress
+ * is false — the next checkForUpdate() call will be accepted.
+ *
+ * IMPORTANT: Must be called BEFORE free(ctx). The mutex ensures the destructor
+ * cannot read g_active_check_ctx while we're freeing it.
+ */
+void internal_end_check(void)
+{
+    pthread_mutex_lock(&g_check_in_progress_mutex);
+    g_check_in_progress = false;
+    g_active_check_ctx = NULL;
+    pthread_mutex_unlock(&g_check_in_progress_mutex);
+}
+
+/**
+ * @brief Atomically clear in-progress flag WITHOUT untracking context.
+ *
+ * TL;DR: Used only on error paths in checkForUpdate() (in _api.c) when
+ * the context was never successfully tracked (e.g., calloc/strdup/mutex_init
+ * failed before internal_begin_check was called) or when pthread_create fails
+ * after begin_check. The caller will free ctx itself.
+ */
+void internal_abort_check(void)
+{
+    pthread_mutex_lock(&g_check_in_progress_mutex);
+    g_check_in_progress = false;
+    g_active_check_ctx = NULL;
+    pthread_mutex_unlock(&g_check_in_progress_mutex);
+}
+
+/**
+ * @brief Cancel all active checkForUpdate worker threads and join them.
+ *
+ * Called from library destructor. Quits the worker's event loop so it
+ * exits cleanly, then joins the thread to ensure no code is executing
+ * in library memory when dlclose() unmaps us.
+ *
+ * RACE-SAFETY: We snapshot ctx, thread, and take a GMainLoop ref all
+ * under the mutex, then clear the global pointer (so the worker's
+ * internal_end_check() becomes a benign no-op). After unlock we can
+ * safely quit the loop and join the thread — even if the worker is
+ * concurrently in cleanup, because:
+ *   - The GMainLoop ref we hold prevents premature destruction
+ *   - The pthread_t is a value copy, valid until pthread_join returns
+ *   - The worker still frees ctx (it owns the allocation)
+ */
+void internal_cancel_all_active_check_threads(void)
+{
+    pthread_t saved_thread;
+    GMainLoop *saved_loop = NULL;
+
+    pthread_mutex_lock(&g_check_in_progress_mutex);
+
+    if (g_active_check_ctx == NULL) {
+        pthread_mutex_unlock(&g_check_in_progress_mutex);
+        FWUPMGR_INFO("internal_cancel_all_active_check_threads: no active worker\n");
+        return;
+    }
+
+    /* Snapshot what we need under the lock */
+    saved_thread = g_active_check_ctx->thread;
+    if (g_active_check_ctx->main_loop != NULL) {
+        saved_loop = g_main_loop_ref(g_active_check_ctx->main_loop);
+    }
+
+    /* Take ownership: clear global so worker's internal_end_check() is a no-op */
+    g_check_in_progress = false;
+    g_active_check_ctx = NULL;
+
+    pthread_mutex_unlock(&g_check_in_progress_mutex);
+
+    FWUPMGR_INFO("internal_cancel_all_active_check_threads: "
+                 "stopping active worker thread\n");
+
+    /* Quit the worker's event loop — this causes g_main_loop_run() to return.
+     * Safe: we hold an extra ref, so the loop object is valid even if the
+     * worker concurrently unrefs it. */
+    if (saved_loop != NULL) {
+        g_main_loop_quit(saved_loop);
+        g_main_loop_unref(saved_loop);
+    }
+
+    /* Wait for worker thread to finish cleanup and exit */
+    pthread_join(saved_thread, NULL);
+
+    FWUPMGR_INFO("internal_cancel_all_active_check_threads: "
+                 "worker thread joined\n");
+}
+
+/**
+ * @brief Timeout handler for the worker thread's GMainLoop.
+ *
+ * Fires after CHECK_SIGNAL_TIMEOUT_SECONDS if the daemon never sends
+ * the CheckForUpdateComplete signal. Quits the event loop so the worker
+ * can proceed to cleanup.
+ *
+ * @param user_data  CheckRequestContext* (NOT freed here — worker does it)
+ * @return G_SOURCE_REMOVE (fire once only)
+ */
+static gboolean on_check_timeout(gpointer user_data)
+{
+    CheckRequestContext *ctx = (CheckRequestContext *)user_data;
+
+    FWUPMGR_WARN("on_check_timeout: %ds timeout expired, "
+                 "daemon did not respond. handle='%s'\n",
+                 CHECK_SIGNAL_TIMEOUT_SECONDS,
+                 ctx->handle_key ? ctx->handle_key : "(null)");
+
+    if (ctx->main_loop != NULL) {
+        g_main_loop_quit(ctx->main_loop);
+    }
+
+    return G_SOURCE_REMOVE;
+}
+
+/**
+ * @brief Signal handler for CheckForUpdateComplete — fires client callback.
+ *
+ * Called by GLib in the worker thread's GMainContext when the daemon emits
+ * the CheckForUpdateComplete signal. Parses the payload, builds FwInfoData,
+ * invokes the client callback, then quits the event loop.
+ *
+ * @param user_data  CheckRequestContext* (NOT freed here — worker does it)
+ */
+static void on_check_signal_handler(GDBusConnection *conn,
+                                    const gchar *sender,
+                                    const gchar *object_path,
+                                    const gchar *interface_name,
+                                    const gchar *signal_name,
+                                    GVariant *parameters,
+                                    gpointer user_data)
+{
+    (void)conn; (void)sender; (void)object_path;
+    (void)interface_name; (void)signal_name;
+
+    CheckRequestContext *ctx = (CheckRequestContext *)user_data;
+
+    FWUPMGR_INFO("on_check_signal_handler: received CheckForUpdateComplete "
+                 "for handle='%s'\n",
+                 ctx->handle_key ? ctx->handle_key : "(null)");
+
+    /* Parse signal payload */
+    InternalSignalData signal_data;
+    memset(&signal_data, 0, sizeof(signal_data));
+
+    if (!internal_parse_signal_data(parameters, &signal_data)) {
+        FWUPMGR_ERROR("on_check_signal_handler: parse failed\n");
+        /* Quit loop even on parse failure — don't hang forever */
+        if (ctx->main_loop != NULL) {
+            g_main_loop_quit(ctx->main_loop);
+        }
+        return;
+    }
+
+    /* Build FwInfoData for the callback */
+    CheckForUpdateStatus status = internal_map_status_code(signal_data.status_code);
+
+    FwInfoData fwinfo_data;
+    memset(&fwinfo_data, 0, sizeof(fwinfo_data));
+
+    /* Copy current firmware version */
+    if (signal_data.current_version) {
+        strncpy(fwinfo_data.CurrFWVersion, signal_data.current_version,
+                sizeof(fwinfo_data.CurrFWVersion) - 1);
+        fwinfo_data.CurrFWVersion[sizeof(fwinfo_data.CurrFWVersion) - 1] = '\0';
+    }
+
+    fwinfo_data.status = status;
+
+    /* Parse UpdateDetails if firmware is available */
+    UpdateDetails update_details;
+    if (status == FIRMWARE_AVAILABLE && signal_data.update_details) {
+        memset(&update_details, 0, sizeof(update_details));
+
+        if (parse_update_details(signal_data.update_details, &update_details)) {
+            fwinfo_data.UpdateDetails = &update_details;
+            FWUPMGR_INFO("on_check_signal_handler: UpdateDetails populated\n");
+        } else {
+            fwinfo_data.UpdateDetails = NULL;
+            FWUPMGR_ERROR("on_check_signal_handler: parse_update_details failed\n");
+        }
+    } else {
+        fwinfo_data.UpdateDetails = NULL;
+    }
+
+    /* Fire the client's callback
+     *
+     * TL;DR: This is THE moment — deliver the firmware check result to the app.
+     * The callback runs in the worker thread, NOT the app's main thread.
+     * After this call returns, we quit the event loop and clean up.
+     */
+    FWUPMGR_INFO("on_check_signal_handler: invoking callback for handle='%s'\n",
+                 ctx->handle_key ? ctx->handle_key : "(null)");
+
+    ctx->callback(&fwinfo_data);
+
+    FWUPMGR_INFO("on_check_signal_handler: callback returned\n");
+
+    /* Cleanup parsed signal data — free strdup'd strings */
+    internal_cleanup_signal_data(&signal_data);
+
+    /* Quit the event loop — worker proceeds to cleanup.
+     * TL;DR: Break out of g_main_loop_run() in the worker thread. */
+    if (ctx->main_loop != NULL) {
+        g_main_loop_quit(ctx->main_loop);
+    }
+}
+
+/* ========================================================================
+ * DOWNLOAD FIRMWARE — ON-DEMAND WORKER THREAD ENGINE (Phase 2)
+ * ========================================================================
+ *
+ * Replaces the old registry-based signal dispatch for DownloadFirmware.
+ * Each downloadFirmware() call spawns a worker thread that:
+ *   1. Creates isolated GLib event loop
+ *   2. Subscribes to DownloadProgress signal
+ *   3. Sends DownloadFirmware D-Bus method call SYNCHRONOUSLY
+ *   4. Reads daemon's (sss) reply: accept or reject
+ *   5. If accepted: runs event loop, fires callback on each progress signal
+ *   6. Quits loop on COMPLETED/ERROR/timeout
+ *   7. Cleans up and exits
+ *
+ * At most ONE download worker thread per process (enforced by g_dwnl_in_progress).
+ * ======================================================================== */
+
+/**
+ * @brief Query whether a downloadFirmware() is currently in progress.
+ *
+ * Thread-safe: protected by g_dwnl_in_progress_mutex.
+ */
+bool internal_is_dwnl_in_progress(void)
+{
+    pthread_mutex_lock(&g_dwnl_in_progress_mutex);
+    bool result = g_dwnl_in_progress;
+    pthread_mutex_unlock(&g_dwnl_in_progress_mutex);
+    return result;
+}
+
+/**
+ * @brief Atomically try to begin a downloadFirmware session and track the context.
+ */
+bool internal_begin_download(DownloadRequestContext *ctx)
+{
+    pthread_mutex_lock(&g_dwnl_in_progress_mutex);
+    if (g_dwnl_in_progress) {
+        pthread_mutex_unlock(&g_dwnl_in_progress_mutex);
+        return false;  /* already in progress — reject */
+    }
+    g_dwnl_in_progress = true;
+    g_active_dwnl_ctx = ctx;
+    pthread_mutex_unlock(&g_dwnl_in_progress_mutex);
+    return true;
+}
+
+/**
+ * @brief Atomically end the downloadFirmware session and untrack the context.
+ *
+ * Called by worker thread in cleanup, BEFORE freeing ctx.
+ */
+void internal_end_download(void)
+{
+    pthread_mutex_lock(&g_dwnl_in_progress_mutex);
+    g_dwnl_in_progress = false;
+    g_active_dwnl_ctx = NULL;
+    pthread_mutex_unlock(&g_dwnl_in_progress_mutex);
+}
+
+/**
+ * @brief Atomically clear download in-progress state on error paths.
+ */
+void internal_abort_download(void)
+{
+    pthread_mutex_lock(&g_dwnl_in_progress_mutex);
+    g_dwnl_in_progress = false;
+    g_active_dwnl_ctx = NULL;
+    pthread_mutex_unlock(&g_dwnl_in_progress_mutex);
+}
+
+/**
+ * @brief Cancel all active download worker threads and join them.
+ *
+ * Called from library destructor. Quits the worker's event loop so it
+ * exits cleanly, then joins the thread to ensure no code is executing
+ * in library memory when dlclose() unmaps us.
+ *
+ * RACE-SAFETY: Same pattern as internal_cancel_all_active_check_threads().
+ * We snapshot the thread handle and take a GMainLoop ref under the mutex,
+ * then clear the global pointer so the worker's internal_end_download()
+ * becomes a benign no-op. The worker still owns ctx and frees it.
+ */
+void internal_cancel_all_active_download_threads(void)
+{
+    pthread_t saved_thread;
+    GMainLoop *saved_loop = NULL;
+
+    pthread_mutex_lock(&g_dwnl_in_progress_mutex);
+
+    if (g_active_dwnl_ctx == NULL) {
+        pthread_mutex_unlock(&g_dwnl_in_progress_mutex);
+        FWUPMGR_INFO("internal_cancel_all_active_download_threads: no active worker\n");
+        return;
+    }
+
+    /* Snapshot what we need under the lock */
+    saved_thread = g_active_dwnl_ctx->thread;
+    if (g_active_dwnl_ctx->main_loop != NULL) {
+        saved_loop = g_main_loop_ref(g_active_dwnl_ctx->main_loop);
+    }
+
+    /* Take ownership: clear global so worker's internal_end_download() is a no-op */
+    g_dwnl_in_progress = false;
+    g_active_dwnl_ctx = NULL;
+
+    pthread_mutex_unlock(&g_dwnl_in_progress_mutex);
+
+    FWUPMGR_INFO("internal_cancel_all_active_download_threads: "
+                 "stopping active worker thread\n");
+
+    /* Quit the worker's event loop — safe via extra ref */
+    if (saved_loop != NULL) {
+        g_main_loop_quit(saved_loop);
+        g_main_loop_unref(saved_loop);
+    }
+
+    /* Wait for worker thread to finish cleanup and exit */
+    pthread_join(saved_thread, NULL);
+
+    FWUPMGR_INFO("internal_cancel_all_active_download_threads: "
+                 "worker thread joined\n");
+}
+
+/**
+ * @brief Timeout handler for the download worker thread's GMainLoop.
+ *
+ * Fires after DWNL_SIGNAL_TIMEOUT_SECONDS (3600s) if the download never
+ * completes or errors. Fires DWNL_ERROR callback so the client knows,
+ * then quits the event loop.
+ */
+static gboolean on_download_timeout(gpointer user_data)
+{
+    DownloadRequestContext *ctx = (DownloadRequestContext *)user_data;
+
+    FWUPMGR_ERROR("on_download_timeout: %ds timeout expired, "
+                  "download did not complete. handle='%s'\n",
+                  DWNL_SIGNAL_TIMEOUT_SECONDS,
+                  ctx->handle_key ? ctx->handle_key : "(null)");
+
+    /* Fire error callback so client knows the download failed/stalled */
+    if (ctx->callback != NULL) {
+        ctx->callback(0, DWNL_ERROR);
+    }
+
+    if (ctx->main_loop != NULL) {
+        g_main_loop_quit(ctx->main_loop);
+    }
+
+    return G_SOURCE_REMOVE;
+}
+
+/**
+ * @brief Signal handler for DownloadProgress — fires client callback.
+ *
+ * Called by GLib in the worker thread's GMainContext when the daemon emits
+ * a DownloadProgress signal. Parses the payload, maps status, invokes
+ * the client's callback. Quits the event loop ONLY on terminal status
+ * (COMPLETED or ERROR).
+ *
+ * KEY DIFFERENCE FROM CheckForUpdate:
+ *   CheckForUpdate: one signal → callback → quit loop → thread exits
+ *   DownloadFirmware: many signals → callback each time → quit only on terminal
+ */
+static void on_download_signal_handler(GDBusConnection *conn,
                                        const gchar *sender,
                                        const gchar *object_path,
                                        const gchar *interface_name,
                                        const gchar *signal_name,
                                        GVariant *parameters,
-                                       gpointer user_data);
-
-static void  dispatch_all_pending(const InternalSignalData *signal_data);
-static void  registry_reset_slot(CallbackEntry *entry);
-static bool  parse_update_details(const char *update_details_str,
-                                   UpdateDetails *out_details);
-
-/* Forward declaration for download status mapping function */
-static DownloadStatus map_dwnl_status_string(const char *status_str);
-
-/* Forward declarations for cleanup functions */
-static void internal_dwnl_system_deinit(void);
-static void internal_update_system_deinit(void);
-
-/* ========================================================================
- * LIBRARY LIFECYCLE
- * ======================================================================== */
-
-/**
- * @brief Initialize the internal system
- *
- * STEPS:
- *   1. Zero and mutex-init the registry
- *   2. Create isolated GLib context + event loop
- *   3. Spawn background thread
- *   4. Wait until background thread confirms it is ready
- *      (ensures signal subscription exists before any D-Bus call is fired)
- */
-int internal_system_init(void)
+                                       gpointer user_data)
 {
-    FWUPMGR_INFO("internal_system_init: begin\n");
+    (void)conn; (void)sender; (void)object_path;
+    (void)interface_name; (void)signal_name;
 
-    /* Registry */
-    memset(&g_registry, 0, sizeof(g_registry));
-    if (pthread_mutex_init(&g_registry.mutex, NULL) != 0) {
-        FWUPMGR_ERROR("internal_system_init: registry mutex init failed\n");
-        return -1;
-    }
-    g_registry.initialized = true;
+    DownloadRequestContext *ctx = (DownloadRequestContext *)user_data;
 
-    /* Background thread state */
-    memset(&g_bg_thread, 0, sizeof(g_bg_thread));
-    if (pthread_mutex_init(&g_bg_thread.mutex, NULL) != 0) {
-        FWUPMGR_ERROR("internal_system_init: bg thread mutex init failed\n");
-        pthread_mutex_destroy(&g_registry.mutex);
-        return -1;
+    /* Parse signal payload */
+    InternalDwnlSignalData signal_data;
+    memset(&signal_data, 0, sizeof(signal_data));
+
+    if (!internal_parse_dwnl_signal_data(parameters, &signal_data)) {
+        FWUPMGR_ERROR("on_download_signal_handler: parse failed\n");
+        return;  /* Don't quit loop on parse failure — wait for next signal */
     }
 
-    /*
-     * Isolated GLib context: prevents interference with any GLib event loop
-     * the app may be running on its own main thread.
-     */
-    g_bg_thread.context   = g_main_context_new();
-    g_bg_thread.main_loop = g_main_loop_new(g_bg_thread.context, FALSE);
-    g_bg_thread.running   = false;
+    FWUPMGR_INFO("on_download_signal_handler: handler=%" PRIu64
+                 " firmware='%s' progress=%u%% status='%s' handle='%s'\n",
+                 signal_data.handler_id,
+                 signal_data.firmware_name ? signal_data.firmware_name : "(null)",
+                 signal_data.progress_percent,
+                 signal_data.status_string ? signal_data.status_string : "(null)",
+                 ctx->handle_key ? ctx->handle_key : "(null)");
 
-    if (pthread_create(&g_bg_thread.thread, NULL, background_thread_func, NULL) != 0) {
-        FWUPMGR_ERROR("internal_system_init: pthread_create failed\n");
-        g_main_loop_unref(g_bg_thread.main_loop);
-        g_main_context_unref(g_bg_thread.context);
-        pthread_mutex_destroy(&g_bg_thread.mutex);
-        pthread_mutex_destroy(&g_registry.mutex);
-        return -1;
+    /* Map status string to enum */
+    DownloadStatus status = map_dwnl_status_string(signal_data.status_string);
+
+    /* Fire the client's callback with progress and status */
+    if (ctx->callback != NULL) {
+        ctx->callback((int)signal_data.progress_percent, status);
     }
 
-    /*
-     * Spin-wait for background thread to set running=true.
-     * Max wait: 50 × 100ms = 5 seconds.
-     * Ensures D-Bus signal subscription is live before checkForUpdate()
-     * can send a D-Bus method call — prevents missing the response signal.
-     */
-    for (int i = 0; i < 50; i++) {
-        pthread_mutex_lock(&g_bg_thread.mutex);
-        bool ready = g_bg_thread.running;
-        pthread_mutex_unlock(&g_bg_thread.mutex);
-        if (ready) break;
+    /* Free parsed signal data strings (allocated by g_variant_get) */
+    g_free(signal_data.firmware_name);
+    g_free(signal_data.status_string);
+    g_free(signal_data.message);
 
-        struct timespec ts = { .tv_sec = 0, .tv_nsec = 100 * 1000 * 1000 };
-        nanosleep(&ts, NULL);
-    }
+    /* Quit loop ONLY on terminal status — otherwise wait for next signal */
+    if (status == DWNL_COMPLETED || status == DWNL_ERROR) {
+        FWUPMGR_INFO("on_download_signal_handler: terminal status (%s), "
+                     "quitting loop. handle='%s'\n",
+                     (status == DWNL_COMPLETED) ? "COMPLETED" : "ERROR",
+                     ctx->handle_key ? ctx->handle_key : "(null)");
 
-    /* Initialize download and update registries */
-    memset(&g_dwnl_registry, 0, sizeof(g_dwnl_registry));
-    if (pthread_mutex_init(&g_dwnl_registry.mutex, NULL) != 0) {
-        FWUPMGR_ERROR("internal_system_init: dwnl mutex init failed\n");
-        return -1;
-    }
-    g_dwnl_registry.initialized = true;
-
-    memset(&g_update_registry, 0, sizeof(g_update_registry));
-    if (pthread_mutex_init(&g_update_registry.mutex, NULL) != 0) {
-        FWUPMGR_ERROR("internal_system_init: update mutex init failed\n");
-        pthread_mutex_destroy(&g_dwnl_registry.mutex);
-        return -1;
-    }
-    g_update_registry.initialized = true;
-
-    FWUPMGR_INFO("internal_system_init: ready\n");
-    return 0;
-}
-
-/**
- * @brief Shut down the internal system
- *
- * STEPS:
- *   1. Quit GLib event loop → background thread exits g_main_loop_run()
- *   2. Join background thread (wait for clean exit)
- *   3. Free GLib resources
- *   4. Free any remaining strdup'd handle_key strings in registry
- *   5. Destroy mutexes
- */
-void internal_system_deinit(void)
-{
-    FWUPMGR_INFO("internal_system_deinit: begin\n");
-
-    if (g_bg_thread.main_loop != NULL) {
-        g_main_loop_quit(g_bg_thread.main_loop);
-    }
-
-    pthread_join(g_bg_thread.thread, NULL);
-
-    if (g_bg_thread.main_loop) g_main_loop_unref(g_bg_thread.main_loop);
-    if (g_bg_thread.context)   g_main_context_unref(g_bg_thread.context);
-    pthread_mutex_destroy(&g_bg_thread.mutex);
-
-    /* Cleanup download and update registries */
-    internal_dwnl_system_deinit();
-    internal_update_system_deinit();
-
-    /* Free any leftover handle_key strings from CheckForUpdate registry */
-    pthread_mutex_lock(&g_registry.mutex);
-    for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
-        if (g_registry.entries[i].handle_key != NULL) {
-            free(g_registry.entries[i].handle_key);
-            g_registry.entries[i].handle_key = NULL;
+        if (ctx->main_loop != NULL) {
+            g_main_loop_quit(ctx->main_loop);
         }
     }
-    pthread_mutex_unlock(&g_registry.mutex);
-    pthread_mutex_destroy(&g_registry.mutex);
-
-    FWUPMGR_INFO("internal_system_deinit: done\n");
 }
 
 /* ========================================================================
- * BACKGROUND THREAD
+ * UPDATE FIRMWARE — ON-DEMAND WORKER THREAD ENGINE (Phase 3)
+ * ========================================================================
+ *
+ * Same pattern as DownloadFirmware. Each updateFirmware() call spawns a
+ * worker thread that:
+ *   1. Creates isolated GLib event loop
+ *   2. Subscribes to UpdateProgress signal
+ *   3. Sends UpdateFirmware D-Bus method call SYNCHRONOUSLY
+ *   4. Reads daemon's (sss) reply: accept or reject
+ *   5. If accepted: runs event loop, fires callback on each progress signal
+ *   6. Quits loop on COMPLETED/ERROR/timeout
+ *   7. Cleans up and exits
+ *
+ * At most ONE update worker thread per process (enforced by g_update_in_progress).
  * ======================================================================== */
 
 /**
- * @brief Background thread entry point
+ * @brief Query whether an updateFirmware() is currently in progress.
  *
- * Runs for the lifetime of the library.
- *
- *   1. Push isolated GLib context for this thread
- *   2. Connect to system D-Bus
- *   3. Subscribe to CheckForUpdateComplete signal
- *   4. Signal main thread: ready
- *   5. g_main_loop_run() — blocks until deinit calls g_main_loop_quit()
- *   6. Cleanup: unsubscribe, release connection, pop context
+ * Thread-safe: protected by g_update_in_progress_mutex.
  */
-static void *background_thread_func(void *arg)
+bool internal_is_update_in_progress(void)
 {
-    (void)arg;
-    FWUPMGR_INFO("background_thread: starting\n");
-
-    g_main_context_push_thread_default(g_bg_thread.context);
-
-    GError *error = NULL;
-    g_bg_thread.connection = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
-    if (g_bg_thread.connection == NULL) {
-        FWUPMGR_ERROR("background_thread: D-Bus connect failed: %s\n",
-                      error ? error->message : "unknown");
-        if (error) g_error_free(error);
-        goto thread_exit;
-    }
-
-    /*
-     * Subscribe to the CheckForUpdateComplete signal.
-     *
-     * sender = NULL  → accept from any sender
-     *                  (daemon's well-known name may vary by deployment)
-     * arg0   = NULL  → no filter on first argument
-     *
-     * GLib calls on_check_complete_signal() in THIS thread's context
-     * whenever the signal arrives.
-     */
-    g_bg_thread.subscription_id = g_dbus_connection_signal_subscribe(
-        g_bg_thread.connection,
-        NULL,                        /* sender: any                       */
-        DBUS_INTERFACE_NAME,         /* interface                         */
-        DBUS_SIGNAL_COMPLETE,        /* signal: CheckForUpdateComplete    */
-        DBUS_OBJECT_PATH,            /* object path                       */
-        NULL,                        /* arg0 filter: none                 */
-        G_DBUS_SIGNAL_FLAGS_NONE,
-        on_check_complete_signal,    /* handler                           */
-        NULL,                        /* user_data: not needed (use globals)*/
-        NULL                         /* user_data destroy notify          */
-    );
-
-    FWUPMGR_INFO("background_thread: subscribed to CheckForUpdateComplete (id=%u)\n",
-                 g_bg_thread.subscription_id);
-
-    /*
-     * Subscribe to DownloadProgress and UpdateProgress signals.
-     * Must be done HERE in the background thread, not from main thread,
-     * because the connection belongs to this thread's GMainContext.
-     */
-    guint dwnl_sub_id = g_dbus_connection_signal_subscribe(
-        g_bg_thread.connection,
-        NULL,                           /* sender: any                        */
-        DBUS_INTERFACE_NAME,            /* interface                          */
-        DBUS_SIGNAL_DWNL_PROGRESS,     /* signal: DownloadProgress           */
-        DBUS_OBJECT_PATH,              /* object path                         */
-        NULL,                          /* arg0 filter: none                   */
-        G_DBUS_SIGNAL_FLAGS_NONE,
-        on_download_progress_signal,   /* handler                             */
-        NULL,
-        NULL
-    );
-    FWUPMGR_INFO("background_thread: subscribed to DownloadProgress (id=%u)\n", dwnl_sub_id);
-
-    guint update_sub_id = g_dbus_connection_signal_subscribe(
-        g_bg_thread.connection,
-        NULL,                           /* sender: any                        */
-        DBUS_INTERFACE_NAME,            /* interface                          */
-        DBUS_SIGNAL_UPDATE_PROGRESS,   /* signal: UpdateProgress             */
-        DBUS_OBJECT_PATH,              /* object path                         */
-        NULL,                          /* arg0 filter: none                   */
-        G_DBUS_SIGNAL_FLAGS_NONE,
-        on_update_progress_signal,     /* handler                             */
-        NULL,
-        NULL
-    );
-    FWUPMGR_INFO("background_thread: subscribed to UpdateProgress (id=%u)\n", update_sub_id);
-
-    /* Signal main thread that we are ready */
-    pthread_mutex_lock(&g_bg_thread.mutex);
-    g_bg_thread.running = true;
-    pthread_mutex_unlock(&g_bg_thread.mutex);
-
-    /* Block here until internal_system_deinit() calls g_main_loop_quit() */
-    g_main_loop_run(g_bg_thread.main_loop);
-    FWUPMGR_INFO("background_thread: event loop exited\n");
-
-    if (g_bg_thread.subscription_id != 0) {
-        g_dbus_connection_signal_unsubscribe(g_bg_thread.connection,
-                                             g_bg_thread.subscription_id);
-    }
-    g_object_unref(g_bg_thread.connection);
-    g_bg_thread.connection = NULL;
-
-thread_exit:
-    g_main_context_pop_thread_default(g_bg_thread.context);
-    FWUPMGR_INFO("background_thread: exiting\n");
-    return NULL;
+    pthread_mutex_lock(&g_update_in_progress_mutex);
+    bool result = g_update_in_progress;
+    pthread_mutex_unlock(&g_update_in_progress_mutex);
+    return result;
 }
 
-/* ========================================================================
- * D-BUS SIGNAL HANDLER
- * ======================================================================== */
+/**
+ * @brief Atomically try to begin an updateFirmware session and track the context.
+ *
+ * TL;DR: This is the single entry point for transitioning from "idle" to
+ * "update in progress." It combines the duplicate-rejection check, the flag
+ * set, and the context tracking into ONE mutex-protected operation.
+ *
+ * @param ctx  The newly allocated UpdateRequestContext to track.
+ * @return true if the update was started (no other update was active),
+ *         false if an update was already in progress (caller should return FAIL).
+ */
+bool internal_begin_update(UpdateRequestContext *ctx)
+{
+    pthread_mutex_lock(&g_update_in_progress_mutex);
+    if (g_update_in_progress) {
+        pthread_mutex_unlock(&g_update_in_progress_mutex);
+        return false;  /* already in progress — reject */
+    }
+    g_update_in_progress = true;
+    g_active_update_ctx = ctx;
+    pthread_mutex_unlock(&g_update_in_progress_mutex);
+    return true;
+}
 
 /**
- * @brief Called by GLib when CheckForUpdateComplete signal arrives
+ * @brief Atomically end the updateFirmware session and untrack the context.
  *
- * Runs in the background thread context.
- *
- *   1. Parse GVariant payload → InternalSignalData
- *   2. Dispatch to all PENDING registry entries
- *   3. Free parsed signal data
+ * Called by worker thread in cleanup, BEFORE freeing ctx.
+ * After this returns, g_active_update_ctx is NULL and g_update_in_progress
+ * is false — the next updateFirmware() call will be accepted.
  */
-static void on_check_complete_signal(GDBusConnection *conn,
+void internal_end_update(void)
+{
+    pthread_mutex_lock(&g_update_in_progress_mutex);
+    g_update_in_progress = false;
+    g_active_update_ctx = NULL;
+    pthread_mutex_unlock(&g_update_in_progress_mutex);
+}
+
+/**
+ * @brief Atomically clear update in-progress state on error paths.
+ *
+ * Used when updateFirmware() itself fails (e.g., pthread_create fails
+ * after internal_begin_update succeeded). The caller will free ctx directly.
+ */
+void internal_abort_update(void)
+{
+    pthread_mutex_lock(&g_update_in_progress_mutex);
+    g_update_in_progress = false;
+    g_active_update_ctx = NULL;
+    pthread_mutex_unlock(&g_update_in_progress_mutex);
+}
+
+/**
+ * @brief Cancel all active update worker threads and join them.
+ *
+ * Called from library destructor. Quits the worker's event loop so it
+ * exits cleanly, then joins the thread to ensure no code is executing
+ * in library memory when dlclose() unmaps us.
+ *
+ * RACE-SAFETY: Same pattern as internal_cancel_all_active_check_threads().
+ * We snapshot the thread handle and take a GMainLoop ref under the mutex,
+ * then clear the global pointer so the worker's internal_end_update()
+ * becomes a benign no-op. The worker still owns ctx and frees it.
+ */
+void internal_cancel_all_active_update_threads(void)
+{
+    pthread_t saved_thread;
+    GMainLoop *saved_loop = NULL;
+
+    pthread_mutex_lock(&g_update_in_progress_mutex);
+
+    if (g_active_update_ctx == NULL) {
+        pthread_mutex_unlock(&g_update_in_progress_mutex);
+        FWUPMGR_INFO("internal_cancel_all_active_update_threads: no active worker\n");
+        return;
+    }
+
+    /* Snapshot what we need under the lock */
+    saved_thread = g_active_update_ctx->thread;
+    if (g_active_update_ctx->main_loop != NULL) {
+        saved_loop = g_main_loop_ref(g_active_update_ctx->main_loop);
+    }
+
+    /* Take ownership: clear global so worker's internal_end_update() is a no-op */
+    g_update_in_progress = false;
+    g_active_update_ctx = NULL;
+
+    pthread_mutex_unlock(&g_update_in_progress_mutex);
+
+    FWUPMGR_INFO("internal_cancel_all_active_update_threads: "
+                 "stopping active worker thread\n");
+
+    /* Quit the worker's event loop — safe via extra ref */
+    if (saved_loop != NULL) {
+        g_main_loop_quit(saved_loop);
+        g_main_loop_unref(saved_loop);
+    }
+
+    /* Wait for worker thread to finish cleanup and exit */
+    pthread_join(saved_thread, NULL);
+
+    FWUPMGR_INFO("internal_cancel_all_active_update_threads: "
+                 "worker thread joined\n");
+}
+
+/**
+ * @brief Timeout handler for the update worker thread's GMainLoop.
+ *
+ * Fires after UPDATE_SIGNAL_TIMEOUT_SECONDS (3600s) if the update never
+ * completes or errors. Fires UPDATE_ERROR callback so the client knows,
+ * then quits the event loop.
+ */
+static gboolean on_update_timeout(gpointer user_data)
+{
+    UpdateRequestContext *ctx = (UpdateRequestContext *)user_data;
+
+    FWUPMGR_ERROR("on_update_timeout: %ds timeout expired, "
+                  "update did not complete. handle='%s'\n",
+                  UPDATE_SIGNAL_TIMEOUT_SECONDS,
+                  ctx->handle_key ? ctx->handle_key : "(null)");
+
+    /* Fire error callback so client knows the update failed/stalled */
+    if (ctx->callback != NULL) {
+        ctx->callback(0, UPDATE_ERROR);
+    }
+
+    if (ctx->main_loop != NULL) {
+        g_main_loop_quit(ctx->main_loop);
+    }
+
+    return G_SOURCE_REMOVE;
+}
+
+/**
+ * @brief Signal handler for UpdateProgress — fires client callback.
+ *
+ * Called by GLib in the worker thread's GMainContext when the daemon emits
+ * an UpdateProgress signal. Parses the (tsiis) payload, maps status, invokes
+ * the client's callback. Quits the event loop ONLY on terminal status
+ * (UPDATE_COMPLETED or UPDATE_ERROR).
+ *
+ * Same pattern as on_download_signal_handler:
+ *   Many signals → callback each time → quit only on terminal
+ */
+static void on_update_signal_handler(GDBusConnection *conn,
                                      const gchar *sender,
                                      const gchar *object_path,
                                      const gchar *interface_name,
@@ -348,232 +805,701 @@ static void on_check_complete_signal(GDBusConnection *conn,
                                      gpointer user_data)
 {
     (void)conn; (void)sender; (void)object_path;
-    (void)interface_name; (void)signal_name; (void)user_data;
+    (void)interface_name; (void)signal_name;
 
-    FWUPMGR_INFO("on_check_complete_signal: received\n");
+    UpdateRequestContext *ctx = (UpdateRequestContext *)user_data;
 
-    InternalSignalData signal_data;
+    /* Parse signal payload — correct (tsiis) format */
+    InternalUpdateSignalData signal_data;
     memset(&signal_data, 0, sizeof(signal_data));
 
-    if (!internal_parse_signal_data(parameters, &signal_data)) {
-        FWUPMGR_ERROR("on_check_complete_signal: parse failed\n");
-        return;
+    if (!internal_parse_update_signal_data(parameters, &signal_data)) {
+        FWUPMGR_ERROR("on_update_signal_handler: parse failed\n");
+        return;  /* Don't quit loop on parse failure — wait for next signal */
     }
 
-    dispatch_all_pending(&signal_data);
+    FWUPMGR_INFO("on_update_signal_handler: handler=%" PRIu64
+                 " firmware='%s' progress=%d%% status=%d handle='%s'\n",
+                 signal_data.handler_id,
+                 signal_data.firmware_name ? signal_data.firmware_name : "(null)",
+                 signal_data.progress_percent,
+                 signal_data.status_code,
+                 ctx->handle_key ? ctx->handle_key : "(null)");
 
-    internal_cleanup_signal_data(&signal_data);
-}
+    /* Map status code to enum */
+    UpdateStatus status = internal_map_update_status_code(signal_data.status_code);
 
-/**
- * @brief Dispatch signal result to every PENDING callback
- *
- * TWO-PHASE DESIGN — avoids deadlock:
- *
- *   PHASE 1 (mutex held):
- *     Scan registry → snapshot all PENDING entries into local array.
- *     Mark each found entry as DISPATCHED.
- *     Release mutex.
- *
- *   PHASE 2 (mutex released):
- *     Build FwUpdateEventData from signal_data.
- *     Invoke each snapshot callback: callback(handle, &event_data)
- *     Re-acquire mutex briefly to reset each slot to IDLE.
- *
- * WHY RELEASE BEFORE CALLING CALLBACKS?
- *   If a callback called checkForUpdate() again, it would call
- *   internal_register_callback() which tries to lock the same mutex
- *   → deadlock. Releasing first makes re-entrant use safe.
- *
- * @param signal_data  Parsed signal payload (shared across all callbacks)
- */
-static void dispatch_all_pending(const InternalSignalData *signal_data)
-{
-    /* Local snapshot — avoids holding mutex during callback invocations */
-    typedef struct {
-        UpdateEventCallback  callback;
-        char                 handle_copy[256];
-        int                  slot_index;
-    } Snapshot;
-
-    Snapshot snapshots[MAX_PENDING_CALLBACKS];
-    int      count = 0;
-
-    /* ---- PHASE 1: collect under mutex ---- */
-    pthread_mutex_lock(&g_registry.mutex);
-
-    for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
-        CallbackEntry *e = &g_registry.entries[i];
-        if (e->state != CB_STATE_PENDING) continue;
-
-        snapshots[count].callback   = e->callback;
-        snapshots[count].slot_index = i;
-        snprintf(snapshots[count].handle_copy,
-                 sizeof(snapshots[count].handle_copy),
-                 "%s", e->handle_key ? e->handle_key : "");
-
-        e->state = CB_STATE_DISPATCHED;
-        count++;
-
-        FWUPMGR_INFO("dispatch_all_pending: queued handle='%s'\n",
-                     e->handle_key ? e->handle_key : "(null)");
+    /* Fire the client's callback with progress and status */
+    if (ctx->callback != NULL) {
+        ctx->callback(signal_data.progress_percent, status);
     }
 
-    pthread_mutex_unlock(&g_registry.mutex);
+    /* Free parsed signal data strings (allocated by g_variant_get) */
+    g_free(signal_data.firmware_name);
+    g_free(signal_data.message);
 
-    FWUPMGR_INFO("dispatch_all_pending: %d callback(s) to fire\n", count);
+    /* Quit loop ONLY on terminal status — otherwise wait for next signal */
+    if (status == UPDATE_COMPLETED || status == UPDATE_ERROR) {
+        FWUPMGR_INFO("on_update_signal_handler: terminal status (%s), "
+                     "quitting loop. handle='%s'\n",
+                     (status == UPDATE_COMPLETED) ? "COMPLETED" : "ERROR",
+                     ctx->handle_key ? ctx->handle_key : "(null)");
 
-    /* ---- PHASE 2: invoke callbacks, no mutex held ---- */
-
-    CheckForUpdateStatus status = internal_map_status_code(signal_data->status_code);
-
-    /*
-     * Build FwInfoData with UpdateDetails for the callback.
-     * This matches the public API signature: UpdateEventCallback(const FwInfoData*)
-     *
-     * MEMORY MANAGEMENT:
-     *   - FwInfoData is stack-allocated (valid during callback invocations)
-     *   - CurrFWVersion is copied from signal_data (array, not pointer)
-     *   - UpdateDetails is stack-allocated if needed
-     *   - All data valid until end of this function
-     */
-    FwInfoData fwinfo_data;
-    memset(&fwinfo_data, 0, sizeof(fwinfo_data));
-
-    /* Copy current firmware version */
-    if (signal_data->current_version) {
-        strncpy(fwinfo_data.CurrFWVersion, signal_data->current_version,
-                sizeof(fwinfo_data.CurrFWVersion) - 1);
-        fwinfo_data.CurrFWVersion[sizeof(fwinfo_data.CurrFWVersion) - 1] = '\0';
-    }
-
-    /* Set status */
-    fwinfo_data.status = status;
-
-    /* Parse and populate UpdateDetails if firmware is available */
-    UpdateDetails update_details;
-    if (status == FIRMWARE_AVAILABLE && signal_data->update_details) {
-        memset(&update_details, 0, sizeof(update_details));
-        
-        if (parse_update_details(signal_data->update_details, &update_details)) {
-            /* Point FwInfoData to our stack-allocated UpdateDetails */
-            fwinfo_data.UpdateDetails = &update_details;
-            
-            FWUPMGR_INFO("dispatch_all_pending: UpdateDetails populated\n");
-            FWUPMGR_INFO("  FwFileName: %s\n", update_details.FwFileName);
-            FWUPMGR_INFO("  FwVersion: %s\n", update_details.FwVersion);
-        } else {
-            /* Parse failed - set to NULL to indicate no details available */
-            fwinfo_data.UpdateDetails = NULL;
-            FWUPMGR_ERROR("dispatch_all_pending: parse_update_details failed\n");
+        if (ctx->main_loop != NULL) {
+            g_main_loop_quit(ctx->main_loop);
         }
-    } else {
-        /* Status is not FIRMWARE_AVAILABLE or no update_details string */
-        fwinfo_data.UpdateDetails = NULL;
-    }
-
-    /* Invoke all callbacks with the same FwInfoData */
-    for (int i = 0; i < count; i++) {
-        Snapshot *s = &snapshots[i];
-
-        FWUPMGR_INFO("dispatch_all_pending: invoking callback for handle='%s'\n",
-                     s->handle_copy);
-
-        /*
-         * Invoke callback with proper signature:
-         *   UpdateEventCallback(const FwInfoData *fwinfodata)
-         *
-         * handle_copy is passed but callback signature doesn't use it anymore.
-         * We pass it to maintain compatibility with 2-param callbacks if needed.
-         */
-        s->callback(&fwinfo_data);
-
-        /* Reset slot to IDLE */
-        pthread_mutex_lock(&g_registry.mutex);
-        registry_reset_slot(&g_registry.entries[s->slot_index]);
-        pthread_mutex_unlock(&g_registry.mutex);
     }
 }
 
 /* ========================================================================
- * REGISTRY OPERATIONS
+ * WORKER THREAD IMPLEMENTATIONS
+ * ========================================================================
+ * These are the actual thread entry points spawned by checkForUpdate(),
+ * downloadFirmware(), and updateFirmware() in rdkFwupdateMgr_api.c.
+ *
+ * Each worker:
+ *   1. Creates an isolated GLib event loop (per-thread GMainContext)
+ *   2. Connects to D-Bus (system bus)
+ *   3. Subscribes to the appropriate D-Bus signal
+ *   4. Sends the D-Bus method call (fire-and-forget or synchronous)
+ *   5. Signals the caller "ready" via condvar
+ *   6. Runs g_main_loop_run() to wait for signals (with timeout)
+ *   7. Cleans up ALL resources and exits
+ *
+ * OWNERSHIP: The caller (api.c) transfers ctx ownership to the worker.
+ *            After condvar handshake, the caller never touches ctx again.
+ *            The worker is responsible for freeing ctx and all its members.
+ *
+ * CLEANUP ORDER (critical for no-leak, no-crash):
+ *   1. Unsubscribe from D-Bus signal (subscription_id)
+ *   2. Destroy timeout source (if any)
+ *   3. Quit and unref GMainLoop
+ *   4. Unref GMainContext (pop thread-default first)
+ *   5. Close D-Bus connection (g_object_unref — NOT g_dbus_connection_close)
+ *   6. internal_end_*() — clear in-progress flag BEFORE freeing ctx
+ *   7. Destroy condvar, mutex
+ *   8. Free all strdup'd strings
+ *   9. free(ctx) — last step
  * ======================================================================== */
 
-/**
- * @brief Register a pending callback keyed by handle (no user_data)
- *
- * SAME HANDLE TWICE:
- *   If the same handle is still PENDING from a previous call, its slot
- *   is overwritten. Prevents ghost callbacks accumulating.
- *
- * @param handle    App's FirmwareInterfaceHandle (will be strdup'd)
- * @param callback  App's 2-param UpdateEventCallback
- * @return true on success, false if registry is full
- */
-bool internal_register_callback(FirmwareInterfaceHandle handle,
-                                 UpdateEventCallback callback)
+/* ========================================================================
+ * internal_check_worker_thread — Phase 1: CheckForUpdate
+ * ======================================================================== */
+
+void *internal_check_worker_thread(void *arg)
 {
-    pthread_mutex_lock(&g_registry.mutex);
+    CheckRequestContext *ctx = (CheckRequestContext *)arg;
 
-    CallbackEntry *free_slot     = NULL;
-    CallbackEntry *existing_slot = NULL;
+    FWUPMGR_INFO("internal_check_worker_thread: starting for handle='%s'\n",
+                 ctx->handle_key ? ctx->handle_key : "(null)");
 
-    for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
-        CallbackEntry *e = &g_registry.entries[i];
+    /* ---- Step 1: Create isolated GLib event loop ---- */
+    ctx->context = g_main_context_new();
+    g_main_context_push_thread_default(ctx->context);
+    ctx->main_loop = g_main_loop_new(ctx->context, FALSE);
 
-        /* Existing pending entry for same handle → overwrite it */
-        if (e->state == CB_STATE_PENDING &&
-            e->handle_key != NULL &&
-            strcmp(e->handle_key, handle) == 0) {
-            existing_slot = e;
-            break;
+    /* ---- Step 2: Connect to D-Bus system bus ---- */
+    GError *error = NULL;
+    ctx->connection = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
+
+    if (ctx->connection == NULL) {
+        FWUPMGR_ERROR("internal_check_worker_thread: D-Bus connect failed: %s\n",
+                      error ? error->message : "unknown");
+        if (error) g_error_free(error);
+
+        /* Signal caller: init failed.
+         * CRITICAL: Set caller_owns_cleanup BEFORE signaling. After the signal,
+         * the caller may wake up, read init_failed, unlock the mutex, and
+         * pthread_join us. If we were to destroy the mutex/cond in cleanup,
+         * we'd race with the caller who is still holding/using them.
+         * By setting caller_owns_cleanup=true, we tell cleanup to skip
+         * mutex/cond destroy and free(ctx) — the caller does it after join. */
+        pthread_mutex_lock(&ctx->ready_mutex);
+        ctx->caller_owns_cleanup = true;
+        ctx->init_failed = true;
+        ctx->is_ready = true;
+        pthread_cond_signal(&ctx->ready_cond);
+        pthread_mutex_unlock(&ctx->ready_mutex);
+
+        goto cleanup;
+    }
+
+    FWUPMGR_INFO("internal_check_worker_thread: D-Bus connected\n");
+
+    /* ---- Step 3: Subscribe to CheckForUpdateComplete signal ---- */
+    ctx->subscription_id = g_dbus_connection_signal_subscribe(
+        ctx->connection,
+        DBUS_SERVICE_NAME,               /* sender (daemon's bus name) */
+        DBUS_INTERFACE_NAME,             /* interface */
+        DBUS_SIGNAL_COMPLETE,            /* signal name */
+        DBUS_OBJECT_PATH,               /* object path */
+        NULL,                            /* arg0 match (none) */
+        G_DBUS_SIGNAL_FLAGS_NONE,
+        on_check_signal_handler,         /* handler */
+        ctx,                             /* user_data */
+        NULL);                           /* user_data free func (we free manually) */
+
+    FWUPMGR_INFO("internal_check_worker_thread: subscribed to %s (id=%u)\n",
+                 DBUS_SIGNAL_COMPLETE, ctx->subscription_id);
+
+    /* ---- Step 4: Send CheckForUpdate D-Bus method call (fire-and-forget) ----
+     *
+     * CheckForUpdate takes (s handler_process_name) and returns (issssi).
+     * We don't use the method return — the real result comes via signal.
+     * We use async call (fire-and-forget) to avoid blocking the condvar handshake.
+     */
+    g_dbus_connection_call(
+        ctx->connection,
+        DBUS_SERVICE_NAME,
+        DBUS_OBJECT_PATH,
+        DBUS_INTERFACE_NAME,
+        DBUS_METHOD_CHECK,
+        g_variant_new("(s)", ctx->handle_key),
+        NULL,                            /* reply type (don't care) */
+        G_DBUS_CALL_FLAGS_NONE,
+        DBUS_TIMEOUT_MS,
+        NULL,                            /* cancellable */
+        NULL,                            /* callback (fire-and-forget) */
+        NULL);                           /* user_data */
+
+    FWUPMGR_INFO("internal_check_worker_thread: CheckForUpdate method sent\n");
+
+    /* ---- Step 5: Add timeout source ---- */
+    GSource *timeout_source = g_timeout_source_new_seconds(CHECK_SIGNAL_TIMEOUT_SECONDS);
+    g_source_set_callback(timeout_source, on_check_timeout, ctx, NULL);
+    g_source_attach(timeout_source, ctx->context);
+    g_source_unref(timeout_source);  /* context holds ref now */
+
+    /* ---- Step 6: Signal caller "ready" ---- */
+    pthread_mutex_lock(&ctx->ready_mutex);
+    ctx->is_ready = true;
+    pthread_cond_signal(&ctx->ready_cond);
+    pthread_mutex_unlock(&ctx->ready_mutex);
+
+    FWUPMGR_INFO("internal_check_worker_thread: signaled ready, entering event loop\n");
+
+    /* ---- Step 7: Run event loop — wait for signal or timeout ---- */
+    g_main_loop_run(ctx->main_loop);
+
+    FWUPMGR_INFO("internal_check_worker_thread: event loop exited\n");
+
+cleanup:
+    /* ---- Cleanup: release all resources in correct order ---- */
+    FWUPMGR_INFO("internal_check_worker_thread: cleaning up\n");
+
+    /* Unsubscribe from signal */
+    if (ctx->connection && ctx->subscription_id > 0) {
+        g_dbus_connection_signal_unsubscribe(ctx->connection, ctx->subscription_id);
+    }
+
+    /* Quit and unref main loop */
+    if (ctx->main_loop) {
+        if (g_main_loop_is_running(ctx->main_loop)) {
+            g_main_loop_quit(ctx->main_loop);
         }
-
-        if (free_slot == NULL && e->state == CB_STATE_IDLE) {
-            free_slot = e;
-        }
+        g_main_loop_unref(ctx->main_loop);
+        ctx->main_loop = NULL;
     }
 
-    CallbackEntry *target = existing_slot ? existing_slot : free_slot;
-
-    if (target == NULL) {
-        FWUPMGR_ERROR("internal_register_callback: registry full (max=%d)\n",
-                      MAX_PENDING_CALLBACKS);
-        pthread_mutex_unlock(&g_registry.mutex);
-        return false;
+    /* Pop and unref context */
+    if (ctx->context) {
+        g_main_context_pop_thread_default(ctx->context);
+        g_main_context_unref(ctx->context);
+        ctx->context = NULL;
     }
 
-    if (existing_slot) {
-        FWUPMGR_INFO("internal_register_callback: overwriting existing for handle='%s'\n",
-                     handle);
-        free(target->handle_key);
-        target->handle_key = NULL;
+    /* Release D-Bus connection (shared connection — unref only, don't close) */
+    if (ctx->connection) {
+        g_object_unref(ctx->connection);
+        ctx->connection = NULL;
     }
 
-    target->handle_key      = strdup(handle);
-    target->callback        = callback;
-    target->state           = CB_STATE_PENDING;
-    target->registered_time = time(NULL);
+    /* Clear in-progress flag BEFORE freeing ctx */
+    internal_end_check();
 
-    pthread_mutex_unlock(&g_registry.mutex);
+    /* Destroy synchronization primitives and free ctx — BUT only if the worker
+     * owns cleanup. On init-failure paths, the caller (API function) owns these
+     * because it may still be inside pthread_cond_timedwait or about to call
+     * pthread_mutex_unlock on the same mutex. The caller will destroy/free
+     * after pthread_join returns. */
+    if (!ctx->caller_owns_cleanup) {
+        pthread_mutex_destroy(&ctx->ready_mutex);
+        pthread_cond_destroy(&ctx->ready_cond);
 
-    FWUPMGR_INFO("internal_register_callback: registered handle='%s'\n", handle);
-    return true;
+        /* Free strdup'd strings */
+        free(ctx->handle_key);
+
+        /* Free context */
+        free(ctx);
+    } else {
+        /* Worker does NOT own the sync primitives or ctx on init-failure.
+         * But we still need to free any GLib/strdup resources that we allocated
+         * in the worker thread before the failure. handle_key was allocated by
+         * the caller, so it will be freed by the caller after join. */
+        FWUPMGR_INFO("internal_check_worker_thread: caller_owns_cleanup=true, "
+                     "skipping mutex/cond destroy and free(ctx)\n");
+    }
+
+    FWUPMGR_INFO("internal_check_worker_thread: thread exiting\n");
+    return NULL;
 }
 
-/**
- * @brief Reset a registry slot to IDLE
- * MUST be called with registry mutex held.
- */
-static void registry_reset_slot(CallbackEntry *entry)
+/* ========================================================================
+ * internal_download_worker_thread — Phase 2: DownloadFirmware
+ * ======================================================================== */
+
+void *internal_download_worker_thread(void *arg)
 {
-    if (entry->handle_key != NULL) {
-        free(entry->handle_key);
-        entry->handle_key = NULL;
+    DownloadRequestContext *ctx = (DownloadRequestContext *)arg;
+
+    FWUPMGR_INFO("internal_download_worker_thread: starting for handle='%s' "
+                 "firmware='%s'\n",
+                 ctx->handle_key ? ctx->handle_key : "(null)",
+                 ctx->firmware_name ? ctx->firmware_name : "(null)");
+
+    /* ---- Step 1: Create isolated GLib event loop ---- */
+    ctx->context = g_main_context_new();
+    g_main_context_push_thread_default(ctx->context);
+    ctx->main_loop = g_main_loop_new(ctx->context, FALSE);
+
+    /* ---- Step 2: Connect to D-Bus system bus ---- */
+    GError *error = NULL;
+    ctx->connection = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
+
+    if (ctx->connection == NULL) {
+        FWUPMGR_ERROR("internal_download_worker_thread: D-Bus connect failed: %s\n",
+                      error ? error->message : "unknown");
+        if (error) g_error_free(error);
+
+        pthread_mutex_lock(&ctx->ready_mutex);
+        ctx->caller_owns_cleanup = true;
+        ctx->init_failed = true;
+        ctx->is_ready = true;
+        pthread_cond_signal(&ctx->ready_cond);
+        pthread_mutex_unlock(&ctx->ready_mutex);
+
+        goto cleanup;
     }
-    entry->callback        = NULL;
-    entry->registered_time = 0;
-    entry->state           = CB_STATE_IDLE;
+
+    FWUPMGR_INFO("internal_download_worker_thread: D-Bus connected\n");
+
+    /* ---- Step 3: Subscribe to DownloadProgress signal ---- */
+    ctx->subscription_id = g_dbus_connection_signal_subscribe(
+        ctx->connection,
+        DBUS_SERVICE_NAME,
+        DBUS_INTERFACE_NAME,
+        DBUS_SIGNAL_DWNL_PROGRESS,
+        DBUS_OBJECT_PATH,
+        NULL,
+        G_DBUS_SIGNAL_FLAGS_NONE,
+        on_download_signal_handler,
+        ctx,
+        NULL);
+
+    FWUPMGR_INFO("internal_download_worker_thread: subscribed to %s (id=%u)\n",
+                 DBUS_SIGNAL_DWNL_PROGRESS, ctx->subscription_id);
+
+    /* ---- Step 4: Send DownloadFirmware D-Bus method call SYNCHRONOUSLY ----
+     *
+     * D-Bus signature IN: (ssss) — handlerId, firmwareName, downloadUrl, typeOfFirmware
+     * D-Bus signature OUT: (sss) — result, status, message
+     *
+     * We call synchronously so we can read the daemon's accept/reject reply
+     * BEFORE signaling the caller. This gives the caller an ACCURATE return value.
+     */
+    FWUPMGR_INFO("internal_download_worker_thread: calling DownloadFirmware "
+                 "synchronously...\n");
+
+    GVariant *reply = g_dbus_connection_call_sync(
+        ctx->connection,
+        DBUS_SERVICE_NAME,
+        DBUS_OBJECT_PATH,
+        DBUS_INTERFACE_NAME,
+        DBUS_METHOD_DOWNLOAD,
+        g_variant_new("(ssss)",
+                      ctx->handle_key,
+                      ctx->firmware_name,
+                      ctx->firmware_url ? ctx->firmware_url : "",
+                      ctx->firmware_type ? ctx->firmware_type : ""),
+        G_VARIANT_TYPE("(sss)"),          /* expected reply signature */
+        G_DBUS_CALL_FLAGS_NONE,
+        30000,                            /* 30s timeout for method call itself */
+        NULL,                             /* cancellable */
+        &error);
+
+    if (reply == NULL) {
+        FWUPMGR_ERROR("internal_download_worker_thread: D-Bus call failed: %s\n",
+                      error ? error->message : "unknown");
+        if (error) g_error_free(error);
+
+        pthread_mutex_lock(&ctx->ready_mutex);
+        ctx->caller_owns_cleanup = true;
+        ctx->init_failed = true;
+        ctx->is_ready = true;
+        pthread_cond_signal(&ctx->ready_cond);
+        pthread_mutex_unlock(&ctx->ready_mutex);
+
+        goto cleanup;
+    }
+
+    /* Parse daemon's (sss) reply: result, status, message */
+    const gchar *result_str = NULL;
+    const gchar *status_str = NULL;
+    const gchar *message_str = NULL;
+    g_variant_get(reply, "(&s&s&s)", &result_str, &status_str, &message_str);
+
+    FWUPMGR_INFO("internal_download_worker_thread: daemon reply: "
+                 "result='%s' status='%s' message='%s'\n",
+                 result_str ? result_str : "(null)",
+                 status_str ? status_str : "(null)",
+                 message_str ? message_str : "(null)");
+
+    /* Check if daemon accepted or rejected */
+    if (result_str && strcmp(result_str, "RDKFW_DWNL_SUCCESS") == 0) {
+        ctx->daemon_accepted = true;
+        FWUPMGR_INFO("internal_download_worker_thread: daemon ACCEPTED download\n");
+    } else {
+        ctx->daemon_accepted = false;
+        ctx->daemon_reject_message = (message_str && message_str[0])
+                                     ? strdup(message_str) : NULL;
+        FWUPMGR_WARN("internal_download_worker_thread: daemon REJECTED download: %s\n",
+                     message_str ? message_str : "(no message)");
+    }
+
+    g_variant_unref(reply);
+
+    /* If daemon rejected, signal caller with failure and exit */
+    if (!ctx->daemon_accepted) {
+        pthread_mutex_lock(&ctx->ready_mutex);
+        ctx->caller_owns_cleanup = true;
+        ctx->init_failed = true;
+        ctx->is_ready = true;
+        pthread_cond_signal(&ctx->ready_cond);
+        pthread_mutex_unlock(&ctx->ready_mutex);
+
+        goto cleanup;
+    }
+
+    /* ---- Step 5: Add timeout source (3600s) ---- */
+    ctx->timeout_source = g_timeout_source_new_seconds(DWNL_SIGNAL_TIMEOUT_SECONDS);
+    g_source_set_callback(ctx->timeout_source, on_download_timeout, ctx, NULL);
+    g_source_attach(ctx->timeout_source, ctx->context);
+    g_source_unref(ctx->timeout_source);  /* context holds ref now */
+    ctx->timeout_source = NULL;           /* don't double-unref in cleanup */
+
+    /* ---- Step 6: Signal caller "ready" with success ---- */
+    pthread_mutex_lock(&ctx->ready_mutex);
+    ctx->is_ready = true;
+    pthread_cond_signal(&ctx->ready_cond);
+    pthread_mutex_unlock(&ctx->ready_mutex);
+
+    FWUPMGR_INFO("internal_download_worker_thread: signaled ready, "
+                 "entering event loop\n");
+
+    /* ---- Step 7: Run event loop — wait for DownloadProgress signals ---- */
+    g_main_loop_run(ctx->main_loop);
+
+    FWUPMGR_INFO("internal_download_worker_thread: event loop exited\n");
+
+cleanup:
+    FWUPMGR_INFO("internal_download_worker_thread: cleaning up\n");
+
+    /* Unsubscribe from signal */
+    if (ctx->connection && ctx->subscription_id > 0) {
+        g_dbus_connection_signal_unsubscribe(ctx->connection, ctx->subscription_id);
+    }
+
+    /* Quit and unref main loop */
+    if (ctx->main_loop) {
+        if (g_main_loop_is_running(ctx->main_loop)) {
+            g_main_loop_quit(ctx->main_loop);
+        }
+        g_main_loop_unref(ctx->main_loop);
+        ctx->main_loop = NULL;
+    }
+
+    /* Pop and unref context */
+    if (ctx->context) {
+        g_main_context_pop_thread_default(ctx->context);
+        g_main_context_unref(ctx->context);
+        ctx->context = NULL;
+    }
+
+    /* Release D-Bus connection */
+    if (ctx->connection) {
+        g_object_unref(ctx->connection);
+        ctx->connection = NULL;
+    }
+
+    /* Clear in-progress flag BEFORE freeing ctx */
+    internal_end_download();
+
+    /* Destroy synchronization primitives and free ctx — BUT only if the worker
+     * owns cleanup. On init-failure paths, the caller (API function) owns these
+     * because it may still be inside pthread_cond_timedwait or about to call
+     * pthread_mutex_unlock on the same mutex. The caller will destroy/free
+     * after pthread_join returns. */
+    if (!ctx->caller_owns_cleanup) {
+        pthread_mutex_destroy(&ctx->ready_mutex);
+        pthread_cond_destroy(&ctx->ready_cond);
+
+        /* Free strdup'd strings */
+        free(ctx->handle_key);
+        free(ctx->firmware_name);
+        free(ctx->firmware_url);
+        free(ctx->firmware_type);
+        free(ctx->daemon_reject_message);
+
+        /* Free context */
+        free(ctx);
+    } else {
+        /* Worker does NOT own the sync primitives or ctx on init-failure.
+         * The caller will free everything after pthread_join.
+         * We still need to free any worker-allocated resources (like
+         * daemon_reject_message which was strdup'd in the worker). */
+        free(ctx->daemon_reject_message);
+        ctx->daemon_reject_message = NULL;
+        FWUPMGR_INFO("internal_download_worker_thread: caller_owns_cleanup=true, "
+                     "skipping mutex/cond destroy and free(ctx)\n");
+    }
+
+    FWUPMGR_INFO("internal_download_worker_thread: thread exiting\n");
+    return NULL;
+}
+
+/* ========================================================================
+ * internal_update_worker_thread — Phase 3: UpdateFirmware
+ * ======================================================================== */
+
+void *internal_update_worker_thread(void *arg)
+{
+    UpdateRequestContext *ctx = (UpdateRequestContext *)arg;
+
+    FWUPMGR_INFO("internal_update_worker_thread: starting for handle='%s' "
+                 "firmware='%s' type='%s' location='%s' reboot='%s'\n",
+                 ctx->handle_key ? ctx->handle_key : "(null)",
+                 ctx->firmware_name ? ctx->firmware_name : "(null)",
+                 ctx->firmware_type ? ctx->firmware_type : "(null)",
+                 ctx->firmware_location ? ctx->firmware_location : "(default)",
+                 ctx->reboot_flag ? ctx->reboot_flag : "(null)");
+
+    /* ---- Step 1: Create isolated GLib event loop ---- */
+    ctx->context = g_main_context_new();
+    g_main_context_push_thread_default(ctx->context);
+    ctx->main_loop = g_main_loop_new(ctx->context, FALSE);
+
+    /* ---- Step 2: Connect to D-Bus system bus ---- */
+    GError *error = NULL;
+    ctx->connection = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
+
+    if (ctx->connection == NULL) {
+        FWUPMGR_ERROR("internal_update_worker_thread: D-Bus connect failed: %s\n",
+                      error ? error->message : "unknown");
+        if (error) g_error_free(error);
+
+        /* CRITICAL: Set caller_owns_cleanup BEFORE signaling. After the signal,
+         * the caller may wake up, read init_failed, unlock the mutex, and
+         * pthread_join us. If we were to destroy the mutex/cond in cleanup,
+         * we'd race with the caller who is still holding/using them.
+         * By setting caller_owns_cleanup=true, we tell cleanup to skip
+         * mutex/cond destroy and free(ctx) — the caller does it after join. */
+        pthread_mutex_lock(&ctx->ready_mutex);
+        ctx->caller_owns_cleanup = true;
+        ctx->init_failed = true;
+        ctx->is_ready = true;
+        pthread_cond_signal(&ctx->ready_cond);
+        pthread_mutex_unlock(&ctx->ready_mutex);
+
+        goto cleanup;
+    }
+
+    FWUPMGR_INFO("internal_update_worker_thread: D-Bus connected\n");
+
+    /* ---- Step 3: Subscribe to UpdateProgress signal ---- */
+    ctx->subscription_id = g_dbus_connection_signal_subscribe(
+        ctx->connection,
+        DBUS_SERVICE_NAME,
+        DBUS_INTERFACE_NAME,
+        DBUS_SIGNAL_UPDATE_PROGRESS,
+        DBUS_OBJECT_PATH,
+        NULL,
+        G_DBUS_SIGNAL_FLAGS_NONE,
+        on_update_signal_handler,
+        ctx,
+        NULL);
+
+    FWUPMGR_INFO("internal_update_worker_thread: subscribed to %s (id=%u)\n",
+                 DBUS_SIGNAL_UPDATE_PROGRESS, ctx->subscription_id);
+
+    /* ---- Step 4: Send UpdateFirmware D-Bus method call SYNCHRONOUSLY ----
+     *
+     * D-Bus signature IN: (sssss) — handlerId, firmwareName, LocationOfFirmware,
+     *                                TypeOfFirmware, rebootImmediately
+     * D-Bus signature OUT: (sss) — UpdateResult, UpdateStatus, message
+     *
+     * We call synchronously so we can read the daemon's accept/reject reply
+     * BEFORE signaling the caller. This gives the caller an ACCURATE return value.
+     */
+    FWUPMGR_INFO("internal_update_worker_thread: calling UpdateFirmware "
+                 "synchronously...\n");
+
+    GVariant *reply = g_dbus_connection_call_sync(
+        ctx->connection,
+        DBUS_SERVICE_NAME,
+        DBUS_OBJECT_PATH,
+        DBUS_INTERFACE_NAME,
+        DBUS_METHOD_UPDATE,
+        g_variant_new("(sssss)",
+                      ctx->handle_key,
+                      ctx->firmware_name,
+                      ctx->firmware_location ? ctx->firmware_location : "",
+                      ctx->firmware_type ? ctx->firmware_type : "",
+                      ctx->reboot_flag ? ctx->reboot_flag : "false"),
+        G_VARIANT_TYPE("(sss)"),          /* expected reply signature */
+        G_DBUS_CALL_FLAGS_NONE,
+        30000,                            /* 30s timeout for method call itself */
+        NULL,                             /* cancellable */
+        &error);
+
+    if (reply == NULL) {
+        FWUPMGR_ERROR("internal_update_worker_thread: D-Bus call failed: %s\n",
+                      error ? error->message : "unknown");
+        if (error) g_error_free(error);
+
+        pthread_mutex_lock(&ctx->ready_mutex);
+        ctx->caller_owns_cleanup = true;
+        ctx->init_failed = true;
+        ctx->is_ready = true;
+        pthread_cond_signal(&ctx->ready_cond);
+        pthread_mutex_unlock(&ctx->ready_mutex);
+
+        goto cleanup;
+    }
+
+    /* Parse daemon's (sss) reply: UpdateResult, UpdateStatus, message */
+    const gchar *result_str = NULL;
+    const gchar *status_str = NULL;
+    const gchar *message_str = NULL;
+    g_variant_get(reply, "(&s&s&s)", &result_str, &status_str, &message_str);
+
+    FWUPMGR_INFO("internal_update_worker_thread: daemon reply: "
+                 "result='%s' status='%s' message='%s'\n",
+                 result_str ? result_str : "(null)",
+                 status_str ? status_str : "(null)",
+                 message_str ? message_str : "(null)");
+
+    /* Check if daemon accepted or rejected */
+    if (result_str && strcmp(result_str, "RDKFW_UPDATE_SUCCESS") == 0) {
+        ctx->daemon_accepted = true;
+        FWUPMGR_INFO("internal_update_worker_thread: daemon ACCEPTED update\n");
+    } else {
+        ctx->daemon_accepted = false;
+        ctx->daemon_reject_message = (message_str && message_str[0])
+                                     ? strdup(message_str) : NULL;
+        FWUPMGR_WARN("internal_update_worker_thread: daemon REJECTED update: %s\n",
+                     message_str ? message_str : "(no message)");
+    }
+
+    g_variant_unref(reply);
+
+    /* If daemon rejected, signal caller with failure and exit */
+    if (!ctx->daemon_accepted) {
+        pthread_mutex_lock(&ctx->ready_mutex);
+        ctx->caller_owns_cleanup = true;
+        ctx->init_failed = true;
+        ctx->is_ready = true;
+        pthread_cond_signal(&ctx->ready_cond);
+        pthread_mutex_unlock(&ctx->ready_mutex);
+
+        goto cleanup;
+    }
+
+    /* ---- Step 5: Add timeout source (3600s) ---- */
+    ctx->timeout_source = g_timeout_source_new_seconds(UPDATE_SIGNAL_TIMEOUT_SECONDS);
+    g_source_set_callback(ctx->timeout_source, on_update_timeout, ctx, NULL);
+    g_source_attach(ctx->timeout_source, ctx->context);
+    g_source_unref(ctx->timeout_source);  /* context holds ref now */
+    ctx->timeout_source = NULL;           /* don't double-unref in cleanup */
+
+    /* ---- Step 6: Signal caller "ready" with success ---- */
+    pthread_mutex_lock(&ctx->ready_mutex);
+    ctx->is_ready = true;
+    pthread_cond_signal(&ctx->ready_cond);
+    pthread_mutex_unlock(&ctx->ready_mutex);
+
+    FWUPMGR_INFO("internal_update_worker_thread: signaled ready, "
+                 "entering event loop\n");
+
+    /* ---- Step 7: Run event loop — wait for UpdateProgress signals ---- */
+    g_main_loop_run(ctx->main_loop);
+
+    FWUPMGR_INFO("internal_update_worker_thread: event loop exited\n");
+
+cleanup:
+    FWUPMGR_INFO("internal_update_worker_thread: cleaning up\n");
+
+    /* Unsubscribe from signal */
+    if (ctx->connection && ctx->subscription_id > 0) {
+        g_dbus_connection_signal_unsubscribe(ctx->connection, ctx->subscription_id);
+    }
+
+    /* Quit and unref main loop */
+    if (ctx->main_loop) {
+        if (g_main_loop_is_running(ctx->main_loop)) {
+            g_main_loop_quit(ctx->main_loop);
+        }
+        g_main_loop_unref(ctx->main_loop);
+        ctx->main_loop = NULL;
+    }
+
+    /* Pop and unref context */
+    if (ctx->context) {
+        g_main_context_pop_thread_default(ctx->context);
+        g_main_context_unref(ctx->context);
+        ctx->context = NULL;
+    }
+
+    /* Release D-Bus connection */
+    if (ctx->connection) {
+        g_object_unref(ctx->connection);
+        ctx->connection = NULL;
+    }
+
+    /* Clear in-progress flag BEFORE freeing ctx */
+    internal_end_update();
+
+    /* Destroy synchronization primitives and free ctx — BUT only if the worker
+     * owns cleanup. On init-failure paths, the caller (API function) owns these
+     * because it may still be inside pthread_cond_timedwait or about to call
+     * pthread_mutex_unlock on the same mutex. The caller will destroy/free
+     * after pthread_join returns. */
+    if (!ctx->caller_owns_cleanup) {
+        pthread_mutex_destroy(&ctx->ready_mutex);
+        pthread_cond_destroy(&ctx->ready_cond);
+
+        /* Free strdup'd strings */
+        free(ctx->handle_key);
+        free(ctx->firmware_name);
+        free(ctx->firmware_location);
+        free(ctx->firmware_type);
+        free(ctx->reboot_flag);
+        free(ctx->daemon_reject_message);
+
+        /* Free context */
+        free(ctx);
+    } else {
+        /* Worker does NOT own the sync primitives or ctx on init-failure.
+         * The caller will free everything after pthread_join.
+         * We still need to free any worker-allocated resources (like
+         * daemon_reject_message which was strdup'd in the worker). */
+        free(ctx->daemon_reject_message);
+        ctx->daemon_reject_message = NULL;
+        FWUPMGR_INFO("internal_update_worker_thread: caller_owns_cleanup=true, "
+                     "skipping mutex/cond destroy and free(ctx)\n");
+    }
+
+    FWUPMGR_INFO("internal_update_worker_thread: thread exiting\n");
+    return NULL;
 }
 
 /* ========================================================================
@@ -646,284 +1572,18 @@ CheckForUpdateStatus internal_map_status_code(int32_t status_code)
 
 
 /* ========================================================================
- * DOWNLOAD FIRMWARE — INTERNAL ENGINE
- * ========================================================================
- *
- * Everything below is the DownloadFirmware equivalent of the
- * CheckForUpdate engine above. Same patterns, different registry and signal.
- *
- * KEY DIFFERENCE:
- *   CheckForUpdate slot fires ONCE then goes IDLE.
- *   Download slot stays ACTIVE and fires on EVERY DownloadProgress signal
- *   until the daemon sends DWNL_COMPLETED or DWNL_ERROR.
- * ======================================================================== */
-
-/* ---- Forward declarations for helper functions ---- */
-static void dispatch_all_dwnl_active(const InternalDwnlSignalData *signal_data);
-static void dwnl_registry_reset_slot(DwnlCallbackEntry *entry);
-
-/* ========================================================================
- * DOWNLOAD REGISTRY CLEANUP
- *
- * Called from internal_system_deinit() to free download registry resources.
- * Signal unsubscription is handled by the background thread.
- * ======================================================================== */
-
-/**
- * @brief Cleanup download registry — called from internal_system_deinit()
- */
-static void internal_dwnl_system_deinit(void)
-{
-    pthread_mutex_lock(&g_dwnl_registry.mutex);
-    for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
-        if (g_dwnl_registry.entries[i].handle_key != NULL) {
-            free(g_dwnl_registry.entries[i].handle_key);
-            g_dwnl_registry.entries[i].handle_key = NULL;
-        }
-    }
-    pthread_mutex_unlock(&g_dwnl_registry.mutex);
-    pthread_mutex_destroy(&g_dwnl_registry.mutex);
-
-    FWUPMGR_INFO("internal_dwnl_system_deinit: done\n");
-}
-
-/* ========================================================================
- * DOWNLOAD SIGNAL HANDLER
- * ======================================================================== */
-
-/**
- * @brief Called by GLib when DownloadProgress signal arrives
- *
- * Runs in the background thread — same thread as on_check_complete_signal().
- *
- * FLOW:
- *   1. Parse GVariant payload → InternalDwnlSignalData
- *   2. Dispatch to ALL ACTIVE download callbacks
- *   3. If status is COMPLETED or ERROR → remove finished slots from registry
- */
-static void on_download_progress_signal(GDBusConnection *conn,
-                                        const gchar *sender,
-                                        const gchar *object_path,
-                                        const gchar *interface_name,
-                                        const gchar *signal_name,
-                                        GVariant *parameters,
-                                        gpointer user_data)
-{
-    (void)conn; (void)sender; (void)object_path;
-    (void)interface_name; (void)signal_name; (void)user_data;
-
-    FWUPMGR_INFO("on_download_progress_signal: received\n");
-
-    InternalDwnlSignalData signal_data;
-    memset(&signal_data, 0, sizeof(signal_data));
-
-    if (!internal_parse_dwnl_signal_data(parameters, &signal_data)) {
-        FWUPMGR_ERROR("on_download_progress_signal: parse failed\n");
-        return;
-    }
-
-    FWUPMGR_INFO("on_download_progress_signal: handler=%" PRIu64 " firmware='%s' progress=%u%% status='%s'\n",
-                 signal_data.handler_id,
-                 signal_data.firmware_name ? signal_data.firmware_name : "(null)",
-                 signal_data.progress_percent,
-                 signal_data.status_string ? signal_data.status_string : "(null)");
-
-    dispatch_all_dwnl_active(&signal_data);
-
-    // Free allocated strings from g_variant_get
-    g_free(signal_data.firmware_name);
-    g_free(signal_data.status_string);
-    g_free(signal_data.message);
-}
-
-/**
- * @brief Dispatch DownloadProgress signal to every ACTIVE download callback
- *
- * SAME TWO-PHASE DESIGN as CheckForUpdate dispatch:
- *
- *   PHASE 1 (mutex held):
- *     Snapshot all ACTIVE entries.
- *     Do NOT change state yet — slot must stay ACTIVE for future signals.
- *     EXCEPTION: if status is COMPLETED or ERROR, mark slot for removal.
- *     Release mutex.
- *
- *   PHASE 2 (mutex released):
- *     Invoke each callback: callback(progress_per, status)
- *     Re-acquire mutex to reset completed/errored slots to IDLE.
- *
- * WHY KEEP SLOTS ACTIVE ACROSS MULTIPLE SIGNALS?
- *   Download progress fires many times: 1%, 5%, 20%...100%.
- *   If we reset to IDLE after the first callback, subsequent signals
- *   would find no registered callback and be silently dropped.
- *   The slot only becomes IDLE when the download ends.
- */
-static void dispatch_all_dwnl_active(const InternalDwnlSignalData *signal_data)
-{
-    typedef struct {
-        DownloadCallback  callback;
-        char              handle_copy[256];
-        int               slot_index;
-        bool              is_final;   /* true if COMPLETED or ERROR — remove after firing */
-    } DwnlSnapshot;
-
-    DwnlSnapshot snapshots[MAX_PENDING_CALLBACKS];
-    int          count = 0;
-
-    DownloadStatus status = map_dwnl_status_string(signal_data->status_string);
-    bool           is_final = (status == DWNL_COMPLETED || status == DWNL_ERROR);
-
-    /* ---- PHASE 1: snapshot under mutex ---- */
-    pthread_mutex_lock(&g_dwnl_registry.mutex);
-
-    for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
-        DwnlCallbackEntry *e = &g_dwnl_registry.entries[i];
-        if (e->state != DWNL_CB_STATE_ACTIVE) continue;
-
-        snapshots[count].callback   = e->callback;
-        snapshots[count].slot_index = i;
-        snapshots[count].is_final   = is_final;
-        snprintf(snapshots[count].handle_copy,
-                 sizeof(snapshots[count].handle_copy),
-                 "%s", e->handle_key ? e->handle_key : "");
-
-        /*
-         * If this is the final signal (completed/error), mark the slot
-         * so we reset it to IDLE after the callback fires.
-         * For in-progress signals, leave the slot ACTIVE.
-         */
-        count++;
-
-        FWUPMGR_INFO("dispatch_all_dwnl_active: queued handle='%s' progress=%d%% final=%d\n",
-                     e->handle_key ? e->handle_key : "(null)",
-                     signal_data->progress_percent, is_final);
-    }
-
-    pthread_mutex_unlock(&g_dwnl_registry.mutex);
-
-    FWUPMGR_INFO("dispatch_all_dwnl_active: %d callback(s) to fire\n", count);
-
-    /* ---- PHASE 2: invoke callbacks, no mutex held ---- */
-    for (int i = 0; i < count; i++) {
-        DwnlSnapshot *s = &snapshots[i];
-
-        FWUPMGR_INFO("dispatch_all_dwnl_active: invoking callback for handle='%s'\n",
-                     s->handle_copy);
-
-        /*
-         * Callback signature: void fn(int progress_per, DownloadStatus status)
-         * No handle parameter — matches the DownloadCallback typedef exactly.
-         */
-        s->callback(signal_data->progress_percent, status);
-
-        /*
-         * If download is done (COMPLETED or ERROR), reset slot to IDLE.
-         * This frees the handle_key and makes the slot available for reuse.
-         * For in-progress signals, leave slot ACTIVE for next signal.
-         */
-        if (s->is_final) {
-            pthread_mutex_lock(&g_dwnl_registry.mutex);
-            dwnl_registry_reset_slot(&g_dwnl_registry.entries[s->slot_index]);
-            pthread_mutex_unlock(&g_dwnl_registry.mutex);
-
-            FWUPMGR_INFO("dispatch_all_dwnl_active: slot %d reset to IDLE (download ended)\n",
-                         s->slot_index);
-        }
-    }
-}
-
-/* ========================================================================
- * DOWNLOAD REGISTRY OPERATIONS
- * ======================================================================== */
-
-/**
- * @brief Register a download callback keyed by handle
- *
- * Sets slot state to ACTIVE. Slot will receive ALL subsequent
- * DownloadProgress signals until DWNL_COMPLETED or DWNL_ERROR.
- *
- * SAME HANDLE TWICE:
- *   Overwrites existing ACTIVE slot for the same handle.
- *   Prevents stale callbacks from a previous download session.
- *
- * @param handle    App's FirmwareInterfaceHandle (strdup'd internally)
- * @param callback  App's DownloadCallback
- * @return true on success, false if registry full
- */
-bool internal_dwnl_register_callback(FirmwareInterfaceHandle handle,
-                                      DownloadCallback callback)
-{
-    pthread_mutex_lock(&g_dwnl_registry.mutex);
-
-    DwnlCallbackEntry *free_slot     = NULL;
-    DwnlCallbackEntry *existing_slot = NULL;
-
-    for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
-        DwnlCallbackEntry *e = &g_dwnl_registry.entries[i];
-
-        if (e->state == DWNL_CB_STATE_ACTIVE &&
-            e->handle_key != NULL &&
-            strcmp(e->handle_key, handle) == 0) {
-            existing_slot = e;
-            break;
-        }
-
-        if (free_slot == NULL && e->state == DWNL_CB_STATE_IDLE) {
-            free_slot = e;
-        }
-    }
-
-    DwnlCallbackEntry *target = existing_slot ? existing_slot : free_slot;
-
-    if (target == NULL) {
-        FWUPMGR_ERROR("internal_dwnl_register_callback: registry full (max=%d)\n",
-                      MAX_PENDING_CALLBACKS);
-        pthread_mutex_unlock(&g_dwnl_registry.mutex);
-        return false;
-    }
-
-    if (existing_slot) {
-        FWUPMGR_INFO("internal_dwnl_register_callback: overwriting existing for handle='%s'\n",
-                     handle);
-        free(target->handle_key);
-        target->handle_key = NULL;
-    }
-
-    target->handle_key      = strdup(handle);
-    target->callback        = callback;
-    target->state           = DWNL_CB_STATE_ACTIVE;
-    target->registered_time = time(NULL);
-
-    pthread_mutex_unlock(&g_dwnl_registry.mutex);
-
-    FWUPMGR_INFO("internal_dwnl_register_callback: registered handle='%s'\n", handle);
-    return true;
-}
-
-/**
- * @brief Reset a download registry slot to IDLE
- * MUST be called with g_dwnl_registry.mutex held.
- */
-static void dwnl_registry_reset_slot(DwnlCallbackEntry *entry)
-{
-    if (entry->handle_key != NULL) {
-        free(entry->handle_key);
-        entry->handle_key = NULL;
-    }
-    entry->callback        = NULL;
-    entry->registered_time = 0;
-    entry->state           = DWNL_CB_STATE_IDLE;
-}
-
-/* ========================================================================
  * DOWNLOAD SIGNAL DATA HELPERS
  * ======================================================================== */
 
 /**
- * @brief Parse GVariant DownloadProgress signal payload
+ * @brief Parse GVariant DownloadProgress payload
  *
- * Expected GVariant signature: (ii)
- *   i  progress_percent  (0–100)
- *   i  status_code       (maps to DownloadStatus)
+ * Expected GVariant signature: (tsuss)
+ *   t  handlerId         (uint64)
+ *   s  firmwareName      (string)
+ *   u  progressPercent   (uint32)
+ *   s  status            (string - "INPROGRESS", "COMPLETED", "ERROR")
+ *   s  message           (string)
  */
 bool internal_parse_dwnl_signal_data(GVariant *parameters,
                                       InternalDwnlSignalData *out_data)
@@ -932,7 +1592,8 @@ bool internal_parse_dwnl_signal_data(GVariant *parameters,
 
     const gchar *sig = g_variant_get_type_string(parameters);
     if (strcmp(sig, "(tsuss)") != 0) {
-        FWUPMGR_ERROR("internal_parse_dwnl_signal_data: unexpected signature '%s' (expected '(tsuss)')\n", sig);
+        FWUPMGR_ERROR("internal_parse_dwnl_signal_data: "
+                      "unexpected signature '%s' (expected '(tsuss)')\n", sig);
         return false;
     }
 
@@ -942,38 +1603,20 @@ bool internal_parse_dwnl_signal_data(GVariant *parameters,
     gchar   *status_str = NULL;
     gchar   *message_str = NULL;
 
-    g_variant_get(parameters, "(tsuss)", 
-                  &handler_id, 
-                  &firmware_name, 
-                  &progress, 
-                  &status_str, 
+    g_variant_get(parameters, "(tsuss)",
+                  &handler_id,
+                  &firmware_name,
+                  &progress,
+                  &status_str,
                   &message_str);
 
-    out_data->handler_id      = handler_id;
-    out_data->firmware_name   = firmware_name;   // Caller must g_free
+    out_data->handler_id       = handler_id;
+    out_data->firmware_name    = firmware_name;    /* Caller must g_free */
     out_data->progress_percent = progress;
-    out_data->status_string   = status_str;      // Caller must g_free
-    out_data->message         = message_str;     // Caller must g_free
+    out_data->status_string    = status_str;       /* Caller must g_free */
+    out_data->message          = message_str;      /* Caller must g_free */
 
     return true;
-}
-
-/**
- * @brief Map status string to DownloadStatus enum
- */
-DownloadStatus internal_map_dwnl_status_code(int32_t status_code)
-{
-    // This function is kept for backward compatibility but now receives
-    // a mapped value. The actual mapping happens in the caller.
-    switch (status_code) {
-        case 0:  return DWNL_IN_PROGRESS;
-        case 1:  return DWNL_COMPLETED;
-        case 2:  return DWNL_ERROR;
-        default:
-            FWUPMGR_ERROR("internal_map_dwnl_status_code: unknown %d → DWNL_ERROR\n",
-                          status_code);
-            return DWNL_ERROR;
-    }
 }
 
 /**
@@ -993,255 +1636,8 @@ static DownloadStatus map_dwnl_status_string(const char *status_str)
         return DWNL_ERROR;
     }
 
-    FWUPMGR_ERROR("map_dwnl_status_string: unknown status '%s' → DWNL_ERROR\n", status_str);
+    FWUPMGR_ERROR("map_dwnl_status_string: unknown status '%s'\n", status_str);
     return DWNL_ERROR;
-}
-
-/* ========================================================================
- * UPDATE FIRMWARE — INTERNAL ENGINE
- * ========================================================================
- *
- * Mirror of the DownloadFirmware engine above.
- * Same registry pattern, same two-phase dispatch, same lifecycle.
- *
- * Signal:  UpdateProgress (ii) — progress_percent, status_code
- * Registry slot: ACTIVE until UPDATE_COMPLETED or UPDATE_ERROR, then IDLE.
- * ======================================================================== */
-
-/* ---- Forward declarations for helper functions ---- */
-static void dispatch_all_update_active(const InternalUpdateSignalData *signal_data);
-static void update_registry_reset_slot(UpdateCbEntry *entry);
-
-/* ========================================================================
- * UPDATE SUBSYSTEM LIFECYCLE
- * ======================================================================== */
-
-/**
- * @brief Cleanup update registry — frees all strdup'd handle_key strings
- *
- * Called from internal_system_deinit(). Signal unsubscription is handled
- * by the background thread.
- */
-static void internal_update_system_deinit(void)
-{
-    pthread_mutex_lock(&g_update_registry.mutex);
-    for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
-        if (g_update_registry.entries[i].handle_key != NULL) {
-            free(g_update_registry.entries[i].handle_key);
-            g_update_registry.entries[i].handle_key = NULL;
-        }
-    }
-    pthread_mutex_unlock(&g_update_registry.mutex);
-    pthread_mutex_destroy(&g_update_registry.mutex);
-
-    FWUPMGR_INFO("internal_update_system_deinit: done\n");
-}
-
-/* ========================================================================
- * UPDATE SIGNAL HANDLER
- * ======================================================================== */
-
-/**
- * @brief Called by GLib when UpdateProgress signal arrives
- *
- * Runs in background thread. Parses payload and dispatches to all
- * ACTIVE update callbacks.
- */
-static void on_update_progress_signal(GDBusConnection *conn,
-                                      const gchar *sender,
-                                      const gchar *object_path,
-                                      const gchar *interface_name,
-                                      const gchar *signal_name,
-                                      GVariant *parameters,
-                                      gpointer user_data)
-{
-    (void)conn; (void)sender; (void)object_path;
-    (void)interface_name; (void)signal_name; (void)user_data;
-
-    FWUPMGR_INFO("on_update_progress_signal: received\n");
-
-    InternalUpdateSignalData signal_data;
-    memset(&signal_data, 0, sizeof(signal_data));
-
-    if (!internal_parse_update_signal_data(parameters, &signal_data)) {
-        FWUPMGR_ERROR("on_update_progress_signal: parse failed\n");
-        return;
-    }
-
-    FWUPMGR_INFO("on_update_progress_signal: handler=%" PRIu64 " firmware='%s' progress=%d%% status=%d\n",
-                 signal_data.handler_id,
-                 signal_data.firmware_name ? signal_data.firmware_name : "(null)",
-                 signal_data.progress_percent,
-                 signal_data.status_code);
-
-    dispatch_all_update_active(&signal_data);
-
-    // Free allocated strings from g_variant_get
-    g_free(signal_data.firmware_name);
-    g_free(signal_data.message);
-}
-
-/**
- * @brief Dispatch UpdateProgress signal to every ACTIVE update callback
- *
- * TWO-PHASE DESIGN (identical to download dispatch):
- *
- *   PHASE 1 (mutex held):
- *     Snapshot all ACTIVE entries.
- *     Mark is_final=true only if status is COMPLETED or ERROR.
- *     Release mutex.
- *
- *   PHASE 2 (mutex released):
- *     Invoke callback(progress_per, status) for each snapshot.
- *     If is_final: re-acquire mutex, reset slot to IDLE.
- *     If in-progress: leave slot ACTIVE for next signal.
- */
-static void dispatch_all_update_active(const InternalUpdateSignalData *signal_data)
-{
-    typedef struct {
-        UpdateCallback  callback;
-        char            handle_copy[256];
-        int             slot_index;
-        bool            is_final;
-    } UpdateSnapshot;
-
-    UpdateSnapshot snapshots[MAX_PENDING_CALLBACKS];
-    int            count = 0;
-
-    UpdateStatus status   = internal_map_update_status_code(signal_data->status_code);
-    bool         is_final = (status == UPDATE_COMPLETED || status == UPDATE_ERROR);
-
-    /* ---- PHASE 1: snapshot under mutex ---- */
-    pthread_mutex_lock(&g_update_registry.mutex);
-
-    for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
-        UpdateCbEntry *e = &g_update_registry.entries[i];
-        if (e->state != UPDATE_CB_STATE_ACTIVE) continue;
-
-        snapshots[count].callback   = e->callback;
-        snapshots[count].slot_index = i;
-        snapshots[count].is_final   = is_final;
-        snprintf(snapshots[count].handle_copy,
-                 sizeof(snapshots[count].handle_copy),
-                 "%s", e->handle_key ? e->handle_key : "");
-
-        count++;
-
-        FWUPMGR_INFO("dispatch_all_update_active: queued handle='%s' "
-                     "progress=%d%% final=%d\n",
-                     e->handle_key ? e->handle_key : "(null)",
-                     signal_data->progress_percent, is_final);
-    }
-
-    pthread_mutex_unlock(&g_update_registry.mutex);
-
-    FWUPMGR_INFO("dispatch_all_update_active: %d callback(s) to fire\n", count);
-
-    /* ---- PHASE 2: invoke callbacks, no mutex held ---- */
-    for (int i = 0; i < count; i++) {
-        UpdateSnapshot *s = &snapshots[i];
-
-        FWUPMGR_INFO("dispatch_all_update_active: invoking callback "
-                     "for handle='%s'\n", s->handle_copy);
-
-        /*
-         * Callback signature: void fn(int progress_per, UpdateStatus status)
-         * Matches UpdateCallback typedef exactly.
-         */
-        s->callback(signal_data->progress_percent, status);
-
-        /*
-         * If this was the final signal (COMPLETED or ERROR), reset slot to IDLE.
-         * For in-progress signals, leave slot ACTIVE for the next signal.
-         */
-        if (s->is_final) {
-            pthread_mutex_lock(&g_update_registry.mutex);
-            update_registry_reset_slot(&g_update_registry.entries[s->slot_index]);
-            pthread_mutex_unlock(&g_update_registry.mutex);
-
-            FWUPMGR_INFO("dispatch_all_update_active: slot %d → IDLE "
-                         "(update ended)\n", s->slot_index);
-        }
-    }
-}
-
-/* ========================================================================
- * UPDATE REGISTRY OPERATIONS
- * ======================================================================== */
-
-/**
- * @brief Register an update callback keyed by handle
- *
- * Sets slot to ACTIVE. Slot receives ALL subsequent UpdateProgress signals
- * until UPDATE_COMPLETED or UPDATE_ERROR resets it to IDLE.
- *
- * SAME HANDLE TWICE:
- *   Overwrites existing ACTIVE slot for the same handle.
- */
-bool internal_update_register_callback(FirmwareInterfaceHandle handle,
-                                        UpdateCallback callback)
-{
-    pthread_mutex_lock(&g_update_registry.mutex);
-
-    UpdateCbEntry *free_slot     = NULL;
-    UpdateCbEntry *existing_slot = NULL;
-
-    for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
-        UpdateCbEntry *e = &g_update_registry.entries[i];
-
-        if (e->state == UPDATE_CB_STATE_ACTIVE &&
-            e->handle_key != NULL &&
-            strcmp(e->handle_key, handle) == 0) {
-            existing_slot = e;
-            break;
-        }
-
-        if (free_slot == NULL && e->state == UPDATE_CB_STATE_IDLE) {
-            free_slot = e;
-        }
-    }
-
-    UpdateCbEntry *target = existing_slot ? existing_slot : free_slot;
-
-    if (target == NULL) {
-        FWUPMGR_ERROR("internal_update_register_callback: registry full (max=%d)\n",
-                      MAX_PENDING_CALLBACKS);
-        pthread_mutex_unlock(&g_update_registry.mutex);
-        return false;
-    }
-
-    if (existing_slot) {
-        FWUPMGR_INFO("internal_update_register_callback: "
-                     "overwriting existing for handle='%s'\n", handle);
-        free(target->handle_key);
-        target->handle_key = NULL;
-    }
-
-    target->handle_key      = strdup(handle);
-    target->callback        = callback;
-    target->state           = UPDATE_CB_STATE_ACTIVE;
-    target->registered_time = time(NULL);
-
-    pthread_mutex_unlock(&g_update_registry.mutex);
-
-    FWUPMGR_INFO("internal_update_register_callback: registered handle='%s'\n",
-                 handle);
-    return true;
-}
-
-/**
- * @brief Reset an update registry slot to IDLE
- * MUST be called with g_update_registry.mutex held.
- */
-static void update_registry_reset_slot(UpdateCbEntry *entry)
-{
-    if (entry->handle_key != NULL) {
-        free(entry->handle_key);
-        entry->handle_key = NULL;
-    }
-    entry->callback        = NULL;
-    entry->registered_time = 0;
-    entry->state           = UPDATE_CB_STATE_IDLE;
 }
 
 /* ========================================================================
@@ -1251,9 +1647,12 @@ static void update_registry_reset_slot(UpdateCbEntry *entry)
 /**
  * @brief Parse GVariant UpdateProgress payload
  *
- * Expected GVariant signature: (ii)
- *   i  progress_percent  (0–100)
- *   i  status_code       (maps to UpdateStatus)
+ * Expected GVariant signature: (tsiis)
+ *   t  handlerId         (uint64)
+ *   s  firmwareName      (string)
+ *   i  progressPercent   (int32)
+ *   i  statusCode        (int32)
+ *   s  message           (string)
  */
 bool internal_parse_update_signal_data(GVariant *parameters,
                                         InternalUpdateSignalData *out_data)
@@ -1312,12 +1711,12 @@ UpdateStatus internal_map_update_status_code(int32_t status_code)
 /**
  * @brief Parse update_details string into UpdateDetails structure
  *
- * The update_details string from the daemon is a comma-separated key:value format:
- *   "FwFileName:filename.bin,FwUrl:https://...,FwVersion:1.0,..."
+ * The update_details string from the daemon is a pipe-separated key:value format:
+ *   "File:filename.bin|Location:https://...|Version:1.0|..."
  *
  * This function safely parses it and populates the UpdateDetails structure.
  *
- * @param update_details_str   Comma-separated string from daemon (may be NULL)
+ * @param update_details_str   Pipe-separated string from daemon (may be NULL)
  * @param out_details          Output UpdateDetails structure (must be allocated)
  * @return true if parsing succeeded (even if string was NULL/empty),
  *         false only on critical errors
@@ -1428,9 +1827,5 @@ static bool parse_update_details(const char *update_details_str,
 
     return true;
 }
-
-/* ========================================================================
- * D-BUS SIGNAL HANDLERS
- * ======================================================================== */
 
 
