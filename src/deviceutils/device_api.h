@@ -26,7 +26,11 @@
 #ifdef GTEST_ENABLE
 #include "rdkv_cdl_log_wrapper.h"
 #endif
+
+#if defined(IARM_ENABLED)
 #include "../include/iarmInterface.h"
+#endif
+
 #ifndef GTEST_ENABLE
 #include "rdk_fwdl_utils.h"
 #include "common_device_api.h"
