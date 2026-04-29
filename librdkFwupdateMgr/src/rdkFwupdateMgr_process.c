@@ -733,13 +733,49 @@ FirmwareInterfaceHandle registerProcess(const char *processName, const char *lib
      *   D-BUS:      1 persistent connection in BG thread (for signal reception)
      *
      * If internal_system_init() returns non-zero (failure):
-     *   - We log an error but STILL return the handle
-     *   - The handle is valid for the daemon, but callbacks won't work
-     *   - This is a degraded state (TODO: consider returning NULL here)
+     *   The async engine is partially or fully uninitialized. Returning
+     *   the handle here would leave the library in a broken state:
+     *     - Callbacks would never fire (no BG thread / no registries)
+     *     - unregisterProcess() would call internal_system_deinit() on
+     *       uninitialized globals (pthread_join on invalid thread = UB)
+     *   So we roll back: best-effort unregister from daemon, free
+     *   handle_str, return NULL to signal failure to the caller.
      */
     FWUPMGR_INFO("=== rdkFwupdateMgr Creating thread for listen ===\n");
     if (internal_system_init() != 0) {
         FWUPMGR_ERROR("rdkFwupdateMgr_lib_init: internal_system_init FAILED\n");
+
+        /* Best-effort: tell the daemon to drop our registration */
+        FWUPMGR_ERROR("Attempting best-effort cleanup: UnregisterProcess(%" PRIu64 ")\n",
+                      handler_id);
+        GError *cleanup_error = NULL;
+        GDBusProxy *cleanup_proxy = create_dbus_proxy(&cleanup_error);
+        if (cleanup_proxy) {
+            GVariant *cleanup_result = g_dbus_proxy_call_sync(
+                cleanup_proxy,
+                "UnregisterProcess",
+                g_variant_new("(t)", handler_id),
+                G_DBUS_CALL_FLAGS_NONE,
+                DBUS_SYNC_TIMEOUT_MS,
+                NULL,
+                &cleanup_error
+            );
+            if (cleanup_result) {
+                FWUPMGR_INFO("Cleanup successful: process unregistered\n");
+                g_variant_unref(cleanup_result);
+            } else {
+                FWUPMGR_ERROR("Cleanup failed: %s (registration may be leaked)\n",
+                              cleanup_error ? cleanup_error->message : "unknown");
+                if (cleanup_error) g_error_free(cleanup_error);
+            }
+            g_object_unref(cleanup_proxy);
+        } else {
+            FWUPMGR_ERROR("Cleanup proxy creation failed (registration leaked)\n");
+            if (cleanup_error) g_error_free(cleanup_error);
+        }
+
+        free(handle_str);
+        return NULL;
     }
     FWUPMGR_INFO("=== rdkFwupdateMgr Creating thread for listen successful ===\n");
 
