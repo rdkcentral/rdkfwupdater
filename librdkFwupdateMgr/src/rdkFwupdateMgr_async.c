@@ -1281,17 +1281,56 @@ static void dwnl_registry_reset_slot(DwnlCallbackEntry *entry);
 
 /* ========================================================================
  * DOWNLOAD REGISTRY CLEANUP
- *
- * Called from internal_system_deinit() to free download registry resources.
- * Signal unsubscription is handled by the background thread.
  * ======================================================================== */
 
-/**
- * @brief Cleanup download registry — called from internal_system_deinit()
+/*
+ * internal_dwnl_system_deinit - Free all download registry resources.
+ *
+ * PURPOSE:
+ *   Called from internal_system_deinit() during library unload (either
+ *   via __attribute__((destructor)) or explicitly by unregisterProcess).
+ *   Frees any strdup'd handle_key strings that are still in the registry
+ *   (e.g., downloads that were in-progress when the app exits) and
+ *   destroys the mutex.
+ *
+ * WHEN IS THIS CALLED?
+ *   During orderly shutdown of the library. The BG thread has already
+ *   been joined (stopped), so no concurrent access to g_dwnl_registry
+ *   is possible. The mutex lock/unlock is purely defensive -- in theory
+ *   no other thread can be using the registry at this point.
+ *
+ * WHY FREE handle_key's?
+ *   If the app exits while a download is ACTIVE (e.g., download at 50%
+ *   and app receives SIGTERM), the slot still holds a strdup'd handle_key
+ *   that was never freed by dwnl_registry_reset_slot() (because the
+ *   terminal COMPLETED/ERROR signal never arrived). We must free it here
+ *   to avoid a memory leak reported by Valgrind/ASan.
+ *
+ * WHY pthread_mutex_destroy()?
+ *   The mutex was initialized by pthread_mutex_init() in internal_system_init().
+ *   Every init must have a matching destroy for clean resource management.
+ *   Destroying a locked mutex is undefined behavior (we unlock first).
+ *
+ * NOTE: Signal unsubscription (g_dbus_connection_signal_unsubscribe) is
+ *   handled separately by the BG thread during its shutdown sequence,
+ *   NOT here. This function only handles registry memory.
+ *
+ * @param none (operates on global g_dwnl_registry)
  */
 static void internal_dwnl_system_deinit(void)
 {
+    /*
+     * Lock before freeing. Defensive -- no other thread should be
+     * active at this point, but the pattern is consistent with how
+     * all other registry operations lock before accessing entries[].
+     */
     pthread_mutex_lock(&g_dwnl_registry.mutex);
+
+    /*
+     * Scan all 30 slots. Free any non-NULL handle_key strings.
+     * IDLE slots have handle_key == NULL (already freed or never set).
+     * ACTIVE slots (abandoned downloads) have handle_key != NULL.
+     */
     for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
         if (g_dwnl_registry.entries[i].handle_key != NULL) {
             free(g_dwnl_registry.entries[i].handle_key);
@@ -1299,6 +1338,11 @@ static void internal_dwnl_system_deinit(void)
         }
     }
     pthread_mutex_unlock(&g_dwnl_registry.mutex);
+
+    /*
+     * Destroy the mutex. After this, any attempt to lock it is UB.
+     * Since the library is unloading, no one should try.
+     */
     pthread_mutex_destroy(&g_dwnl_registry.mutex);
 
     FWUPMGR_INFO("internal_dwnl_system_deinit: done\n");
@@ -1308,15 +1352,66 @@ static void internal_dwnl_system_deinit(void)
  * DOWNLOAD SIGNAL HANDLER
  * ======================================================================== */
 
-/**
- * @brief Called by GLib when DownloadProgress signal arrives
+/*
+ * on_download_progress_signal - BG thread entry point for DownloadProgress.
  *
- * Runs in the background thread — same thread as on_check_complete_signal().
+ * PURPOSE:
+ *   This function is called by GLib's D-Bus infrastructure when the daemon
+ *   broadcasts the "DownloadProgress" signal. It is the ENTRY POINT for
+ *   the "response" side of the downloadFirmware() async flow.
+ *
+ * WHEN DOES THIS FIRE?
+ *   Repeatedly, starting shortly after downloadFirmware() was called.
+ *   The daemon emits a DownloadProgress signal each time it has a
+ *   progress update (0%, 10%, 50%, 100%, or on error). Unlike
+ *   checkForUpdate which fires ONCE, this fires MANY TIMES.
+ *
+ * WHICH THREAD RUNS THIS?
+ *   The BACKGROUND THREAD. Same thread that handles CheckForUpdateComplete
+ *   and UpdateProgress. All three signals are dispatched on the same
+ *   single BG thread. Only one signal handler runs at a time because
+ *   they all share the same GMainContext.
+ *
+ * WHY (void) CASTS?
+ *   GLib's signal handler signature requires 7 parameters. We only need
+ *   'parameters' (the GVariant payload). The (void) casts suppress
+ *   "unused parameter" compiler warnings for the other 6.
+ *
+ * SIGNAL PAYLOAD FORMAT:
+ *   GVariant type "(tsuss)":
+ *     t  handler_id       (uint64 -- which registered client)
+ *     s  firmware_name    (string -- filename being downloaded)
+ *     u  progress_percent (uint32 -- 0 to 100)
+ *     s  status_string    (string -- "NOTSTARTED"/"INPROGRESS"/"COMPLETED"/"ERROR")
+ *     s  message          (string -- human-readable status message)
+ *
+ *   IMPORTANT DIFFERENCE FROM checkForUpdate:
+ *     checkForUpdate used integer status codes mapped by internal_map_status_code().
+ *     download uses STRING status values mapped by map_dwnl_status_string().
+ *     The daemon sends "INPROGRESS" not 0, "COMPLETED" not 1.
+ *
+ * MEMORY MANAGEMENT (DIFFERENT FROM checkForUpdate):
+ *   checkForUpdate: internal_parse_signal_data() uses strdup() -> free()
+ *   download: internal_parse_dwnl_signal_data() uses GLib's g_variant_get()
+ *   with 's' format -> returns gchar* that caller must g_free().
+ *
+ *   The strings (firmware_name, status_string, message) are allocated by
+ *   GLib during g_variant_get(). They stay valid until we g_free() them
+ *   AFTER dispatch is complete. This ensures the strings are valid
+ *   throughout all callback invocations.
  *
  * FLOW:
- *   1. Parse GVariant payload → InternalDwnlSignalData
- *   2. Dispatch to ALL ACTIVE download callbacks
- *   3. If status is COMPLETED or ERROR → remove finished slots from registry
+ *   1. Parse GVariant -> InternalDwnlSignalData (extracts 5 fields)
+ *   2. Call dispatch_all_dwnl_active() -- fires all ACTIVE callbacks
+ *   3. g_free() the 3 GLib-allocated strings
+ *
+ * @param conn           The BG thread's persistent D-Bus connection (:1.141)
+ * @param sender         D-Bus sender address (ignored -- accept from any)
+ * @param object_path    D-Bus object path of the signal source (ignored)
+ * @param interface_name D-Bus interface the signal belongs to (ignored)
+ * @param signal_name    "DownloadProgress" (ignored -- we know from subscription)
+ * @param parameters     The GVariant payload -- type "(tsuss)"
+ * @param user_data      NULL (we use globals, no per-subscription user data)
  */
 static void on_download_progress_signal(GDBusConnection *conn,
                                         const gchar *sender,
@@ -1326,14 +1421,28 @@ static void on_download_progress_signal(GDBusConnection *conn,
                                         GVariant *parameters,
                                         gpointer user_data)
 {
+    /* Suppress "unused parameter" warnings for the 6 params we don't need. */
     (void)conn; (void)sender; (void)object_path;
     (void)interface_name; (void)signal_name; (void)user_data;
 
     FWUPMGR_INFO("on_download_progress_signal: received\n");
 
+    /*
+     * Stack-allocate and zero-init the parsed data struct.
+     * After parsing, this holds:
+     *   handler_id       -- uint64 (which client the signal is for)
+     *   firmware_name    -- gchar* (GLib-allocated, must g_free)
+     *   progress_percent -- uint32 (0-100)
+     *   status_string    -- gchar* (GLib-allocated, must g_free)
+     *   message          -- gchar* (GLib-allocated, must g_free)
+     */
     InternalDwnlSignalData signal_data;
     memset(&signal_data, 0, sizeof(signal_data));
 
+    /*
+     * Parse the GVariant. If parsing fails (wrong type signature,
+     * NULL parameters), log and return. No callbacks fire.
+     */
     if (!internal_parse_dwnl_signal_data(parameters, &signal_data)) {
         FWUPMGR_ERROR("on_download_progress_signal: parse failed\n");
         return;
@@ -1345,57 +1454,164 @@ static void on_download_progress_signal(GDBusConnection *conn,
                  signal_data.progress_percent,
                  signal_data.status_string ? signal_data.status_string : "(null)");
 
+    /*
+     * Dispatch to all ACTIVE download callbacks.
+     * This is the two-phase dispatch (snapshot under mutex, invoke without).
+     * The callback may fire for progress (slot stays ACTIVE) or for
+     * terminal status (slot reset to IDLE).
+     */
     dispatch_all_dwnl_active(&signal_data);
 
-    // Free allocated strings from g_variant_get
+    /*
+     * Free the GLib-allocated strings.
+     *
+     * g_free() is GLib's equivalent of free(). We use g_free() because
+     * the strings were allocated by GLib's g_variant_get() internally.
+     * Using standard free() on GLib-allocated memory is technically
+     * undefined behavior (though it works on most platforms).
+     *
+     * These strings were valid throughout dispatch_all_dwnl_active()
+     * because we only free them AFTER all callbacks have returned.
+     * The callbacks receive progress_percent (int, copied by value)
+     * and status (enum, copied by value), so they don't reference
+     * these strings directly. But the dispatch function does read
+     * status_string to determine is_final, so it must be valid then.
+     *
+     * g_free(NULL) is safe -- it's a no-op.
+     */
     g_free(signal_data.firmware_name);
     g_free(signal_data.status_string);
     g_free(signal_data.message);
 }
 
-/**
- * @brief Dispatch DownloadProgress signal to every ACTIVE download callback
+/*
+ * dispatch_all_dwnl_active - Two-phase dispatch for download progress.
  *
- * SAME TWO-PHASE DESIGN as CheckForUpdate dispatch:
+ * PURPOSE:
+ *   Called by on_download_progress_signal() on the BG thread.
+ *   Finds ALL ACTIVE entries in g_dwnl_registry and invokes each one's
+ *   callback with the progress and status. If the download ended
+ *   (COMPLETED or ERROR), resets the slot to IDLE after the callback.
  *
- *   PHASE 1 (mutex held):
- *     Snapshot all ACTIVE entries.
- *     Do NOT change state yet — slot must stay ACTIVE for future signals.
- *     EXCEPTION: if status is COMPLETED or ERROR, mark slot for removal.
- *     Release mutex.
+ * TWO-PHASE DESIGN (SAME PATTERN AS checkForUpdate's dispatch_all_pending):
  *
- *   PHASE 2 (mutex released):
- *     Invoke each callback: callback(progress_per, status)
- *     Re-acquire mutex to reset completed/errored slots to IDLE.
+ *   PHASE 1 -- SNAPSHOT (mutex held, ~microseconds):
+ *     Lock g_dwnl_registry.mutex.
+ *     Scan all 30 slots. For each ACTIVE entry:
+ *       - Copy callback function pointer into stack-local snapshot
+ *       - Copy handle string (snprintf into fixed buffer)
+ *       - Record slot index (for IDLE reset later)
+ *       - Record whether this is a terminal signal (is_final)
+ *     Unlock mutex.
  *
- * WHY KEEP SLOTS ACTIVE ACROSS MULTIPLE SIGNALS?
- *   Download progress fires many times: 1%, 5%, 20%...100%.
- *   If we reset to IDLE after the first callback, subsequent signals
- *   would find no registered callback and be silently dropped.
- *   The slot only becomes IDLE when the download ends.
+ *   PHASE 2 -- INVOKE (no mutex held, may take milliseconds):
+ *     For each snapshot entry:
+ *       - Call: callback(progress_percent, status)
+ *       - If is_final: re-lock mutex, reset slot to IDLE, unlock
+ *
+ *   WHY TWO PHASES?
+ *     Same deadlock prevention as checkForUpdate. If we held the mutex
+ *     while calling the app's callback, and the callback tried to call
+ *     downloadFirmware() or unregisterProcess(), that would try to lock
+ *     the same mutex -> DEADLOCK. By releasing before invoking, the
+ *     callback can safely call any library API.
+ *
+ * KEY DIFFERENCE FROM checkForUpdate's dispatch_all_pending():
+ *
+ *   checkForUpdate: slot goes PENDING -> DISPATCHED -> IDLE after ONE callback.
+ *   download: slot stays ACTIVE across MANY callbacks. Only goes IDLE when
+ *     the status is DWNL_COMPLETED or DWNL_ERROR (is_final == true).
+ *
+ *   For in-progress signals (is_final == false):
+ *     - Phase 1: snapshot the ACTIVE slot, do NOT touch slot state.
+ *     - Phase 2: invoke callback, do NOT reset slot.
+ *     - Result: slot remains ACTIVE for the next DownloadProgress signal.
+ *
+ *   For terminal signals (is_final == true):
+ *     - Phase 1: same snapshot.
+ *     - Phase 2: invoke callback, THEN lock mutex and reset slot to IDLE.
+ *     - Result: slot is freed. No more callbacks will fire for this handle.
+ *
+ * STATUS MAPPING:
+ *   The daemon sends status as a STRING ("INPROGRESS", "COMPLETED", etc.).
+ *   map_dwnl_status_string() converts it to the DownloadStatus enum:
+ *     "NOTSTARTED" or "INPROGRESS" -> DWNL_IN_PROGRESS
+ *     "COMPLETED"                  -> DWNL_COMPLETED
+ *     "ERROR" or "DWNL_ERROR"     -> DWNL_ERROR
+ *
+ *   is_final is true only for DWNL_COMPLETED or DWNL_ERROR.
+ *   All other statuses (IN_PROGRESS) keep the slot alive.
+ *
+ * CALLBACK SIGNATURE:
+ *   void callback(int progress_per, DownloadStatus status)
+ *   - progress_per: 0-100 integer (percentage of download complete)
+ *   - status: DWNL_IN_PROGRESS, DWNL_COMPLETED, or DWNL_ERROR
+ *   - No handle parameter (different from checkForUpdate's callback)
+ *   - Runs on BG thread, NOT the app's main thread
+ *
+ * THREAD: Runs entirely on the BG thread.
+ *
+ * @param signal_data  Parsed DownloadProgress signal payload.
+ *                     Must remain valid for the duration of this function
+ *                     (strings freed by caller AFTER this returns).
  */
 static void dispatch_all_dwnl_active(const InternalDwnlSignalData *signal_data)
 {
+    /*
+     * Stack-local snapshot struct for one ACTIVE entry.
+     * Same pattern as checkForUpdate's dispatch -- we copy what we need
+     * while the mutex is held, then work from the copy with no mutex.
+     *
+     * Fields:
+     *   callback    -- the app's function pointer (copied from slot)
+     *   handle_copy -- snprintf'd copy of handle_key (for logging only)
+     *   slot_index  -- which slot in entries[] this came from
+     *   is_final    -- true if COMPLETED/ERROR (need to reset slot after)
+     */
     typedef struct {
         DownloadCallback  callback;
         char              handle_copy[256];
         int               slot_index;
-        bool              is_final;   /* true if COMPLETED or ERROR — remove after firing */
+        bool              is_final;   /* true if COMPLETED or ERROR -- remove after firing */
     } DwnlSnapshot;
 
     DwnlSnapshot snapshots[MAX_PENDING_CALLBACKS];
     int          count = 0;
 
+    /*
+     * Map the status string to our enum BEFORE entering the mutex.
+     * This is a pure computation (strcmp calls) with no shared state.
+     * Doing it outside the mutex keeps the critical section shorter.
+     *
+     * is_final determines whether we reset the slot after the callback:
+     *   true  = COMPLETED or ERROR -> download ended, free the slot
+     *   false = IN_PROGRESS -> download continuing, keep slot ACTIVE
+     */
     DownloadStatus status = map_dwnl_status_string(signal_data->status_string);
     bool           is_final = (status == DWNL_COMPLETED || status == DWNL_ERROR);
 
     /* ---- PHASE 1: snapshot under mutex ---- */
+
+    /*
+     * Lock the download registry. This blocks any concurrent call to
+     * internal_dwnl_register_callback() (from main thread) until we
+     * finish our snapshot. Hold time: microseconds (just scanning + copying).
+     */
     pthread_mutex_lock(&g_dwnl_registry.mutex);
 
+    /*
+     * Scan all 30 slots. Only process entries in ACTIVE state.
+     * IDLE and TIMED_OUT entries are skipped.
+     */
     for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
         DwnlCallbackEntry *e = &g_dwnl_registry.entries[i];
         if (e->state != DWNL_CB_STATE_ACTIVE) continue;
 
+        /*
+         * Copy the entry data into our stack-local snapshot.
+         * After we unlock, the slot might be modified by another thread
+         * (extremely unlikely, but the pattern is safe regardless).
+         */
         snapshots[count].callback   = e->callback;
         snapshots[count].slot_index = i;
         snapshots[count].is_final   = is_final;
@@ -1404,9 +1620,11 @@ static void dispatch_all_dwnl_active(const InternalDwnlSignalData *signal_data)
                  "%s", e->handle_key ? e->handle_key : "");
 
         /*
-         * If this is the final signal (completed/error), mark the slot
-         * so we reset it to IDLE after the callback fires.
-         * For in-progress signals, leave the slot ACTIVE.
+         * NOTE: We do NOT change the slot state here.
+         * For in-progress signals, the slot must remain ACTIVE.
+         * For terminal signals, we'll reset it in Phase 2 AFTER
+         * the callback fires. This is different from checkForUpdate
+         * which sets state=DISPATCHED during Phase 1.
          */
         count++;
 
@@ -1415,11 +1633,17 @@ static void dispatch_all_dwnl_active(const InternalDwnlSignalData *signal_data)
                      signal_data->progress_percent, is_final);
     }
 
+    /*
+     * Unlock BEFORE invoking callbacks.
+     * This is the deadlock prevention: callbacks may call library APIs
+     * that need g_dwnl_registry.mutex, so we must not hold it.
+     */
     pthread_mutex_unlock(&g_dwnl_registry.mutex);
 
     FWUPMGR_INFO("dispatch_all_dwnl_active: %d callback(s) to fire\n", count);
 
     /* ---- PHASE 2: invoke callbacks, no mutex held ---- */
+
     for (int i = 0; i < count; i++) {
         DwnlSnapshot *s = &snapshots[i];
 
@@ -1427,15 +1651,36 @@ static void dispatch_all_dwnl_active(const InternalDwnlSignalData *signal_data)
                      s->handle_copy);
 
         /*
+         * Invoke the app's download callback.
+         *
          * Callback signature: void fn(int progress_per, DownloadStatus status)
-         * No handle parameter — matches the DownloadCallback typedef exactly.
+         *   progress_per = signal_data->progress_percent (0-100)
+         *   status = mapped enum (DWNL_IN_PROGRESS, DWNL_COMPLETED, DWNL_ERROR)
+         *
+         * The app's callback (e.g., on_download_progress_callback in example_app)
+         * typically:
+         *   - Logs the progress
+         *   - On terminal status: locks its own condvar mutex, sets done=1,
+         *     signals the condvar to wake the main thread
+         *   - Returns
+         *
+         * This call may take microseconds to milliseconds depending on
+         * what the app does in the callback. We hold NO library mutex
+         * during this time.
          */
         s->callback(signal_data->progress_percent, status);
 
         /*
-         * If download is done (COMPLETED or ERROR), reset slot to IDLE.
-         * This frees the handle_key and makes the slot available for reuse.
-         * For in-progress signals, leave slot ACTIVE for next signal.
+         * If this was a terminal signal (download ended), reset the slot.
+         *
+         * We re-acquire the mutex, call dwnl_registry_reset_slot(), then
+         * release. This frees the strdup'd handle_key and sets state=IDLE.
+         *
+         * After this, no more callbacks will fire for this handle.
+         * The slot is available for reuse by a future downloadFirmware() call.
+         *
+         * For in-progress signals, we skip this entirely. The slot stays
+         * ACTIVE and will be found again on the NEXT DownloadProgress signal.
          */
         if (s->is_final) {
             pthread_mutex_lock(&g_dwnl_registry.mutex);
@@ -1452,31 +1697,92 @@ static void dispatch_all_dwnl_active(const InternalDwnlSignalData *signal_data)
  * DOWNLOAD REGISTRY OPERATIONS
  * ======================================================================== */
 
-/**
- * @brief Register a download callback keyed by handle
+/*
+ * internal_dwnl_register_callback - Allocate a download registry slot.
  *
- * Sets slot state to ACTIVE. Slot will receive ALL subsequent
- * DownloadProgress signals until DWNL_COMPLETED or DWNL_ERROR.
+ * PURPOSE:
+ *   Called by downloadFirmware() (on the main thread) to register the
+ *   app's DownloadCallback in g_dwnl_registry. After this call, the
+ *   BG thread will invoke the callback on EVERY DownloadProgress signal
+ *   until the download completes or errors.
  *
- * SAME HANDLE TWICE:
- *   Overwrites existing ACTIVE slot for the same handle.
- *   Prevents stale callbacks from a previous download session.
+ * REGISTRY DETAILS (g_dwnl_registry -- SEPARATE from g_registry):
+ *   - 30 slots (DwnlCallbackEntry entries[MAX_PENDING_CALLBACKS])
+ *   - Protected by g_dwnl_registry.mutex (its own mutex, independent)
+ *   - State machine: IDLE -> ACTIVE -> IDLE
+ *   - No PENDING or DISPATCHED states (unlike checkForUpdate)
+ *   - Slot stays ACTIVE across MULTIPLE DownloadProgress signals
  *
- * @param handle    App's FirmwareInterfaceHandle (strdup'd internally)
- * @param callback  App's DownloadCallback
- * @return true on success, false if registry full
+ * SLOT LIFECYCLE:
+ *   IDLE:   Slot is empty. handle_key==NULL, callback==NULL, state==0.
+ *   ACTIVE: Slot is registered. Callback fires on every DownloadProgress.
+ *           Stays ACTIVE until DWNL_COMPLETED or DWNL_ERROR arrives.
+ *   IDLE:   Reset by dwnl_registry_reset_slot() after terminal signal.
+ *
+ * DEDUP / OVERWRITE:
+ *   If the same handle already has an ACTIVE entry (e.g., the app called
+ *   downloadFirmware() twice without waiting for the first to complete),
+ *   we OVERWRITE the existing slot. This prevents:
+ *     - Two ACTIVE entries for the same handle (double-firing callbacks)
+ *     - Ghost entries from a previous download that was abandoned
+ *   We free the old handle_key before replacing it.
+ *
+ * SCAN ORDER:
+ *   Linear scan from slot 0 to 29. We look for two things simultaneously:
+ *     1. existing_slot: an ACTIVE entry with the same handle (overwrite it)
+ *     2. free_slot: the first IDLE entry (use it if no existing found)
+ *   If existing_slot is found, we break immediately (priority: overwrite).
+ *   If neither is found after scanning all 30, registry is full -> fail.
+ *
+ * THREAD SAFETY:
+ *   Called on the MAIN thread (from downloadFirmware).
+ *   g_dwnl_registry.mutex protects against concurrent access from:
+ *     - Another main-thread downloadFirmware() call (unlikely, but safe)
+ *     - The BG thread's dispatch_all_dwnl_active() reading the registry
+ *
+ * MEMORY:
+ *   handle is strdup'd (heap copy). Freed by dwnl_registry_reset_slot()
+ *   when the slot is released (after COMPLETED/ERROR).
+ *
+ * @param handle    The handle string (e.g., "1"). Will be strdup'd.
+ * @param callback  The app's DownloadCallback function pointer.
+ * @return true if registered successfully, false if registry full.
  */
 bool internal_dwnl_register_callback(FirmwareInterfaceHandle handle,
                                       DownloadCallback callback)
 {
+    /*
+     * Lock the download registry mutex.
+     * This ensures only one thread modifies g_dwnl_registry at a time.
+     * The BG thread also locks this during Phase 1 of dispatch (snapshot)
+     * and during is_final slot reset.
+     */
     pthread_mutex_lock(&g_dwnl_registry.mutex);
 
     DwnlCallbackEntry *free_slot     = NULL;
     DwnlCallbackEntry *existing_slot = NULL;
 
+    /*
+     * Single-pass scan of all 30 slots.
+     *
+     * Priority 1: Find an ACTIVE entry with the same handle.
+     *   -> We'll overwrite it (dedup).
+     *   -> Break immediately when found (no need to continue).
+     *
+     * Priority 2: Remember the first IDLE slot encountered.
+     *   -> We'll use it if no existing slot is found.
+     *   -> Don't break -- keep scanning for existing_slot.
+     */
     for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
         DwnlCallbackEntry *e = &g_dwnl_registry.entries[i];
 
+        /*
+         * Check for existing ACTIVE entry with same handle.
+         * Three conditions must all be true:
+         *   1. Slot is ACTIVE (not IDLE or TIMED_OUT)
+         *   2. handle_key is not NULL (defensive -- should always be set for ACTIVE)
+         *   3. handle_key matches our handle (string comparison)
+         */
         if (e->state == DWNL_CB_STATE_ACTIVE &&
             e->handle_key != NULL &&
             strcmp(e->handle_key, handle) == 0) {
@@ -1484,13 +1790,28 @@ bool internal_dwnl_register_callback(FirmwareInterfaceHandle handle,
             break;
         }
 
+        /*
+         * Remember first free slot (only if we haven't found one yet).
+         * We DON'T break here -- we keep scanning because an existing
+         * slot at a higher index takes priority over a free slot at
+         * a lower index.
+         */
         if (free_slot == NULL && e->state == DWNL_CB_STATE_IDLE) {
             free_slot = e;
         }
     }
 
+    /*
+     * Decide which slot to use.
+     * existing_slot (overwrite) takes priority over free_slot (new).
+     */
     DwnlCallbackEntry *target = existing_slot ? existing_slot : free_slot;
 
+    /*
+     * If neither was found, the registry is full. All 30 slots are ACTIVE
+     * (30 concurrent downloads -- should never happen in practice).
+     * Unlock and return false.
+     */
     if (target == NULL) {
         FWUPMGR_ERROR("internal_dwnl_register_callback: registry full (max=%d)\n",
                       MAX_PENDING_CALLBACKS);
@@ -1498,6 +1819,10 @@ bool internal_dwnl_register_callback(FirmwareInterfaceHandle handle,
         return false;
     }
 
+    /*
+     * If overwriting an existing slot, free the old handle_key first.
+     * strdup'd memory must be freed to avoid a memory leak.
+     */
     if (existing_slot) {
         FWUPMGR_INFO("internal_dwnl_register_callback: overwriting existing for handle='%s'\n",
                      handle);
@@ -1505,6 +1830,24 @@ bool internal_dwnl_register_callback(FirmwareInterfaceHandle handle,
         target->handle_key = NULL;
     }
 
+    /*
+     * Populate the slot with the new registration.
+     *
+     * strdup(handle): Creates a heap copy of the handle string.
+     *   We need our own copy because the caller's handle may be freed
+     *   or overwritten after downloadFirmware() returns. The slot
+     *   must retain the handle for the entire download duration.
+     *
+     * callback: Store the function pointer directly. No copy needed --
+     *   function pointers are just addresses in the code segment.
+     *
+     * state = DWNL_CB_STATE_ACTIVE: The slot is now live. The BG thread
+     *   will find it during its next dispatch_all_dwnl_active() call.
+     *   NOTE: ACTIVE, not PENDING. There's no intermediate state.
+     *
+     * registered_time: Stored for potential timeout detection (not
+     *   currently active, but the infrastructure is there for future use).
+     */
     target->handle_key      = strdup(handle);
     target->callback        = callback;
     target->state           = DWNL_CB_STATE_ACTIVE;
@@ -1516,9 +1859,41 @@ bool internal_dwnl_register_callback(FirmwareInterfaceHandle handle,
     return true;
 }
 
-/**
- * @brief Reset a download registry slot to IDLE
- * MUST be called with g_dwnl_registry.mutex held.
+/*
+ * dwnl_registry_reset_slot - Clear a download registry slot back to IDLE.
+ *
+ * PURPOSE:
+ *   Called after a terminal DownloadProgress signal (COMPLETED or ERROR)
+ *   has been dispatched. Frees the strdup'd handle_key and resets all
+ *   fields to zero/NULL/IDLE so the slot can be reused by a future
+ *   downloadFirmware() call.
+ *
+ * PRECONDITION:
+ *   MUST be called with g_dwnl_registry.mutex held by the caller.
+ *   The caller (dispatch_all_dwnl_active Phase 2) acquires the mutex
+ *   before calling this and releases it after.
+ *
+ * WHAT GETS FREED:
+ *   - handle_key: strdup'd in internal_dwnl_register_callback().
+ *     Must be freed to avoid memory leak. Set to NULL after free.
+ *
+ * WHAT GETS ZEROED:
+ *   - callback: set to NULL (dangling pointer prevention)
+ *   - registered_time: set to 0 (slot has no registration timestamp)
+ *   - state: set to DWNL_CB_STATE_IDLE (slot is free for reuse)
+ *
+ * AFTER THIS CALL:
+ *   The slot looks exactly like it did after internal_system_init():
+ *   all zeros, state == IDLE, ready for a new registration.
+ *   Subsequent DownloadProgress signals will skip this slot because
+ *   dispatch_all_dwnl_active() only processes ACTIVE slots.
+ *
+ * free(NULL) SAFETY:
+ *   If handle_key is already NULL (shouldn't happen, but defensive),
+ *   free(NULL) is a safe no-op in C.
+ *
+ * @param entry  Pointer to the DwnlCallbackEntry to reset.
+ *               MUST NOT be NULL.
  */
 static void dwnl_registry_reset_slot(DwnlCallbackEntry *entry)
 {
@@ -1535,30 +1910,85 @@ static void dwnl_registry_reset_slot(DwnlCallbackEntry *entry)
  * DOWNLOAD SIGNAL DATA HELPERS
  * ======================================================================== */
 
-/**
- * @brief Parse GVariant DownloadProgress signal payload
+/*
+ * internal_parse_dwnl_signal_data - Extract fields from DownloadProgress signal.
  *
- * Expected GVariant signature: (ii)
- *   i  progress_percent  (0–100)
- *   i  status_code       (maps to DownloadStatus)
+ * PURPOSE:
+ *   The daemon broadcasts DownloadProgress as a GVariant of type "(tsuss)".
+ *   This function unpacks that GVariant into an InternalDwnlSignalData struct
+ *   with individual typed fields.
+ *
+ * GVariant TYPE "(tsuss)" -- what each letter means:
+ *   '(' and ')' = tuple delimiters
+ *   't'         = uint64 (guint64) -- handler_id (which client this is for)
+ *   's'         = string (gchar*)  -- firmware_name (file being downloaded)
+ *   'u'         = uint32 (guint32) -- progress_percent (0-100)
+ *   's'         = string (gchar*)  -- status_string ("INPROGRESS", "COMPLETED", etc.)
+ *   's'         = string (gchar*)  -- message (human-readable)
+ *
+ * MEMORY MODEL (DIFFERENT FROM checkForUpdate):
+ *   checkForUpdate used strdup() on strings returned by g_variant_get('s').
+ *   For download, we DON'T strdup. Instead, g_variant_get() with 's' format
+ *   returns a NEWLY-ALLOCATED gchar* that the caller must g_free().
+ *
+ *   Wait -- isn't 's' supposed to return a pointer into the GVariant?
+ *   Actually NO: GLib documentation says for g_variant_get():
+ *     's' format: returns a newly-allocated copy (gchar*) that caller frees.
+ *     '&s' format: returns a pointer into the GVariant (no allocation).
+ *   We use 's' (not '&s'), so we get fresh allocations that outlive the GVariant.
+ *
+ *   The caller (on_download_progress_signal) calls g_free() on all three
+ *   string pointers AFTER dispatch is complete.
+ *
+ * VALIDATION:
+ *   Checks the GVariant type is "(tsuss)" before extracting. If the daemon
+ *   sends a different signature (version mismatch), we reject immediately.
+ *
+ * THREAD: Called on the BG thread (from on_download_progress_signal).
+ *
+ * @param parameters  The GVariant payload from the DownloadProgress signal.
+ *                    Type must be "(tsuss)".
+ * @param out_data    Output struct. Must be zero-initialized by caller.
+ *                    On success, contains handler_id, progress, and 3 strings.
+ *                    Strings are GLib-allocated -- caller must g_free() them.
+ * @return true on success, false if parameters is NULL or wrong type.
  */
 bool internal_parse_dwnl_signal_data(GVariant *parameters,
                                       InternalDwnlSignalData *out_data)
 {
     if (parameters == NULL || out_data == NULL) return false;
 
+    /*
+     * Verify the type signature before extracting.
+     * "(tsuss)" is the expected format for DownloadProgress.
+     * If it's different, the daemon protocol changed -- reject.
+     */
     const gchar *sig = g_variant_get_type_string(parameters);
     if (strcmp(sig, "(tsuss)") != 0) {
         FWUPMGR_ERROR("internal_parse_dwnl_signal_data: unexpected signature '%s' (expected '(tsuss)')\n", sig);
         return false;
     }
 
+    /*
+     * Local variables to receive g_variant_get() output.
+     * For 's' format: GLib allocates fresh strings (must g_free).
+     * For 't' and 'u' format: values copied directly into locals.
+     */
     guint64  handler_id = 0;
     gchar   *firmware_name = NULL;
     guint32  progress = 0;
     gchar   *status_str = NULL;
     gchar   *message_str = NULL;
 
+    /*
+     * Extract all 5 fields from the GVariant tuple.
+     * Format "(tsuss)" maps to:
+     *   &handler_id    -- receives uint64
+     *   &firmware_name -- receives gchar* (GLib-allocated)
+     *   &progress      -- receives uint32
+     *   &status_str    -- receives gchar* (GLib-allocated)
+     *   &message_str   -- receives gchar* (GLib-allocated)
+     */
     g_variant_get(parameters, "(tsuss)", 
                   &handler_id, 
                   &firmware_name, 
@@ -1566,42 +1996,107 @@ bool internal_parse_dwnl_signal_data(GVariant *parameters,
                   &status_str, 
                   &message_str);
 
+    /*
+     * Copy into output struct. The string pointers are just transferred --
+     * we don't strdup them again. Ownership passes to the caller.
+     * Caller is responsible for g_free() on firmware_name, status_string, message.
+     */
     out_data->handler_id      = handler_id;
-    out_data->firmware_name   = firmware_name;   // Caller must g_free
+    out_data->firmware_name   = firmware_name;   /* Caller must g_free */
     out_data->progress_percent = progress;
-    out_data->status_string   = status_str;      // Caller must g_free
-    out_data->message         = message_str;     // Caller must g_free
+    out_data->status_string   = status_str;      /* Caller must g_free */
+    out_data->message         = message_str;     /* Caller must g_free */
 
     return true;
 }
 
-/**
- * @brief Map status string to DownloadStatus enum
+/*
+ * internal_map_dwnl_status_code - Map integer status to DownloadStatus enum.
+ *
+ * PURPOSE:
+ *   Legacy function kept for backward compatibility. In the current protocol,
+ *   the daemon sends status as a STRING ("INPROGRESS", "COMPLETED", "ERROR")
+ *   and the actual mapping is done by map_dwnl_status_string() below.
+ *
+ *   This function exists for cases where an integer status code is received
+ *   (older daemon versions or internal testing).
+ *
+ * MAPPING:
+ *   0 -> DWNL_IN_PROGRESS  (download is actively happening)
+ *   1 -> DWNL_COMPLETED    (download finished successfully)
+ *   2 -> DWNL_ERROR        (download failed)
+ *   anything else -> DWNL_ERROR (unknown = treat as failure)
+ *
+ * @param status_code  Integer status from an older protocol format.
+ * @return Corresponding DownloadStatus enum value.
  */
 DownloadStatus internal_map_dwnl_status_code(int32_t status_code)
 {
-    // This function is kept for backward compatibility but now receives
-    // a mapped value. The actual mapping happens in the caller.
     switch (status_code) {
         case 0:  return DWNL_IN_PROGRESS;
         case 1:  return DWNL_COMPLETED;
         case 2:  return DWNL_ERROR;
         default:
-            FWUPMGR_ERROR("internal_map_dwnl_status_code: unknown %d → DWNL_ERROR\n",
+            FWUPMGR_ERROR("internal_map_dwnl_status_code: unknown %d -> DWNL_ERROR\n",
                           status_code);
             return DWNL_ERROR;
     }
 }
 
-/**
- * @brief Map status string from daemon to DownloadStatus enum
+/*
+ * map_dwnl_status_string - Map daemon's status string to DownloadStatus enum.
+ *
+ * PURPOSE:
+ *   The daemon sends download status as a human-readable string in the
+ *   DownloadProgress signal. This function converts that string to the
+ *   typed DownloadStatus enum that the app's callback receives.
+ *
+ * WHY STRINGS INSTEAD OF INTEGERS?
+ *   The daemon team chose strings for DownloadProgress (unlike
+ *   CheckForUpdateComplete which uses integers). Strings are more
+ *   debuggable in D-Bus tools (dbus-monitor shows "COMPLETED" not "1")
+ *   but require strcmp-based mapping in the library.
+ *
+ * MAPPING:
+ *   "INPROGRESS"  -> DWNL_IN_PROGRESS  (download actively downloading)
+ *   "NOTSTARTED"  -> DWNL_IN_PROGRESS  (download queued, about to start)
+ *   "COMPLETED"   -> DWNL_COMPLETED    (file fully downloaded)
+ *   "ERROR"       -> DWNL_ERROR        (download failed)
+ *   "DWNL_ERROR"  -> DWNL_ERROR        (alternate error string from daemon)
+ *   NULL          -> DWNL_ERROR        (missing field = error)
+ *   anything else -> DWNL_ERROR        (unknown = error, with log)
+ *
+ * WHY "NOTSTARTED" MAPS TO IN_PROGRESS:
+ *   "NOTSTARTED" is the daemon's first signal saying "I received your
+ *   request and queued it." From the app's perspective, this is the
+ *   beginning of the download process -- it's "in progress" even if
+ *   bytes haven't started flowing yet. There's no separate enum for
+ *   "queued but not started" -- the app just sees 0% IN_PROGRESS.
+ *
+ * TERMINAL vs NON-TERMINAL:
+ *   The return value determines whether dispatch_all_dwnl_active()
+ *   resets the slot:
+ *     DWNL_IN_PROGRESS -> slot stays ACTIVE (more signals coming)
+ *     DWNL_COMPLETED   -> slot reset to IDLE (download ended)
+ *     DWNL_ERROR       -> slot reset to IDLE (download ended)
+ *
+ * @param status_str  String from the daemon's signal. May be NULL.
+ * @return Corresponding DownloadStatus enum value.
  */
 static DownloadStatus map_dwnl_status_string(const char *status_str)
 {
+    /*
+     * NULL means the field was missing from the signal (parse error
+     * or daemon bug). Treat as error -- something is wrong.
+     */
     if (status_str == NULL) {
         return DWNL_ERROR;
     }
 
+    /*
+     * String comparisons for known values.
+     * "INPROGRESS" and "NOTSTARTED" both mean "not done yet."
+     */
     if (strcmp(status_str, "INPROGRESS") == 0 || strcmp(status_str, "NOTSTARTED") == 0) {
         return DWNL_IN_PROGRESS;
     } else if (strcmp(status_str, "COMPLETED") == 0) {
@@ -1610,7 +2105,11 @@ static DownloadStatus map_dwnl_status_string(const char *status_str)
         return DWNL_ERROR;
     }
 
-    FWUPMGR_ERROR("map_dwnl_status_string: unknown status '%s' → DWNL_ERROR\n", status_str);
+    /*
+     * Unknown string. Log it (for debugging daemon protocol changes)
+     * and treat as error. The slot will be reset to IDLE.
+     */
+    FWUPMGR_ERROR("map_dwnl_status_string: unknown status '%s' -> DWNL_ERROR\n", status_str);
     return DWNL_ERROR;
 }
 

@@ -438,91 +438,305 @@ static void rdkFwupdateMgr_lib_deinit(void)
     FWUPMGR_INFO("=== rdkFwupdateMgr library unloaded ===\n");
 }
 #endif
-/* ========================================================================
- * DOWNLOAD FIRMWARE PUBLIC API
- * ========================================================================
+/*
+ * downloadFirmware - Initiate a non-blocking firmware download.
  *
- * Implements:
- *   DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,
- *                                   FwDwnlReq fwdwnlreq,
- *                                   DownloadCallback callback);
+ * OVERVIEW
  *
- * FLOW:
- *   1. Validate: handle not NULL/empty, firmwareName not empty, callback not NULL
- *   2. Connect to D-Bus (fail early if connection fails)
- *   3. Register callback in download registry (AFTER D-Bus connection succeeds)
- *   4. Fire DownloadFirmware D-Bus method call to daemon (fire-and-forget)
- *   5. Return RDKFW_DWNL_SUCCESS immediately
+ * PURPOSE:
+ *   This is the SECOND async API call in the firmware update workflow.
+ *   After checkForUpdate() confirmed firmware IS available (status ==
+ *   FIRMWARE_AVAILABLE and you got the filename + URL from UpdateDetails),
+ *   you call this to tell the daemon "start downloading that file."
  *
- *   [later — fires multiple times as download progresses]
- *   Daemon emits DownloadProgress(progress%, status) signal repeatedly
- *   → on_download_progress_signal() fires in background thread
- *   → dispatch_all_dwnl_active() calls every ACTIVE DownloadCallback
- *   → slot stays ACTIVE until DWNL_COMPLETED or DWNL_ERROR
- * ======================================================================== */
-
-/**
- * @brief Initiate firmware download — non-blocking, returns immediately
+ *   This function is NON-BLOCKING. It returns immediately (in ~3ms) with
+ *   RDKFW_DWNL_SUCCESS, meaning "your request was accepted." The actual
+ *   download progress (0%, 10%, 50%, 100%) arrives later -- REPEATEDLY --
+ *   via your callback function, which is invoked by the library's
+ *   background thread each time the daemon emits a DownloadProgress signal.
  *
- * @param handle      Valid FirmwareInterfaceHandle from registerProcess()
- * @param fwdwnlreq   Download request (passed by value, library copies it)
- * @param callback    Invoked on each DownloadProgress signal
+ * KEY DIFFERENCE FROM checkForUpdate():
+ *   checkForUpdate callback fires ONCE (one signal, one callback, done).
+ *   downloadFirmware callback fires MANY TIMES (one per progress report).
+ *   The registry slot stays ACTIVE across all progress signals and only
+ *   goes IDLE when the download ends (COMPLETED or ERROR).
+ *
+ * WHAT "FIRE-AND-FORGET" MEANS (SAME PATTERN AS checkForUpdate):
+ *   We send the D-Bus method call and do NOT wait for a reply.
+ *   The daemon's method response is discarded (connection already closed).
+ *   The real data comes as BROADCAST D-Bus signals: "DownloadProgress"
+ *   -- caught by the BG thread's on_download_progress_signal() handler.
+ *
+ * THREADING MODEL:
+ *   - This function runs on the CALLER'S thread (main thread)
+ *   - It does NOT block the caller
+ *   - The callback fires on the BACKGROUND thread (the one created
+ *     during registerProcess -> internal_system_init)
+ *   - The BG thread fires the callback MULTIPLE TIMES (once per signal)
+ *   - The caller typically sleeps on a condvar until the callback
+ *     sets g_download_done=1 on a terminal status (COMPLETED/ERROR)
+ *
+ * D-BUS WIRE PROTOCOL:
+ *   Method: "DownloadFirmware"
+ *   Input:  GVariant type "(ssss)" -- four strings:
+ *     s  handle           e.g., "1" (from registerProcess)
+ *     s  firmwareName     e.g., "firmware_v8.bin"
+ *     s  downloadUrl      e.g., "http://cdn.example.com/fw" or "" (use XConf)
+ *     s  TypeOfFirmware   e.g., "PCI" or "PDRI" or "PERIPHERAL"
+ *   Reply: IGNORED (fire-and-forget -- three trailing NULLs)
+ *
+ *   Signal (arrives later, MULTIPLE times):
+ *     Name: "DownloadProgress"
+ *     GVariant type "(tsuss)":
+ *       t  handler_id       (uint64 - which client)
+ *       s  firmware_name    (string - filename being downloaded)
+ *       u  progress_percent (uint32 - 0 to 100)
+ *       s  status_string    (string - "NOTSTARTED", "INPROGRESS", "COMPLETED", "ERROR")
+ *       s  message          (string - human-readable message)
+ *
+ * CONNECTION MODEL:
+ *   Creates an EPHEMERAL D-Bus connection (e.g., :1.143) that lives
+ *   only for this function call. The BG thread has its own PERSISTENT
+ *   connection (:1.141) for receiving signals. Completely independent.
+ *
+ * DOWNLOAD REGISTRY (g_dwnl_registry -- SEPARATE from g_registry):
+ *   This API uses its OWN registry, independent from checkForUpdate's.
+ *   g_dwnl_registry has its own mutex, its own 30 slots, its own
+ *   state machine. The two registries never interfere with each other.
+ *
+ *   Slot lifecycle:  IDLE --> ACTIVE --> IDLE
+ *     IDLE:   Slot free, no callback registered.
+ *     ACTIVE: Callback registered. Fires on EVERY DownloadProgress signal.
+ *             Stays ACTIVE across multiple signals (0%, 10%, 50%...).
+ *     IDLE:   Reset when DWNL_COMPLETED or DWNL_ERROR is received.
+ *
+ *   Compare with checkForUpdate's lifecycle:
+ *     IDLE --> PENDING --> DISPATCHED --> IDLE  (fires ONCE)
+ *   Download has NO "DISPATCHED" state because the slot fires repeatedly.
+ *
+ * CALLBACK CONTRACT:
+ *   - Fires MULTIPLE TIMES (once per DownloadProgress signal)
+ *   - Fires on the BG thread, NOT the caller's thread
+ *   - Signature: void callback(int progress_per, DownloadStatus status)
+ *   - progress_per: 0 to 100 (percentage complete)
+ *   - status: DWNL_IN_PROGRESS, DWNL_COMPLETED, or DWNL_ERROR
+ *   - DWNL_COMPLETED means download finished successfully
+ *   - DWNL_ERROR means download failed (network error, disk full, etc.)
+ *   - After COMPLETED or ERROR, no more callbacks will fire
+ *   - If daemon crashes mid-download, callback NEVER fires with
+ *     COMPLETED/ERROR -- the caller's condvar timeout is the safety net
+ *
+ * RETURN VALUES:
+ *   RDKFW_DWNL_SUCCESS (0) -- Request sent. Callbacks will fire later.
+ *   RDKFW_DWNL_FAILED  (1) -- Request failed. Callback will NOT fire.
+ *     IMPORTANT: SUCCESS does NOT mean download started. It means the
+ *     request was accepted. Actual progress comes in the callbacks.
+ *
+ * EXECUTION FLOW (step numbers match code comments below):
+ *
+ *   [1] Validate handle, fwdwnlreq, firmwareName, callback (reject NULL/empty)
+ *   [2] Open ephemeral D-Bus connection (fail early if D-Bus is down)
+ *   [3] Register callback in g_dwnl_registry (state = ACTIVE)
+ *       -- MUST happen BEFORE sending D-Bus call to avoid race
+ *   [4] Send fire-and-forget "DownloadFirmware" D-Bus method call
+ *   [5] Close ephemeral connection, return RDKFW_DWNL_SUCCESS
+ *
+ *   [Later, repeatedly -- on BG thread:]
+ *   Daemon broadcasts "DownloadProgress" signal (multiple times)
+ *   BG thread receives it in on_download_progress_signal()
+ *   dispatch_all_dwnl_active() finds our ACTIVE slot, invokes callback
+ *   If status == COMPLETED or ERROR: slot is reset to IDLE
+ *   Otherwise: slot stays ACTIVE for next signal
+ *
+ * WHY REGISTER BEFORE SEND (Step 3 before Step 4):
+ *   Same race condition as checkForUpdate. If the daemon responds
+ *   instantly (e.g., file already cached locally), the BG thread
+ *   would receive the signal before we registered. The dispatch
+ *   would find zero ACTIVE entries and silently drop the signal.
+ *   Our callback would never fire. The app would hang forever.
+ *
+ * WHY CONNECT BEFORE REGISTER (Step 2 before Step 3):
+ *   If we registered first and D-Bus connection then failed, we'd
+ *   have a ghost ACTIVE entry that never fires (because the D-Bus
+ *   call was never sent). The slot would stay ACTIVE forever,
+ *   wasting 1 of 30 slots and never being cleaned up.
+ *
+ * @param handle     The handle returned by registerProcess(). Must be
+ *                   non-NULL and non-empty. e.g., "1"
+ * @param fwdwnlreq  Pointer to download request struct. Must be non-NULL.
+ *                   Contains firmwareName (required), downloadUrl (optional,
+ *                   "" means use XConf URL), TypeOfFirmware (optional).
+ * @param callback   Function pointer invoked on each DownloadProgress signal.
+ *                   Must be non-NULL. Signature:
+ *                     void callback(int progress_per, DownloadStatus status)
+ *
  * @return RDKFW_DWNL_SUCCESS or RDKFW_DWNL_FAILED
+ *
+ * See also: on_download_progress_signal() -- BG thread signal handler
+ * See also: dispatch_all_dwnl_active()    -- two-phase callback dispatch
+ * See also: internal_dwnl_register_callback() -- registry slot allocation
  */
 DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,
                                 const FwDwnlReq *fwdwnlreq,
                                 DownloadCallback callback)
 {
-    /* [1] Validate */
+    /*
+     * [STEP 1] INPUT VALIDATION
+     *
+     * Reject obviously bad inputs before touching D-Bus or the registry.
+     * This is the library's input boundary -- validate everything here.
+     * downloadFirmware has MORE validation than checkForUpdate because
+     * it also validates the request struct fields (not just handle+callback).
+     */
+
+    /*
+     * Check 1a: handle must not be NULL and must not be empty "".
+     *
+     * handle is the string "1" from registerProcess(). If the caller
+     * passes NULL (forgot to register first) or an empty string,
+     * reject immediately. The daemon would reject it too, but we
+     * save the D-Bus round-trip.
+     */
     if (handle == NULL || handle[0] == '\0') {
         FWUPMGR_ERROR("downloadFirmware: invalid handle (NULL or empty)\n");
         return RDKFW_DWNL_FAILED;
     }
 
+    /*
+     * Check 1b: the request struct pointer must not be NULL.
+     *
+     * This catches the case where the caller passes NULL instead of
+     * &download_req. Dereferencing NULL would crash.
+     */
     if (fwdwnlreq == NULL) {
         FWUPMGR_ERROR("downloadFirmware: fwdwnlreq is NULL\n");
         return RDKFW_DWNL_FAILED;
     }
 
+    /*
+     * Check 1c: firmwareName pointer must not be NULL.
+     *
+     * FwDwnlReq.firmwareName is a const char* -- it could be NULL if
+     * the caller forgot to set it. We need a filename to tell the
+     * daemon WHAT to download.
+     */
     if (fwdwnlreq->firmwareName == NULL) {
         FWUPMGR_ERROR("downloadFirmware: firmwareName is NULL\n");
         return RDKFW_DWNL_FAILED;
     }
 
+    /*
+     * Check 1d: firmwareName must not be an empty string "".
+     *
+     * An empty filename is meaningless -- the daemon can't download "".
+     * This catches the case where the caller did:
+     *   download_req.firmwareName = "";   // accident
+     */
     if (fwdwnlreq->firmwareName[0] == '\0') {
         FWUPMGR_ERROR("downloadFirmware: firmwareName is empty\n");
         return RDKFW_DWNL_FAILED;
     }
 
+    /*
+     * Check 1e: callback must not be NULL.
+     *
+     * Without a callback, the app can't receive progress updates.
+     * It would never know when the download finishes. That's always
+     * a programming error.
+     */
     if (callback == NULL) {
         FWUPMGR_ERROR("downloadFirmware: callback is NULL\n");
         return RDKFW_DWNL_FAILED;
     }
 
+    /*
+     * Log what we're about to download. The ternary expressions handle
+     * optional fields: TypeOfFirmware and downloadUrl may be NULL
+     * (they're optional in FwDwnlReq).
+     */
     FWUPMGR_INFO("downloadFirmware: handle='%s' firmware='%s' type='%s' url='%s'\n",
                  handle, 
                  fwdwnlreq->firmwareName,
                  (fwdwnlreq->TypeOfFirmware && fwdwnlreq->TypeOfFirmware[0]) ? fwdwnlreq->TypeOfFirmware : "(none)",
                  (fwdwnlreq->downloadUrl && fwdwnlreq->downloadUrl[0]) ? fwdwnlreq->downloadUrl : "(use XConf)");
 
-    /* [2] Connect to D-Bus FIRST before registering callback
+    /*
+     * [STEP 2] CREATE EPHEMERAL D-BUS CONNECTION
      *
-     * This prevents stale registry entries if D-Bus connection fails.
+     * g_bus_get_sync(G_BUS_TYPE_SYSTEM, ...) opens a new connection to
+     * the system D-Bus bus. Gets a unique sender name like :1.143.
+     *
+     * Why a NEW connection instead of reusing the BG thread's :1.141?
+     *   The BG thread's connection is attached to the BG thread's
+     *   GMainContext. Using it from the main thread would require
+     *   cross-thread GLib context management -- complex and fragile.
+     *   A fresh per-call connection is simpler and safe.
+     *
+     * Why BEFORE registering the callback?
+     *   If D-Bus is down (dbus-daemon crashed, socket missing), this
+     *   call fails. We want to fail BEFORE polluting the download
+     *   registry with an ACTIVE entry that will never be dispatched.
+     *   Clean failure: no registry entry, no dangling state.
+     *
+     * Cost: ~2ms for the D-Bus handshake. Negligible for a firmware
+     * download that takes minutes.
      */
     GError *error = NULL;
     GDBusConnection *conn = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
 
     if (conn == NULL) {
+        /*
+         * D-Bus connection failed. Common causes:
+         *   - dbus-daemon not running
+         *   - System bus socket missing (/var/run/dbus/system_bus_socket)
+         *   - Permission denied (D-Bus policy rejects our user)
+         *
+         * Return FAILED -- no registry entry created, nothing to clean up.
+         */
         FWUPMGR_ERROR("downloadFirmware: D-Bus connect failed: %s\n",
                       error ? error->message : "unknown");
         if (error) g_error_free(error);
         return RDKFW_DWNL_FAILED;
     }
 
-    /* [3] Register callback AFTER D-Bus connection succeeds, BEFORE sending
+    /*
+     * [STEP 3] REGISTER CALLBACK IN THE DOWNLOAD REGISTRY (g_dwnl_registry)
      *
-     * Register immediately before sending to avoid race condition where
-     * the daemon responds before we're ready to receive the signal.
+     * internal_dwnl_register_callback() does the following (see _async.c):
+     *   1. Locks g_dwnl_registry.mutex
+     *   2. Scans all 30 DwnlCallbackEntry slots for:
+     *      a. An existing ACTIVE entry with the same handle (dedup/overwrite)
+     *      b. The first IDLE slot (free slot)
+     *   3. If same handle found: overwrites it (prevents stale callbacks)
+     *      If free slot found: uses it
+     *      If neither: returns false (registry full -- 30 concurrent downloads!)
+     *   4. Populates the slot:
+     *      - handle_key = strdup(handle)    -- "1" (heap copy)
+     *      - callback = our function pointer
+     *      - state = DWNL_CB_STATE_ACTIVE   -- NOTE: ACTIVE, not PENDING!
+     *      - registered_time = current unix timestamp
+     *   5. Unlocks g_dwnl_registry.mutex
+     *   6. Returns true
+     *
+     * After this call, the registry has one ACTIVE entry. When the BG
+     * thread receives DownloadProgress signals, it will find this entry
+     * and invoke the callback on EVERY signal.
+     *
+     * STATE DIFFERENCE FROM checkForUpdate:
+     *   checkForUpdate sets state = CB_STATE_PENDING  (fires once)
+     *   downloadFirmware sets state = DWNL_CB_STATE_ACTIVE (fires repeatedly)
+     *   There is NO "DISPATCHED" intermediate state for download.
+     *
+     * Why BEFORE the D-Bus call?
+     *   Race condition prevention. If the daemon starts downloading
+     *   instantly (file already cached), the BG thread would receive
+     *   the first DownloadProgress signal before we registered.
+     *   dispatch_all_dwnl_active() would find zero ACTIVE entries
+     *   and silently discard the signal. Our callback would never fire.
+     *
+     * Failure case: registry full (30 concurrent pending downloads).
+     *   In practice never happens -- a device downloads one firmware
+     *   at a time. If it does, clean up and fail.
      */
     if (!internal_dwnl_register_callback(handle, callback)) {
         FWUPMGR_ERROR("downloadFirmware: registry full, handle='%s'\n", handle);
@@ -530,16 +744,49 @@ DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,
         return RDKFW_DWNL_FAILED;
     }
 
-    /* [4] Fire-and-forget D-Bus DownloadFirmware method call
+    /*
+     * [STEP 4] SEND FIRE-AND-FORGET D-BUS METHOD CALL
      *
-     * Arguments: (ssss)
-     *   s handle          — identifies this app to the daemon
-     *   s firmwareName    — firmware image filename
-     *   s downloadUrl     — override URL or "" for XConf URL
-     *   s TypeOfFirmware  — "PCI" | "PDRI" | "PERIPHERAL"
+     * g_dbus_connection_call() sends a D-Bus method call to the daemon.
      *
-     * Three trailing NULLs = fire and forget (no reply waited for).
-     * g_dbus_connection_call() returns immediately.
+     * Parameters to g_dbus_connection_call():
+     *   conn              -- our ephemeral connection :1.143
+     *   DBUS_SERVICE_NAME -- "org.rdkfwupdater.Service" (daemon's well-known name)
+     *   DBUS_OBJECT_PATH  -- "/org/rdkfwupdater/Service" (object path)
+     *   DBUS_INTERFACE_NAME -- "org.rdkfwupdater.Interface"
+     *   DBUS_METHOD_DOWNLOAD -- "DownloadFirmware" (the method name)
+     *   g_variant_new("(ssss)", ...) -- 4-string argument tuple:
+     *     "(ssss)" means a tuple containing four strings
+     *     string 1: handle -- "1" (which registered client is asking)
+     *     string 2: firmwareName -- "firmware_v8.bin" (what to download)
+     *     string 3: downloadUrl -- URL or "" (where to download from)
+     *     string 4: TypeOfFirmware -- "PCI" or "" (firmware type category)
+     *   NULL              -- expected reply type: we don't care
+     *   G_DBUS_CALL_FLAGS_NONE -- no special flags
+     *   DBUS_TIMEOUT_MS   -- 5000ms (only for message queueing, not reply)
+     *   NULL              -- GCancellable: no cancellation support
+     *   NULL              -- GAsyncReadyCallback: no reply callback
+     *   NULL              -- user_data for reply callback: N/A
+     *
+     * The three trailing NULLs make this fire-and-forget. GLib queues
+     * the D-Bus message in the kernel's socket buffer and returns.
+     *
+     * NULL-COALESCING for optional fields:
+     *   fwdwnlreq->downloadUrl ? fwdwnlreq->downloadUrl : ""
+     *   If downloadUrl is NULL (caller didn't set it), we send ""
+     *   to the daemon. The daemon treats "" as "use the XConf URL
+     *   that was returned during checkForUpdate." Same for TypeOfFirmware.
+     *
+     * WHAT HAPPENS ON THE DAEMON SIDE:
+     *   1. Daemon receives "DownloadFirmware" with 4 string arguments
+     *   2. Validates handler "1" is registered (from registerProcess)
+     *   3. Starts downloading firmware_v8.bin from the URL
+     *   4. As download progresses, broadcasts DownloadProgress signals:
+     *      - (1, "firmware_v8.bin", 0, "NOTSTARTED", "Download queued")
+     *      - (1, "firmware_v8.bin", 10, "INPROGRESS", "10% downloaded")
+     *      - (1, "firmware_v8.bin", 50, "INPROGRESS", "50% downloaded")
+     *      - (1, "firmware_v8.bin", 100, "COMPLETED", "Download complete")
+     *   5. Our BG thread catches each signal and fires our callback
      */
 
     g_dbus_connection_call(
@@ -561,12 +808,48 @@ DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,
         NULL                                       /* user_data: none            */
     );
 
+    /*
+     * [STEP 5] CLOSE EPHEMERAL CONNECTION AND RETURN
+     *
+     * g_object_unref(conn) closes our ephemeral D-Bus connection :1.143.
+     * The D-Bus message is already in the kernel socket buffer -- closing
+     * our end doesn't prevent delivery to the daemon.
+     *
+     * After this, the state of the world is:
+     *
+     *   Main thread:
+     *     - Returns RDKFW_DWNL_SUCCESS to the caller
+     *     - Caller enters pthread_cond_timedwait (typically 300s timeout)
+     *     - Connection :1.143 is DEAD (just closed)
+     *
+     *   BG thread:
+     *     - Still sleeping in g_main_loop_run() on connection :1.141
+     *     - g_dwnl_registry.entries[0] has our callback in ACTIVE state
+     *     - Will wake up on EVERY DownloadProgress signal
+     *     - Will call our callback MULTIPLE TIMES
+     *
+     *   Daemon:
+     *     - Received our request, started downloading the firmware
+     *     - Will broadcast DownloadProgress signals as download progresses
+     *
+     *   g_dwnl_registry (download-specific, separate from g_registry):
+     *     entries[0] = { state=ACTIVE, handle_key="1",
+     *                    callback=on_download_progress_callback }
+     *     entries[1..29] = IDLE
+     *
+     *   D-Bus connections:
+     *     :1.141 -- BG thread persistent (ALIVE, listening for signals)
+     *     :1.143 -- this downloadFirmware ephemeral (DEAD, just closed)
+     *
+     * SUCCESS here means: "I sent the request and registered your callback."
+     * It does NOT mean: "Download started." or "File exists on server."
+     * The callback will fire later with actual progress.
+     */
     g_object_unref(conn);
 
     FWUPMGR_INFO("downloadFirmware: D-Bus call sent, returning SUCCESS. handle='%s'\n",
                  handle);
 
-    /* [4] Return immediately — app is unblocked */
     return RDKFW_DWNL_SUCCESS;
 }
 
