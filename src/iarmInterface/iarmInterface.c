@@ -318,6 +318,47 @@ bool isConnectedToInternet (void)
     return isconnected;
 }
 
+size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
+{
+    size_t len = 0;
+    IARM_Result_t ret;
+    IARM_Bus_MFRLib_GetSerializedData_Param_t param;
+
+    if (pPDRIFilename == NULL) {
+        SWLOG_ERROR("GetPDRIFileName: Error, input argument NULL\n");
+        return 0;
+    }
+
+    SWLOG_INFO("GetPDRIFileName: Fetching PDRI image name via IARM_Bus_Call (MFRMgr)");
+
+    memset(&param, 0, sizeof(param));
+    param.type = mfrSERIALIZED_TYPE_PDRIVERSION;
+
+    ret = IARM_Bus_Call(
+        IARM_BUS_MFRLIB_NAME,
+        IARM_BUS_MFRLIB_API_GetSerializedData,
+        (void *)&param,
+        sizeof(param)
+    );
+
+    if (ret == IARM_RESULT_SUCCESS ) 
+    {
+	SWLOG_INFO("GetPDRIFileName: IARM_Bus_Call Success , param.bufLen : %zu\n" , (size_t)param.bufLen);    
+	if(param.bufLen > 0 && param.bufLen < szBufSize) {
+            memcpy(pPDRIFilename, param.buffer, param.bufLen);
+            pPDRIFilename[param.bufLen] = '\0';
+            len = param.bufLen;
+            SWLOG_INFO("GetPDRIFileName: IARM_Bus_Call OK, PDRI Version = %s", pPDRIFilename);
+	}
+    } else {
+        // Error path: be explicit
+        SWLOG_ERROR("GetPDRIFileName: IARM_Bus_Call failed (ret=%d, bufLen=%zu). Cannot retrieve PDRI image name.", ret, (size_t)param.bufLen);
+
+    }
+
+    return len;
+}
+
 #else
 
 // Do nothing act as pass through function .
