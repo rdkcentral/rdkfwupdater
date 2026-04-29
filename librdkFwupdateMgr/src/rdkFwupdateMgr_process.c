@@ -96,7 +96,7 @@
 /** Maximum length for library version string */
 #define MAX_LIB_VERSION_LEN     64
 
-/* DBUS_TIMEOUT_MS is defined in rdkFwupdateMgr_async_internal.h */
+/* DBUS_SYNC_TIMEOUT_MS is defined in rdkFwupdateMgr_async_internal.h (10s) */
 
 /* ========================================================================
  * INTERNAL CONTEXT STRUCTURE
@@ -261,7 +261,7 @@ static bool validate_lib_version(const char *libVersion)
  *
  * THREADING MODEL:
  *   - This function runs entirely on the CALLER'S thread
- *   - It BLOCKS (synchronous D-Bus call) for up to DBUS_TIMEOUT_MS (5s)
+ *   - It BLOCKS (synchronous D-Bus call) for up to DBUS_SYNC_TIMEOUT_MS (10s)
  *   - At the end, it spawns a background thread for signal reception
  *   - After return: 2 threads exist (caller's + library BG thread)
  *
@@ -475,7 +475,7 @@ FirmwareInterfaceHandle registerProcess(const char *processName, const char *lib
      *   G_DBUS_CALL_FLAGS_NONE -- No special flags (could use NO_AUTO_START
      *                             to prevent D-Bus activation, but we want
      *                             the daemon to auto-start if not running)
-     *   DBUS_TIMEOUT_MS   -- 5000 ms (5 seconds). If daemon doesn't reply
+     *   DBUS_SYNC_TIMEOUT_MS -- 10000 ms (10 seconds). If daemon doesn't reply
      *                         within this time, the call fails with timeout error.
      *   NULL              -- No GCancellable (we can't cancel this operation)
      *   &error            -- Where to store error details on failure
@@ -495,7 +495,7 @@ FirmwareInterfaceHandle registerProcess(const char *processName, const char *lib
      * BLOCKING BEHAVIOR:
      *   Our thread is SUSPENDED here until:
      *   a) Daemon replies (typically <10ms) -- we get 'result'
-     *   b) 5-second timeout expires -- we get NULL + timeout GError
+     *   b) 10-second timeout expires -- we get NULL + timeout GError
      *   c) D-Bus daemon signals an error -- we get NULL + error GError
      */
     FWUPMGR_INFO("Calling RegisterProcess D-Bus method...\n");
@@ -504,7 +504,7 @@ FirmwareInterfaceHandle registerProcess(const char *processName, const char *lib
         "RegisterProcess",
         g_variant_new("(ss)", processName, libVersion),
         G_DBUS_CALL_FLAGS_NONE,
-        DBUS_TIMEOUT_MS,
+        DBUS_SYNC_TIMEOUT_MS,
         NULL,                       /* GCancellable */
         &error
     );
@@ -611,7 +611,7 @@ FirmwareInterfaceHandle registerProcess(const char *processName, const char *lib
                 "UnregisterProcess",
                 g_variant_new("(t)", handler_id),
                 G_DBUS_CALL_FLAGS_NONE,
-                DBUS_TIMEOUT_MS,
+                DBUS_SYNC_TIMEOUT_MS,
                 NULL,
                 &cleanup_error
             );
@@ -1174,7 +1174,7 @@ void unregisterProcess(FirmwareInterfaceHandle handler)
      *   FALSE = daemon didn't find handler_id (already removed, or unknown)
      *
      * BLOCKING BEHAVIOR:
-     *   Main thread blocks here for up to DBUS_TIMEOUT_MS (5 seconds).
+     *   Main thread blocks here for up to DBUS_SYNC_TIMEOUT_MS (10 seconds).
      *   Typical response time: <5ms (just a hash table lookup + remove).
      *
      * WHAT THE DAEMON DOES:
@@ -1209,7 +1209,7 @@ void unregisterProcess(FirmwareInterfaceHandle handler)
         "UnregisterProcess",
         g_variant_new("(t)", handler_id),
         G_DBUS_CALL_FLAGS_NONE,
-        DBUS_TIMEOUT_MS,
+        DBUS_SYNC_TIMEOUT_MS,
         NULL,                       /* GCancellable */
         &error
     );
