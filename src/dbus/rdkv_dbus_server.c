@@ -401,12 +401,14 @@ static guint64 add_process_to_tracking(const gchar *process_name,
  * Called when client invokes UnregisterProcess. Frees associated ProcessInfo.
  *
  * @param handler_id Handler ID to remove
- * @param sender_id D-Bus sender ID of the requesting client (unused - kept for API compatibility)
+ * @param sender_id D-Bus sender ID of the requesting client; currently unused but
+ * retained to keep this internal helper aligned with its caller context and to
+ * allow future sender-based validation or auditing.
  * @return TRUE if found and removed, FALSE if not found
  */
 static gboolean remove_process_from_tracking(guint64 handler_id, const gchar *sender_id)
 {
-	(void)sender_id;  // Not used - single-thread library model creates new D-Bus connection per API call
+	(void)sender_id;  // Intentionally unused for now; reserved for possible sender-aware checks
 	ProcessInfo *info = g_hash_table_lookup(registered_processes, GINT_TO_POINTER(handler_id));
 	if (!info) {
 		SWLOG_INFO("[PROCESS_TRACKING] Handler %"G_GUINT64_FORMAT" not found\n", handler_id);

@@ -513,7 +513,7 @@ FirmwareInterfaceHandle registerProcess(const char *processName, const char *lib
         /* D-Bus call failed. Common causes:
          *   - Daemon not running ("The name was not provided by any .service files")
          *   - Daemon crashed during handling
-         *   - 5-second timeout expired (daemon overloaded)
+         *   - 10-second timeout expired (daemon overloaded)
          *   - Daemon explicitly rejected us (process name conflict, D-Bus error reply)
          *
          * RESOURCE CLEANUP:
@@ -878,7 +878,7 @@ FirmwareInterfaceHandle registerProcess(const char *processName, const char *lib
  *       - Free check registry (handle_keys + mutex)
  *       After this: 1 thread, 0 mutexes, 0 D-Bus connections
  *   [4] Create ephemeral D-Bus proxy (best-effort)
- *   [5] Call "UnregisterProcess" on daemon (best-effort, blocks up to 5s)
+ *   [5] Call "UnregisterProcess" on daemon (best-effort, blocks up to 10s)
  *   [6] Extract success boolean from daemon reply
  *   [7] free(handler) -- always, regardless of D-Bus outcome
  *
@@ -1154,9 +1154,9 @@ void unregisterProcess(FirmwareInterfaceHandle handler)
      * "dormant" state: no threads, no mutexes, no D-Bus connections.
      * Only the handle string and handler_id still exist.
      */
-    FWUPMGR_INFO("=== rdkFwupdateMgr destroy thred unloading ===\n");
+    FWUPMGR_INFO("=== rdkFwupdateMgr destroy thread unloading ===\n");
     internal_system_deinit();
-    FWUPMGR_INFO("=== rdkFwupdateMgr destory thread ===\n");
+    FWUPMGR_INFO("=== rdkFwupdateMgr destroy thread ===\n");
 
     /*
      * [STEP 4] CREATE D-BUS PROXY (best-effort)
@@ -1267,9 +1267,11 @@ void unregisterProcess(FirmwareInterfaceHandle handler)
          * restarts, it starts fresh. Our registration is already gone.
          */
         FWUPMGR_WARN("UnregisterProcess D-Bus call failed: %s\n",
-                error->message);
+                error ? error->message : "unknown error (GError not set)");
         FWUPMGR_WARN("  (This is OK if daemon already cleaned up)\n");
-        g_error_free(error);
+        if (error) {
+            g_error_free(error);
+        }
         g_object_unref(proxy);
         /* Continue with local cleanup */
         free(handler);
