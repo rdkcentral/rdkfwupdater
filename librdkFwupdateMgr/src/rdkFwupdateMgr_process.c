@@ -741,7 +741,7 @@ FirmwareInterfaceHandle registerProcess(const char *processName, const char *lib
     if (internal_system_init() != 0) {
         FWUPMGR_ERROR("rdkFwupdateMgr_lib_init: internal_system_init FAILED\n");
     }
-    FWUPMGR_INFO("=== rdkFwupdateMgr Creating thread for listen successfull ===\n");
+    FWUPMGR_INFO("=== rdkFwupdateMgr Creating thread for listen successful ===\n");
 
     /*
      * [STEP 10] RETURN THE HANDLE TO THE CALLER
