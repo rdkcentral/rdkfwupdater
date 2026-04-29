@@ -330,14 +330,66 @@ thread_exit:
  * D-BUS SIGNAL HANDLER
  * ======================================================================== */
 
-/**
- * @brief Called by GLib when CheckForUpdateComplete signal arrives
+/*
+ * on_check_complete_signal - D-Bus signal handler for CheckForUpdateComplete.
  *
- * Runs in the background thread context.
+ * OVERVIEW
  *
- *   1. Parse GVariant payload → InternalSignalData
- *   2. Dispatch to all PENDING registry entries
- *   3. Free parsed signal data
+ * PURPOSE:
+ *   This function is called by GLib's D-Bus infrastructure when the daemon
+ *   broadcasts the "CheckForUpdateComplete" signal. It is the ENTRY POINT
+ *   for the "response" side of the checkForUpdate() async flow.
+ *
+ * WHEN DOES THIS FIRE?
+ *   5-30 seconds after checkForUpdate() was called. The daemon queried
+ *   the XConf cloud server for firmware availability, got a response,
+ *   and broadcast the result as a D-Bus signal to ALL listeners.
+ *
+ * WHICH THREAD RUNS THIS?
+ *   The BACKGROUND THREAD. Not the main thread. This is critical.
+ *
+ *   The BG thread is blocked in g_main_loop_run() waiting for events.
+ *   When the signal arrives on the BG thread's persistent D-Bus connection
+ *   (:1.141), GLib wakes the BG thread and dispatches to this handler.
+ *   This handler was registered via g_dbus_connection_signal_subscribe()
+ *   in background_thread_func() during registerProcess().
+ *
+ * PARAMETERS:
+ *   conn           -- the BG thread's persistent D-Bus connection (:1.141)
+ *   sender         -- the daemon's unique sender name (e.g., ":1.5")
+ *   object_path    -- "/org/rdkfwupdater/Service"
+ *   interface_name -- "org.rdkfwupdater.Interface"
+ *   signal_name    -- "CheckForUpdateComplete"
+ *   parameters     -- GVariant of type "(tiissss)" containing the result
+ *   user_data      -- NULL (we use global state, not user_data)
+ *
+ *   All parameters except 'parameters' are unused (cast to void).
+ *   We only care about the GVariant payload.
+ *
+ * EXECUTION FLOW:
+ *   1. Parse the GVariant "(tiissss)" into an InternalSignalData struct
+ *      (4 strdup'd strings: current_version, available_version,
+ *       update_details, status_message)
+ *   2. Call dispatch_all_pending() which:
+ *      a. Finds all PENDING registry entries
+ *      b. Builds FwInfoData from the signal data
+ *      c. Invokes each callback
+ *      d. Resets each slot to IDLE
+ *   3. Free the 4 strdup'd strings via internal_cleanup_signal_data()
+ *
+ * ERROR HANDLING:
+ *   If GVariant parsing fails (wrong type signature, corrupt data),
+ *   we log an error and return without dispatching. Callbacks will
+ *   NOT fire. The caller's condvar timeout will eventually expire.
+ *
+ * MEMORY:
+ *   internal_parse_signal_data() allocates 4 strings via strdup().
+ *   internal_cleanup_signal_data() frees them after dispatch completes.
+ *   The InternalSignalData struct itself is on the stack (this function's
+ *   stack frame on the BG thread).
+ *
+ * After this function returns, the BG thread goes back to
+ * g_main_loop_run() and sleeps until the next signal.
  */
 static void on_check_complete_signal(GDBusConnection *conn,
                                      const gchar *sender,
@@ -347,71 +399,215 @@ static void on_check_complete_signal(GDBusConnection *conn,
                                      GVariant *parameters,
                                      gpointer user_data)
 {
+    /*
+     * Suppress "unused parameter" warnings. GLib's signal handler
+     * signature requires all 7 parameters, but we only use 'parameters'.
+     * (void) casts are the standard C idiom for this.
+     */
     (void)conn; (void)sender; (void)object_path;
     (void)interface_name; (void)signal_name; (void)user_data;
 
     FWUPMGR_INFO("on_check_complete_signal: received\n");
 
+    /*
+     * Stack-allocated struct to hold the parsed signal data.
+     * memset to zero ensures all pointers start as NULL (important
+     * for cleanup -- free(NULL) is safe, free(garbage) is not).
+     */
     InternalSignalData signal_data;
     memset(&signal_data, 0, sizeof(signal_data));
 
+    /*
+     * Parse the GVariant "(tiissss)" payload into our struct.
+     * See internal_parse_signal_data() below for details.
+     *
+     * If parsing fails (wrong signature, NULL parameters), we return
+     * without dispatching. The caller's condvar timeout will fire.
+     * This is the correct behavior -- we can't dispatch garbage data.
+     */
     if (!internal_parse_signal_data(parameters, &signal_data)) {
         FWUPMGR_ERROR("on_check_complete_signal: parse failed\n");
         return;
     }
 
+    /*
+     * Dispatch to all registered callbacks. This is where the actual
+     * callback invocation happens. See dispatch_all_pending() below
+     * for the detailed two-phase dispatch explanation.
+     */
     dispatch_all_pending(&signal_data);
 
+    /*
+     * Free the 4 strdup'd strings in signal_data.
+     * After dispatch_all_pending() returns, all callbacks have completed
+     * and no one holds references to these strings anymore.
+     *
+     * internal_cleanup_signal_data() calls free() on each string
+     * and memset's the struct to zero (defensive cleanup).
+     */
     internal_cleanup_signal_data(&signal_data);
 }
 
-/**
- * @brief Dispatch signal result to every PENDING callback
+/*
+ * dispatch_all_pending - Find all PENDING callbacks and invoke them.
  *
- * TWO-PHASE DESIGN — avoids deadlock:
+ * OVERVIEW
  *
- *   PHASE 1 (mutex held):
- *     Scan registry → snapshot all PENDING entries into local array.
- *     Mark each found entry as DISPATCHED.
- *     Release mutex.
+ * PURPOSE:
+ *   This is the CORE of the async engine. When a CheckForUpdateComplete
+ *   signal arrives, this function finds every PENDING callback in the
+ *   registry, builds the FwInfoData struct from the signal payload,
+ *   and invokes each callback.
  *
- *   PHASE 2 (mutex released):
- *     Build FwUpdateEventData from signal_data.
- *     Invoke each snapshot callback: callback(handle, &event_data)
- *     Re-acquire mutex briefly to reset each slot to IDLE.
+ * WHY "ALL PENDING" (NOT JUST ONE)?
+ *   If multiple clients (or the same client calling checkForUpdate
+ *   multiple times) have PENDING entries, they all get the same
+ *   firmware check result. The daemon broadcasts ONE signal and
+ *   ALL pending callbacks receive it. This is the "fan-out" pattern.
  *
- * WHY RELEASE BEFORE CALLING CALLBACKS?
- *   If a callback called checkForUpdate() again, it would call
- *   internal_register_callback() which tries to lock the same mutex
- *   → deadlock. Releasing first makes re-entrant use safe.
+ *   In the typical single-client case, there is exactly 1 PENDING entry.
  *
- * @param signal_data  Parsed signal payload (shared across all callbacks)
+ * TWO-PHASE DESIGN -- THE DEADLOCK PREVENTION PATTERN:
+ *
+ *   PHASE 1 (mutex HELD):
+ *     Lock g_registry.mutex.
+ *     Scan all 30 entries. For each PENDING entry:
+ *       - Copy its callback pointer and handle into a local stack array
+ *       - Change its state from PENDING to DISPATCHED
+ *     Unlock g_registry.mutex.
+ *
+ *   PHASE 2 (mutex RELEASED):
+ *     Build FwInfoData from signal_data (stack-allocated).
+ *     For each entry in the snapshot:
+ *       - Invoke: callback(&fwinfo_data)
+ *       - After callback returns: lock mutex, reset slot to IDLE, unlock
+ *
+ *   WHY NOT HOLD THE MUTEX DURING CALLBACK INVOCATION?
+ *
+ *   Scenario that would deadlock WITHOUT two-phase:
+ *     1. BG thread holds g_registry.mutex
+ *     2. BG thread calls callback(&fwinfo_data)
+ *     3. Inside the callback, the app calls checkForUpdate() again
+ *        (re-entrant use -- not common, but must be safe)
+ *     4. checkForUpdate() calls internal_register_callback()
+ *     5. internal_register_callback() calls pthread_mutex_lock(&g_registry.mutex)
+ *     6. DEADLOCK -- the BG thread is already holding that mutex
+ *        (from step 1), and it's the same thread trying to re-acquire it
+ *
+ *   With two-phase, the mutex is released BEFORE step 2, so step 5
+ *   would succeed (no one holds the mutex).
+ *
+ *   Even if the callback does NOT call checkForUpdate() again, holding
+ *   the mutex during a potentially slow callback (imagine the callback
+ *   does heavy work -- file I/O, network, etc.) would block the main
+ *   thread from registering new callbacks until the slow callback finishes.
+ *   Two-phase keeps the critical section (Phase 1) fast: just a scan
+ *   and copy, microseconds.
+ *
+ * WHY MARK AS DISPATCHED (NOT JUST SKIP IDLE)?
+ *   DISPATCHED is an intermediate state between PENDING and IDLE.
+ *   It means "we're about to call this callback but haven't finished yet."
+ *   If another signal arrives while Phase 2 is running (very unlikely but
+ *   possible), the next dispatch_all_pending() call would see DISPATCHED
+ *   and skip it -- preventing double-dispatch of the same callback.
+ *
+ * MEMORY MODEL:
+ *   - The Snapshot struct is stack-allocated (local array of 30 entries)
+ *   - Each Snapshot copies the callback pointer and handle string
+ *   - FwInfoData is stack-allocated in this function's frame
+ *   - UpdateDetails is stack-allocated in this function's frame
+ *   - ALL of this data is valid ONLY during callback execution
+ *   - When this function returns, all stack data is gone
+ *   - The callback MUST copy any data it needs before returning
+ *
+ * THREAD: Always runs on the BG thread (called from on_check_complete_signal).
+ *
+ * @param signal_data  Parsed signal payload from internal_parse_signal_data().
+ *                     Contains strdup'd strings -- valid until cleanup.
+ *
+ * Called by: on_check_complete_signal()
+ * Calls:    internal_map_status_code(), parse_update_details(),
+ *           each registered callback, registry_reset_slot()
  */
 static void dispatch_all_pending(const InternalSignalData *signal_data)
 {
-    /* Local snapshot — avoids holding mutex during callback invocations */
+    /*
+     * Local snapshot struct -- what we copy from each PENDING entry.
+     *
+     * typedef here (inside the function) because this struct is only
+     * used locally -- no other function needs it.
+     *
+     * callback:     the function pointer to invoke
+     * handle_copy:  a copy of the handle string (256 bytes, more than enough
+     *               for handle strings like "1" or "12345")
+     * slot_index:   which entry in g_registry.entries[] this came from
+     *               (needed to reset the slot to IDLE after callback returns)
+     */
     typedef struct {
         UpdateEventCallback  callback;
         char                 handle_copy[256];
         int                  slot_index;
     } Snapshot;
 
+    /*
+     * Stack-allocated array of snapshots. 30 entries x ~270 bytes each
+     * = ~8KB on the stack. Well within the BG thread's 8MB stack limit.
+     *
+     * count tracks how many PENDING entries we found.
+     */
     Snapshot snapshots[MAX_PENDING_CALLBACKS];
     int      count = 0;
 
-    /* ---- PHASE 1: collect under mutex ---- */
+    /* ================================================================
+     * PHASE 1: COLLECT PENDING ENTRIES UNDER MUTEX
+     *
+     * This is the fast critical section. We hold the mutex for as short
+     * as possible: scan 30 entries, copy the ones we need, release.
+     * Total time: microseconds.
+     * ================================================================ */
     pthread_mutex_lock(&g_registry.mutex);
 
     for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
         CallbackEntry *e = &g_registry.entries[i];
+
+        /*
+         * Skip anything that isn't PENDING.
+         *   IDLE       -- empty slot, nothing to do
+         *   DISPATCHED -- another dispatch is already handling this
+         *   TIMED_OUT  -- expired, will be cleaned up separately
+         */
         if (e->state != CB_STATE_PENDING) continue;
 
+        /*
+         * Found a PENDING entry. Copy its essential data into our
+         * local snapshot so we can invoke it after releasing the mutex.
+         *
+         * We copy the function pointer (8 bytes) and the handle string
+         * (up to 256 bytes via snprintf). We also record the slot index
+         * so we can reset the exact slot to IDLE later.
+         *
+         * snprintf with "%s" safely copies the string with null termination.
+         * If handle_key is NULL (should never happen for PENDING entries,
+         * but defensive), we copy an empty string.
+         */
         snapshots[count].callback   = e->callback;
         snapshots[count].slot_index = i;
         snprintf(snapshots[count].handle_copy,
                  sizeof(snapshots[count].handle_copy),
                  "%s", e->handle_key ? e->handle_key : "");
 
+        /*
+         * Mark the slot as DISPATCHED. This is the transition:
+         *   PENDING -> DISPATCHED
+         *
+         * This prevents:
+         *   1. Another signal dispatch from calling this callback again
+         *   2. A new checkForUpdate() from overwriting this slot
+         *      (dedup only matches PENDING, not DISPATCHED)
+         *
+         * The slot will go DISPATCHED -> IDLE after the callback returns
+         * (in Phase 2's loop below).
+         */
         e->state = CB_STATE_DISPATCHED;
         count++;
 
@@ -419,60 +615,156 @@ static void dispatch_all_pending(const InternalSignalData *signal_data)
                      e->handle_key ? e->handle_key : "(null)");
     }
 
+    /*
+     * Release the mutex. Phase 1 is done.
+     * From this point on, the main thread is free to register new
+     * callbacks via internal_register_callback() -- no blocking.
+     */
     pthread_mutex_unlock(&g_registry.mutex);
 
     FWUPMGR_INFO("dispatch_all_pending: %d callback(s) to fire\n", count);
 
-    /* ---- PHASE 2: invoke callbacks, no mutex held ---- */
+    /* ================================================================
+     * PHASE 2: BUILD DATA AND INVOKE CALLBACKS (NO MUTEX HELD)
+     *
+     * Now we build the FwInfoData struct that callbacks receive,
+     * and invoke each callback in sequence. No mutex is held during
+     * any of this -- safe for re-entrant use.
+     * ================================================================ */
 
+    /*
+     * Map the daemon's integer status_code to our public enum.
+     *
+     * The daemon sends status_code as an integer in the signal:
+     *   0 = FIRMWARE_AVAILABLE
+     *   1 = FIRMWARE_NOT_AVAILABLE
+     *   2 = UPDATE_NOT_ALLOWED
+     *   3 = FIRMWARE_CHECK_ERROR
+     *   4 = IGNORE_OPTOUT
+     *   5 = BYPASS_OPTOUT
+     *
+     * internal_map_status_code() converts this to our CheckForUpdateStatus enum.
+     * Unknown values map to FIRMWARE_CHECK_ERROR (safe default).
+     */
     CheckForUpdateStatus status = internal_map_status_code(signal_data->status_code);
 
     /*
-     * Build FwInfoData with UpdateDetails for the callback.
-     * This matches the public API signature: UpdateEventCallback(const FwInfoData*)
+     * Build FwInfoData on the STACK.
      *
-     * MEMORY MANAGEMENT:
-     *   - FwInfoData is stack-allocated (valid during callback invocations)
-     *   - CurrFWVersion is copied from signal_data (array, not pointer)
-     *   - UpdateDetails is stack-allocated if needed
-     *   - All data valid until end of this function
+     * This is the struct that callbacks receive via their
+     * (const FwInfoData *fwinfodata) parameter.
+     *
+     * CRITICAL: This struct is stack-allocated. It exists only while
+     * this function is running. When dispatch_all_pending() returns
+     * (after all callbacks have been invoked and returned), this stack
+     * frame is destroyed and fwinfo_data becomes invalid.
+     *
+     * This is why callbacks MUST copy any data they need before returning.
+     * The example_app does this:
+     *   strncpy(g_fw_filename, event_data->UpdateDetails->FwFileName, ...);
+     *
+     * memset to zero ensures all char arrays start as empty strings
+     * (first byte is '\0') and all pointers start as NULL.
      */
     FwInfoData fwinfo_data;
     memset(&fwinfo_data, 0, sizeof(fwinfo_data));
 
-    /* Copy current firmware version */
+    /*
+     * Copy the current firmware version from the signal data into
+     * fwinfo_data.CurrFWVersion (a char[64] array).
+     *
+     * strncpy with sizeof()-1 ensures we never overflow the buffer.
+     * The explicit null-termination on the next line is a safety net
+     * in case signal_data->current_version is >= 63 characters
+     * (strncpy does NOT null-terminate if src >= n characters).
+     *
+     * If current_version is NULL (daemon didn't provide it), we skip
+     * the copy and the field stays as empty string from memset.
+     */
     if (signal_data->current_version) {
         strncpy(fwinfo_data.CurrFWVersion, signal_data->current_version,
                 sizeof(fwinfo_data.CurrFWVersion) - 1);
         fwinfo_data.CurrFWVersion[sizeof(fwinfo_data.CurrFWVersion) - 1] = '\0';
     }
 
-    /* Set status */
+    /* Set the status enum in the struct. */
     fwinfo_data.status = status;
 
-    /* Parse and populate UpdateDetails if firmware is available */
+    /*
+     * Parse UpdateDetails if firmware is available.
+     *
+     * The daemon sends update details as a pipe-separated string:
+     *   "File:firmware_v8.bin|Location:http://cdn..|Version:RDKV_8.0|Reboot:false|..."
+     *
+     * We need to parse this into an UpdateDetails struct with individual
+     * fields (FwFileName, FwUrl, FwVersion, RebootImmediately, etc.).
+     *
+     * UpdateDetails is ALSO stack-allocated. It lives in this function's
+     * stack frame. fwinfo_data.UpdateDetails is a POINTER to this stack
+     * variable. After this function returns, both are gone.
+     *
+     * We only populate UpdateDetails when status == FIRMWARE_AVAILABLE.
+     * For all other statuses (NOT_AVAILABLE, ERROR, etc.), UpdateDetails
+     * is set to NULL -- there's nothing to update, so no details to show.
+     */
     UpdateDetails update_details;
     if (status == FIRMWARE_AVAILABLE && signal_data->update_details) {
         memset(&update_details, 0, sizeof(update_details));
         
+        /*
+         * parse_update_details() tokenizes the pipe-separated string
+         * and copies each Key:Value pair into the appropriate field
+         * of the UpdateDetails struct. See parse_update_details() below.
+         */
         if (parse_update_details(signal_data->update_details, &update_details)) {
-            /* Point FwInfoData to our stack-allocated UpdateDetails */
+            /*
+             * Point FwInfoData's UpdateDetails pointer to our stack variable.
+             *
+             * This is safe because: both fwinfo_data and update_details
+             * live on the same stack frame. The pointer is valid as long
+             * as this function is executing. The callback receives this
+             * pointer and MUST copy what it needs before returning.
+             */
             fwinfo_data.UpdateDetails = &update_details;
             
             FWUPMGR_INFO("dispatch_all_pending: UpdateDetails populated\n");
             FWUPMGR_INFO("  FwFileName: %s\n", update_details.FwFileName);
             FWUPMGR_INFO("  FwVersion: %s\n", update_details.FwVersion);
         } else {
-            /* Parse failed - set to NULL to indicate no details available */
+            /*
+             * Parsing failed (malformed string, etc.). Set to NULL so
+             * the callback knows: "firmware is available but I couldn't
+             * parse the details." The callback should handle this gracefully.
+             */
             fwinfo_data.UpdateDetails = NULL;
             FWUPMGR_ERROR("dispatch_all_pending: parse_update_details failed\n");
         }
     } else {
-        /* Status is not FIRMWARE_AVAILABLE or no update_details string */
+        /*
+         * Either firmware is NOT available, or the daemon didn't send
+         * an update_details string. Set pointer to NULL.
+         *
+         * The callback should check: if (event_data->UpdateDetails != NULL)
+         * before accessing any UpdateDetails fields.
+         */
         fwinfo_data.UpdateDetails = NULL;
     }
 
-    /* Invoke all callbacks with the same FwInfoData */
+    /*
+     * Invoke each callback from our snapshot.
+     *
+     * For each snapshot entry:
+     *   1. Call the callback with a pointer to our stack-allocated FwInfoData
+     *   2. After the callback returns, lock the mutex and reset the slot to IDLE
+     *
+     * The same FwInfoData struct is passed to ALL callbacks. They all see
+     * the same firmware check result (because the daemon broadcast one signal).
+     *
+     * Callbacks run SEQUENTIALLY on the BG thread. If there are 3 pending
+     * callbacks, they fire one after another (not in parallel). If one
+     * callback is slow, it delays the others. Callbacks should be fast --
+     * typically just copy data and signal a condvar.
+     */
     for (int i = 0; i < count; i++) {
         Snapshot *s = &snapshots[i];
 
@@ -480,15 +772,40 @@ static void dispatch_all_pending(const InternalSignalData *signal_data)
                      s->handle_copy);
 
         /*
-         * Invoke callback with proper signature:
-         *   UpdateEventCallback(const FwInfoData *fwinfodata)
+         * THE ACTUAL CALLBACK INVOCATION.
          *
-         * handle_copy is passed but callback signature doesn't use it anymore.
-         * We pass it to maintain compatibility with 2-param callbacks if needed.
+         * s->callback is the function pointer stored during
+         * internal_register_callback(). For our example_app, this is
+         * on_firmware_check_callback().
+         *
+         * &fwinfo_data is a pointer to our stack-allocated struct.
+         * The callback receives it as (const FwInfoData *event_data).
+         * "const" means the callback cannot modify it, but it can read
+         * all fields and copy them.
+         *
+         * THIS CALL BLOCKS THE BG THREAD until the callback returns.
+         * While inside the callback:
+         *   - The BG thread is busy (not listening for more signals)
+         *   - If another signal arrives, GLib queues it in the GMainContext
+         *   - The signal will be dispatched after this function returns
+         *     and the BG thread goes back to g_main_loop_run()
          */
         s->callback(&fwinfo_data);
 
-        /* Reset slot to IDLE */
+        /*
+         * Callback has returned. Now reset the slot to IDLE.
+         *
+         * We must lock the mutex for this because dispatch_all_pending()
+         * could be called concurrently (another signal arrives while
+         * we're in Phase 2), or the main thread could be registering
+         * a new callback.
+         *
+         * registry_reset_slot() frees the strdup'd handle_key, sets
+         * callback to NULL, and sets state to CB_STATE_IDLE.
+         *
+         * After this, the slot is available for reuse by the next
+         * checkForUpdate() call.
+         */
         pthread_mutex_lock(&g_registry.mutex);
         registry_reset_slot(&g_registry.entries[s->slot_index]);
         pthread_mutex_unlock(&g_registry.mutex);
@@ -499,29 +816,110 @@ static void dispatch_all_pending(const InternalSignalData *signal_data)
  * REGISTRY OPERATIONS
  * ======================================================================== */
 
-/**
- * @brief Register a pending callback keyed by handle (no user_data)
+/*
+ * internal_register_callback - Store a callback in the check-for-update registry.
  *
- * SAME HANDLE TWICE:
- *   If the same handle is still PENDING from a previous call, its slot
- *   is overwritten. Prevents ghost callbacks accumulating.
+ * OVERVIEW
  *
- * @param handle    App's FirmwareInterfaceHandle (will be strdup'd)
- * @param callback  App's 2-param UpdateEventCallback
- * @return true on success, false if registry is full
+ * PURPOSE:
+ *   Called by checkForUpdate() to record the caller's callback function
+ *   in g_registry so that when the BG thread later receives the
+ *   CheckForUpdateComplete D-Bus signal, it can find and invoke it.
+ *
+ *   Think of it as writing your name and phone number on a waiting list.
+ *   When the result arrives, the BG thread walks the list and calls
+ *   everyone who signed up.
+ *
+ * REGISTRY STRUCTURE:
+ *   g_registry is a static global CallbackRegistry:
+ *     - entries[30] -- array of CallbackEntry structs (MAX_PENDING_CALLBACKS=30)
+ *     - mutex       -- pthread_mutex_t protecting the array
+ *     - initialized -- bool (set by internal_system_init)
+ *
+ *   Each CallbackEntry has:
+ *     - state           -- IDLE, PENDING, DISPATCHED, or TIMED_OUT
+ *     - handle_key      -- strdup'd copy of the handle string (e.g., "1")
+ *     - callback        -- function pointer to the caller's callback
+ *     - registered_time -- unix timestamp for potential timeout detection
+ *
+ * SLOT LIFECYCLE:
+ *   IDLE     -- slot is empty, available for use
+ *   PENDING  -- callback registered, waiting for signal from daemon
+ *   DISPATCHED -- signal received, callback is being invoked right now
+ *   IDLE     -- callback returned, slot reset and available again
+ *
+ * DEDUP BEHAVIOR:
+ *   If the same handle already has a PENDING entry (the caller called
+ *   checkForUpdate() twice before the first callback fired), the old
+ *   entry is OVERWRITTEN with the new callback. This prevents "ghost"
+ *   callbacks from accumulating. The old callback will never fire.
+ *
+ * THREAD SAFETY:
+ *   Protected by g_registry.mutex. The main thread calls this function
+ *   (to register). The BG thread calls dispatch_all_pending() (to read
+ *   and dispatch). The mutex ensures they never see inconsistent state.
+ *
+ * MEMORY:
+ *   handle_key is strdup'd here (heap allocation). It is freed either:
+ *     a. When the slot is reset to IDLE (registry_reset_slot)
+ *     b. When an existing entry is overwritten (dedup path)
+ *     c. When internal_system_deinit cleans up all remaining entries
+ *
+ * @param handle    The client's handle string (e.g., "1"). Will be
+ *                  strdup'd -- caller retains ownership of their copy.
+ * @param callback  The function to call when the signal arrives.
+ *                  Signature: void callback(const FwInfoData *fwinfodata)
+ * @return true if registered successfully, false if registry is full (30 slots)
+ *
+ * Called by: checkForUpdate() in rdkFwupdateMgr_api.c
+ * Pairs with: dispatch_all_pending() which reads PENDING entries
  */
 bool internal_register_callback(FirmwareInterfaceHandle handle,
                                  UpdateEventCallback callback)
 {
+    /*
+     * Lock the registry mutex before touching the entries array.
+     *
+     * Who else might be holding this mutex right now?
+     *   - dispatch_all_pending() on the BG thread (Phase 1 -- collecting
+     *     PENDING entries into a snapshot). But Phase 1 is very fast
+     *     (microseconds), so contention is rare.
+     *   - registry_reset_slot() on the BG thread (after invoking a
+     *     callback, resetting the slot to IDLE). Also very fast.
+     *
+     * In practice, the main thread and BG thread almost never contend
+     * because the BG thread only touches the registry when a signal
+     * arrives, which is seconds apart.
+     */
     pthread_mutex_lock(&g_registry.mutex);
 
+    /*
+     * Two scan targets:
+     *   free_slot     -- first IDLE entry (to use if no dedup match)
+     *   existing_slot -- a PENDING entry with the same handle (dedup)
+     *
+     * We scan all 30 entries in one pass, looking for both simultaneously.
+     */
     CallbackEntry *free_slot     = NULL;
     CallbackEntry *existing_slot = NULL;
 
     for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
         CallbackEntry *e = &g_registry.entries[i];
 
-        /* Existing pending entry for same handle → overwrite it */
+        /*
+         * Dedup check: is there already a PENDING entry for this handle?
+         *
+         * This happens when the caller calls checkForUpdate() twice
+         * with the same handle before the first callback fires.
+         * Without dedup, both entries would BOTH get dispatched when
+         * the signal arrives -- the callback would fire twice. The
+         * second invocation would be a "ghost" with stale data.
+         *
+         * By overwriting, only the latest callback survives.
+         *
+         * strcmp is safe here because handle_key is always a valid
+         * null-terminated string (set by strdup) or NULL (checked first).
+         */
         if (e->state == CB_STATE_PENDING &&
             e->handle_key != NULL &&
             strcmp(e->handle_key, handle) == 0) {
@@ -529,11 +927,30 @@ bool internal_register_callback(FirmwareInterfaceHandle handle,
             break;
         }
 
+        /*
+         * Remember the first free slot we find, but keep scanning
+         * in case there's a dedup match later in the array.
+         *
+         * We only record the FIRST free slot (free_slot == NULL guard)
+         * to avoid unnecessary work.
+         */
         if (free_slot == NULL && e->state == CB_STATE_IDLE) {
             free_slot = e;
         }
     }
 
+    /*
+     * Choose target: prefer dedup (overwrite existing) over new slot.
+     *
+     * If existing_slot != NULL: overwrite the existing PENDING entry.
+     *   This is the dedup path -- same handle called checkForUpdate again.
+     *
+     * If existing_slot == NULL and free_slot != NULL: use the free slot.
+     *   This is the normal first-call path.
+     *
+     * If both are NULL: registry is full. All 30 slots are occupied
+     *   (some combination of PENDING and DISPATCHED). Return false.
+     */
     CallbackEntry *target = existing_slot ? existing_slot : free_slot;
 
     if (target == NULL) {
@@ -543,6 +960,13 @@ bool internal_register_callback(FirmwareInterfaceHandle handle,
         return false;
     }
 
+    /*
+     * If overwriting an existing entry, free the old handle_key.
+     *
+     * The old strdup'd string must be freed to avoid a memory leak.
+     * The old callback function pointer is just overwritten -- function
+     * pointers don't need freeing, they point to code, not heap data.
+     */
     if (existing_slot) {
         FWUPMGR_INFO("internal_register_callback: overwriting existing for handle='%s'\n",
                      handle);
@@ -550,6 +974,33 @@ bool internal_register_callback(FirmwareInterfaceHandle handle,
         target->handle_key = NULL;
     }
 
+    /*
+     * Populate the slot:
+     *
+     * handle_key = strdup(handle):
+     *   Creates a heap copy of the handle string "1". We need our own
+     *   copy because the caller's 'handle' pointer belongs to them --
+     *   they could theoretically modify or free it later. strdup
+     *   allocates strlen(handle)+1 bytes (2 bytes for "1\0").
+     *   This copy is freed in registry_reset_slot() when the slot
+     *   returns to IDLE.
+     *
+     * callback = callback:
+     *   Stores the function pointer. When dispatch_all_pending() runs,
+     *   it will call this: callback(&fwinfo_data).
+     *   Function pointers are just addresses -- no heap allocation.
+     *
+     * state = CB_STATE_PENDING:
+     *   Marks this slot as "waiting for a signal." The BG thread's
+     *   dispatch_all_pending() only looks at PENDING entries.
+     *   IDLE entries are skipped, DISPATCHED entries are being processed.
+     *
+     * registered_time = time(NULL):
+     *   Unix timestamp of when this callback was registered. Currently
+     *   used only for logging/debugging, but could be used by a future
+     *   timeout sweeper to detect stale entries that have been PENDING
+     *   for too long (e.g., > CALLBACK_TIMEOUT_SECONDS = 60s).
+     */
     target->handle_key      = strdup(handle);
     target->callback        = callback;
     target->state           = CB_STATE_PENDING;
@@ -561,16 +1012,59 @@ bool internal_register_callback(FirmwareInterfaceHandle handle,
     return true;
 }
 
-/**
- * @brief Reset a registry slot to IDLE
- * MUST be called with registry mutex held.
+/*
+ * registry_reset_slot - Return a CallbackEntry to the IDLE state.
+ *
+ * PURPOSE:
+ *   After a callback has been dispatched (invoked and returned), the
+ *   registry slot must be cleaned up and made available for reuse.
+ *   This function frees the strdup'd handle_key, clears the callback
+ *   pointer, resets the timestamp, and sets state to IDLE.
+ *
+ * PRECONDITION:
+ *   Caller MUST hold g_registry.mutex before calling this function.
+ *   dispatch_all_pending() does this: lock -> reset -> unlock.
+ *   internal_system_deinit() also calls this during cleanup.
+ *
+ *   Why must the mutex be held?
+ *   Without the mutex, a race could occur:
+ *     - BG thread is resetting slot 0 (setting state to IDLE)
+ *     - Main thread scans for free slots (sees IDLE in half-written state)
+ *     - Main thread writes into slot 0 while BG thread is still clearing it
+ *   The mutex ensures atomicity of the reset operation.
+ *
+ * MEMORY:
+ *   handle_key was allocated by strdup() in internal_register_callback().
+ *   We free() it here. After this call, entry->handle_key is NULL.
+ *   The callback function pointer is just zeroed (it points to code
+ *   segment, not heap -- no need to free).
+ *
+ * STATE TRANSITION:
+ *   DISPATCHED -> IDLE (normal flow after callback invocation)
+ *   PENDING    -> IDLE (during system deinit cleanup)
+ *   Any state  -> IDLE (this function doesn't check current state)
+ *
+ * @param entry  Pointer to the CallbackEntry to reset.
+ *               Must not be NULL.
  */
 static void registry_reset_slot(CallbackEntry *entry)
 {
+    /*
+     * Free the strdup'd handle_key string (e.g., "1").
+     * NULL check is defensive -- PENDING and DISPATCHED entries always
+     * have a non-NULL handle_key, but IDLE entries have NULL.
+     * free(NULL) is safe in C (no-op), but the explicit check avoids
+     * confusion and makes the intent clear.
+     */
     if (entry->handle_key != NULL) {
         free(entry->handle_key);
         entry->handle_key = NULL;
     }
+
+    /*
+     * Clear remaining fields. After this, the entry looks identical
+     * to a freshly memset'd entry from internal_system_init().
+     */
     entry->callback        = NULL;
     entry->registered_time = 0;
     entry->state           = CB_STATE_IDLE;
@@ -580,35 +1074,112 @@ static void registry_reset_slot(CallbackEntry *entry)
  * SIGNAL DATA HELPERS
  * ======================================================================== */
 
-/**
- * @brief Parse GVariant into InternalSignalData
+/*
+ * internal_parse_signal_data - Extract fields from CheckForUpdateComplete signal.
  *
- * Expected signature: (tiissss)
- *   t  handler_id (uint64) - identifies which client this is for
- *   i  result_code
- *   i  status_code
- *   s  current_version
- *   s  available_version
- *   s  update_details
- *   s  status_message
+ * PURPOSE:
+ *   The daemon broadcasts a D-Bus signal with a GVariant of type "(tiissss)".
+ *   This function unpacks that GVariant into an InternalSignalData struct
+ *   with individual typed fields, making the data easy to work with.
+ *
+ * GVariant TYPE "(tiissss)" -- what each letter means:
+ *   '(' and ')' = tuple delimiters (the whole thing is a tuple)
+ *   't'         = uint64 (guint64) -- handler_id
+ *   'i'         = int32 (gint32)   -- result_code (0=success, 1=fail)
+ *   'i'         = int32 (gint32)   -- status_code (0=available, 1=not, 3=error)
+ *   's'         = string (gchar*)  -- current_version (e.g., "RDKV_7.0")
+ *   's'         = string (gchar*)  -- available_version (e.g., "RDKV_8.0")
+ *   's'         = string (gchar*)  -- update_details (pipe-separated "Key:Value|...")
+ *   's'         = string (gchar*)  -- status_message (human-readable text)
+ *
+ * WHY strdup() EACH STRING?
+ *   g_variant_get() with 's' type returns pointers into the GVariant's
+ *   internal buffer. Those pointers are only valid while the GVariant
+ *   exists. After on_check_complete_signal() returns, GLib may free
+ *   the GVariant. We strdup() to create our own heap copies that survive
+ *   beyond the GVariant's lifetime.
+ *
+ *   The strdup'd copies are freed later by internal_cleanup_signal_data().
+ *
+ * VALIDATION:
+ *   We check the GVariant type signature before extracting. If the daemon
+ *   sends a signal with a different signature (protocol mismatch, daemon
+ *   version skew), we reject it immediately rather than crashing on
+ *   mismatched g_variant_get().
+ *
+ * THREAD: Called on the BG thread (from on_check_complete_signal).
+ *
+ * @param parameters  The GVariant payload from the D-Bus signal.
+ *                    Type must be "(tiissss)".
+ * @param out_data    Output struct. Must be zero-initialized by caller.
+ *                    On success, contains result_code, status_code, and
+ *                    4 strdup'd strings (any may be NULL if daemon sent NULL).
+ * @return true on success, false if parameters is NULL or wrong type.
  */
 bool internal_parse_signal_data(GVariant *parameters, InternalSignalData *out_data)
 {
     if (parameters == NULL || out_data == NULL) return false;
 
+    /*
+     * Check the type signature before extracting.
+     *
+     * g_variant_get_type_string() returns the GVariant's type as a string.
+     * We expect "(tiissss)". If it's anything else, the daemon sent
+     * something unexpected -- possibly a newer/older protocol version.
+     * Extracting with the wrong format string would read garbage.
+     */
     const gchar *sig = g_variant_get_type_string(parameters);
     if (strcmp(sig, "(tiissss)") != 0) {
         FWUPMGR_ERROR("internal_parse_signal_data: unexpected signature '%s'\n", sig);
         return false;
     }
 
+    /*
+     * Local variables to receive g_variant_get() output.
+     *
+     * For string types ('s'), g_variant_get() returns pointers into
+     * the GVariant's internal buffer. These are temporary -- we must
+     * strdup() them before the GVariant could be freed.
+     *
+     * For integer types ('t', 'i'), g_variant_get() copies the value
+     * directly into our local variables.
+     */
     const gchar *cur = NULL, *avail = NULL, *details = NULL, *msg = NULL;
     guint64 handler_id = 0;
     gint32 result = 0, status = 0;
 
+    /*
+     * Extract all 7 fields from the GVariant tuple in one call.
+     *
+     * The format string "(tiissss)" must exactly match the GVariant type.
+     * Each format character corresponds to one pointer argument:
+     *   &handler_id -- receives the uint64
+     *   &result     -- receives the first int32
+     *   &status     -- receives the second int32
+     *   &cur        -- receives pointer to current_version string
+     *   &avail      -- receives pointer to available_version string
+     *   &details    -- receives pointer to update_details string
+     *   &msg        -- receives pointer to status_message string
+     */
     g_variant_get(parameters, "(tiissss)",
                   &handler_id, &result, &status, &cur, &avail, &details, &msg);
 
+    /*
+     * Copy extracted values into the output struct.
+     *
+     * Integers are copied directly (they're values, not pointers).
+     *
+     * Strings are strdup'd to create heap copies that we own.
+     * The ternary (cur ? strdup(cur) : NULL) handles the case where
+     * the daemon sent an empty string (glib may return "" not NULL)
+     * or truly NULL. strdup(NULL) is undefined behavior in C, so
+     * the NULL check is essential.
+     *
+     * Note: handler_id is extracted but not stored in InternalSignalData.
+     * We don't currently use it because the dispatch is broadcast to
+     * ALL pending callbacks, not filtered by handler_id. If we later
+     * need per-client filtering, we would add handler_id to the struct.
+     */
     out_data->result_code       = (int32_t)result;
     out_data->status_code       = (int32_t)status;
     out_data->current_version   = cur     ? strdup(cur)     : NULL;
@@ -619,6 +1190,26 @@ bool internal_parse_signal_data(GVariant *parameters, InternalSignalData *out_da
     return true;
 }
 
+/*
+ * internal_cleanup_signal_data - Free the strdup'd strings in InternalSignalData.
+ *
+ * PURPOSE:
+ *   Called after dispatch_all_pending() has finished invoking all callbacks.
+ *   Frees the 4 heap-allocated strings that internal_parse_signal_data()
+ *   created via strdup(). Also zeroes the struct as a defensive measure.
+ *
+ * WHY memset AFTER free()?
+ *   After freeing the pointers, the struct still contains the old pointer
+ *   values (dangling pointers). If someone accidentally reads the struct
+ *   after cleanup, they'd get use-after-free. memset to zero sets all
+ *   pointers to NULL (safe to dereference for a NULL check) and all
+ *   integers to 0.
+ *
+ * free(NULL) is safe in C -- it's a no-op. So if any string was NULL
+ * (daemon didn't send it), the free() call is harmless.
+ *
+ * @param data  The InternalSignalData to clean up. Must not be NULL.
+ */
 void internal_cleanup_signal_data(InternalSignalData *data)
 {
     free(data->current_version);
@@ -628,6 +1219,32 @@ void internal_cleanup_signal_data(InternalSignalData *data)
     memset(data, 0, sizeof(InternalSignalData));
 }
 
+/*
+ * internal_map_status_code - Convert daemon's integer to our public enum.
+ *
+ * PURPOSE:
+ *   The daemon sends status_code as a plain integer in the D-Bus signal.
+ *   Our public API uses a typed enum (CheckForUpdateStatus). This function
+ *   does the mapping.
+ *
+ * MAPPING:
+ *   0 -> FIRMWARE_AVAILABLE      (new firmware exists, UpdateDetails populated)
+ *   1 -> FIRMWARE_NOT_AVAILABLE  (device is on latest version)
+ *   2 -> UPDATE_NOT_ALLOWED      (device policy prevents updates)
+ *   3 -> FIRMWARE_CHECK_ERROR    (XConf query failed, network error, etc.)
+ *   4 -> IGNORE_OPTOUT           (update available, ignore opt-out preference)
+ *   5 -> BYPASS_OPTOUT           (update available, bypass opt-out preference)
+ *   anything else -> FIRMWARE_CHECK_ERROR  (unknown code = error)
+ *
+ * WHY DEFAULT TO FIRMWARE_CHECK_ERROR?
+ *   Unknown status codes indicate a protocol mismatch (daemon version
+ *   newer than library). Treating unknown as "error" is the safest
+ *   default -- the caller will handle it as a failure case rather than
+ *   proceeding with potentially incorrect firmware data.
+ *
+ * @param status_code  Integer from the daemon's signal payload.
+ * @return Corresponding CheckForUpdateStatus enum value.
+ */
 CheckForUpdateStatus internal_map_status_code(int32_t status_code)
 {
     switch (status_code) {
@@ -638,7 +1255,7 @@ CheckForUpdateStatus internal_map_status_code(int32_t status_code)
         case 4:  return IGNORE_OPTOUT;
         case 5:  return BYPASS_OPTOUT;
         default:
-            FWUPMGR_ERROR("internal_map_status_code: unknown %d → FIRMWARE_CHECK_ERROR\n",
+            FWUPMGR_ERROR("internal_map_status_code: unknown %d -> FIRMWARE_CHECK_ERROR\n",
                           status_code);
             return FIRMWARE_CHECK_ERROR;
     }
@@ -1310,33 +1927,88 @@ UpdateStatus internal_map_update_status_code(int32_t status_code)
  * ======================================================================== */
 
 /**
- * @brief Parse update_details string into UpdateDetails structure
+ * parse_update_details - Parse pipe-separated firmware details into a struct.
  *
- * The update_details string from the daemon is a comma-separated key:value format:
- *   "FwFileName:filename.bin,FwUrl:https://...,FwVersion:1.0,..."
+ * OVERVIEW
  *
- * This function safely parses it and populates the UpdateDetails structure.
+ * PURPOSE:
+ *   When the daemon reports FIRMWARE_AVAILABLE, it includes a string
+ *   describing the available firmware. This string uses a custom
+ *   pipe-separated Key:Value format:
  *
- * @param update_details_str   Comma-separated string from daemon (may be NULL)
- * @param out_details          Output UpdateDetails structure (must be allocated)
- * @return true if parsing succeeded (even if string was NULL/empty),
- *         false only on critical errors
+ *     "File:firmware_v8.bin|Location:http://cdn.example.com/fw|Version:RDKV_8.0|Reboot:false|Delay:false|PDRI:N/A|Peripherals:N/A"
  *
- * Thread safety: Safe - operates on local data only
- * Memory: out_details is caller-allocated, this function fills arrays
+ *   This function tokenizes that string and copies each value into the
+ *   appropriate field of an UpdateDetails struct, which the callback
+ *   receives via FwInfoData->UpdateDetails.
+ *
+ * WHY PIPE-SEPARATED (NOT JSON)?
+ *   This is a daemon-internal format, not a public protocol. It's simple,
+ *   requires no JSON parser dependency, and is easy to tokenize with
+ *   strtok_r(). The library translates this format into typed struct
+ *   fields so callers never see the pipe-separated format.
+ *
+ * STRING FORMAT:
+ *   - Tokens separated by '|' (pipe)
+ *   - Each token is "Key:Value" (colon-separated)
+ *   - Known keys: File, Location, IPv6Location, Version, Reboot,
+ *                 Delay, PDRI, Peripherals, Protocol, CertBundle
+ *   - "N/A" is treated as "not available" for PDRI and Peripherals
+ *   - Unknown keys are logged and skipped (forward compatibility)
+ *
+ * THREAD SAFETY:
+ *   Safe -- operates only on local data. The work_str is a strdup'd
+ *   copy (so strtok_r doesn't modify the original), and out_details
+ *   is caller-provided (stack-allocated in dispatch_all_pending).
+ *
+ * MEMORY:
+ *   work_str is strdup'd at the start and freed at the end.
+ *   out_details fields are char arrays (not pointers) -- data is
+ *   copied directly into the struct, no additional heap allocation.
+ *
+ * ROBUSTNESS:
+ *   - NULL/empty input is valid (returns success with zeroed struct)
+ *   - Malformed tokens (no colon) are logged and skipped
+ *   - Unknown keys are logged and skipped
+ *   - strdup failure returns false (out of memory)
+ *
+ * @param update_details_str  The pipe-separated string from the daemon.
+ *                            May be NULL or empty (both are valid).
+ * @param out_details         Output struct. Filled with parsed values.
+ *                            Caller must provide allocated storage.
+ * @return true on success (even if input was NULL/empty -- struct is zeroed),
+ *         false only on critical errors (NULL out_details, OOM).
+ *
+ * Called by: dispatch_all_pending() (Phase 2, when status == FIRMWARE_AVAILABLE)
  */
 static bool parse_update_details(const char *update_details_str,
                                    UpdateDetails *out_details)
 {
+    /*
+     * NULL check on the output struct. This is a programming error
+     * in the caller -- should never happen, but catch it defensively.
+     */
     if (out_details == NULL) {
         FWUPMGR_ERROR("parse_update_details: out_details is NULL\n");
         return false;
     }
 
-    /* Zero-initialize the output structure */
+    /*
+     * Zero-initialize the output struct.
+     *
+     * All char arrays (FwFileName, FwUrl, etc.) start as empty strings
+     * (first byte '\0'). This ensures that if a key is missing from
+     * the daemon's string, the corresponding field is empty rather
+     * than containing garbage.
+     */
     memset(out_details, 0, sizeof(UpdateDetails));
 
-    /* Empty or NULL input is valid - just means no details available */
+    /*
+     * NULL or empty input is valid -- it means the daemon has no
+     * details to share. Return success with a zeroed struct.
+     * The caller (dispatch_all_pending) will see empty strings in
+     * all fields and can handle accordingly.
+     */
     if (update_details_str == NULL || update_details_str[0] == '\0') {
         FWUPMGR_INFO("parse_update_details: empty input, returning zeroed structure\n");
         return true;
@@ -1344,41 +2016,129 @@ static bool parse_update_details(const char *update_details_str,
 
     FWUPMGR_INFO("parse_update_details: parsing '%s'\n", update_details_str);
 
-    /* Make a working copy since strtok modifies the string */
+    /*
+     * Create a working copy of the input string.
+     *
+     * Why? strtok_r() MODIFIES the string it tokenizes (it replaces
+     * delimiters with '\0'). The input string belongs to InternalSignalData
+     * (from strdup in internal_parse_signal_data). We must not modify it
+     * because internal_cleanup_signal_data() needs to free() the original
+     * pointer. Modifying the string would corrupt the pointer if strtok_r
+     * happened to insert '\0' at a different position.
+     *
+     * strdup() allocates strlen(update_details_str)+1 bytes on the heap.
+     * Freed at the end of this function.
+     */
     char *work_str = strdup(update_details_str);
     if (work_str == NULL) {
         FWUPMGR_ERROR("parse_update_details: strdup failed\n");
         return false;
     }
 
-    /* Parse pipe-separated key:value pairs (daemon uses | not ,) */
+    /*
+     * Tokenize the pipe-separated string.
+     *
+     * strtok_r() is the REENTRANT version of strtok(). We use it
+     * instead of strtok() because:
+     *   - strtok() uses a static internal buffer -- NOT thread-safe.
+     *     If another thread called strtok() simultaneously, they'd
+     *     corrupt each other's state.
+     *   - strtok_r() uses the caller-provided 'saveptr' for state,
+     *     making it thread-safe.
+     *
+     * First call: strtok_r(work_str, "|", &saveptr)
+     *   Returns pointer to first token (everything before first '|')
+     *   Replaces the '|' with '\0' in work_str
+     *   Stores position in saveptr for next call
+     *
+     * Subsequent calls: strtok_r(NULL, "|", &saveptr)
+     *   Returns pointer to next token
+     *   NULL when no more tokens
+     *
+     * Example:
+     *   Input:  "File:fw.bin|Version:8.0|Reboot:false"
+     *   Call 1: returns "File:fw.bin"
+     *   Call 2: returns "Version:8.0"
+     *   Call 3: returns "Reboot:false"
+     *   Call 4: returns NULL (done)
+     */
     char *saveptr = NULL;
     char *token = strtok_r(work_str, "|", &saveptr);
 
     while (token != NULL) {
-        /* Split on ':' to get key and value */
+        /*
+         * Each token should be "Key:Value". Find the colon separator.
+         *
+         * strchr() returns a pointer to the first ':' in the token,
+         * or NULL if there is no colon (malformed token).
+         */
         char *colon = strchr(token, ':');
         if (colon == NULL) {
-            /* Malformed token, skip it */
+            /*
+             * No colon found -- this token is malformed. Skip it.
+             * This is defensive: if the daemon sends garbage like
+             * "File:fw.bin|OOPS|Version:8.0", we skip "OOPS" and
+             * continue parsing the rest.
+             */
             FWUPMGR_ERROR("parse_update_details: malformed token '%s' (no colon)\n", token);
             token = strtok_r(NULL, "|", &saveptr);
             continue;
         }
 
-        /* Null-terminate the key and get the value */
+        /*
+         * Split the token into key and value by replacing ':' with '\0'.
+         *
+         * Before: token = "File:fw.bin"  (colon points to ':')
+         * After:  key   = "File"         (token, now null-terminated at colon)
+         *         value = "fw.bin"        (colon + 1, rest of original string)
+         *
+         * This is an in-place split -- we're modifying our work_str copy.
+         */
         *colon = '\0';
         const char *key = token;
         const char *value = colon + 1;
 
-        /* Match keys and copy values into appropriate fields
-         * Daemon uses: File, Location, Version, Reboot, Delay, PDRI, Peripherals
-         * We map them to our struct fields */
+        /*
+         * Match the key to our struct fields and copy the value.
+         *
+         * strncpy with sizeof(field)-1 ensures we never overflow the
+         * destination buffer. The struct fields are fixed-size arrays
+         * (e.g., FwFileName[128], FwUrl[512]). The -1 leaves room for
+         * the null terminator.
+         *
+         * We don't need to explicitly null-terminate because memset
+         * zeroed the entire struct at the start (all bytes are '\0').
+         * strncpy will write the value characters and NOT overwrite
+         * the trailing '\0' that's already there from memset, as long
+         * as the value is shorter than the buffer.
+         *
+         * KEY MAPPING:
+         *   Daemon key       -> Struct field
+         *   "File"           -> FwFileName
+         *   "Location"       -> FwUrl (IPv4 download URL)
+         *   "IPv6Location"   -> FwUrl (IPv6 fallback, used if Location is "N/A")
+         *   "Version"        -> FwVersion
+         *   "Reboot"         -> RebootImmediately ("true" or "false")
+         *   "Delay"          -> DelayDownload ("true" or "false")
+         *   "PDRI"           -> PDRIVersion (PDRI image version)
+         *   "Peripherals"    -> PeripheralFirmwares (peripheral versions)
+         *   "Protocol"       -> (no struct field -- skipped)
+         *   "CertBundle"     -> (no struct field -- skipped)
+         */
         if (strcmp(key, "File") == 0) {
             strncpy(out_details->FwFileName, value, 
                     sizeof(out_details->FwFileName) - 1);
         }
         else if (strcmp(key, "Location") == 0 || strcmp(key, "IPv6Location") == 0) {
-            /* Use Location if not empty, fallback to IPv6Location */
+            /*
+             * Use Location if it's a real URL (not "N/A" and not empty).
+             * IPv6Location is a fallback -- if Location was "N/A" but
+             * IPv6Location has a URL, we use that instead.
+             *
+             * We don't overwrite an already-set FwUrl. If Location came
+             * first and was valid, IPv6Location won't overwrite it.
+             * This depends on daemon field ordering (Location before IPv6Location).
+             */
             if (strcmp(value, "N/A") != 0 && value[0] != '\0') {
                 strncpy(out_details->FwUrl, value,
                         sizeof(out_details->FwUrl) - 1);
@@ -1397,29 +2157,51 @@ static bool parse_update_details(const char *update_details_str,
                     sizeof(out_details->DelayDownload) - 1);
         }
         else if (strcmp(key, "PDRI") == 0) {
+            /*
+             * Skip "N/A" -- leave the field as empty string (from memset).
+             * "N/A" means the daemon has no PDRI version info, which is
+             * the common case for non-PDRI devices.
+             */
             if (strcmp(value, "N/A") != 0) {
                 strncpy(out_details->PDRIVersion, value,
                         sizeof(out_details->PDRIVersion) - 1);
             }
         }
         else if (strcmp(key, "Peripherals") == 0) {
+            /* Same N/A handling as PDRI. */
             if (strcmp(value, "N/A") != 0) {
                 strncpy(out_details->PeripheralFirmwares, value,
                         sizeof(out_details->PeripheralFirmwares) - 1);
             }
         }
         else if (strcmp(key, "Protocol") == 0 || strcmp(key, "CertBundle") == 0) {
-            /* These fields exist in daemon format but not in our struct - ignore */
+            /*
+             * These keys exist in the daemon's format but our UpdateDetails
+             * struct doesn't have fields for them. Log and skip.
+             * If a future version needs these, add struct fields and
+             * copy them here.
+             */
             FWUPMGR_INFO("parse_update_details: skipping field '%s'='%s'\n", key, value);
         }
         else {
-            /* Unknown key - log but don't fail */
+            /*
+             * Unknown key -- forward compatibility. If the daemon adds
+             * new fields in a future version, we log and skip them
+             * rather than failing. This allows the library to work with
+             * newer daemons that send extra fields.
+             */
             FWUPMGR_INFO("parse_update_details: unknown key '%s', ignoring\n", key);
         }
 
+        /* Advance to next pipe-separated token. */
         token = strtok_r(NULL, "|", &saveptr);
     }
 
+    /*
+     * Free the working copy. All the data we needed has been copied
+     * into out_details struct fields (which are char arrays, not pointers
+     * into work_str). So freeing work_str is safe.
+     */
     free(work_str);
 
     FWUPMGR_INFO("parse_update_details: parsed successfully\n");
