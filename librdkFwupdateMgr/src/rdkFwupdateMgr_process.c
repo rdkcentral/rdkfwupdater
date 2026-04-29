@@ -513,7 +513,7 @@ FirmwareInterfaceHandle registerProcess(const char *processName, const char *lib
         /* D-Bus call failed. Common causes:
          *   - Daemon not running ("The name was not provided by any .service files")
          *   - Daemon crashed during handling
-         *   - 5-second timeout expired (daemon overloaded)
+         *   - 10-second timeout expired (daemon overloaded)
          *   - Daemon explicitly rejected us (process name conflict, D-Bus error reply)
          *
          * RESOURCE CLEANUP:
