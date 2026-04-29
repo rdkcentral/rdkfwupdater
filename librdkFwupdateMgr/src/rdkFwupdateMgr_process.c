@@ -878,7 +878,7 @@ FirmwareInterfaceHandle registerProcess(const char *processName, const char *lib
  *       - Free check registry (handle_keys + mutex)
  *       After this: 1 thread, 0 mutexes, 0 D-Bus connections
  *   [4] Create ephemeral D-Bus proxy (best-effort)
- *   [5] Call "UnregisterProcess" on daemon (best-effort, blocks up to 5s)
+ *   [5] Call "UnregisterProcess" on daemon (best-effort, blocks up to 10s)
  *   [6] Extract success boolean from daemon reply
  *   [7] free(handler) -- always, regardless of D-Bus outcome
  *
