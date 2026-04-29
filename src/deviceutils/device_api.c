@@ -211,9 +211,11 @@ size_t GetAdditionalFwVerInfo( char *pAdditionalFwVerInfo, size_t szBufSize )
 size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
 {
     size_t len = 0;
+    SWLOG_INFO( "#####################Calling GetPDRIFileNameUsingMFR function \n" );
 #if defined(IARM_ENABLED)
     len = GetPDRIFileNameUsingMFR(pPDRIFilename, szBufSize);
 #endif
+    SWLOG_INFO("########################Out side #if defined(IARM_ENABLED) \n");
     return len;
 #if 0
     if( pPDRIFilename != NULL )
