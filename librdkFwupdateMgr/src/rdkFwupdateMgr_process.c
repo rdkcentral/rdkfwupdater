@@ -1267,9 +1267,11 @@ void unregisterProcess(FirmwareInterfaceHandle handler)
          * restarts, it starts fresh. Our registration is already gone.
          */
         FWUPMGR_WARN("UnregisterProcess D-Bus call failed: %s\n",
-                error->message);
+                error ? error->message : "unknown error (GError not set)");
         FWUPMGR_WARN("  (This is OK if daemon already cleaned up)\n");
-        g_error_free(error);
+        if (error) {
+            g_error_free(error);
+        }
         g_object_unref(proxy);
         /* Continue with local cleanup */
         free(handler);
