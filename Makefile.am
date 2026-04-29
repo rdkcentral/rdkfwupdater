@@ -61,7 +61,6 @@ librdksw_flash_la_SOURCES = \
 librdksw_fwutils_la_SOURCES = \
     ${top_srcdir}/src/deviceutils/deviceutils.c \
     ${top_srcdir}/src/deviceutils/device_api.c \
-    ${top_srcdir}/src/iarmInterface/iarmInterface.c
 
 
 librdksw_upgrade_la_CFLAGS = -fPIC -I${top_srcdir}/src/include -I${top_srcdir}/src/deviceutils  $(AM_CFLAGS)
