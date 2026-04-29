@@ -857,81 +857,229 @@ DownloadResult downloadFirmware(FirmwareInterfaceHandle handle,
  * UPDATE FIRMWARE PUBLIC API
  * ========================================================================
  *
+ * updateFirmware -- Initiate firmware flashing (non-blocking)
+ *
  * Implements:
  *   UpdateResult updateFirmware(FirmwareInterfaceHandle handle,
- *                               FwUpdateReq fwupdatereq,
+ *                               const FwUpdateReq *fwupdatereq,
  *                               UpdateCallback callback);
  *
- * FLOW:
- *   1. Validate: handle not NULL/empty, firmwareName not empty,
- *                TypeOfFirmware not empty, callback not NULL
- *   2. Connect to D-Bus (fail early if connection fails)
- *   3. Register callback in update registry (AFTER D-Bus connection succeeds)
- *   4. Fire UpdateFirmware D-Bus method call to daemon (fire-and-forget)
- *   5. Return RDKFW_UPDATE_SUCCESS immediately
+ * PURPOSE:
+ *   This is the third and final step in the firmware lifecycle:
+ *     1. checkForUpdate()     -- ask the daemon if new firmware exists
+ *     2. downloadFirmware()   -- download the firmware image
+ *     3. updateFirmware()     -- flash the downloaded image onto the device
  *
- *   [later — fires multiple times as flashing progresses]
- *   Daemon emits UpdateProgress(progress%, status) signal repeatedly
- *   → on_update_progress_signal() fires in background thread
- *   → dispatch_all_update_active() calls every ACTIVE UpdateCallback
- *   → slot stays ACTIVE until UPDATE_COMPLETED or UPDATE_ERROR
- * ======================================================================== */
-
-/**
- * @brief Initiate firmware flashing — non-blocking, returns immediately
+ *   updateFirmware() sends a fire-and-forget D-Bus method call to the
+ *   daemon instructing it to flash the specified firmware image. The
+ *   function returns IMMEDIATELY -- the actual flashing happens on the
+ *   daemon side and may take minutes. Progress is delivered through
+ *   repeated callbacks on the BG thread.
  *
- * D-Bus arguments sent to daemon: (sssss)
- *   s  handle               — identifies this app
- *   s  firmwareName         — image filename to flash
- *   s  LocationOfFirmware   — path to image ("" = use device.properties)
- *   s  TypeOfFirmware       — "PCI" | "PDRI" | "PERIPHERAL"
- *   s  rebootImmediately    — "true" or "false" (daemon expects string)
+ * RETURN VALUES:
+ *   RDKFW_UPDATE_SUCCESS (0) -- Request sent. Callbacks will fire later.
+ *   RDKFW_UPDATE_FAILED  (1) -- Request failed. Callback will NOT fire.
+ *     IMPORTANT: SUCCESS does NOT mean flashing started. It means the
+ *     request was accepted. Actual progress comes in the callbacks.
  *
- * @param handle        Valid FirmwareInterfaceHandle from registerProcess()
- * @param fwupdatereq   Update request (passed by value, library copies it)
- * @param callback      Invoked on each UpdateProgress signal
+ * CALLBACK CONTRACT:
+ *   The UpdateCallback is invoked MULTIPLE TIMES (like downloadFirmware,
+ *   unlike checkForUpdate which fires once). Each invocation carries:
+ *     int progress_per     -- 0 to 100 (percent complete)
+ *     UpdateStatus status  -- UPDATE_IN_PROGRESS, UPDATE_COMPLETED, or
+ *                             UPDATE_ERROR
+ *   The callback fires on the BG thread (NOT the main thread). If the
+ *   app needs to update UI, it must marshal the call to the main thread.
+ *
+ * EXECUTION FLOW (step numbers match code comments below):
+ *
+ *   [1] Validate handle, fwupdatereq, firmwareName, TypeOfFirmware,
+ *       callback (reject NULL/empty). This has the MOST validations
+ *       of all three APIs (7 checks vs 4 for checkForUpdate, 5 for
+ *       downloadFirmware) because FwUpdateReq has more required fields.
+ *   [2] Open ephemeral D-Bus connection (fail early if D-Bus is down)
+ *   [3] Register callback in g_update_registry (state = ACTIVE)
+ *       -- MUST happen BEFORE sending D-Bus call to avoid race
+ *   [4] Send fire-and-forget "UpdateFirmware" D-Bus method call
+ *   [5] Close ephemeral connection, return RDKFW_UPDATE_SUCCESS
+ *
+ *   [Later, repeatedly -- on BG thread:]
+ *   Daemon broadcasts "UpdateProgress" signal (multiple times)
+ *   BG thread receives it in on_update_progress_signal()
+ *   dispatch_all_update_active() finds our ACTIVE slot, invokes callback
+ *   If status == UPDATE_COMPLETED or UPDATE_ERROR: slot is reset to IDLE
+ *   Otherwise: slot stays ACTIVE for next signal
+ *
+ * WHY REGISTER BEFORE SEND (Step 3 before Step 4):
+ *   Same race condition as checkForUpdate and downloadFirmware. If the
+ *   daemon responds instantly (e.g., trivial flash operation), the BG
+ *   thread would receive the signal before we registered. The dispatch
+ *   would find zero ACTIVE entries and silently drop the signal.
+ *   Our callback would never fire. The app would hang forever.
+ *
+ * WHY CONNECT BEFORE REGISTER (Step 2 before Step 3):
+ *   If we registered first and D-Bus connection then failed, we'd
+ *   have a ghost ACTIVE entry that never fires (because the D-Bus
+ *   call was never sent). The slot would stay ACTIVE forever,
+ *   wasting 1 of 30 slots and never being cleaned up.
+ *
+ * D-BUS ARGUMENTS: (sssss) -- five strings
+ *   This is the ONLY API that sends 5 strings. For comparison:
+ *     checkForUpdate:   (s)     -- 1 string  (handle)
+ *     downloadFirmware: (ssss)  -- 4 strings (handle, name, url, type)
+ *     updateFirmware:   (sssss) -- 5 strings (handle, name, location,
+ *                                              type, rebootImmediately)
+ *
+ *   The 5th argument, rebootImmediately, is a boolean in FwUpdateReq
+ *   but is sent as a string "true"/"false" because the daemon's D-Bus
+ *   interface expects all arguments as strings.
+ *
+ * REGISTRY DIFFERENCES FROM checkForUpdate AND downloadFirmware:
+ *   - Uses g_update_registry (third separate registry, not g_registry
+ *     or g_dwnl_registry)
+ *   - Slot state = UPDATE_CB_STATE_ACTIVE (fires repeatedly, like download)
+ *   - Signal format = "(tsiis)" not "(tsuss)" like download
+ *     t = handler_id (uint64), s = firmware_name, i = progress (int32),
+ *     i = status_code (int32), s = message
+ *   - Status mapping uses INTEGER codes (0=IN_PROGRESS, 1=COMPLETED,
+ *     2=ERROR) via internal_map_update_status_code(), not STRING codes
+ *     like download's map_dwnl_status_string()
+ *
+ * @param handle     The handle returned by registerProcess(). Must be
+ *                   non-NULL and non-empty. e.g., "1"
+ * @param fwupdatereq  Pointer to update request struct. Must be non-NULL.
+ *                   Contains firmwareName (required), LocationOfFirmware
+ *                   (optional, "" means use device.properties path),
+ *                   TypeOfFirmware (required, e.g. "PCI"),
+ *                   rebootImmediately (bool, converted to "true"/"false").
+ * @param callback   Function pointer invoked on each UpdateProgress signal.
+ *                   Must be non-NULL. Signature:
+ *                     void callback(int progress_per, UpdateStatus status)
+ *
  * @return RDKFW_UPDATE_SUCCESS or RDKFW_UPDATE_FAILED
- */
+ *
+ * See also: on_update_progress_signal()         -- BG thread signal handler
+ * See also: dispatch_all_update_active()        -- two-phase callback dispatch
+ * See also: internal_update_register_callback() -- registry slot allocation
+ * See also: internal_map_update_status_code()   -- integer->enum mapping
+ * ======================================================================== */
 UpdateResult updateFirmware(FirmwareInterfaceHandle handle,
                              const FwUpdateReq *fwupdatereq,
                              UpdateCallback callback)
 {
-    /* [1] Validate */
+    /*
+     * [STEP 1] INPUT VALIDATION
+     *
+     * Reject obviously bad inputs before touching D-Bus or the registry.
+     * This is the library's input boundary -- validate everything here.
+     *
+     * updateFirmware has the MOST validation of all three APIs:
+     *   checkForUpdate:   2 checks (handle, callback)
+     *   downloadFirmware: 5 checks (handle, struct, firmwareName, empty, callback)
+     *   updateFirmware:   7 checks (handle, struct, firmwareName, firmwareName
+     *                               empty, TypeOfFirmware, TypeOfFirmware empty,
+     *                               callback)
+     *
+     * TypeOfFirmware is required here (unlike downloadFirmware where it's
+     * optional) because the daemon needs to know HOW to flash the image
+     * (different flash paths for PCI vs PDRI vs PERIPHERAL).
+     */
+
+    /*
+     * Check 1a: handle must not be NULL and must not be empty "".
+     *
+     * handle is the string returned by registerProcess(), e.g. "1".
+     * If the caller passes NULL (forgot to register first) or an
+     * empty string, reject immediately. The daemon would reject it
+     * too, but we save the D-Bus round-trip.
+     */
     if (handle == NULL || handle[0] == '\0') {
         FWUPMGR_ERROR("updateFirmware: invalid handle (NULL or empty)\n");
         return RDKFW_UPDATE_FAILED;
     }
 
+    /*
+     * Check 1b: the request struct pointer must not be NULL.
+     *
+     * This catches the case where the caller passes NULL instead of
+     * &update_req. Dereferencing NULL would crash the process.
+     */
     if (fwupdatereq == NULL) {
         FWUPMGR_ERROR("updateFirmware: fwupdatereq is NULL\n");
         return RDKFW_UPDATE_FAILED;
     }
 
+    /*
+     * Check 1c: firmwareName pointer must not be NULL.
+     *
+     * FwUpdateReq.firmwareName is a const char* -- it could be NULL if
+     * the caller forgot to set it. We need a filename to tell the
+     * daemon WHAT image to flash.
+     */
     if (fwupdatereq->firmwareName == NULL) {
         FWUPMGR_ERROR("updateFirmware: firmwareName is NULL\n");
         return RDKFW_UPDATE_FAILED;
     }
 
+    /*
+     * Check 1d: firmwareName must not be an empty string "".
+     *
+     * An empty filename is meaningless -- the daemon can't flash "".
+     * This catches the case where the caller did:
+     *   update_req.firmwareName = "";   // accident
+     */
     if (fwupdatereq->firmwareName[0] == '\0') {
         FWUPMGR_ERROR("updateFirmware: firmwareName is empty\n");
         return RDKFW_UPDATE_FAILED;
     }
 
+    /*
+     * Check 1e: TypeOfFirmware pointer must not be NULL.
+     *
+     * Unlike downloadFirmware (where TypeOfFirmware is optional),
+     * updateFirmware REQUIRES TypeOfFirmware because the daemon
+     * uses it to select the correct flash mechanism:
+     *   "PCI"        -- flash to the main chipset
+     *   "PDRI"       -- flash to PDRI (Platform Data Recovery Image)
+     *   "PERIPHERAL" -- flash to a connected peripheral device
+     * Without this, the daemon doesn't know HOW to flash the image.
+     */
     if (fwupdatereq->TypeOfFirmware == NULL) {
         FWUPMGR_ERROR("updateFirmware: TypeOfFirmware is NULL\n");
         return RDKFW_UPDATE_FAILED;
     }
 
+    /*
+     * Check 1f: TypeOfFirmware must not be empty "".
+     *
+     * Same reasoning as check 1e -- an empty string provides no
+     * flash-type information. Catches:
+     *   update_req.TypeOfFirmware = "";   // accident
+     */
     if (fwupdatereq->TypeOfFirmware[0] == '\0') {
         FWUPMGR_ERROR("updateFirmware: TypeOfFirmware is empty\n");
         return RDKFW_UPDATE_FAILED;
     }
 
+    /*
+     * Check 1g: callback must not be NULL.
+     *
+     * Without a callback, the app can't receive flash progress updates.
+     * It would never know when the update finishes (or if it failed).
+     * That's always a programming error.
+     */
     if (callback == NULL) {
         FWUPMGR_ERROR("updateFirmware: callback is NULL\n");
         return RDKFW_UPDATE_FAILED;
     }
 
+    /*
+     * Log what we're about to flash. The ternary expressions handle
+     * optional fields:
+     *   LocationOfFirmware may be NULL (it's optional in FwUpdateReq).
+     *   If NULL or empty, the daemon uses the path from device.properties.
+     *   rebootImmediately is a bool, logged as "yes"/"no" for clarity.
+     */
     FWUPMGR_INFO("updateFirmware: handle='%s' firmware='%s' type='%s' "
                  "location='%s' reboot=%s\n",
                  handle,
@@ -942,41 +1090,152 @@ UpdateResult updateFirmware(FirmwareInterfaceHandle handle,
                      : "(use device.properties path)",
                  fwupdatereq->rebootImmediately ? "yes" : "no");
 
-    /* [2] Connect to D-Bus FIRST before registering callback
+    /*
+     * [STEP 2] CREATE EPHEMERAL D-BUS CONNECTION
      *
-     * This prevents stale registry entries if D-Bus connection fails.
+     * g_bus_get_sync(G_BUS_TYPE_SYSTEM, ...) opens a new connection to
+     * the system D-Bus bus. Gets a unique sender name like :1.143.
+     *
+     * Why a NEW connection instead of reusing the BG thread's :1.141?
+     *   The BG thread's connection is attached to the BG thread's
+     *   GMainContext. Using it from the main thread would require
+     *   cross-thread GLib context management -- complex and fragile.
+     *   A fresh per-call connection is simpler and safe.
+     *
+     * Why BEFORE registering the callback?
+     *   If D-Bus is down (dbus-daemon crashed, socket missing), this
+     *   call fails. We want to fail BEFORE polluting the update
+     *   registry with an ACTIVE entry that will never be dispatched.
+     *   Clean failure: no registry entry, no dangling state.
+     *
+     * Cost: ~2ms for the D-Bus handshake. Negligible for a firmware
+     * update that takes minutes.
      */
     GError *error = NULL;
     GDBusConnection *conn = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
 
     if (conn == NULL) {
+        /*
+         * D-Bus connection failed. Common causes:
+         *   - dbus-daemon not running
+         *   - System bus socket missing (/var/run/dbus/system_bus_socket)
+         *   - Permission denied (D-Bus policy rejects our user)
+         *
+         * Return FAILED -- no registry entry created, nothing to clean up.
+         */
         FWUPMGR_ERROR("updateFirmware: D-Bus connect failed: %s\n",
                       error ? error->message : "unknown");
         if (error) g_error_free(error);
         return RDKFW_UPDATE_FAILED;
     }
 
-    /* [3] Register callback AFTER D-Bus connection succeeds, BEFORE sending
+    /*
+     * [STEP 3] REGISTER CALLBACK IN THE UPDATE REGISTRY (g_update_registry)
      *
-     * Register immediately before sending to avoid race condition where
-     * the daemon responds before we're ready to receive the signal.
+     * internal_update_register_callback() does the following (see _async.c):
+     *   1. Locks g_update_registry.mutex
+     *   2. Scans all 30 UpdateCbEntry slots for:
+     *      a. An existing ACTIVE entry with the same handle (dedup/overwrite)
+     *      b. The first IDLE slot (free slot)
+     *   3. If same handle found: overwrites it (prevents stale callbacks)
+     *      If free slot found: uses it
+     *      If neither: returns false (registry full -- 30 concurrent updates!)
+     *   4. Populates the slot:
+     *      - handle_key = strdup(handle)    -- "1" (heap copy)
+     *      - callback = our function pointer
+     *      - state = UPDATE_CB_STATE_ACTIVE -- NOTE: ACTIVE, not PENDING!
+     *      - registered_time = current unix timestamp
+     *   5. Unlocks g_update_registry.mutex
+     *   6. Returns true
+     *
+     * After this call, the registry has one ACTIVE entry. When the BG
+     * thread receives UpdateProgress signals, it will find this entry
+     * and invoke the callback on EVERY signal.
+     *
+     * STATE DIFFERENCE FROM THE OTHER TWO REGISTRIES:
+     *   checkForUpdate:   g_registry       -- state = CB_STATE_PENDING (fires ONCE)
+     *   downloadFirmware: g_dwnl_registry  -- state = DWNL_CB_STATE_ACTIVE (fires MANY)
+     *   updateFirmware:   g_update_registry -- state = UPDATE_CB_STATE_ACTIVE (fires MANY)
+     *   Download and update both use the ACTIVE-until-terminal pattern.
+     *   checkForUpdate uses the PENDING->DISPATCHED->IDLE one-shot pattern.
+     *
+     * Why BEFORE the D-Bus call?
+     *   Race condition prevention. If the daemon starts flashing
+     *   instantly, the BG thread would receive the first UpdateProgress
+     *   signal before we registered. dispatch_all_update_active() would
+     *   find zero ACTIVE entries and silently discard the signal. Our
+     *   callback would never fire. The app would hang forever.
+     *
+     * Failure case: registry full (30 concurrent pending updates).
+     *   In practice never happens -- a device flashes one firmware
+     *   at a time. If it does, clean up the D-Bus connection and fail.
      */
     if (!internal_update_register_callback(handle, callback)) {
         FWUPMGR_ERROR("updateFirmware: registry full, handle='%s'\n", handle);
+        /*
+         * Clean up: close the D-Bus connection we opened in Step 2.
+         * No registry entry was created, so no registry cleanup needed.
+         */
         g_object_unref(conn);
         return RDKFW_UPDATE_FAILED;
     }
 
-    /* [4] Fire-and-forget D-Bus UpdateFirmware method call
+    /*
+     * [STEP 4] SEND FIRE-AND-FORGET D-BUS METHOD CALL
      *
-     * Arguments: (sssss)
-     *   s handle                — app's handler_id string
-     *   s firmwareName          — image to flash
-     *   s LocationOfFirmware    — path or "" for device.properties default
-     *   s TypeOfFirmware        — PCI / PDRI / PERIPHERAL
-     *   s rebootImmediately     — "true" or "false" (daemon expects string)
+     * g_dbus_connection_call() sends a D-Bus method call to the daemon.
      *
-     * Three trailing NULLs = fire and forget.
+     * Parameters to g_dbus_connection_call():
+     *   conn              -- our ephemeral connection :1.143
+     *   DBUS_SERVICE_NAME -- "org.rdkfwupdater.Service" (daemon's well-known name)
+     *   DBUS_OBJECT_PATH  -- "/org/rdkfwupdater/Service" (object path)
+     *   DBUS_INTERFACE_NAME -- "org.rdkfwupdater.Interface"
+     *   DBUS_METHOD_UPDATE -- "UpdateFirmware" (the method name)
+     *   g_variant_new("(sssss)", ...) -- 5-string argument tuple:
+     *     "(sssss)" means a tuple containing five strings
+     *     string 1: handle              -- "1" (which registered client is asking)
+     *     string 2: firmwareName        -- "firmware_v8.bin" (what to flash)
+     *     string 3: LocationOfFirmware  -- path to image or "" for default
+     *     string 4: TypeOfFirmware      -- "PCI" / "PDRI" / "PERIPHERAL"
+     *     string 5: rebootImmediately   -- "true" or "false" (see note below)
+     *   NULL              -- expected reply type: we don't care
+     *   G_DBUS_CALL_FLAGS_NONE -- no special flags
+     *   DBUS_TIMEOUT_MS   -- 5000ms (only for message queueing, not reply)
+     *   NULL              -- GCancellable: no cancellation support
+     *   NULL              -- GAsyncReadyCallback: no reply callback
+     *   NULL              -- user_data for reply callback: N/A
+     *
+     * The three trailing NULLs make this fire-and-forget. GLib queues
+     * the D-Bus message in the kernel's socket buffer and returns.
+     *
+     * WHY 5 STRINGS (NOT 4 LIKE downloadFirmware):
+     *   updateFirmware sends an extra argument: rebootImmediately.
+     *   The FwUpdateReq struct has rebootImmediately as a bool (true/false),
+     *   but the daemon's D-Bus interface is defined with all-string
+     *   arguments. So we convert: true -> "true", false -> "false"
+     *   using the ternary: fwupdatereq->rebootImmediately ? "true" : "false"
+     *
+     * NULL-COALESCING for optional field:
+     *   fwupdatereq->LocationOfFirmware ? fwupdatereq->LocationOfFirmware : ""
+     *   If LocationOfFirmware is NULL (caller didn't set it), we send ""
+     *   to the daemon. The daemon treats "" as "use the path from
+     *   device.properties." TypeOfFirmware is NOT coalesced because it's
+     *   required (validated in Step 1e/1f above).
+     *
+     * WHAT HAPPENS ON THE DAEMON SIDE:
+     *   1. Daemon receives "UpdateFirmware" with 5 string arguments
+     *   2. Validates handler "1" is registered (from registerProcess)
+     *   3. Starts flashing the firmware image using the appropriate method
+     *   4. As flashing progresses, broadcasts UpdateProgress signals:
+     *      - (1, "firmware_v8.bin", 0,  0, "Flash started")
+     *      - (1, "firmware_v8.bin", 25, 0, "Writing partition 1")
+     *      - (1, "firmware_v8.bin", 50, 0, "Writing partition 2")
+     *      - (1, "firmware_v8.bin", 100, 1, "Flash complete")
+     *      Signal format: "(tsiis)" where:
+     *        t = handler_id (uint64), s = firmware_name,
+     *        i = progress (int32 0-100), i = status_code (0/1/2),
+     *        s = message
+     *   5. Our BG thread catches each signal and fires our callback
      */
 
     g_dbus_connection_call(
@@ -985,7 +1244,7 @@ UpdateResult updateFirmware(FirmwareInterfaceHandle handle,
         DBUS_OBJECT_PATH,
         DBUS_INTERFACE_NAME,
         DBUS_METHOD_UPDATE,                         /* method: UpdateFirmware     */
-        g_variant_new("(sssss)",                                  /* ✅ 5 strings now! */
+        g_variant_new("(sssss)",                    /* 5 strings (see above)      */
                       handle,                                     /* app's handler_id string    */
                       fwupdatereq->firmwareName,                  /* image to flash             */
                       fwupdatereq->LocationOfFirmware ? fwupdatereq->LocationOfFirmware : "", /* path or "" */
@@ -999,11 +1258,47 @@ UpdateResult updateFirmware(FirmwareInterfaceHandle handle,
         NULL                                        /* user_data: none            */
     );
 
+    /*
+     * [STEP 5] CLOSE EPHEMERAL CONNECTION AND RETURN
+     *
+     * g_object_unref(conn) closes our ephemeral D-Bus connection :1.143.
+     * The D-Bus message is already in the kernel socket buffer -- closing
+     * our end doesn't prevent delivery to the daemon.
+     *
+     * After this, the state of the world is:
+     *
+     *   Main thread:
+     *     - Returns RDKFW_UPDATE_SUCCESS to the caller
+     *     - Caller enters pthread_cond_timedwait (typically 300s+ timeout)
+     *     - Connection :1.143 is DEAD (just closed)
+     *
+     *   BG thread:
+     *     - Still sleeping in g_main_loop_run() on connection :1.141
+     *     - g_update_registry.entries[0] has our callback in ACTIVE state
+     *     - Will wake up on EVERY UpdateProgress signal
+     *     - Will call our callback MULTIPLE TIMES
+     *
+     *   Daemon:
+     *     - Received our request, started flashing the firmware
+     *     - Will broadcast UpdateProgress signals as flashing progresses
+     *
+     *   g_update_registry (update-specific, third registry):
+     *     entries[0] = { state=ACTIVE, handle_key="1",
+     *                    callback=on_update_progress_callback }
+     *     entries[1..29] = IDLE
+     *
+     *   D-Bus connections:
+     *     :1.141 -- BG thread persistent (ALIVE, listening for signals)
+     *     :1.143 -- this updateFirmware ephemeral (DEAD, just closed)
+     *
+     * SUCCESS here means: "I sent the request and registered your callback."
+     * It does NOT mean: "Flashing started." or "Image is valid."
+     * The callback will fire later with actual progress.
+     */
     g_object_unref(conn);
 
     FWUPMGR_INFO("updateFirmware: D-Bus call sent, returning SUCCESS. "
                  "handle='%s'\n", handle);
 
-    /* [4] Return immediately — app is unblocked */
     return RDKFW_UPDATE_SUCCESS;
 }

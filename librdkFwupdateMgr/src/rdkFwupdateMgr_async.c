@@ -2114,17 +2114,68 @@ static DownloadStatus map_dwnl_status_string(const char *status_str)
 }
 
 /* ========================================================================
- * UPDATE FIRMWARE — INTERNAL ENGINE
+ * UPDATE FIRMWARE -- INTERNAL ENGINE
  * ========================================================================
  *
- * Mirror of the DownloadFirmware engine above.
- * Same registry pattern, same two-phase dispatch, same lifecycle.
+ * This section contains all the internal machinery that powers the
+ * updateFirmware() public API. It is the third and final async engine
+ * in the library, mirroring the download engine above.
  *
- * Signal:  UpdateProgress (ii) — progress_percent, status_code
+ * ARCHITECTURE OVERVIEW:
+ *
+ *   updateFirmware() [_api.c, main thread]
+ *        |
+ *        +--> internal_update_register_callback()  [registers in g_update_registry]
+ *        +--> g_dbus_connection_call()             [fire-and-forget to daemon]
+ *        |
+ *   [daemon flashes firmware, broadcasts UpdateProgress signals]
+ *        |
+ *   on_update_progress_signal() [BG thread, GLib callback]
+ *        |
+ *        +--> internal_parse_update_signal_data()  [extract "(tsiis)" payload]
+ *        +--> dispatch_all_update_active()         [two-phase dispatch]
+ *              |
+ *              +--> internal_map_update_status_code() [int -> UpdateStatus]
+ *              +--> callback(progress, status)        [app's function]
+ *              +--> update_registry_reset_slot()       [if terminal]
+ *
+ * KEY DIFFERENCES FROM DOWNLOAD ENGINE:
+ *
+ *   Signal format:
+ *     Download: "(tsuss)" -- progress is uint32, status is STRING
+ *     Update:   "(tsiis)" -- progress is int32,  status is INTEGER
+ *
+ *   Status mapping:
+ *     Download: map_dwnl_status_string() uses strcmp on strings
+ *     Update:   internal_map_update_status_code() uses switch on integers
+ *
+ *   Strings to free after parsing:
+ *     Download: 3 (firmware_name, status_string, message)
+ *     Update:   2 (firmware_name, message) -- no status_string
+ *
+ *   Registry:
+ *     Download: g_dwnl_registry with DwnlCallbackEntry and DWNL_CB_STATE_*
+ *     Update:   g_update_registry with UpdateCbEntry and UPDATE_CB_STATE_*
+ *
+ *   Slot lifecycle (same as download):
+ *     IDLE -> ACTIVE (on register) -> ACTIVE (fires repeatedly) -> IDLE (on terminal)
+ *
+ * SIGNAL: UpdateProgress "(tsiis)"
+ *   t  handler_id       -- uint64, identifies the registered client
+ *   s  firmware_name    -- string, image being flashed
+ *   i  progress_percent -- int32, 0 to 100
+ *   i  status_code      -- int32, 0=IN_PROGRESS, 1=COMPLETED, 2=ERROR
+ *   s  message          -- string, human-readable status
+ *
  * Registry slot: ACTIVE until UPDATE_COMPLETED or UPDATE_ERROR, then IDLE.
  * ======================================================================== */
 
 /* ---- Forward declarations for helper functions ---- */
+/*
+ * These forward declarations allow the functions to be defined in a
+ * logical order (signal handler first, then dispatch, then helpers)
+ * even though the C compiler needs to see declarations before use.
+ */
 static void dispatch_all_update_active(const InternalUpdateSignalData *signal_data);
 static void update_registry_reset_slot(UpdateCbEntry *entry);
 
@@ -2133,21 +2184,79 @@ static void update_registry_reset_slot(UpdateCbEntry *entry);
  * ======================================================================== */
 
 /**
- * @brief Cleanup update registry — frees all strdup'd handle_key strings
+ * @brief Cleanup update registry -- frees all strdup'd handle_key strings
  *
- * Called from internal_system_deinit(). Signal unsubscription is handled
- * by the background thread.
+ * PURPOSE:
+ *   Called from internal_system_deinit() during library shutdown
+ *   (unregisterProcess -> internal_system_deinit -> this function).
+ *   Walks all 30 registry slots and frees any handle_key strings that
+ *   were allocated by strdup() in internal_update_register_callback().
+ *
+ * WHY THIS IS NEEDED:
+ *   When the library shuts down, any ACTIVE update callbacks are
+ *   abandoned (no more signals will be dispatched). But the strdup'd
+ *   handle_key strings are still on the heap. Without this cleanup,
+ *   they would leak. Valgrind would report "definitely lost" blocks.
+ *
+ * WHAT ABOUT THE CALLBACKS THEMSELVES:
+ *   Callback function pointers are not heap-allocated -- they're just
+ *   pointers to compiled code. Setting callback=NULL is defensive but
+ *   doesn't free anything. The ONLY heap allocation per slot is
+ *   handle_key (from strdup).
+ *
+ * SIGNAL UNSUBSCRIPTION:
+ *   This function does NOT unsubscribe from the UpdateProgress D-Bus
+ *   signal. That's handled by the BG thread's cleanup code when it
+ *   calls g_dbus_connection_signal_unsubscribe(). The signal
+ *   subscription and the registry are independent concerns.
+ *
+ * MUTEX DESTRUCTION:
+ *   After freeing all strings, pthread_mutex_destroy() is called to
+ *   release the mutex's internal resources. After this, the mutex
+ *   must NOT be used again -- any lock/unlock would be undefined behavior.
+ *
+ * THREAD SAFETY:
+ *   Called during shutdown when the BG thread has already been stopped.
+ *   The mutex lock/unlock is still used for correctness, even though
+ *   no other thread should be accessing the registry at this point.
+ *
+ * Called from: internal_system_deinit() (in this file)
  */
 static void internal_update_system_deinit(void)
 {
+    /*
+     * Lock the mutex before modifying the registry. Even during
+     * shutdown, we follow the locking protocol for consistency.
+     */
     pthread_mutex_lock(&g_update_registry.mutex);
+
+    /*
+     * Walk all 30 slots and free any non-NULL handle_key strings.
+     *
+     * We don't check the slot's state -- even if a slot is somehow
+     * in an inconsistent state, we still free its handle_key to
+     * prevent leaks. A NULL handle_key means the slot was already
+     * clean (IDLE with no previous allocation).
+     */
     for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
         if (g_update_registry.entries[i].handle_key != NULL) {
             free(g_update_registry.entries[i].handle_key);
-            g_update_registry.entries[i].handle_key = NULL;
+            g_update_registry.entries[i].handle_key = NULL;  /* Prevent dangling pointer */
         }
     }
+
+    /*
+     * Unlock the mutex before destroying it. pthread_mutex_destroy()
+     * requires the mutex to be unlocked. Destroying a locked mutex
+     * is undefined behavior on most POSIX implementations.
+     */
     pthread_mutex_unlock(&g_update_registry.mutex);
+
+    /*
+     * Destroy the mutex itself. This releases any OS resources
+     * associated with the mutex (e.g., kernel futex state on Linux).
+     * After this call, the mutex must NEVER be used again.
+     */
     pthread_mutex_destroy(&g_update_registry.mutex);
 
     FWUPMGR_INFO("internal_update_system_deinit: done\n");
@@ -2155,13 +2264,66 @@ static void internal_update_system_deinit(void)
 
 /* ========================================================================
  * UPDATE SIGNAL HANDLER
+ *
+ * When the daemon broadcasts an "UpdateProgress" D-Bus signal, GLib's
+ * event loop on the BG thread dispatches it to on_update_progress_signal().
+ * That function parses the signal, then calls dispatch_all_update_active()
+ * to invoke all registered UpdateCallbacks.
  * ======================================================================== */
 
 /**
- * @brief Called by GLib when UpdateProgress signal arrives
+ * @brief Called by GLib when UpdateProgress signal arrives on D-Bus
  *
- * Runs in background thread. Parses payload and dispatches to all
- * ACTIVE update callbacks.
+ * PURPOSE:
+ *   This is the BG thread's entry point for handling firmware update
+ *   progress signals. When the daemon flashes firmware, it periodically
+ *   broadcasts UpdateProgress signals on D-Bus. GLib's GMainLoop on
+ *   the BG thread receives these signals and invokes THIS function.
+ *
+ * EXECUTION CONTEXT:
+ *   Runs on the BACKGROUND THREAD (not the main thread).
+ *   Called by g_main_loop_run() -> GLib signal dispatch.
+ *   The BG thread subscribed to "UpdateProgress" signals during
+ *   internal_system_init() using g_dbus_connection_signal_subscribe().
+ *
+ * SIGNAL FORMAT -- "(tsiis)":
+ *   t  handler_id       -- uint64, identifies which registered client
+ *   s  firmware_name    -- string, the image being flashed
+ *   i  progress_percent -- int32, 0 to 100
+ *   i  status_code      -- int32, 0=IN_PROGRESS, 1=COMPLETED, 2=ERROR
+ *   s  message          -- string, human-readable status message
+ *
+ *   NOTE: This is DIFFERENT from DownloadProgress's "(tsuss)":
+ *     - Download uses uint32 for progress, update uses int32
+ *     - Download uses string for status ("INPROGRESS"), update uses int32
+ *     - Download has 3 g_free-able strings, update has 2
+ *
+ * FLOW:
+ *   1. Suppress unused parameter warnings with (void) casts
+ *   2. Zero-initialize InternalUpdateSignalData on the stack
+ *   3. Call internal_parse_update_signal_data() to extract fields
+ *   4. Log the parsed data for debugging
+ *   5. Call dispatch_all_update_active() to invoke all ACTIVE callbacks
+ *   6. Free heap-allocated strings (firmware_name, message) from g_variant_get
+ *
+ * MEMORY OWNERSHIP:
+ *   g_variant_get() with "s" format allocates new strings on the heap
+ *   via g_strdup(). The caller (this function) MUST g_free() them.
+ *   Two strings need freeing: firmware_name and message.
+ *   (Compare: download has three -- firmware_name, status_string, message)
+ *
+ * THREAD SAFETY:
+ *   This function itself is single-threaded (only the BG thread calls it).
+ *   But it calls dispatch_all_update_active() which accesses the shared
+ *   g_update_registry under mutex protection.
+ *
+ * @param conn            The BG thread's persistent D-Bus connection
+ * @param sender          The D-Bus sender (daemon's unique name)
+ * @param object_path     D-Bus object path ("/org/rdkfwupdater/Service")
+ * @param interface_name  D-Bus interface ("org.rdkfwupdater.Interface")
+ * @param signal_name     "UpdateProgress"
+ * @param parameters      GVariant containing the "(tsiis)" payload
+ * @param user_data       NULL (not used)
  */
 static void on_update_progress_signal(GDBusConnection *conn,
                                       const gchar *sender,
@@ -2171,28 +2333,82 @@ static void on_update_progress_signal(GDBusConnection *conn,
                                       GVariant *parameters,
                                       gpointer user_data)
 {
+    /*
+     * Suppress "unused parameter" compiler warnings. GLib's signal
+     * callback signature requires all 7 parameters, but we only
+     * need 'parameters' (the signal payload). The (void) cast tells
+     * the compiler "yes, I know I'm not using these."
+     */
     (void)conn; (void)sender; (void)object_path;
     (void)interface_name; (void)signal_name; (void)user_data;
 
     FWUPMGR_INFO("on_update_progress_signal: received\n");
 
+    /*
+     * Stack-allocate the signal data struct and zero-initialize it.
+     * memset ensures all pointers start as NULL and all integers as 0.
+     * This is defensive -- if parsing fails partially, we don't have
+     * garbage values in the struct.
+     */
     InternalUpdateSignalData signal_data;
     memset(&signal_data, 0, sizeof(signal_data));
 
+    /*
+     * Parse the GVariant payload "(tsiis)" into our struct.
+     * internal_parse_update_signal_data() validates the signature,
+     * extracts handler_id, firmware_name, progress, status_code,
+     * and message. Returns false if signature mismatch.
+     *
+     * If parsing fails, we bail out. No callbacks are invoked, no
+     * memory needs freeing (the struct was zero-initialized).
+     */
     if (!internal_parse_update_signal_data(parameters, &signal_data)) {
         FWUPMGR_ERROR("on_update_progress_signal: parse failed\n");
         return;
     }
 
+    /*
+     * Log the parsed signal data for debugging. This is invaluable
+     * when troubleshooting "callback never fired" bugs -- it proves
+     * whether the signal was received and what it contained.
+     *
+     * PRIu64 is the portable format specifier for uint64_t
+     * (avoids warnings on 32-bit vs 64-bit platforms).
+     */
     FWUPMGR_INFO("on_update_progress_signal: handler=%" PRIu64 " firmware='%s' progress=%d%% status=%d\n",
                  signal_data.handler_id,
                  signal_data.firmware_name ? signal_data.firmware_name : "(null)",
                  signal_data.progress_percent,
                  signal_data.status_code);
 
+    /*
+     * Dispatch the parsed signal data to all ACTIVE update callbacks.
+     * dispatch_all_update_active() does the two-phase dispatch:
+     *   Phase 1: snapshot ACTIVE entries under mutex
+     *   Phase 2: invoke callbacks without mutex
+     *   If terminal status: reset slot to IDLE
+     *
+     * After this call returns, all registered UpdateCallbacks have
+     * been invoked with the current progress and status.
+     */
     dispatch_all_update_active(&signal_data);
 
-    // Free allocated strings from g_variant_get
+    /*
+     * Free the heap-allocated strings from g_variant_get().
+     *
+     * g_variant_get() with the "s" format specifier allocates new
+     * strings via g_strdup(). We own these strings and must free them.
+     *
+     * Two strings to free:
+     *   1. firmware_name -- the image filename (e.g., "firmware_v8.bin")
+     *   2. message       -- the status message (e.g., "Writing partition 2")
+     *
+     * Compare with download's on_download_progress_signal() which frees
+     * THREE strings (firmware_name, status_string, message). Update
+     * has no status_string because it uses an integer status_code instead.
+     *
+     * g_free(NULL) is safe (it's a no-op), so we don't need NULL checks.
+     */
     g_free(signal_data.firmware_name);
     g_free(signal_data.message);
 }
@@ -2200,20 +2416,75 @@ static void on_update_progress_signal(GDBusConnection *conn,
 /**
  * @brief Dispatch UpdateProgress signal to every ACTIVE update callback
  *
- * TWO-PHASE DESIGN (identical to download dispatch):
+ * PURPOSE:
+ *   Called by on_update_progress_signal() after parsing the D-Bus signal
+ *   payload. Finds ALL ACTIVE entries in g_update_registry and invokes
+ *   their callbacks with the current progress and status.
  *
- *   PHASE 1 (mutex held):
- *     Snapshot all ACTIVE entries.
- *     Mark is_final=true only if status is COMPLETED or ERROR.
- *     Release mutex.
+ * TWO-PHASE DESIGN (identical pattern to download dispatch):
  *
- *   PHASE 2 (mutex released):
- *     Invoke callback(progress_per, status) for each snapshot.
- *     If is_final: re-acquire mutex, reset slot to IDLE.
- *     If in-progress: leave slot ACTIVE for next signal.
+ *   PHASE 1 (mutex HELD):
+ *     - Lock g_update_registry.mutex
+ *     - Scan all 30 slots for ACTIVE entries
+ *     - For each ACTIVE entry, copy callback pointer, handle, and slot
+ *       index into a local snapshot array on the stack
+ *     - Determine if this is a terminal signal (COMPLETED or ERROR)
+ *     - Unlock mutex
+ *
+ *   PHASE 2 (mutex RELEASED):
+ *     - Iterate through snapshot array
+ *     - Invoke each callback(progress_percent, status)
+ *     - If terminal signal: re-lock mutex, reset slot to IDLE, unlock
+ *     - If in-progress: leave slot ACTIVE for the next signal
+ *
+ * WHY TWO PHASES (not one):
+ *   If we held the mutex while invoking callbacks, the callbacks could
+ *   not safely call any library function that touches the registry
+ *   (e.g., updateFirmware() again, or unregisterProcess()). That would
+ *   deadlock because our thread already holds the mutex. By releasing
+ *   the mutex before invoking callbacks, we avoid this entirely.
+ *
+ * WHY SNAPSHOT (not direct access):
+ *   Once we release the mutex, another thread could modify the registry
+ *   (e.g., the main thread calling updateFirmware() to register a new
+ *   callback). The snapshot freezes the state at scan time, so our
+ *   iteration is safe regardless of concurrent modifications.
+ *
+ * TERMINAL vs IN-PROGRESS SIGNALS:
+ *   - status == UPDATE_COMPLETED or UPDATE_ERROR -> TERMINAL
+ *     The update is done (success or failure). Reset slot to IDLE so
+ *     it can be reused for future updateFirmware() calls.
+ *   - status == UPDATE_IN_PROGRESS -> IN-PROGRESS
+ *     The update is still running. Leave slot ACTIVE so the NEXT
+ *     UpdateProgress signal also dispatches to this callback.
+ *
+ *   This is the key difference from checkForUpdate's dispatch:
+ *     checkForUpdate: slot fires ONCE then goes to IDLE
+ *     downloadFirmware: slot fires MANY times, IDLE on terminal
+ *     updateFirmware: slot fires MANY times, IDLE on terminal (same)
+ *
+ * THREAD SAFETY:
+ *   Called on the BG thread. Accesses g_update_registry under mutex.
+ *   Phase 2 callbacks run WITHOUT mutex -- the app's callback function
+ *   can safely call library APIs without deadlocking.
+ *
+ * @param signal_data  Parsed signal data from on_update_progress_signal()
  */
 static void dispatch_all_update_active(const InternalUpdateSignalData *signal_data)
 {
+    /*
+     * Local snapshot struct -- stores one entry's callback info.
+     * We allocate an array of these on the stack (up to 30 entries).
+     *
+     * Fields:
+     *   callback    -- the UpdateCallback function pointer to invoke
+     *   handle_copy -- string copy of handle_key (for logging only)
+     *   slot_index  -- which g_update_registry.entries[] index this is
+     *   is_final    -- true if this signal ends the update (COMPLETED/ERROR)
+     *
+     * handle_copy is a fixed-size char[256] buffer, not a heap allocation.
+     * This avoids malloc/free overhead for a temporary logging string.
+     */
     typedef struct {
         UpdateCallback  callback;
         char            handle_copy[256];
@@ -2224,16 +2495,53 @@ static void dispatch_all_update_active(const InternalUpdateSignalData *signal_da
     UpdateSnapshot snapshots[MAX_PENDING_CALLBACKS];
     int            count = 0;
 
+    /*
+     * Map the raw integer status_code to the UpdateStatus enum.
+     * internal_map_update_status_code() does:
+     *   0 -> UPDATE_IN_PROGRESS
+     *   1 -> UPDATE_COMPLETED
+     *   2 -> UPDATE_ERROR
+     *   anything else -> UPDATE_ERROR (defensive default)
+     *
+     * Then determine if this is a terminal signal (update finished).
+     * A terminal signal means we should reset the slot to IDLE after
+     * invoking the callback, because no more signals are coming.
+     */
     UpdateStatus status   = internal_map_update_status_code(signal_data->status_code);
     bool         is_final = (status == UPDATE_COMPLETED || status == UPDATE_ERROR);
 
     /* ---- PHASE 1: snapshot under mutex ---- */
+
+    /*
+     * Lock the registry. While we hold this lock, no other thread can
+     * modify g_update_registry (e.g., the main thread can't register
+     * a new callback via internal_update_register_callback()).
+     */
     pthread_mutex_lock(&g_update_registry.mutex);
 
+    /*
+     * Scan all 30 slots. For each ACTIVE entry, copy its info into
+     * the snapshot array. We copy the callback pointer (not the entry
+     * pointer) because after releasing the mutex, the entry could be
+     * modified by another thread.
+     */
     for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
         UpdateCbEntry *e = &g_update_registry.entries[i];
+
+        /*
+         * Skip non-ACTIVE entries. IDLE slots have no callback to invoke.
+         * (There's no PENDING or DISPATCHED state for update -- only
+         * IDLE and ACTIVE.)
+         */
         if (e->state != UPDATE_CB_STATE_ACTIVE) continue;
 
+        /*
+         * Copy this entry's data into the snapshot:
+         *   callback   -- the function pointer we'll invoke in Phase 2
+         *   slot_index -- needed to reset this specific slot in Phase 2
+         *   is_final   -- same for all entries (determined by status_code)
+         *   handle_copy -- snprintf'd for safe logging (truncated to 255 chars)
+         */
         snapshots[count].callback   = e->callback;
         snapshots[count].slot_index = i;
         snapshots[count].is_final   = is_final;
@@ -2249,11 +2557,22 @@ static void dispatch_all_update_active(const InternalUpdateSignalData *signal_da
                      signal_data->progress_percent, is_final);
     }
 
+    /*
+     * Release the mutex. From this point, the main thread can freely
+     * register new callbacks. Our snapshot is a frozen copy -- it won't
+     * be affected by concurrent registry modifications.
+     */
     pthread_mutex_unlock(&g_update_registry.mutex);
 
     FWUPMGR_INFO("dispatch_all_update_active: %d callback(s) to fire\n", count);
 
     /* ---- PHASE 2: invoke callbacks, no mutex held ---- */
+
+    /*
+     * Iterate through the snapshot array and invoke each callback.
+     * No mutex is held during callback invocation -- the app's callback
+     * can safely call any library function without deadlocking.
+     */
     for (int i = 0; i < count; i++) {
         UpdateSnapshot *s = &snapshots[i];
 
@@ -2261,21 +2580,41 @@ static void dispatch_all_update_active(const InternalUpdateSignalData *signal_da
                      "for handle='%s'\n", s->handle_copy);
 
         /*
+         * INVOKE THE APP'S CALLBACK
+         *
          * Callback signature: void fn(int progress_per, UpdateStatus status)
-         * Matches UpdateCallback typedef exactly.
+         * Matches the UpdateCallback typedef exactly.
+         *
+         * Arguments:
+         *   signal_data->progress_percent -- 0 to 100 (how far along)
+         *   status -- UPDATE_IN_PROGRESS, UPDATE_COMPLETED, or UPDATE_ERROR
+         *
+         * This runs on the BG thread. If the app needs to update UI,
+         * it must marshal the call to the main thread (e.g., via
+         * pthread_cond_signal, g_idle_add, or similar mechanism).
+         *
+         * The callback MUST NOT block for a long time, because it blocks
+         * this BG thread from processing further D-Bus signals.
          */
         s->callback(signal_data->progress_percent, status);
 
         /*
-         * If this was the final signal (COMPLETED or ERROR), reset slot to IDLE.
-         * For in-progress signals, leave slot ACTIVE for the next signal.
+         * If this was a TERMINAL signal (COMPLETED or ERROR), reset
+         * the slot back to IDLE so it can be reused.
+         *
+         * We must RE-ACQUIRE the mutex to modify the registry. This is
+         * a brief lock/unlock pair -- just enough to reset one slot.
+         *
+         * If this was an IN-PROGRESS signal, we leave the slot ACTIVE.
+         * The next UpdateProgress signal will dispatch to the same
+         * callback again.
          */
         if (s->is_final) {
             pthread_mutex_lock(&g_update_registry.mutex);
             update_registry_reset_slot(&g_update_registry.entries[s->slot_index]);
             pthread_mutex_unlock(&g_update_registry.mutex);
 
-            FWUPMGR_INFO("dispatch_all_update_active: slot %d → IDLE "
+            FWUPMGR_INFO("dispatch_all_update_active: slot %d -> IDLE "
                          "(update ended)\n", s->slot_index);
         }
     }
@@ -2283,61 +2622,186 @@ static void dispatch_all_update_active(const InternalUpdateSignalData *signal_da
 
 /* ========================================================================
  * UPDATE REGISTRY OPERATIONS
+ *
+ * These functions manage the g_update_registry -- allocating slots for
+ * new update callbacks (internal_update_register_callback) and cleaning
+ * up slots when updates complete (update_registry_reset_slot).
+ *
+ * The registry holds up to MAX_PENDING_CALLBACKS (30) entries.
+ * Each entry has two states: UPDATE_CB_STATE_IDLE (available) and
+ * UPDATE_CB_STATE_ACTIVE (callback registered, waiting for signals).
  * ======================================================================== */
 
 /**
  * @brief Register an update callback keyed by handle
  *
- * Sets slot to ACTIVE. Slot receives ALL subsequent UpdateProgress signals
- * until UPDATE_COMPLETED or UPDATE_ERROR resets it to IDLE.
+ * PURPOSE:
+ *   Called by updateFirmware() (in _api.c) AFTER the D-Bus connection
+ *   succeeds but BEFORE the fire-and-forget D-Bus call is sent.
+ *   Allocates a slot in g_update_registry so the BG thread can find
+ *   the callback when UpdateProgress signals arrive.
+ *
+ * HOW IT WORKS:
+ *   1. Lock g_update_registry.mutex (prevents races with BG thread)
+ *   2. Scan all MAX_PENDING_CALLBACKS (30) slots looking for:
+ *      a. An existing ACTIVE slot with the same handle (dedup case)
+ *      b. The first IDLE slot (normal allocation case)
+ *   3. Pick the target:
+ *      - If same handle found: overwrite it (existing_slot)
+ *      - Else if free slot found: use it (free_slot)
+ *      - Else: return false (registry full)
+ *   4. Populate the target slot:
+ *      - handle_key = strdup(handle)           -- heap copy of "1"
+ *      - callback = the UpdateCallback function pointer
+ *      - state = UPDATE_CB_STATE_ACTIVE         -- ready for dispatch
+ *      - registered_time = time(NULL)           -- unix timestamp
+ *   5. Unlock mutex and return true
  *
  * SAME HANDLE TWICE:
- *   Overwrites existing ACTIVE slot for the same handle.
+ *   If the same handle already has an ACTIVE slot (e.g., the app calls
+ *   updateFirmware() again before the first update finishes), the old
+ *   entry is OVERWRITTEN. The old handle_key string is freed first to
+ *   avoid a memory leak. This means:
+ *   - Only ONE active update callback per handle at a time
+ *   - The NEW callback replaces the old one
+ *   - The old callback will never fire again
+ *
+ * WHY ACTIVE (NOT PENDING):
+ *   checkForUpdate uses PENDING -> DISPATCHED -> IDLE (fires once).
+ *   updateFirmware uses ACTIVE -> IDLE (fires many times until terminal).
+ *   The slot stays ACTIVE and the callback fires on EVERY UpdateProgress
+ *   signal until the status is UPDATE_COMPLETED or UPDATE_ERROR, at
+ *   which point dispatch_all_update_active() resets it to IDLE.
+ *
+ * THREAD SAFETY:
+ *   Thread-safe. Protected by g_update_registry.mutex.
+ *   Called from the main thread (inside updateFirmware()).
+ *   The BG thread reads the same registry in dispatch_all_update_active().
+ *   The mutex ensures they never read/write the same slot simultaneously.
+ *
+ * MEMORY:
+ *   handle_key = strdup(handle) -- heap allocated by THIS function.
+ *   Freed by update_registry_reset_slot() when the slot returns to IDLE,
+ *   or freed here if overwriting an existing entry.
+ *
+ * @param handle    The handle string from registerProcess(), e.g. "1"
+ * @param callback  The UpdateCallback function pointer to invoke later
+ * @return true if registered, false if registry full (all 30 slots occupied)
  */
 bool internal_update_register_callback(FirmwareInterfaceHandle handle,
                                         UpdateCallback callback)
 {
+    /*
+     * Lock the update registry mutex. This mutex protects the entire
+     * g_update_registry.entries[] array from concurrent access.
+     * The BG thread also locks this mutex when dispatching callbacks.
+     */
     pthread_mutex_lock(&g_update_registry.mutex);
 
+    /*
+     * We need to find a slot. Two pointers track our search:
+     *   free_slot     -- first IDLE entry found (available for use)
+     *   existing_slot -- entry with same handle (dedup/overwrite case)
+     *
+     * Both start NULL. If neither is found after scanning, the registry
+     * is full of ACTIVE entries (all 30 slots occupied by other handles).
+     */
     UpdateCbEntry *free_slot     = NULL;
     UpdateCbEntry *existing_slot = NULL;
 
+    /*
+     * Linear scan through all 30 slots. We MUST scan the entire array
+     * even after finding a free slot, because we need to check for
+     * duplicate handles. An existing ACTIVE entry for the same handle
+     * takes priority over a free slot.
+     */
     for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
         UpdateCbEntry *e = &g_update_registry.entries[i];
 
+        /*
+         * Check for DEDUP: is this an ACTIVE entry with the same handle?
+         *
+         * If the app calls updateFirmware() twice with the same handle
+         * before the first update finishes, we find the old entry here
+         * and overwrite it rather than wasting a new slot.
+         *
+         * strcmp(e->handle_key, handle) == 0 means exact string match.
+         * The handle_key NULL check prevents strcmp(NULL, ...) crash.
+         */
         if (e->state == UPDATE_CB_STATE_ACTIVE &&
             e->handle_key != NULL &&
             strcmp(e->handle_key, handle) == 0) {
             existing_slot = e;
-            break;
+            break;  /* Found duplicate -- no need to continue scanning */
         }
 
+        /*
+         * Track the FIRST idle slot we encounter. We only save the
+         * first one (free_slot == NULL check) because we want the
+         * lowest-indexed available slot for consistency.
+         */
         if (free_slot == NULL && e->state == UPDATE_CB_STATE_IDLE) {
             free_slot = e;
         }
     }
 
+    /*
+     * Pick the target slot:
+     *   - Prefer existing_slot (dedup/overwrite case)
+     *   - Fall back to free_slot (normal allocation case)
+     *   - If both NULL: registry is full, fail
+     */
     UpdateCbEntry *target = existing_slot ? existing_slot : free_slot;
 
     if (target == NULL) {
+        /*
+         * All 30 slots are ACTIVE with different handles. This should
+         * never happen in practice -- a device rarely has more than
+         * one or two concurrent update clients. But we handle it
+         * gracefully by returning false instead of crashing.
+         */
         FWUPMGR_ERROR("internal_update_register_callback: registry full (max=%d)\n",
                       MAX_PENDING_CALLBACKS);
         pthread_mutex_unlock(&g_update_registry.mutex);
         return false;
     }
 
+    /*
+     * If we're overwriting an existing entry (same handle), free the
+     * old handle_key string to avoid a memory leak. The old strdup'd
+     * string is on the heap and must be explicitly freed.
+     */
     if (existing_slot) {
         FWUPMGR_INFO("internal_update_register_callback: "
                      "overwriting existing for handle='%s'\n", handle);
         free(target->handle_key);
-        target->handle_key = NULL;
+        target->handle_key = NULL;  /* Defensive: NULL before reassignment */
     }
 
+    /*
+     * Populate the slot with the new callback registration.
+     *
+     * strdup(handle) creates a heap copy of the handle string "1".
+     * We need our own copy because the caller's string may go out of
+     * scope or be freed after updateFirmware() returns.
+     *
+     * UPDATE_CB_STATE_ACTIVE means this slot is ready to receive
+     * UpdateProgress signals. The BG thread's dispatch_all_update_active()
+     * will find it and invoke the callback.
+     *
+     * registered_time is recorded for diagnostic purposes (log how
+     * long a slot has been active).
+     */
     target->handle_key      = strdup(handle);
     target->callback        = callback;
     target->state           = UPDATE_CB_STATE_ACTIVE;
     target->registered_time = time(NULL);
 
+    /*
+     * Unlock the mutex. The slot is now visible to the BG thread.
+     * From this point, any UpdateProgress signal will find our ACTIVE
+     * entry and invoke the callback.
+     */
     pthread_mutex_unlock(&g_update_registry.mutex);
 
     FWUPMGR_INFO("internal_update_register_callback: registered handle='%s'\n",
@@ -2347,35 +2811,163 @@ bool internal_update_register_callback(FirmwareInterfaceHandle handle,
 
 /**
  * @brief Reset an update registry slot to IDLE
- * MUST be called with g_update_registry.mutex held.
+ *
+ * PURPOSE:
+ *   Returns a single UpdateCbEntry to the IDLE (empty) state so it
+ *   can be reused by a future updateFirmware() call. Called in two
+ *   situations:
+ *     1. dispatch_all_update_active() -- when a terminal signal arrives
+ *        (UPDATE_COMPLETED or UPDATE_ERROR), the slot is reset after
+ *        the callback is invoked.
+ *     2. internal_update_system_deinit() -- during library shutdown,
+ *        all slots are cleaned up (though deinit frees handle_key
+ *        directly rather than calling this function).
+ *
+ * WHAT IT DOES:
+ *   1. Frees the handle_key string (heap-allocated by strdup in
+ *      internal_update_register_callback). Sets pointer to NULL.
+ *   2. Clears the callback function pointer to NULL.
+ *   3. Resets registered_time to 0.
+ *   4. Sets state back to UPDATE_CB_STATE_IDLE.
+ *
+ *   After this call, the slot is indistinguishable from a never-used
+ *   slot. It will be found by the next registry scan looking for a
+ *   free slot.
+ *
+ * THREAD SAFETY:
+ *   MUST be called with g_update_registry.mutex HELD by the caller.
+ *   This function does NOT lock the mutex itself -- the caller is
+ *   responsible for locking. This is because the caller typically
+ *   needs to do the lock, call this function, then do other work
+ *   before unlocking (or is already inside a locked section).
+ *
+ * MEMORY:
+ *   Frees one heap allocation: handle_key (from strdup).
+ *   Does NOT free the entry itself -- entries are array elements
+ *   inside g_update_registry, not individually heap-allocated.
+ *
+ * @param entry  Pointer to the UpdateCbEntry to reset. Must not be NULL.
  */
 static void update_registry_reset_slot(UpdateCbEntry *entry)
 {
+    /*
+     * Free the handle_key string if it exists.
+     *
+     * handle_key was allocated by strdup() in
+     * internal_update_register_callback(). We must free it to avoid
+     * a memory leak. The NULL check is defensive -- an IDLE slot
+     * should already have handle_key == NULL, but we check anyway.
+     */
     if (entry->handle_key != NULL) {
         free(entry->handle_key);
-        entry->handle_key = NULL;
+        entry->handle_key = NULL;  /* Prevent dangling pointer / double-free */
     }
+
+    /*
+     * Clear the callback function pointer. Setting to NULL ensures
+     * that even if something accidentally tries to invoke this slot's
+     * callback, it will be a NULL dereference (crash) rather than
+     * calling a stale function pointer (undefined behavior / security risk).
+     */
     entry->callback        = NULL;
+
+    /*
+     * Reset the registration timestamp. Not strictly necessary for
+     * correctness, but keeps the slot in a clean, known state.
+     */
     entry->registered_time = 0;
+
+    /*
+     * Set state back to IDLE. This is the critical line -- it's what
+     * makes the slot available for reuse by the next
+     * internal_update_register_callback() call. The linear scan in
+     * that function looks for UPDATE_CB_STATE_IDLE to find free slots.
+     */
     entry->state           = UPDATE_CB_STATE_IDLE;
 }
 
 /* ========================================================================
  * UPDATE SIGNAL DATA HELPERS
+ *
+ * These helper functions handle the translation between D-Bus wire
+ * format and the library's internal types:
+ *
+ *   internal_parse_update_signal_data() -- GVariant "(tsiis)" -> struct
+ *   internal_map_update_status_code()   -- int (0/1/2) -> UpdateStatus enum
+ *
+ * Both are pure functions with no side effects (except logging on error).
  * ======================================================================== */
 
 /**
- * @brief Parse GVariant UpdateProgress payload
+ * @brief Parse GVariant UpdateProgress payload into a struct
  *
- * Expected GVariant signature: (ii)
- *   i  progress_percent  (0–100)
- *   i  status_code       (maps to UpdateStatus)
+ * PURPOSE:
+ *   Extracts the five fields from the D-Bus UpdateProgress signal's
+ *   GVariant payload and stores them in an InternalUpdateSignalData
+ *   struct for easy access by the dispatch logic.
+ *
+ * EXPECTED GVariant SIGNATURE: "(tsiis)"
+ *   t  handler_id       -- uint64: identifies which registered client
+ *   s  firmware_name    -- string: the image being flashed (e.g., "firmware_v8.bin")
+ *   i  progress_percent -- int32:  0 to 100
+ *   i  status_code      -- int32:  0=IN_PROGRESS, 1=COMPLETED, 2=ERROR
+ *   s  message          -- string: human-readable status message
+ *
+ * COMPARISON WITH DOWNLOAD SIGNAL:
+ *   Download signal "(tsuss)":
+ *     t handler_id, s firmware_name, u progress (uint32),
+ *     s status_string ("INPROGRESS"/"COMPLETED"/"ERROR"), s message
+ *   Update signal "(tsiis)":
+ *     t handler_id, s firmware_name, i progress (int32),
+ *     i status_code (0/1/2), s message
+ *
+ *   Key differences:
+ *     - Download: progress is uint32 (u), status is string (s)
+ *     - Update:   progress is int32 (i),  status is int32 (i)
+ *     - Download: 3 strings to g_free (firmware_name, status_string, message)
+ *     - Update:   2 strings to g_free (firmware_name, message)
+ *
+ * MEMORY OWNERSHIP:
+ *   g_variant_get() with "s" format ALLOCATES new strings on the heap
+ *   (via g_strdup). The CALLER is responsible for freeing them with
+ *   g_free() when done. This function sets:
+ *     out_data->firmware_name  -- caller must g_free()
+ *     out_data->message        -- caller must g_free()
+ *   Integer fields (handler_id, progress_percent, status_code) are
+ *   simple value copies -- no heap allocation.
+ *
+ * THREAD SAFETY:
+ *   Safe -- operates only on its parameters (no global state).
+ *   Called from on_update_progress_signal() on the BG thread.
+ *
+ * @param parameters  The GVariant from the D-Bus signal. Must not be NULL.
+ * @param out_data    Output struct to populate. Must not be NULL.
+ *                    Caller must g_free firmware_name and message.
+ * @return true on success, false if parameters is NULL, out_data is NULL,
+ *         or the GVariant signature doesn't match "(tsiis)".
  */
 bool internal_parse_update_signal_data(GVariant *parameters,
                                         InternalUpdateSignalData *out_data)
 {
+    /*
+     * NULL checks on both parameters. If either is NULL, we can't
+     * proceed -- return false immediately. No cleanup needed because
+     * nothing has been allocated yet.
+     */
     if (parameters == NULL || out_data == NULL) return false;
 
+    /*
+     * Verify the GVariant's type signature matches what we expect.
+     *
+     * g_variant_get_type_string() returns the GVariant's type as a
+     * string, e.g. "(tsiis)". If the daemon sends a different format
+     * (e.g., due to a version mismatch), we'd get garbage if we tried
+     * to extract with the wrong format. This check catches mismatches
+     * early with a clear error message.
+     *
+     * strcmp returns 0 if the strings are equal. If NOT equal (non-zero),
+     * log the unexpected signature and return false.
+     */
     const gchar *sig = g_variant_get_type_string(parameters);
     if (strcmp(sig, "(tsiis)") != 0) {
         FWUPMGR_ERROR("internal_parse_update_signal_data: "
@@ -2383,12 +2975,37 @@ bool internal_parse_update_signal_data(GVariant *parameters,
         return false;
     }
 
+    /*
+     * Declare local variables to receive the extracted values.
+     * We use typed locals rather than extracting directly into out_data
+     * for clarity and to match the GLib API pattern.
+     *
+     * guint64 handler_id   -- maps to 't' (uint64)
+     * gchar  *firmware_name -- maps to 's' (string, heap-allocated by g_variant_get)
+     * gint32  progress      -- maps to 'i' (int32)
+     * gint32  status        -- maps to 'i' (int32)
+     * gchar  *message_str   -- maps to 's' (string, heap-allocated by g_variant_get)
+     */
     guint64  handler_id = 0;
     gchar   *firmware_name = NULL;
     gint32   progress = 0;
     gint32   status = 0;
     gchar   *message_str = NULL;
 
+    /*
+     * Extract all five fields from the GVariant in one call.
+     *
+     * g_variant_get() is the inverse of g_variant_new(). The format
+     * string "(tsiis)" tells GLib how to interpret the binary data:
+     *   t -> extract as guint64, store at &handler_id
+     *   s -> extract as string, allocate copy, store at &firmware_name
+     *   i -> extract as gint32, store at &progress
+     *   i -> extract as gint32, store at &status
+     *   s -> extract as string, allocate copy, store at &message_str
+     *
+     * The 's' format specifier ALWAYS allocates a new string (g_strdup).
+     * This is why the caller must g_free() firmware_name and message.
+     */
     g_variant_get(parameters, "(tsiis)", 
                   &handler_id, 
                   &firmware_name, 
@@ -2396,27 +3013,100 @@ bool internal_parse_update_signal_data(GVariant *parameters,
                   &status, 
                   &message_str);
 
+    /*
+     * Copy the extracted values into the output struct.
+     *
+     * For strings (firmware_name, message): we transfer OWNERSHIP of
+     * the heap-allocated string to the caller via the out_data struct.
+     * The caller (on_update_progress_signal) is responsible for calling
+     * g_free() on these pointers when done.
+     *
+     * For integers (handler_id, progress_percent, status_code): these
+     * are simple value copies. No heap allocation, no cleanup needed.
+     */
     out_data->handler_id       = handler_id;
-    out_data->firmware_name    = firmware_name;   // Caller must g_free
+    out_data->firmware_name    = firmware_name;   /* Caller must g_free */
     out_data->progress_percent = progress;
     out_data->status_code      = status;
-    out_data->message          = message_str;     // Caller must g_free
+    out_data->message          = message_str;     /* Caller must g_free */
 
     return true;
 }
 
 /**
- * @brief Map raw integer to UpdateStatus enum
+ * @brief Map raw integer status code to UpdateStatus enum
+ *
+ * PURPOSE:
+ *   The daemon's UpdateProgress signal sends status as a raw integer
+ *   (0, 1, or 2). The library's public API uses the UpdateStatus enum
+ *   (UPDATE_IN_PROGRESS, UPDATE_COMPLETED, UPDATE_ERROR). This function
+ *   translates between the two representations.
+ *
+ * COMPARISON WITH DOWNLOAD STATUS MAPPING:
+ *   Download uses STRING codes: "INPROGRESS", "COMPLETED", "ERROR"
+ *     -> mapped by map_dwnl_status_string() using strcmp()
+ *   Update uses INTEGER codes: 0, 1, 2
+ *     -> mapped by THIS function using a switch statement
+ *
+ *   The integer approach is simpler and faster (no string comparison),
+ *   but less self-documenting in D-Bus traces. The two APIs evolved
+ *   independently, which is why they use different conventions.
+ *
+ * MAPPING:
+ *   0 -> UPDATE_IN_PROGRESS  (flashing is underway, more signals coming)
+ *   1 -> UPDATE_COMPLETED    (flashing finished successfully)
+ *   2 -> UPDATE_ERROR        (flashing failed)
+ *   anything else -> UPDATE_ERROR (defensive default, with error log)
+ *
+ * WHY DEFAULT TO ERROR:
+ *   If the daemon sends an unknown status code (e.g., 3), we treat it
+ *   as an error. This is the SAFEST default because:
+ *   - It causes the slot to be reset to IDLE (terminal status)
+ *   - It notifies the app that something unexpected happened
+ *   - It prevents the slot from staying ACTIVE forever
+ *   If we defaulted to IN_PROGRESS, an unknown code would leave the
+ *   slot ACTIVE indefinitely, leaking a registry slot.
+ *
+ * THREAD SAFETY:
+ *   Pure function -- no side effects, no global state. Safe to call
+ *   from any thread.
+ *
+ * @param status_code  The raw integer from the D-Bus signal (0, 1, or 2)
+ * @return The corresponding UpdateStatus enum value
  */
 UpdateStatus internal_map_update_status_code(int32_t status_code)
 {
     switch (status_code) {
+        /*
+         * 0 = IN_PROGRESS: The daemon is still flashing the firmware.
+         * More UpdateProgress signals will follow. The callback slot
+         * stays ACTIVE.
+         */
         case 0:  return UPDATE_IN_PROGRESS;
+
+        /*
+         * 1 = COMPLETED: The firmware was flashed successfully.
+         * This is a TERMINAL status -- no more signals will come.
+         * dispatch_all_update_active() will reset the slot to IDLE.
+         */
         case 1:  return UPDATE_COMPLETED;
+
+        /*
+         * 2 = ERROR: The firmware flash failed.
+         * This is a TERMINAL status -- no more signals will come.
+         * dispatch_all_update_active() will reset the slot to IDLE.
+         */
         case 2:  return UPDATE_ERROR;
+
+        /*
+         * Unknown status code. This should never happen with a matching
+         * daemon version. But if the daemon is newer and adds status
+         * code 3 (e.g., "PAUSED"), we default to ERROR so the slot
+         * gets cleaned up rather than stuck ACTIVE forever.
+         */
         default:
             FWUPMGR_ERROR("internal_map_update_status_code: "
-                          "unknown %d → UPDATE_ERROR\n", status_code);
+                          "unknown %d -> UPDATE_ERROR\n", status_code);
             return UPDATE_ERROR;
     }
 }
