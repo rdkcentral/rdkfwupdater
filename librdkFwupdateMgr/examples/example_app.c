@@ -335,7 +335,7 @@ int main(void)
     struct timespec timeout;
     int rc;
 
-    /* Initialize logging — must be first.
+    /* Initialize logging must be first.
      * All EXAMPLE_* and FWUPMGR_* log output goes to stdout/stderr.
      * Shell redirect puts it in the right file:
      *   example_plugin > /opt/logs/rdkFwupdateMgr.log 2>&1
