@@ -404,40 +404,6 @@ CheckForUpdateResult checkForUpdate(FirmwareInterfaceHandle handle,
 
     return CHECK_FOR_UPDATE_SUCCESS;
 }
-#if 0
-/* ========================================================================
- * LIBRARY LIFECYCLE
- * ======================================================================== */
-
-/**
- * @brief Library constructor — auto-called when .so is loaded
- *
- * Initializes the internal async engine (registry + background thread)
- * before any app code runs.
- */
-__attribute__((constructor))
-static void rdkFwupdateMgr_lib_init(void)
-{
-    FWUPMGR_INFO("=== rdkFwupdateMgr library loading ===\n");
-    if (internal_system_init() != 0) {
-        FWUPMGR_ERROR("rdkFwupdateMgr_lib_init: internal_system_init FAILED\n");
-    }
-    FWUPMGR_INFO("=== rdkFwupdateMgr library ready ===\n");
-}
-
-/**
- * @brief Library destructor — auto-called when .so is unloaded
- *
- * Stops background thread and frees all resources cleanly.
- */
-__attribute__((destructor))
-static void rdkFwupdateMgr_lib_deinit(void)
-{
-    FWUPMGR_INFO("=== rdkFwupdateMgr library unloading ===\n");
-    internal_system_deinit();
-    FWUPMGR_INFO("=== rdkFwupdateMgr library unloaded ===\n");
-}
-#endif
 /*
  * downloadFirmware - Initiate a non-blocking firmware download.
  *
