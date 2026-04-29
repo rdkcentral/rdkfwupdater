@@ -1154,9 +1154,9 @@ void unregisterProcess(FirmwareInterfaceHandle handler)
      * "dormant" state: no threads, no mutexes, no D-Bus connections.
      * Only the handle string and handler_id still exist.
      */
-    FWUPMGR_INFO("=== rdkFwupdateMgr destroy thred unloading ===\n");
+    FWUPMGR_INFO("=== rdkFwupdateMgr destroy thread unloading ===\n");
     internal_system_deinit();
-    FWUPMGR_INFO("=== rdkFwupdateMgr destory thread ===\n");
+    FWUPMGR_INFO("=== rdkFwupdateMgr destroy thread ===\n");
 
     /*
      * [STEP 4] CREATE D-BUS PROXY (best-effort)
