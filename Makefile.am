@@ -80,6 +80,10 @@ if IS_IARMEVENT_ENABLED
 librdksw_iarmIntf_la_CFLAGS += $(IARM_EVENT_FLAG)
 endif
 
+if IS_IARMEVENT_ENABLED
+librdksw_fwutils_la_CFLAGS += $(IARM_EVENT_FLAG)
+endif
+
 if IS_LIBRFCAPI_ENABLED
 librdksw_rfcIntf_la_CFLAGS += $(LIBRFCAPI_FLAG)
 endif
