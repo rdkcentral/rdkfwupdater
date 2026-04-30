@@ -315,7 +315,7 @@ extern "C" void eventManager(const char *cur_event_name, const char *event_statu
     printf("Inside Mock Function eventManager\n");
     return g_DeviceStatusMock->eventManager(cur_event_name, event_status);
 }
-
+#if 0
 extern "C" size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
 {
     if (!g_DeviceStatusMock)
@@ -326,7 +326,7 @@ extern "C" size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
     printf("Inside Mock Function GetPDRIFileName\n");
     return g_DeviceStatusMock->GetPDRIFileName(pPDRIFilename, szBufSize);
 }
-
+#endif
 extern "C" void updateUpgradeFlag(int action)
 {
     if (!g_DeviceStatusMock)

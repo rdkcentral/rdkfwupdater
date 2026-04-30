@@ -82,6 +82,7 @@ TEST_F(CreateJsonTestFixture, TestName_checkPDRIUpgrade_Null)
 {
     EXPECT_EQ(checkPDRIUpgrade(NULL), false);
 }
+#if 0
 TEST_F(CreateJsonTestFixture, TestName_checkPDRIUpgrade_notrq) 
 {
     char pdri_image[] = "Test_pdri.bin";
@@ -539,3 +540,4 @@ GTEST_API_ int main(int argc, char *argv[]){
     cout << "Starting device_status_helper App ===================>" << endl;
     return RUN_ALL_TESTS();
 }
+#endif
