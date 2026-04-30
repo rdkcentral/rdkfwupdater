@@ -27,6 +27,7 @@
 #include "libIBus.h"
 #include "libIBusDaemon.h"
 #include <glib.h>
+#include <stddef.h>
 #endif
 #ifdef EN_MAINTENANCE_MANAGER
 #include "maintenanceMGR.h"
