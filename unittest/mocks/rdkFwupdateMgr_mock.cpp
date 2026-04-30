@@ -138,6 +138,23 @@ extern "C" size_t GetFirmwareVersion(char *pFWVersion, size_t szBufSize) {
     return g_RdkFwupdateMgrMock->GetFirmwareVersion(pFWVersion, szBufSize);
 }
 
+extern "C" size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
+{
+    if (!g_RdkFwupdateMgrMock) {
+        cout << "GetPDRIFileNameUsingMFR g_IarmInterfaceMock object is NULL" << endl;
+        return 0;
+    }
+    printf("Inside Mock Function GetPDRIFileNameUsingMFR\n");
+    // Give a fake file name for tests unless you want to do more in your mock object
+    const char *mockPDRI = "mock-PDRI-image.bin";
+    size_t len = strlen(mockPDRI);
+    if (pPDRIFilename && szBufSize > len) {
+        strncpy(pPDRIFilename, mockPDRI, szBufSize);
+        pPDRIFilename[szBufSize - 1] = '\0';
+        return len;
+    }
+    return g_RdkFwupdateMgrMock->GetPDRIFileNameUsingMFR(pPDRIFilename, szBufSize);
+}
 // =============================================================================
 // File operations
 // =============================================================================

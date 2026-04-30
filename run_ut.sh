@@ -65,7 +65,6 @@ echo "-------------> Return value $rdkfwupdatemgr_main_flow"
 
 dbus_handlers_gtest=$?
 echo "-------------> Return value $dbus_handlers_gtest"
-
 if [ "$devicestatus" = "0" ] && [ "$deviceutils" = "0" ] && [ "$mainapp" = "0" ] && [ "$rdkfw_interface" = "0" ]&& [ "$rdkFwupdateMgr_handlers" = "0" ] && [ "$dbus_handlers_gtest" = "0" ] && [ "$rdkfwupdatemgr_main_flow" = "0" ]; then
     cd ../src/
 
@@ -77,4 +76,4 @@ if [ "$devicestatus" = "0" ] && [ "$deviceutils" = "0" ] && [ "$mainapp" = "0" ]
 else
     echo "L1 UNIT TEST FAILED. PLEASE CHECK AND FIX"
     exit 1
-fi
+fi    
