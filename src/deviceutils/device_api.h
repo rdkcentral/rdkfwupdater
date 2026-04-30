@@ -28,7 +28,7 @@
 #endif
 
 #if defined(IARM_ENABLED)
-#include "../include/iarmInterface.h"
+#include "iarmInterface.h"
 #endif
 
 #ifndef GTEST_ENABLE
