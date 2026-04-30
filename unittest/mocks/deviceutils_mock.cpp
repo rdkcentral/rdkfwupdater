@@ -266,6 +266,23 @@ extern "C" void t2ValNotify(char *marker, char *val)
     return g_DeviceUtilsMock->t2ValNotify(marker, val);
 }
 
+extern "C" size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
+{
+    if (!g_DeviceUtilsMock) {
+        cout << "GetPDRIFileNameUsingMFR g_IarmInterfaceMock object is NULL" << endl;
+        return 0;
+    }
+    printf("Inside Mock Function GetPDRIFileNameUsingMFR\n");
+    // Give a fake file name for tests unless you want to do more in your mock object
+    const char *mockPDRI = "mock-PDRI-image.bin";
+    size_t len = strlen(mockPDRI);
+    if (pPDRIFilename && szBufSize > len) {
+        strncpy(pPDRIFilename, mockPDRI, szBufSize);
+        pPDRIFilename[szBufSize - 1] = '\0';
+        return len;
+    }
+    return g_DeviceUtilsMock->GetPDRIFileNameUsingMFR(pPDRIFilename, szBufSize);
+}
 // ========== Mocks for external functions (moved to common_utilities) ==========
 /*
 extern "C" size_t GetTimezone(char *pTimezone, const char *arch, size_t szBufSize)

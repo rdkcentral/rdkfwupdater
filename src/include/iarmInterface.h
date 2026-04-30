@@ -74,6 +74,21 @@ typedef struct _IARM_BUS_SYSMgr_EventData_t{
 #define IARM_BUS_SYSMGR_SYSSTATE_FIRMWARE_DWNLD 2
 #define IARM_BUS_SYSMGR_SYSSTATE_RED_RECOV_UPDATE_STATE 3
 
+#ifndef IARM_BUS_MFRLIB_NAME
+#define IARM_BUS_MFRLIB_NAME "IARM_BUS_MFRLIB_NAME_teststub"
+#endif
+
+#ifndef IARM_BUS_MFRLIB_API_GetSerializedData
+#define IARM_BUS_MFRLIB_API_GetSerializedData 111
+#endif
+
+typedef struct {
+    int type;
+    size_t bufLen;
+    char buffer[256];
+} IARM_Bus_MFRLib_GetSerializedData_Param_t;
+
+#define mfrSERIALIZED_TYPE_PDRIVERSION 0
 typedef char gchar;
 
 #endif

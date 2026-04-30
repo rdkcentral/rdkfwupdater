@@ -50,6 +50,7 @@ class FwDlInterface
         virtual int IARM_Bus_Term() = 0;
         virtual int allocDowndLoadDataMem(void *ptr, int size) = 0;
         virtual int getJsonRpc(char *data, void *ptr) = 0;
+	virtual int IARM_Bus_Call(const char* ownerName, int apiId, void* param, unsigned int paramLen) = 0;
 };
 
 class FwDlInterfaceMock: public FwDlInterface
@@ -75,6 +76,7 @@ class FwDlInterfaceMock: public FwDlInterface
         MOCK_METHOD(int, IARM_Bus_Term, (), ());
         MOCK_METHOD(int, allocDowndLoadDataMem, (void *ptr, int size), ());
         MOCK_METHOD(int, getJsonRpc, (char *data, void *ptr), ());
+	MOCK_METHOD(int, IARM_Bus_Call, (const char*, int, void*, unsigned int), ());
 };
 
 #endif
