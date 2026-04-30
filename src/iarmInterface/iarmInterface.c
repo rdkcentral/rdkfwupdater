@@ -349,7 +349,6 @@ size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
             pPDRIFilename[param.bufLen] = '\0';
             len = param.bufLen;
             SWLOG_INFO("GetPDRIFileName: PDRI Version = %s", pPDRIFilename);
-	    t2ValNotify("PDRI_Version_split", pPDRIFilename);
 	}
     } else {
         // Error path: be explicit
