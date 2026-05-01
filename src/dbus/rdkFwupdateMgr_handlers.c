@@ -473,11 +473,11 @@ static int fetch_xconf_firmware_info( XCONFRES *pResponse, int server_type, int 
                     xconf_context.dwlloc = &DwnLoc;
                     xconf_context.pPostFields = pJSONStr;
                     
-                    //Have to revist these vars once - MADHU
+                    
                     Rfc_t local_rfc_list = {0};
                     getRFCSettings(&local_rfc_list);  // Read actual RFC settings from system
                     
-                    const char *local_immed_reboot_flag = "false"; // Keep throttle behavior enabled by default; set to "true" only when explicitly requested.
+                    const char *local_immed_reboot_flag = "NA"; // Keeping it as NA as default setting to make it work in Throttle enable mode.
                     int local_delay_dwnl = 0;                       // Default daemon setting  
                     const char *local_lastrun = "0";               // Default daemon setting
                     char *local_disableStatsUpdate = "false";      // Default daemon setting
