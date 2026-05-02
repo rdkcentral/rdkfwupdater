@@ -399,52 +399,23 @@ static void on_check_complete_signal(GDBusConnection *conn,
                                      GVariant *parameters,
                                      gpointer user_data)
 {
-    /*
-     * Suppress "unused parameter" warnings. GLib's signal handler
-     * signature requires all 7 parameters, but we only use 'parameters'.
-     * (void) casts are the standard C idiom for this.
-     */
+    /* Suppress unused parameter warnings (GLib signal handler requires all 7) */
     (void)conn; (void)sender; (void)object_path;
     (void)interface_name; (void)signal_name; (void)user_data;
 
     FWUPMGR_INFO("on_check_complete_signal: received\n");
 
-    /*
-     * Stack-allocated struct to hold the parsed signal data.
-     * memset to zero ensures all pointers start as NULL (important
-     * for cleanup -- free(NULL) is safe, free(garbage) is not).
-     */
+    /* Parse signal payload "(tiissss)" into local struct */
     InternalSignalData signal_data;
     memset(&signal_data, 0, sizeof(signal_data));
 
-    /*
-     * Parse the GVariant "(tiissss)" payload into our struct.
-     * See internal_parse_signal_data() below for details.
-     *
-     * If parsing fails (wrong signature, NULL parameters), we return
-     * without dispatching. The caller's condvar timeout will fire.
-     * This is the correct behavior -- we can't dispatch garbage data.
-     */
     if (!internal_parse_signal_data(parameters, &signal_data)) {
         FWUPMGR_ERROR("on_check_complete_signal: parse failed\n");
         return;
     }
 
-    /*
-     * Dispatch to all registered callbacks. This is where the actual
-     * callback invocation happens. See dispatch_all_pending() below
-     * for the detailed two-phase dispatch explanation.
-     */
+    /* Dispatch to all registered callbacks, then free strdup'd strings */
     dispatch_all_pending(&signal_data);
-
-    /*
-     * Free the 4 strdup'd strings in signal_data.
-     * After dispatch_all_pending() returns, all callbacks have completed
-     * and no one holds references to these strings anymore.
-     *
-     * internal_cleanup_signal_data() calls free() on each string
-     * and memset's the struct to zero (defensive cleanup).
-     */
     internal_cleanup_signal_data(&signal_data);
 }
 
@@ -531,83 +502,31 @@ static void on_check_complete_signal(GDBusConnection *conn,
  */
 static void dispatch_all_pending(const InternalSignalData *signal_data)
 {
-    /*
-     * Local snapshot struct -- what we copy from each PENDING entry.
-     *
-     * typedef here (inside the function) because this struct is only
-     * used locally -- no other function needs it.
-     *
-     * callback:     the function pointer to invoke
-     * handle_copy:  a copy of the handle string (256 bytes, more than enough
-     *               for handle strings like "1" or "12345")
-     * slot_index:   which entry in g_registry.entries[] this came from
-     *               (needed to reset the slot to IDLE after callback returns)
-     */
+    /* Stack-local snapshot: copied from each PENDING entry while mutex is held */
     typedef struct {
         UpdateEventCallback  callback;
         char                 handle_copy[256];
         int                  slot_index;
     } Snapshot;
 
-    /*
-     * Stack-allocated array of snapshots. 30 entries x ~270 bytes each
-     * = ~8KB on the stack. Well within the BG thread's 8MB stack limit.
-     *
-     * count tracks how many PENDING entries we found.
-     */
     Snapshot snapshots[MAX_PENDING_CALLBACKS];
     int      count = 0;
 
-    /* ================================================================
-     * PHASE 1: COLLECT PENDING ENTRIES UNDER MUTEX
-     *
-     * This is the fast critical section. We hold the mutex for as short
-     * as possible: scan 30 entries, copy the ones we need, release.
-     * Total time: microseconds.
-     * ================================================================ */
+    /* PHASE 1: Collect PENDING entries under mutex (fast critical section) */
     pthread_mutex_lock(&g_registry.mutex);
 
     for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
         CallbackEntry *e = &g_registry.entries[i];
-
-        /*
-         * Skip anything that isn't PENDING.
-         *   IDLE       -- empty slot, nothing to do
-         *   DISPATCHED -- another dispatch is already handling this
-         *   TIMED_OUT  -- expired, will be cleaned up separately
-         */
         if (e->state != CB_STATE_PENDING) continue;
 
-        /*
-         * Found a PENDING entry. Copy its essential data into our
-         * local snapshot so we can invoke it after releasing the mutex.
-         *
-         * We copy the function pointer (8 bytes) and the handle string
-         * (up to 256 bytes via snprintf). We also record the slot index
-         * so we can reset the exact slot to IDLE later.
-         *
-         * snprintf with "%s" safely copies the string with null termination.
-         * If handle_key is NULL (should never happen for PENDING entries,
-         * but defensive), we copy an empty string.
-         */
+        /* Copy essential data into snapshot for mutex-free invocation */
         snapshots[count].callback   = e->callback;
         snapshots[count].slot_index = i;
         snprintf(snapshots[count].handle_copy,
                  sizeof(snapshots[count].handle_copy),
                  "%s", e->handle_key ? e->handle_key : "");
 
-        /*
-         * Mark the slot as DISPATCHED. This is the transition:
-         *   PENDING -> DISPATCHED
-         *
-         * This prevents:
-         *   1. Another signal dispatch from calling this callback again
-         *   2. A new checkForUpdate() from overwriting this slot
-         *      (dedup only matches PENDING, not DISPATCHED)
-         *
-         * The slot will go DISPATCHED -> IDLE after the callback returns
-         * (in Phase 2's loop below).
-         */
+        /* Mark DISPATCHED to prevent double-dispatch or re-entrant overwrite */
         e->state = CB_STATE_DISPATCHED;
         count++;
 
@@ -615,72 +534,21 @@ static void dispatch_all_pending(const InternalSignalData *signal_data)
                      e->handle_key ? e->handle_key : "(null)");
     }
 
-    /*
-     * Release the mutex. Phase 1 is done.
-     * From this point on, the main thread is free to register new
-     * callbacks via internal_register_callback() -- no blocking.
-     */
+    /* Release mutex; main thread can now register new callbacks */
     pthread_mutex_unlock(&g_registry.mutex);
 
     FWUPMGR_INFO("dispatch_all_pending: %d callback(s) to fire\n", count);
 
-    /* ================================================================
-     * PHASE 2: BUILD DATA AND INVOKE CALLBACKS (NO MUTEX HELD)
-     *
-     * Now we build the FwInfoData struct that callbacks receive,
-     * and invoke each callback in sequence. No mutex is held during
-     * any of this -- safe for re-entrant use.
-     * ================================================================ */
+    /* PHASE 2: Build FwInfoData and invoke callbacks (no mutex held) */
 
-    /*
-     * Map the daemon's integer status_code to our public enum.
-     *
-     * The daemon sends status_code as an integer in the signal:
-     *   0 = FIRMWARE_AVAILABLE
-     *   1 = FIRMWARE_NOT_AVAILABLE
-     *   2 = UPDATE_NOT_ALLOWED
-     *   3 = FIRMWARE_CHECK_ERROR
-     *   4 = IGNORE_OPTOUT
-     *   5 = BYPASS_OPTOUT
-     *
-     * internal_map_status_code() converts this to our CheckForUpdateStatus enum.
-     * Unknown values map to FIRMWARE_CHECK_ERROR (safe default).
-     */
+    /* Map daemon's integer status_code to public enum */
     CheckForUpdateStatus status = internal_map_status_code(signal_data->status_code);
 
-    /*
-     * Build FwInfoData on the STACK.
-     *
-     * This is the struct that callbacks receive via their
-     * (const FwInfoData *fwinfodata) parameter.
-     *
-     * CRITICAL: This struct is stack-allocated. It exists only while
-     * this function is running. When dispatch_all_pending() returns
-     * (after all callbacks have been invoked and returned), this stack
-     * frame is destroyed and fwinfo_data becomes invalid.
-     *
-     * This is why callbacks MUST copy any data they need before returning.
-     * The example_app does this:
-     *   strncpy(g_fw_filename, event_data->UpdateDetails->FwFileName, ...);
-     *
-     * memset to zero ensures all char arrays start as empty strings
-     * (first byte is '\0') and all pointers start as NULL.
-     */
+    /* Build stack-allocated FwInfoData (valid only during callbacks) */
     FwInfoData fwinfo_data;
     memset(&fwinfo_data, 0, sizeof(fwinfo_data));
 
-    /*
-     * Copy the current firmware version from the signal data into
-     * fwinfo_data.CurrFWVersion (a char[64] array).
-     *
-     * strncpy with sizeof()-1 ensures we never overflow the buffer.
-     * The explicit null-termination on the next line is a safety net
-     * in case signal_data->current_version is >= 63 characters
-     * (strncpy does NOT null-terminate if src >= n characters).
-     *
-     * If current_version is NULL (daemon didn't provide it), we skip
-     * the copy and the field stays as empty string from memset.
-     */
+    /* Copy current version from signal into fixed-size buffer */
     if (signal_data->current_version) {
         strncpy(fwinfo_data.CurrFWVersion, signal_data->current_version,
                 sizeof(fwinfo_data.CurrFWVersion) - 1);
@@ -690,122 +558,35 @@ static void dispatch_all_pending(const InternalSignalData *signal_data)
     /* Set the status enum in the struct. */
     fwinfo_data.status = status;
 
-    /*
-     * Parse UpdateDetails if firmware is available.
-     *
-     * The daemon sends update details as a pipe-separated string:
-     *   "File:firmware_v8.bin|Location:http://cdn..|Version:RDKV_8.0|Reboot:false|..."
-     *
-     * We need to parse this into an UpdateDetails struct with individual
-     * fields (FwFileName, FwUrl, FwVersion, RebootImmediately, etc.).
-     *
-     * UpdateDetails is ALSO stack-allocated. It lives in this function's
-     * stack frame. fwinfo_data.UpdateDetails is a POINTER to this stack
-     * variable. After this function returns, both are gone.
-     *
-     * We only populate UpdateDetails when status == FIRMWARE_AVAILABLE.
-     * For all other statuses (NOT_AVAILABLE, ERROR, etc.), UpdateDetails
-     * is set to NULL -- there's nothing to update, so no details to show.
-     */
+    /* Parse UpdateDetails from pipe-separated string if firmware is available */
     UpdateDetails update_details;
     if (status == FIRMWARE_AVAILABLE && signal_data->update_details) {
         memset(&update_details, 0, sizeof(update_details));
         
-        /*
-         * parse_update_details() tokenizes the pipe-separated string
-         * and copies each Key:Value pair into the appropriate field
-         * of the UpdateDetails struct. See parse_update_details() below.
-         */
         if (parse_update_details(signal_data->update_details, &update_details)) {
-            /*
-             * Point FwInfoData's UpdateDetails pointer to our stack variable.
-             *
-             * This is safe because: both fwinfo_data and update_details
-             * live on the same stack frame. The pointer is valid as long
-             * as this function is executing. The callback receives this
-             * pointer and MUST copy what it needs before returning.
-             */
             fwinfo_data.UpdateDetails = &update_details;
             
             FWUPMGR_INFO("dispatch_all_pending: UpdateDetails populated\n");
             FWUPMGR_INFO("  FwFileName: %s\n", update_details.FwFileName);
             FWUPMGR_INFO("  FwVersion: %s\n", update_details.FwVersion);
         } else {
-            /*
-             * Parsing failed (malformed string, etc.). Set to NULL so
-             * the callback knows: "firmware is available but I couldn't
-             * parse the details." The callback should handle this gracefully.
-             */
             fwinfo_data.UpdateDetails = NULL;
             FWUPMGR_ERROR("dispatch_all_pending: parse_update_details failed\n");
         }
     } else {
-        /*
-         * Either firmware is NOT available, or the daemon didn't send
-         * an update_details string. Set pointer to NULL.
-         *
-         * The callback should check: if (event_data->UpdateDetails != NULL)
-         * before accessing any UpdateDetails fields.
-         */
         fwinfo_data.UpdateDetails = NULL;
     }
 
-    /*
-     * Invoke each callback from our snapshot.
-     *
-     * For each snapshot entry:
-     *   1. Call the callback with a pointer to our stack-allocated FwInfoData
-     *   2. After the callback returns, lock the mutex and reset the slot to IDLE
-     *
-     * The same FwInfoData struct is passed to ALL callbacks. They all see
-     * the same firmware check result (because the daemon broadcast one signal).
-     *
-     * Callbacks run SEQUENTIALLY on the BG thread. If there are 3 pending
-     * callbacks, they fire one after another (not in parallel). If one
-     * callback is slow, it delays the others. Callbacks should be fast --
-     * typically just copy data and signal a condvar.
-     */
+    /* Invoke each callback sequentially, then reset slot to IDLE */
     for (int i = 0; i < count; i++) {
         Snapshot *s = &snapshots[i];
 
         FWUPMGR_INFO("dispatch_all_pending: invoking callback for handle='%s'\n",
                      s->handle_copy);
 
-        /*
-         * THE ACTUAL CALLBACK INVOCATION.
-         *
-         * s->callback is the function pointer stored during
-         * internal_register_callback(). For our example_app, this is
-         * on_firmware_check_callback().
-         *
-         * &fwinfo_data is a pointer to our stack-allocated struct.
-         * The callback receives it as (const FwInfoData *event_data).
-         * "const" means the callback cannot modify it, but it can read
-         * all fields and copy them.
-         *
-         * THIS CALL BLOCKS THE BG THREAD until the callback returns.
-         * While inside the callback:
-         *   - The BG thread is busy (not listening for more signals)
-         *   - If another signal arrives, GLib queues it in the GMainContext
-         *   - The signal will be dispatched after this function returns
-         *     and the BG thread goes back to g_main_loop_run()
-         */
         s->callback(&fwinfo_data);
 
-        /*
-         * Callback has returned. Now reset the slot to IDLE.
-         *
-         * We must lock the mutex for this because dispatch_all_pending()
-         * could be called concurrently (another signal arrives while
-         * we're in Phase 2), or the main thread could be registering
-         * a new callback.
-         *
-         * registry_reset_slot() frees the strdup'd handle_key, sets
-         * callback to NULL, and sets state to CB_STATE_IDLE.
-         *
-         * After this, the slot is available for reuse by the next
-         * checkForUpdate() call.
-         */
+        /* Reset slot to IDLE under mutex (frees strdup'd handle_key) */
         pthread_mutex_lock(&g_registry.mutex);
         registry_reset_slot(&g_registry.entries[s->slot_index]);
         pthread_mutex_unlock(&g_registry.mutex);
@@ -877,49 +658,16 @@ static void dispatch_all_pending(const InternalSignalData *signal_data)
 bool internal_register_callback(FirmwareInterfaceHandle handle,
                                  UpdateEventCallback callback)
 {
-    /*
-     * Lock the registry mutex before touching the entries array.
-     *
-     * Who else might be holding this mutex right now?
-     *   - dispatch_all_pending() on the BG thread (Phase 1 -- collecting
-     *     PENDING entries into a snapshot). But Phase 1 is very fast
-     *     (microseconds), so contention is rare.
-     *   - registry_reset_slot() on the BG thread (after invoking a
-     *     callback, resetting the slot to IDLE). Also very fast.
-     *
-     * In practice, the main thread and BG thread almost never contend
-     * because the BG thread only touches the registry when a signal
-     * arrives, which is seconds apart.
-     */
     pthread_mutex_lock(&g_registry.mutex);
 
-    /*
-     * Two scan targets:
-     *   free_slot     -- first IDLE entry (to use if no dedup match)
-     *   existing_slot -- a PENDING entry with the same handle (dedup)
-     *
-     * We scan all 30 entries in one pass, looking for both simultaneously.
-     */
+    /* Single-pass scan: look for dedup match (same handle) and first free slot */
     CallbackEntry *free_slot     = NULL;
     CallbackEntry *existing_slot = NULL;
 
     for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
         CallbackEntry *e = &g_registry.entries[i];
 
-        /*
-         * Dedup check: is there already a PENDING entry for this handle?
-         *
-         * This happens when the caller calls checkForUpdate() twice
-         * with the same handle before the first callback fires.
-         * Without dedup, both entries would BOTH get dispatched when
-         * the signal arrives -- the callback would fire twice. The
-         * second invocation would be a "ghost" with stale data.
-         *
-         * By overwriting, only the latest callback survives.
-         *
-         * strcmp is safe here because handle_key is always a valid
-         * null-terminated string (set by strdup) or NULL (checked first).
-         */
+        /* Dedup: overwrite existing PENDING entry for same handle */
         if (e->state == CB_STATE_PENDING &&
             e->handle_key != NULL &&
             strcmp(e->handle_key, handle) == 0) {
@@ -927,30 +675,12 @@ bool internal_register_callback(FirmwareInterfaceHandle handle,
             break;
         }
 
-        /*
-         * Remember the first free slot we find, but keep scanning
-         * in case there's a dedup match later in the array.
-         *
-         * We only record the FIRST free slot (free_slot == NULL guard)
-         * to avoid unnecessary work.
-         */
         if (free_slot == NULL && e->state == CB_STATE_IDLE) {
             free_slot = e;
         }
     }
 
-    /*
-     * Choose target: prefer dedup (overwrite existing) over new slot.
-     *
-     * If existing_slot != NULL: overwrite the existing PENDING entry.
-     *   This is the dedup path -- same handle called checkForUpdate again.
-     *
-     * If existing_slot == NULL and free_slot != NULL: use the free slot.
-     *   This is the normal first-call path.
-     *
-     * If both are NULL: registry is full. All 30 slots are occupied
-     *   (some combination of PENDING and DISPATCHED). Return false.
-     */
+    /* Prefer dedup (overwrite) over new slot */
     CallbackEntry *target = existing_slot ? existing_slot : free_slot;
 
     if (target == NULL) {
@@ -960,13 +690,7 @@ bool internal_register_callback(FirmwareInterfaceHandle handle,
         return false;
     }
 
-    /*
-     * If overwriting an existing entry, free the old handle_key.
-     *
-     * The old strdup'd string must be freed to avoid a memory leak.
-     * The old callback function pointer is just overwritten -- function
-     * pointers don't need freeing, they point to code, not heap data.
-     */
+    /* If overwriting, free the old handle_key to avoid leak */
     if (existing_slot) {
         FWUPMGR_INFO("internal_register_callback: overwriting existing for handle='%s'\n",
                      handle);
@@ -974,33 +698,7 @@ bool internal_register_callback(FirmwareInterfaceHandle handle,
         target->handle_key = NULL;
     }
 
-    /*
-     * Populate the slot:
-     *
-     * handle_key = strdup(handle):
-     *   Creates a heap copy of the handle string "1". We need our own
-     *   copy because the caller's 'handle' pointer belongs to them --
-     *   they could theoretically modify or free it later. strdup
-     *   allocates strlen(handle)+1 bytes (2 bytes for "1\0").
-     *   This copy is freed in registry_reset_slot() when the slot
-     *   returns to IDLE.
-     *
-     * callback = callback:
-     *   Stores the function pointer. When dispatch_all_pending() runs,
-     *   it will call this: callback(&fwinfo_data).
-     *   Function pointers are just addresses -- no heap allocation.
-     *
-     * state = CB_STATE_PENDING:
-     *   Marks this slot as "waiting for a signal." The BG thread's
-     *   dispatch_all_pending() only looks at PENDING entries.
-     *   IDLE entries are skipped, DISPATCHED entries are being processed.
-     *
-     * registered_time = time(NULL):
-     *   Unix timestamp of when this callback was registered. Currently
-     *   used only for logging/debugging, but could be used by a future
-     *   timeout sweeper to detect stale entries that have been PENDING
-     *   for too long (e.g., > CALLBACK_TIMEOUT_SECONDS = 60s).
-     */
+    /* Populate slot: strdup handle, store callback, mark PENDING */
     target->handle_key      = strdup(handle);
     target->callback        = callback;
     target->state           = CB_STATE_PENDING;
@@ -1049,22 +747,10 @@ bool internal_register_callback(FirmwareInterfaceHandle handle,
  */
 static void registry_reset_slot(CallbackEntry *entry)
 {
-    /*
-     * Free the strdup'd handle_key string (e.g., "1").
-     * NULL check is defensive -- PENDING and DISPATCHED entries always
-     * have a non-NULL handle_key, but IDLE entries have NULL.
-     * free(NULL) is safe in C (no-op), but the explicit check avoids
-     * confusion and makes the intent clear.
-     */
     if (entry->handle_key != NULL) {
         free(entry->handle_key);
         entry->handle_key = NULL;
     }
-
-    /*
-     * Clear remaining fields. After this, the entry looks identical
-     * to a freshly memset'd entry from internal_system_init().
-     */
     entry->callback        = NULL;
     entry->registered_time = 0;
     entry->state           = CB_STATE_IDLE;
@@ -1120,66 +806,21 @@ bool internal_parse_signal_data(GVariant *parameters, InternalSignalData *out_da
 {
     if (parameters == NULL || out_data == NULL) return false;
 
-    /*
-     * Check the type signature before extracting.
-     *
-     * g_variant_get_type_string() returns the GVariant's type as a string.
-     * We expect "(tiissss)". If it's anything else, the daemon sent
-     * something unexpected -- possibly a newer/older protocol version.
-     * Extracting with the wrong format string would read garbage.
-     */
+    /* Verify type signature before extracting */
     const gchar *sig = g_variant_get_type_string(parameters);
     if (strcmp(sig, "(tiissss)") != 0) {
         FWUPMGR_ERROR("internal_parse_signal_data: unexpected signature '%s'\n", sig);
         return false;
     }
 
-    /*
-     * Local variables to receive g_variant_get() output.
-     *
-     * For string types ('s'), g_variant_get() returns pointers into
-     * the GVariant's internal buffer. These are temporary -- we must
-     * strdup() them before the GVariant could be freed.
-     *
-     * For integer types ('t', 'i'), g_variant_get() copies the value
-     * directly into our local variables.
-     */
     const gchar *cur = NULL, *avail = NULL, *details = NULL, *msg = NULL;
     guint64 handler_id = 0;
     gint32 result = 0, status = 0;
 
-    /*
-     * Extract all 7 fields from the GVariant tuple in one call.
-     *
-     * The format string "(tiissss)" must exactly match the GVariant type.
-     * Each format character corresponds to one pointer argument:
-     *   &handler_id -- receives the uint64
-     *   &result     -- receives the first int32
-     *   &status     -- receives the second int32
-     *   &cur        -- receives pointer to current_version string
-     *   &avail      -- receives pointer to available_version string
-     *   &details    -- receives pointer to update_details string
-     *   &msg        -- receives pointer to status_message string
-     */
     g_variant_get(parameters, "(tiissss)",
                   &handler_id, &result, &status, &cur, &avail, &details, &msg);
 
-    /*
-     * Copy extracted values into the output struct.
-     *
-     * Integers are copied directly (they're values, not pointers).
-     *
-     * Strings are strdup'd to create heap copies that we own.
-     * The ternary (cur ? strdup(cur) : NULL) handles the case where
-     * the daemon sent an empty string (glib may return "" not NULL)
-     * or truly NULL. strdup(NULL) is undefined behavior in C, so
-     * the NULL check is essential.
-     *
-     * Note: handler_id is extracted but not stored in InternalSignalData.
-     * We don't currently use it because the dispatch is broadcast to
-     * ALL pending callbacks, not filtered by handler_id. If we later
-     * need per-client filtering, we would add handler_id to the struct.
-     */
+    /* strdup strings to outlive the GVariant; freed by internal_cleanup_signal_data() */
     out_data->result_code       = (int32_t)result;
     out_data->status_code       = (int32_t)status;
     out_data->current_version   = cur     ? strdup(cur)     : NULL;
@@ -1319,18 +960,7 @@ static void dwnl_registry_reset_slot(DwnlCallbackEntry *entry);
  */
 static void internal_dwnl_system_deinit(void)
 {
-    /*
-     * Lock before freeing. Defensive -- no other thread should be
-     * active at this point, but the pattern is consistent with how
-     * all other registry operations lock before accessing entries[].
-     */
     pthread_mutex_lock(&g_dwnl_registry.mutex);
-
-    /*
-     * Scan all 30 slots. Free any non-NULL handle_key strings.
-     * IDLE slots have handle_key == NULL (already freed or never set).
-     * ACTIVE slots (abandoned downloads) have handle_key != NULL.
-     */
     for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
         if (g_dwnl_registry.entries[i].handle_key != NULL) {
             free(g_dwnl_registry.entries[i].handle_key);
@@ -1338,11 +968,6 @@ static void internal_dwnl_system_deinit(void)
         }
     }
     pthread_mutex_unlock(&g_dwnl_registry.mutex);
-
-    /*
-     * Destroy the mutex. After this, any attempt to lock it is UB.
-     * Since the library is unloading, no one should try.
-     */
     pthread_mutex_destroy(&g_dwnl_registry.mutex);
 
     FWUPMGR_INFO("internal_dwnl_system_deinit: done\n");
@@ -1421,28 +1046,16 @@ static void on_download_progress_signal(GDBusConnection *conn,
                                         GVariant *parameters,
                                         gpointer user_data)
 {
-    /* Suppress "unused parameter" warnings for the 6 params we don't need. */
+    /* Suppress unused parameter warnings */
     (void)conn; (void)sender; (void)object_path;
     (void)interface_name; (void)signal_name; (void)user_data;
 
     FWUPMGR_INFO("on_download_progress_signal: received\n");
 
-    /*
-     * Stack-allocate and zero-init the parsed data struct.
-     * After parsing, this holds:
-     *   handler_id       -- uint64 (which client the signal is for)
-     *   firmware_name    -- gchar* (GLib-allocated, must g_free)
-     *   progress_percent -- uint32 (0-100)
-     *   status_string    -- gchar* (GLib-allocated, must g_free)
-     *   message          -- gchar* (GLib-allocated, must g_free)
-     */
+    /* Parse signal payload "(tsuss)" into local struct */
     InternalDwnlSignalData signal_data;
     memset(&signal_data, 0, sizeof(signal_data));
 
-    /*
-     * Parse the GVariant. If parsing fails (wrong type signature,
-     * NULL parameters), log and return. No callbacks fire.
-     */
     if (!internal_parse_dwnl_signal_data(parameters, &signal_data)) {
         FWUPMGR_ERROR("on_download_progress_signal: parse failed\n");
         return;
@@ -1454,31 +1067,10 @@ static void on_download_progress_signal(GDBusConnection *conn,
                  signal_data.progress_percent,
                  signal_data.status_string ? signal_data.status_string : "(null)");
 
-    /*
-     * Dispatch to all ACTIVE download callbacks.
-     * This is the two-phase dispatch (snapshot under mutex, invoke without).
-     * The callback may fire for progress (slot stays ACTIVE) or for
-     * terminal status (slot reset to IDLE).
-     */
+    /* Dispatch to all ACTIVE download callbacks */
     dispatch_all_dwnl_active(&signal_data);
 
-    /*
-     * Free the GLib-allocated strings.
-     *
-     * g_free() is GLib's equivalent of free(). We use g_free() because
-     * the strings were allocated by GLib's g_variant_get() internally.
-     * Using standard free() on GLib-allocated memory is technically
-     * undefined behavior (though it works on most platforms).
-     *
-     * These strings were valid throughout dispatch_all_dwnl_active()
-     * because we only free them AFTER all callbacks have returned.
-     * The callbacks receive progress_percent (int, copied by value)
-     * and status (enum, copied by value), so they don't reference
-     * these strings directly. But the dispatch function does read
-     * status_string to determine is_final, so it must be valid then.
-     *
-     * g_free(NULL) is safe -- it's a no-op.
-     */
+    /* Free GLib-allocated strings from g_variant_get() */
     g_free(signal_data.firmware_name);
     g_free(signal_data.status_string);
     g_free(signal_data.message);
@@ -1557,61 +1149,28 @@ static void on_download_progress_signal(GDBusConnection *conn,
  */
 static void dispatch_all_dwnl_active(const InternalDwnlSignalData *signal_data)
 {
-    /*
-     * Stack-local snapshot struct for one ACTIVE entry.
-     * Same pattern as checkForUpdate's dispatch -- we copy what we need
-     * while the mutex is held, then work from the copy with no mutex.
-     *
-     * Fields:
-     *   callback    -- the app's function pointer (copied from slot)
-     *   handle_copy -- snprintf'd copy of handle_key (for logging only)
-     *   slot_index  -- which slot in entries[] this came from
-     *   is_final    -- true if COMPLETED/ERROR (need to reset slot after)
-     */
     typedef struct {
         DownloadCallback  callback;
         char              handle_copy[256];
         int               slot_index;
-        bool              is_final;   /* true if COMPLETED or ERROR -- remove after firing */
+        bool              is_final;
     } DwnlSnapshot;
 
     DwnlSnapshot snapshots[MAX_PENDING_CALLBACKS];
     int          count = 0;
 
-    /*
-     * Map the status string to our enum BEFORE entering the mutex.
-     * This is a pure computation (strcmp calls) with no shared state.
-     * Doing it outside the mutex keeps the critical section shorter.
-     *
-     * is_final determines whether we reset the slot after the callback:
-     *   true  = COMPLETED or ERROR -> download ended, free the slot
-     *   false = IN_PROGRESS -> download continuing, keep slot ACTIVE
-     */
+    /* Map status string to enum before entering mutex */
     DownloadStatus status = map_dwnl_status_string(signal_data->status_string);
     bool           is_final = (status == DWNL_COMPLETED || status == DWNL_ERROR);
 
     /* ---- PHASE 1: snapshot under mutex ---- */
-
-    /*
-     * Lock the download registry. This blocks any concurrent call to
-     * internal_dwnl_register_callback() (from main thread) until we
-     * finish our snapshot. Hold time: microseconds (just scanning + copying).
-     */
     pthread_mutex_lock(&g_dwnl_registry.mutex);
 
-    /*
-     * Scan all 30 slots. Only process entries in ACTIVE state.
-     * IDLE and TIMED_OUT entries are skipped.
-     */
     for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
         DwnlCallbackEntry *e = &g_dwnl_registry.entries[i];
         if (e->state != DWNL_CB_STATE_ACTIVE) continue;
 
-        /*
-         * Copy the entry data into our stack-local snapshot.
-         * After we unlock, the slot might be modified by another thread
-         * (extremely unlikely, but the pattern is safe regardless).
-         */
+        /* Copy entry data into stack-local snapshot */
         snapshots[count].callback   = e->callback;
         snapshots[count].slot_index = i;
         snapshots[count].is_final   = is_final;
@@ -1619,13 +1178,6 @@ static void dispatch_all_dwnl_active(const InternalDwnlSignalData *signal_data)
                  sizeof(snapshots[count].handle_copy),
                  "%s", e->handle_key ? e->handle_key : "");
 
-        /*
-         * NOTE: We do NOT change the slot state here.
-         * For in-progress signals, the slot must remain ACTIVE.
-         * For terminal signals, we'll reset it in Phase 2 AFTER
-         * the callback fires. This is different from checkForUpdate
-         * which sets state=DISPATCHED during Phase 1.
-         */
         count++;
 
         FWUPMGR_INFO("dispatch_all_dwnl_active: queued handle='%s' progress=%d%% final=%d\n",
@@ -1633,55 +1185,21 @@ static void dispatch_all_dwnl_active(const InternalDwnlSignalData *signal_data)
                      signal_data->progress_percent, is_final);
     }
 
-    /*
-     * Unlock BEFORE invoking callbacks.
-     * This is the deadlock prevention: callbacks may call library APIs
-     * that need g_dwnl_registry.mutex, so we must not hold it.
-     */
+    /* Unlock before invoking callbacks (deadlock prevention) */
     pthread_mutex_unlock(&g_dwnl_registry.mutex);
 
     FWUPMGR_INFO("dispatch_all_dwnl_active: %d callback(s) to fire\n", count);
 
     /* ---- PHASE 2: invoke callbacks, no mutex held ---- */
-
     for (int i = 0; i < count; i++) {
         DwnlSnapshot *s = &snapshots[i];
 
         FWUPMGR_INFO("dispatch_all_dwnl_active: invoking callback for handle='%s'\n",
                      s->handle_copy);
 
-        /*
-         * Invoke the app's download callback.
-         *
-         * Callback signature: void fn(int progress_per, DownloadStatus status)
-         *   progress_per = signal_data->progress_percent (0-100)
-         *   status = mapped enum (DWNL_IN_PROGRESS, DWNL_COMPLETED, DWNL_ERROR)
-         *
-         * The app's callback (e.g., on_download_progress_callback in example_app)
-         * typically:
-         *   - Logs the progress
-         *   - On terminal status: locks its own condvar mutex, sets done=1,
-         *     signals the condvar to wake the main thread
-         *   - Returns
-         *
-         * This call may take microseconds to milliseconds depending on
-         * what the app does in the callback. We hold NO library mutex
-         * during this time.
-         */
         s->callback(signal_data->progress_percent, status);
 
-        /*
-         * If this was a terminal signal (download ended), reset the slot.
-         *
-         * We re-acquire the mutex, call dwnl_registry_reset_slot(), then
-         * release. This frees the strdup'd handle_key and sets state=IDLE.
-         *
-         * After this, no more callbacks will fire for this handle.
-         * The slot is available for reuse by a future downloadFirmware() call.
-         *
-         * For in-progress signals, we skip this entirely. The slot stays
-         * ACTIVE and will be found again on the NEXT DownloadProgress signal.
-         */
+        /* If terminal signal, reset slot to IDLE */
         if (s->is_final) {
             pthread_mutex_lock(&g_dwnl_registry.mutex);
             dwnl_registry_reset_slot(&g_dwnl_registry.entries[s->slot_index]);
@@ -1751,38 +1269,15 @@ static void dispatch_all_dwnl_active(const InternalDwnlSignalData *signal_data)
 bool internal_dwnl_register_callback(FirmwareInterfaceHandle handle,
                                       DownloadCallback callback)
 {
-    /*
-     * Lock the download registry mutex.
-     * This ensures only one thread modifies g_dwnl_registry at a time.
-     * The BG thread also locks this during Phase 1 of dispatch (snapshot)
-     * and during is_final slot reset.
-     */
     pthread_mutex_lock(&g_dwnl_registry.mutex);
 
     DwnlCallbackEntry *free_slot     = NULL;
     DwnlCallbackEntry *existing_slot = NULL;
 
-    /*
-     * Single-pass scan of all 30 slots.
-     *
-     * Priority 1: Find an ACTIVE entry with the same handle.
-     *   -> We'll overwrite it (dedup).
-     *   -> Break immediately when found (no need to continue).
-     *
-     * Priority 2: Remember the first IDLE slot encountered.
-     *   -> We'll use it if no existing slot is found.
-     *   -> Don't break -- keep scanning for existing_slot.
-     */
+    /* Single-pass scan: look for dedup match (same handle) and first free slot */
     for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
         DwnlCallbackEntry *e = &g_dwnl_registry.entries[i];
 
-        /*
-         * Check for existing ACTIVE entry with same handle.
-         * Three conditions must all be true:
-         *   1. Slot is ACTIVE (not IDLE or TIMED_OUT)
-         *   2. handle_key is not NULL (defensive -- should always be set for ACTIVE)
-         *   3. handle_key matches our handle (string comparison)
-         */
         if (e->state == DWNL_CB_STATE_ACTIVE &&
             e->handle_key != NULL &&
             strcmp(e->handle_key, handle) == 0) {
@@ -1790,28 +1285,13 @@ bool internal_dwnl_register_callback(FirmwareInterfaceHandle handle,
             break;
         }
 
-        /*
-         * Remember first free slot (only if we haven't found one yet).
-         * We DON'T break here -- we keep scanning because an existing
-         * slot at a higher index takes priority over a free slot at
-         * a lower index.
-         */
         if (free_slot == NULL && e->state == DWNL_CB_STATE_IDLE) {
             free_slot = e;
         }
     }
 
-    /*
-     * Decide which slot to use.
-     * existing_slot (overwrite) takes priority over free_slot (new).
-     */
     DwnlCallbackEntry *target = existing_slot ? existing_slot : free_slot;
 
-    /*
-     * If neither was found, the registry is full. All 30 slots are ACTIVE
-     * (30 concurrent downloads -- should never happen in practice).
-     * Unlock and return false.
-     */
     if (target == NULL) {
         FWUPMGR_ERROR("internal_dwnl_register_callback: registry full (max=%d)\n",
                       MAX_PENDING_CALLBACKS);
@@ -1819,10 +1299,7 @@ bool internal_dwnl_register_callback(FirmwareInterfaceHandle handle,
         return false;
     }
 
-    /*
-     * If overwriting an existing slot, free the old handle_key first.
-     * strdup'd memory must be freed to avoid a memory leak.
-     */
+    /* If overwriting, free old handle_key to avoid leak */
     if (existing_slot) {
         FWUPMGR_INFO("internal_dwnl_register_callback: overwriting existing for handle='%s'\n",
                      handle);
@@ -1830,24 +1307,7 @@ bool internal_dwnl_register_callback(FirmwareInterfaceHandle handle,
         target->handle_key = NULL;
     }
 
-    /*
-     * Populate the slot with the new registration.
-     *
-     * strdup(handle): Creates a heap copy of the handle string.
-     *   We need our own copy because the caller's handle may be freed
-     *   or overwritten after downloadFirmware() returns. The slot
-     *   must retain the handle for the entire download duration.
-     *
-     * callback: Store the function pointer directly. No copy needed --
-     *   function pointers are just addresses in the code segment.
-     *
-     * state = DWNL_CB_STATE_ACTIVE: The slot is now live. The BG thread
-     *   will find it during its next dispatch_all_dwnl_active() call.
-     *   NOTE: ACTIVE, not PENDING. There's no intermediate state.
-     *
-     * registered_time: Stored for potential timeout detection (not
-     *   currently active, but the infrastructure is there for future use).
-     */
+    /* Populate slot: strdup handle, store callback, mark ACTIVE */
     target->handle_key      = strdup(handle);
     target->callback        = callback;
     target->state           = DWNL_CB_STATE_ACTIVE;
@@ -1958,37 +1418,19 @@ bool internal_parse_dwnl_signal_data(GVariant *parameters,
 {
     if (parameters == NULL || out_data == NULL) return false;
 
-    /*
-     * Verify the type signature before extracting.
-     * "(tsuss)" is the expected format for DownloadProgress.
-     * If it's different, the daemon protocol changed -- reject.
-     */
+    /* Verify type signature before extracting */
     const gchar *sig = g_variant_get_type_string(parameters);
     if (strcmp(sig, "(tsuss)") != 0) {
         FWUPMGR_ERROR("internal_parse_dwnl_signal_data: unexpected signature '%s' (expected '(tsuss)')\n", sig);
         return false;
     }
 
-    /*
-     * Local variables to receive g_variant_get() output.
-     * For 's' format: GLib allocates fresh strings (must g_free).
-     * For 't' and 'u' format: values copied directly into locals.
-     */
     guint64  handler_id = 0;
     gchar   *firmware_name = NULL;
     guint32  progress = 0;
     gchar   *status_str = NULL;
     gchar   *message_str = NULL;
 
-    /*
-     * Extract all 5 fields from the GVariant tuple.
-     * Format "(tsuss)" maps to:
-     *   &handler_id    -- receives uint64
-     *   &firmware_name -- receives gchar* (GLib-allocated)
-     *   &progress      -- receives uint32
-     *   &status_str    -- receives gchar* (GLib-allocated)
-     *   &message_str   -- receives gchar* (GLib-allocated)
-     */
     g_variant_get(parameters, "(tsuss)", 
                   &handler_id, 
                   &firmware_name, 
@@ -1996,16 +1438,12 @@ bool internal_parse_dwnl_signal_data(GVariant *parameters,
                   &status_str, 
                   &message_str);
 
-    /*
-     * Copy into output struct. The string pointers are just transferred --
-     * we don't strdup them again. Ownership passes to the caller.
-     * Caller is responsible for g_free() on firmware_name, status_string, message.
-     */
+    /* Transfer ownership of GLib-allocated strings to caller (must g_free) */
     out_data->handler_id      = handler_id;
-    out_data->firmware_name   = firmware_name;   /* Caller must g_free */
+    out_data->firmware_name   = firmware_name;
     out_data->progress_percent = progress;
-    out_data->status_string   = status_str;      /* Caller must g_free */
-    out_data->message         = message_str;     /* Caller must g_free */
+    out_data->status_string   = status_str;
+    out_data->message         = message_str;
 
     return true;
 }
@@ -2085,18 +1523,10 @@ DownloadStatus internal_map_dwnl_status_code(int32_t status_code)
  */
 static DownloadStatus map_dwnl_status_string(const char *status_str)
 {
-    /*
-     * NULL means the field was missing from the signal (parse error
-     * or daemon bug). Treat as error -- something is wrong.
-     */
     if (status_str == NULL) {
         return DWNL_ERROR;
     }
 
-    /*
-     * String comparisons for known values.
-     * "INPROGRESS" and "NOTSTARTED" both mean "not done yet."
-     */
     if (strcmp(status_str, "INPROGRESS") == 0 || strcmp(status_str, "NOTSTARTED") == 0) {
         return DWNL_IN_PROGRESS;
     } else if (strcmp(status_str, "COMPLETED") == 0) {
@@ -2105,10 +1535,7 @@ static DownloadStatus map_dwnl_status_string(const char *status_str)
         return DWNL_ERROR;
     }
 
-    /*
-     * Unknown string. Log it (for debugging daemon protocol changes)
-     * and treat as error. The slot will be reset to IDLE.
-     */
+    /* Unknown string -- treat as error */
     FWUPMGR_ERROR("map_dwnl_status_string: unknown status '%s' -> DWNL_ERROR\n", status_str);
     return DWNL_ERROR;
 }
@@ -2224,39 +1651,14 @@ static void update_registry_reset_slot(UpdateCbEntry *entry);
  */
 static void internal_update_system_deinit(void)
 {
-    /*
-     * Lock the mutex before modifying the registry. Even during
-     * shutdown, we follow the locking protocol for consistency.
-     */
     pthread_mutex_lock(&g_update_registry.mutex);
-
-    /*
-     * Walk all 30 slots and free any non-NULL handle_key strings.
-     *
-     * We don't check the slot's state -- even if a slot is somehow
-     * in an inconsistent state, we still free its handle_key to
-     * prevent leaks. A NULL handle_key means the slot was already
-     * clean (IDLE with no previous allocation).
-     */
     for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
         if (g_update_registry.entries[i].handle_key != NULL) {
             free(g_update_registry.entries[i].handle_key);
-            g_update_registry.entries[i].handle_key = NULL;  /* Prevent dangling pointer */
+            g_update_registry.entries[i].handle_key = NULL;
         }
     }
-
-    /*
-     * Unlock the mutex before destroying it. pthread_mutex_destroy()
-     * requires the mutex to be unlocked. Destroying a locked mutex
-     * is undefined behavior on most POSIX implementations.
-     */
     pthread_mutex_unlock(&g_update_registry.mutex);
-
-    /*
-     * Destroy the mutex itself. This releases any OS resources
-     * associated with the mutex (e.g., kernel futex state on Linux).
-     * After this call, the mutex must NEVER be used again.
-     */
     pthread_mutex_destroy(&g_update_registry.mutex);
 
     FWUPMGR_INFO("internal_update_system_deinit: done\n");
@@ -2333,82 +1735,31 @@ static void on_update_progress_signal(GDBusConnection *conn,
                                       GVariant *parameters,
                                       gpointer user_data)
 {
-    /*
-     * Suppress "unused parameter" compiler warnings. GLib's signal
-     * callback signature requires all 7 parameters, but we only
-     * need 'parameters' (the signal payload). The (void) cast tells
-     * the compiler "yes, I know I'm not using these."
-     */
+    /* Suppress unused parameter warnings */
     (void)conn; (void)sender; (void)object_path;
     (void)interface_name; (void)signal_name; (void)user_data;
 
     FWUPMGR_INFO("on_update_progress_signal: received\n");
 
-    /*
-     * Stack-allocate the signal data struct and zero-initialize it.
-     * memset ensures all pointers start as NULL and all integers as 0.
-     * This is defensive -- if parsing fails partially, we don't have
-     * garbage values in the struct.
-     */
+    /* Parse signal payload "(tsiis)" into local struct */
     InternalUpdateSignalData signal_data;
     memset(&signal_data, 0, sizeof(signal_data));
 
-    /*
-     * Parse the GVariant payload "(tsiis)" into our struct.
-     * internal_parse_update_signal_data() validates the signature,
-     * extracts handler_id, firmware_name, progress, status_code,
-     * and message. Returns false if signature mismatch.
-     *
-     * If parsing fails, we bail out. No callbacks are invoked, no
-     * memory needs freeing (the struct was zero-initialized).
-     */
     if (!internal_parse_update_signal_data(parameters, &signal_data)) {
         FWUPMGR_ERROR("on_update_progress_signal: parse failed\n");
         return;
     }
 
-    /*
-     * Log the parsed signal data for debugging. This is invaluable
-     * when troubleshooting "callback never fired" bugs -- it proves
-     * whether the signal was received and what it contained.
-     *
-     * PRIu64 is the portable format specifier for uint64_t
-     * (avoids warnings on 32-bit vs 64-bit platforms).
-     */
     FWUPMGR_INFO("on_update_progress_signal: handler=%" PRIu64 " firmware='%s' progress=%d%% status=%d\n",
                  signal_data.handler_id,
                  signal_data.firmware_name ? signal_data.firmware_name : "(null)",
                  signal_data.progress_percent,
                  signal_data.status_code);
 
-    /*
-     * Dispatch the parsed signal data to all ACTIVE update callbacks.
-     * dispatch_all_update_active() does the two-phase dispatch:
-     *   Phase 1: snapshot ACTIVE entries under mutex
-     *   Phase 2: invoke callbacks without mutex
-     *   If terminal status: reset slot to IDLE
-     *
-     * After this call returns, all registered UpdateCallbacks have
-     * been invoked with the current progress and status.
-     */
+    /* Dispatch to all ACTIVE update callbacks */
     dispatch_all_update_active(&signal_data);
 
-    /*
-     * Free the heap-allocated strings from g_variant_get().
-     *
-     * g_variant_get() with the "s" format specifier allocates new
-     * strings via g_strdup(). We own these strings and must free them.
-     *
-     * Two strings to free:
-     *   1. firmware_name -- the image filename (e.g., "firmware_v8.bin")
-     *   2. message       -- the status message (e.g., "Writing partition 2")
-     *
-     * Compare with download's on_download_progress_signal() which frees
-     * THREE strings (firmware_name, status_string, message). Update
-     * has no status_string because it uses an integer status_code instead.
-     *
-     * g_free(NULL) is safe (it's a no-op), so we don't need NULL checks.
-     */
+    /* Free GLib-allocated strings from g_variant_get() */
     g_free(signal_data.firmware_name);
     g_free(signal_data.message);
 }
@@ -2472,19 +1823,6 @@ static void on_update_progress_signal(GDBusConnection *conn,
  */
 static void dispatch_all_update_active(const InternalUpdateSignalData *signal_data)
 {
-    /*
-     * Local snapshot struct -- stores one entry's callback info.
-     * We allocate an array of these on the stack (up to 30 entries).
-     *
-     * Fields:
-     *   callback    -- the UpdateCallback function pointer to invoke
-     *   handle_copy -- string copy of handle_key (for logging only)
-     *   slot_index  -- which g_update_registry.entries[] index this is
-     *   is_final    -- true if this signal ends the update (COMPLETED/ERROR)
-     *
-     * handle_copy is a fixed-size char[256] buffer, not a heap allocation.
-     * This avoids malloc/free overhead for a temporary logging string.
-     */
     typedef struct {
         UpdateCallback  callback;
         char            handle_copy[256];
@@ -2495,53 +1833,18 @@ static void dispatch_all_update_active(const InternalUpdateSignalData *signal_da
     UpdateSnapshot snapshots[MAX_PENDING_CALLBACKS];
     int            count = 0;
 
-    /*
-     * Map the raw integer status_code to the UpdateStatus enum.
-     * internal_map_update_status_code() does:
-     *   0 -> UPDATE_IN_PROGRESS
-     *   1 -> UPDATE_COMPLETED
-     *   2 -> UPDATE_ERROR
-     *   anything else -> UPDATE_ERROR (defensive default)
-     *
-     * Then determine if this is a terminal signal (update finished).
-     * A terminal signal means we should reset the slot to IDLE after
-     * invoking the callback, because no more signals are coming.
-     */
+    /* Map status code to enum before entering mutex */
     UpdateStatus status   = internal_map_update_status_code(signal_data->status_code);
     bool         is_final = (status == UPDATE_COMPLETED || status == UPDATE_ERROR);
 
     /* ---- PHASE 1: snapshot under mutex ---- */
-
-    /*
-     * Lock the registry. While we hold this lock, no other thread can
-     * modify g_update_registry (e.g., the main thread can't register
-     * a new callback via internal_update_register_callback()).
-     */
     pthread_mutex_lock(&g_update_registry.mutex);
 
-    /*
-     * Scan all 30 slots. For each ACTIVE entry, copy its info into
-     * the snapshot array. We copy the callback pointer (not the entry
-     * pointer) because after releasing the mutex, the entry could be
-     * modified by another thread.
-     */
     for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
         UpdateCbEntry *e = &g_update_registry.entries[i];
-
-        /*
-         * Skip non-ACTIVE entries. IDLE slots have no callback to invoke.
-         * (There's no PENDING or DISPATCHED state for update -- only
-         * IDLE and ACTIVE.)
-         */
         if (e->state != UPDATE_CB_STATE_ACTIVE) continue;
 
-        /*
-         * Copy this entry's data into the snapshot:
-         *   callback   -- the function pointer we'll invoke in Phase 2
-         *   slot_index -- needed to reset this specific slot in Phase 2
-         *   is_final   -- same for all entries (determined by status_code)
-         *   handle_copy -- snprintf'd for safe logging (truncated to 255 chars)
-         */
+        /* Copy entry data into stack-local snapshot */
         snapshots[count].callback   = e->callback;
         snapshots[count].slot_index = i;
         snapshots[count].is_final   = is_final;
@@ -2557,58 +1860,21 @@ static void dispatch_all_update_active(const InternalUpdateSignalData *signal_da
                      signal_data->progress_percent, is_final);
     }
 
-    /*
-     * Release the mutex. From this point, the main thread can freely
-     * register new callbacks. Our snapshot is a frozen copy -- it won't
-     * be affected by concurrent registry modifications.
-     */
+    /* Unlock before invoking callbacks (deadlock prevention) */
     pthread_mutex_unlock(&g_update_registry.mutex);
 
     FWUPMGR_INFO("dispatch_all_update_active: %d callback(s) to fire\n", count);
 
     /* ---- PHASE 2: invoke callbacks, no mutex held ---- */
-
-    /*
-     * Iterate through the snapshot array and invoke each callback.
-     * No mutex is held during callback invocation -- the app's callback
-     * can safely call any library function without deadlocking.
-     */
     for (int i = 0; i < count; i++) {
         UpdateSnapshot *s = &snapshots[i];
 
         FWUPMGR_INFO("dispatch_all_update_active: invoking callback "
                      "for handle='%s'\n", s->handle_copy);
 
-        /*
-         * INVOKE THE APP'S CALLBACK
-         *
-         * Callback signature: void fn(int progress_per, UpdateStatus status)
-         * Matches the UpdateCallback typedef exactly.
-         *
-         * Arguments:
-         *   signal_data->progress_percent -- 0 to 100 (how far along)
-         *   status -- UPDATE_IN_PROGRESS, UPDATE_COMPLETED, or UPDATE_ERROR
-         *
-         * This runs on the BG thread. If the app needs to update UI,
-         * it must marshal the call to the main thread (e.g., via
-         * pthread_cond_signal, g_idle_add, or similar mechanism).
-         *
-         * The callback MUST NOT block for a long time, because it blocks
-         * this BG thread from processing further D-Bus signals.
-         */
         s->callback(signal_data->progress_percent, status);
 
-        /*
-         * If this was a TERMINAL signal (COMPLETED or ERROR), reset
-         * the slot back to IDLE so it can be reused.
-         *
-         * We must RE-ACQUIRE the mutex to modify the registry. This is
-         * a brief lock/unlock pair -- just enough to reset one slot.
-         *
-         * If this was an IN-PROGRESS signal, we leave the slot ACTIVE.
-         * The next UpdateProgress signal will dispatch to the same
-         * callback again.
-         */
+        /* If terminal signal, reset slot to IDLE */
         if (s->is_final) {
             pthread_mutex_lock(&g_update_registry.mutex);
             update_registry_reset_slot(&g_update_registry.entries[s->slot_index]);
@@ -2691,117 +1957,50 @@ static void dispatch_all_update_active(const InternalUpdateSignalData *signal_da
 bool internal_update_register_callback(FirmwareInterfaceHandle handle,
                                         UpdateCallback callback)
 {
-    /*
-     * Lock the update registry mutex. This mutex protects the entire
-     * g_update_registry.entries[] array from concurrent access.
-     * The BG thread also locks this mutex when dispatching callbacks.
-     */
     pthread_mutex_lock(&g_update_registry.mutex);
 
-    /*
-     * We need to find a slot. Two pointers track our search:
-     *   free_slot     -- first IDLE entry found (available for use)
-     *   existing_slot -- entry with same handle (dedup/overwrite case)
-     *
-     * Both start NULL. If neither is found after scanning, the registry
-     * is full of ACTIVE entries (all 30 slots occupied by other handles).
-     */
     UpdateCbEntry *free_slot     = NULL;
     UpdateCbEntry *existing_slot = NULL;
 
-    /*
-     * Linear scan through all 30 slots. We MUST scan the entire array
-     * even after finding a free slot, because we need to check for
-     * duplicate handles. An existing ACTIVE entry for the same handle
-     * takes priority over a free slot.
-     */
+    /* Single-pass scan: look for dedup match (same handle) and first free slot */
     for (int i = 0; i < MAX_PENDING_CALLBACKS; i++) {
         UpdateCbEntry *e = &g_update_registry.entries[i];
 
-        /*
-         * Check for DEDUP: is this an ACTIVE entry with the same handle?
-         *
-         * If the app calls updateFirmware() twice with the same handle
-         * before the first update finishes, we find the old entry here
-         * and overwrite it rather than wasting a new slot.
-         *
-         * strcmp(e->handle_key, handle) == 0 means exact string match.
-         * The handle_key NULL check prevents strcmp(NULL, ...) crash.
-         */
         if (e->state == UPDATE_CB_STATE_ACTIVE &&
             e->handle_key != NULL &&
             strcmp(e->handle_key, handle) == 0) {
             existing_slot = e;
-            break;  /* Found duplicate -- no need to continue scanning */
+            break;
         }
 
-        /*
-         * Track the FIRST idle slot we encounter. We only save the
-         * first one (free_slot == NULL check) because we want the
-         * lowest-indexed available slot for consistency.
-         */
         if (free_slot == NULL && e->state == UPDATE_CB_STATE_IDLE) {
             free_slot = e;
         }
     }
 
-    /*
-     * Pick the target slot:
-     *   - Prefer existing_slot (dedup/overwrite case)
-     *   - Fall back to free_slot (normal allocation case)
-     *   - If both NULL: registry is full, fail
-     */
     UpdateCbEntry *target = existing_slot ? existing_slot : free_slot;
 
     if (target == NULL) {
-        /*
-         * All 30 slots are ACTIVE with different handles. This should
-         * never happen in practice -- a device rarely has more than
-         * one or two concurrent update clients. But we handle it
-         * gracefully by returning false instead of crashing.
-         */
         FWUPMGR_ERROR("internal_update_register_callback: registry full (max=%d)\n",
                       MAX_PENDING_CALLBACKS);
         pthread_mutex_unlock(&g_update_registry.mutex);
         return false;
     }
 
-    /*
-     * If we're overwriting an existing entry (same handle), free the
-     * old handle_key string to avoid a memory leak. The old strdup'd
-     * string is on the heap and must be explicitly freed.
-     */
+    /* If overwriting, free old handle_key to avoid leak */
     if (existing_slot) {
         FWUPMGR_INFO("internal_update_register_callback: "
                      "overwriting existing for handle='%s'\n", handle);
         free(target->handle_key);
-        target->handle_key = NULL;  /* Defensive: NULL before reassignment */
+        target->handle_key = NULL;
     }
 
-    /*
-     * Populate the slot with the new callback registration.
-     *
-     * strdup(handle) creates a heap copy of the handle string "1".
-     * We need our own copy because the caller's string may go out of
-     * scope or be freed after updateFirmware() returns.
-     *
-     * UPDATE_CB_STATE_ACTIVE means this slot is ready to receive
-     * UpdateProgress signals. The BG thread's dispatch_all_update_active()
-     * will find it and invoke the callback.
-     *
-     * registered_time is recorded for diagnostic purposes (log how
-     * long a slot has been active).
-     */
+    /* Populate slot: strdup handle, store callback, mark ACTIVE */
     target->handle_key      = strdup(handle);
     target->callback        = callback;
     target->state           = UPDATE_CB_STATE_ACTIVE;
     target->registered_time = time(NULL);
 
-    /*
-     * Unlock the mutex. The slot is now visible to the BG thread.
-     * From this point, any UpdateProgress signal will find our ACTIVE
-     * entry and invoke the callback.
-     */
     pthread_mutex_unlock(&g_update_registry.mutex);
 
     FWUPMGR_INFO("internal_update_register_callback: registered handle='%s'\n",
@@ -2850,39 +2049,12 @@ bool internal_update_register_callback(FirmwareInterfaceHandle handle,
  */
 static void update_registry_reset_slot(UpdateCbEntry *entry)
 {
-    /*
-     * Free the handle_key string if it exists.
-     *
-     * handle_key was allocated by strdup() in
-     * internal_update_register_callback(). We must free it to avoid
-     * a memory leak. The NULL check is defensive -- an IDLE slot
-     * should already have handle_key == NULL, but we check anyway.
-     */
     if (entry->handle_key != NULL) {
         free(entry->handle_key);
-        entry->handle_key = NULL;  /* Prevent dangling pointer / double-free */
+        entry->handle_key = NULL;
     }
-
-    /*
-     * Clear the callback function pointer. Setting to NULL ensures
-     * that even if something accidentally tries to invoke this slot's
-     * callback, it will be a NULL dereference (crash) rather than
-     * calling a stale function pointer (undefined behavior / security risk).
-     */
     entry->callback        = NULL;
-
-    /*
-     * Reset the registration timestamp. Not strictly necessary for
-     * correctness, but keeps the slot in a clean, known state.
-     */
     entry->registered_time = 0;
-
-    /*
-     * Set state back to IDLE. This is the critical line -- it's what
-     * makes the slot available for reuse by the next
-     * internal_update_register_callback() call. The linear scan in
-     * that function looks for UPDATE_CB_STATE_IDLE to find free slots.
-     */
     entry->state           = UPDATE_CB_STATE_IDLE;
 }
 
@@ -2949,25 +2121,9 @@ static void update_registry_reset_slot(UpdateCbEntry *entry)
 bool internal_parse_update_signal_data(GVariant *parameters,
                                         InternalUpdateSignalData *out_data)
 {
-    /*
-     * NULL checks on both parameters. If either is NULL, we can't
-     * proceed -- return false immediately. No cleanup needed because
-     * nothing has been allocated yet.
-     */
     if (parameters == NULL || out_data == NULL) return false;
 
-    /*
-     * Verify the GVariant's type signature matches what we expect.
-     *
-     * g_variant_get_type_string() returns the GVariant's type as a
-     * string, e.g. "(tsiis)". If the daemon sends a different format
-     * (e.g., due to a version mismatch), we'd get garbage if we tried
-     * to extract with the wrong format. This check catches mismatches
-     * early with a clear error message.
-     *
-     * strcmp returns 0 if the strings are equal. If NOT equal (non-zero),
-     * log the unexpected signature and return false.
-     */
+    /* Verify type signature before extracting */
     const gchar *sig = g_variant_get_type_string(parameters);
     if (strcmp(sig, "(tsiis)") != 0) {
         FWUPMGR_ERROR("internal_parse_update_signal_data: "
@@ -2975,37 +2131,12 @@ bool internal_parse_update_signal_data(GVariant *parameters,
         return false;
     }
 
-    /*
-     * Declare local variables to receive the extracted values.
-     * We use typed locals rather than extracting directly into out_data
-     * for clarity and to match the GLib API pattern.
-     *
-     * guint64 handler_id   -- maps to 't' (uint64)
-     * gchar  *firmware_name -- maps to 's' (string, heap-allocated by g_variant_get)
-     * gint32  progress      -- maps to 'i' (int32)
-     * gint32  status        -- maps to 'i' (int32)
-     * gchar  *message_str   -- maps to 's' (string, heap-allocated by g_variant_get)
-     */
     guint64  handler_id = 0;
     gchar   *firmware_name = NULL;
     gint32   progress = 0;
     gint32   status = 0;
     gchar   *message_str = NULL;
 
-    /*
-     * Extract all five fields from the GVariant in one call.
-     *
-     * g_variant_get() is the inverse of g_variant_new(). The format
-     * string "(tsiis)" tells GLib how to interpret the binary data:
-     *   t -> extract as guint64, store at &handler_id
-     *   s -> extract as string, allocate copy, store at &firmware_name
-     *   i -> extract as gint32, store at &progress
-     *   i -> extract as gint32, store at &status
-     *   s -> extract as string, allocate copy, store at &message_str
-     *
-     * The 's' format specifier ALWAYS allocates a new string (g_strdup).
-     * This is why the caller must g_free() firmware_name and message.
-     */
     g_variant_get(parameters, "(tsiis)", 
                   &handler_id, 
                   &firmware_name, 
@@ -3013,22 +2144,12 @@ bool internal_parse_update_signal_data(GVariant *parameters,
                   &status, 
                   &message_str);
 
-    /*
-     * Copy the extracted values into the output struct.
-     *
-     * For strings (firmware_name, message): we transfer OWNERSHIP of
-     * the heap-allocated string to the caller via the out_data struct.
-     * The caller (on_update_progress_signal) is responsible for calling
-     * g_free() on these pointers when done.
-     *
-     * For integers (handler_id, progress_percent, status_code): these
-     * are simple value copies. No heap allocation, no cleanup needed.
-     */
+    /* Transfer ownership of GLib-allocated strings to caller (must g_free) */
     out_data->handler_id       = handler_id;
-    out_data->firmware_name    = firmware_name;   /* Caller must g_free */
+    out_data->firmware_name    = firmware_name;
     out_data->progress_percent = progress;
     out_data->status_code      = status;
-    out_data->message          = message_str;     /* Caller must g_free */
+    out_data->message          = message_str;
 
     return true;
 }
@@ -3077,33 +2198,9 @@ bool internal_parse_update_signal_data(GVariant *parameters,
 UpdateStatus internal_map_update_status_code(int32_t status_code)
 {
     switch (status_code) {
-        /*
-         * 0 = IN_PROGRESS: The daemon is still flashing the firmware.
-         * More UpdateProgress signals will follow. The callback slot
-         * stays ACTIVE.
-         */
         case 0:  return UPDATE_IN_PROGRESS;
-
-        /*
-         * 1 = COMPLETED: The firmware was flashed successfully.
-         * This is a TERMINAL status -- no more signals will come.
-         * dispatch_all_update_active() will reset the slot to IDLE.
-         */
         case 1:  return UPDATE_COMPLETED;
-
-        /*
-         * 2 = ERROR: The firmware flash failed.
-         * This is a TERMINAL status -- no more signals will come.
-         * dispatch_all_update_active() will reset the slot to IDLE.
-         */
         case 2:  return UPDATE_ERROR;
-
-        /*
-         * Unknown status code. This should never happen with a matching
-         * daemon version. But if the daemon is newer and adds status
-         * code 3 (e.g., "PAUSED"), we default to ERROR so the slot
-         * gets cleaned up rather than stuck ACTIVE forever.
-         */
         default:
             FWUPMGR_ERROR("internal_map_update_status_code: "
                           "unknown %d -> UPDATE_ERROR\n", status_code);
