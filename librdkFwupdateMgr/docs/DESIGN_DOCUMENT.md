@@ -1,12 +1,8 @@
 # librdkFwupdateMgr — Engineering Design Document
 
 > **Document Version**: 2.0  
-> **Date**: April 28, 2026  
-> **Classification**: Internal Engineering — Pull Request Review  
-> **Repository**: `orig_rdkfwupdater`  
+> **Date**: May 02, 2026  
 > **Component**: `librdkFwupdateMgr` (shared library)  
-> **Author**: Senior Architect — rdkFwupdateMgr Team  
-> **Reviewers**: Firmware Platform Team, Security Review Board
 
 ---
 
