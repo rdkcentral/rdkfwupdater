@@ -344,7 +344,7 @@ extern "C" size_t lastDwnlImg(char *pLastImg, size_t szBufSize) {
 
 extern "C" void eventManager(const char *cur_event_name, const char *event_status) {
     // Stub - event manager
-    printf("EventManager: type=%d, data=%s\n", event_type, event_data ? event_data : "NULL");
+    //printf("EventManager: type=%d, data=%s\n", , event_data ? event_data : "NULL");
 }
 /*
 extern "C" int processJsonResponse(XCONFRES *response, const char *myfwversion, const char *model, const char *maint) {
