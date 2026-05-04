@@ -240,7 +240,7 @@ size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
 size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
 {
     size_t len = 0;
-#ifdef defined(IARM_ENABLED)
+#if defined(IARM_ENABLED)
     len = GetPDRIFileNameUsingMFR(pPDRIFilename, szBufSize);
 #endif
     return len;
