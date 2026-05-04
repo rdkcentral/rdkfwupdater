@@ -342,7 +342,7 @@ extern "C" size_t lastDwnlImg(char *pLastImg, size_t szBufSize) {
 
 // v_secure_system is now in deviceutils_mock.cpp
 
-extern "C" void eventManager(int event_type, const char *event_data) {
+extern "C" void eventManager(const char *cur_event_name, const char *event_status) {
     // Stub - event manager
     printf("EventManager: type=%d, data=%s\n", event_type, event_data ? event_data : "NULL");
 }
