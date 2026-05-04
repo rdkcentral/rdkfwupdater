@@ -59,8 +59,8 @@ rdkfw_main_gtest_SOURCES = basic_rdkv_main_gtest.cpp \
     ../src/deviceutils/device_api.c \
     ../src/deviceutils/deviceutils.c \
     deviceutils/json_parse.c \
-    ./mocks/deviceutils_mock.cpp \
-    ./mocks/iarmInterface_mock.cpp
+    ./mocks/deviceutils_mock.cpp 
+   # ./mocks/iarmInterface_mock.cpp
 
 rdkfw_interface_gtest_SOURCES = fwdl_interface_gtest.cpp \
     ./mocks/interface_mock.cpp \
@@ -135,8 +135,7 @@ rdkfwupdatemgr_main_flow_gtest_SOURCES = rdkfwupdatemgr_main_flow_gtest.cpp \
     ../src/deviceutils/deviceutils.c \
     deviceutils/json_parse.c \
     miscellaneous_mock.cpp \
-    ./mocks/deviceutils_mock.cpp \
-    ./mocks/iarmInterface_mock.cpp
+    ./mocks/deviceutils_mock.cpp 
 
 rdkfwupdatemgr_main_flow_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -I../src/dbus $(GLIB_CFLAGS)
 rdkfwupdatemgr_main_flow_gtest_LDFLAGS = $(GLIB_LIBS)
