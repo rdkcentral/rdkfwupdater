@@ -131,6 +131,7 @@ rdkFwupdateMgr_handlers_gtest_CFLAGS = $(COMMON_CXXFLAGS)
 rdkfwupdatemgr_main_flow_gtest_SOURCES = rdkfwupdatemgr_main_flow_gtest.cpp \
     ../src/rdkFwupdateMgr.c \
     ../src/json_process.c \
+    ../src/iarmInterface/iarmInterface.c
     ../src/deviceutils/device_api.c \
     ../src/deviceutils/deviceutils.c \
     deviceutils/json_parse.c \
