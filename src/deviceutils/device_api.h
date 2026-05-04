@@ -23,7 +23,7 @@
     #define GETRDMMANIFESTVERSION_IN_SCRIPT
 #endif
 
-#ifdef defined(IARM_ENABLED) 
+#if defined(IARM_ENABLED) 
 #include "iarmInterface.h"
 #endif
 
