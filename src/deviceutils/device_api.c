@@ -208,6 +208,7 @@ size_t GetAdditionalFwVerInfo( char *pAdditionalFwVerInfo, size_t szBufSize )
 
             RETURN - number of characters copied to the output buffer.
 */
+#if 0
 size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
 {
     char *pTmp;
@@ -234,7 +235,16 @@ size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
     }
     return len;
 }
+#endif
 
+size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
+{
+    size_t len = 0;
+#if defined(IARM_ENABLED)
+    len = GetPDRIFileNameUsingMFR(pPDRIFilename, szBufSize);
+#endif
+    return len;
+}
 
 /* function GetInstalledBundles - gets the bundles installed on a device. 
         Usage: size_t GetInstalledBundles <char *pBundles> <size_t szBufSize>
