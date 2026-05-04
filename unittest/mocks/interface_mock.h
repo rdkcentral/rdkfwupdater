@@ -77,6 +77,7 @@ class FwDlInterfaceMock: public FwDlInterface
         MOCK_METHOD(int, allocDowndLoadDataMem, (void *ptr, int size), ());
         MOCK_METHOD(int, getJsonRpc, (char *data, void *ptr), ());
 	MOCK_METHOD(int, IARM_Bus_Call, (const char*, int, void*, unsigned int), ());
+
 };
 
 #endif

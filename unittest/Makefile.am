@@ -68,7 +68,7 @@ rdkfw_interface_gtest_SOURCES = fwdl_interface_gtest.cpp \
     ../src/iarmInterface/iarmInterface.c \
     ./mocks/rbus_mock.c \
     ../src/rbusInterface/rbusInterface.c \
-    deviceutils/json_parse.c
+    deviceutils/json_parse.c 
 
 
 # rdkFwupdateMgr_handlers_gtest: Tests D-Bus handler functions for daemon
@@ -80,7 +80,7 @@ rdkFwupdateMgr_handlers_gtest_SOURCES = rdkFwupdateMgr_handlers_gtest.cpp \
     ./mocks/deviceutils_mock.cpp \
     ../src/dbus/rdkFwupdateMgr_handlers.c \
     ../src/json_process.c \
-    deviceutils/json_parse.c
+    deviceutils/json_parse.c 
 # Note: All functions from rdkv_upgrade.c, chunk.c, device_status_helper.c, download_status_helper.c
 #       are stubbed in rdkFwupdateMgr_mock.cpp
 # Note: device_api.c and deviceutils.c functions are mocked in deviceutils_mock.cpp
@@ -135,8 +135,7 @@ rdkfwupdatemgr_main_flow_gtest_SOURCES = rdkfwupdatemgr_main_flow_gtest.cpp \
     ../src/deviceutils/deviceutils.c \
     deviceutils/json_parse.c \
     miscellaneous_mock.cpp \
-    ./mocks/deviceutils_mock.cpp \
-    
+    ./mocks/deviceutils_mock.cpp
 
 rdkfwupdatemgr_main_flow_gtest_CPPFLAGS = $(COMMON_CPPFLAGS) -I../src/dbus $(GLIB_CFLAGS)
 rdkfwupdatemgr_main_flow_gtest_LDFLAGS = $(GLIB_LIBS)

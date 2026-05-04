@@ -175,8 +175,23 @@ TEST_F(DeviceApiTestFixture,TestName_getadditionfw_nullcheck)
 {
     EXPECT_EQ(GetAdditionalFwVerInfo(NULL, 0), 0);
 }
-//TODO: Need to check why v_secure_popen is not returning properly
 #if 0
+TEST_F(DeviceApiTestFixture, TestName_Success)
+{
+    char data[64];
+    // Instead of v_secure_popen, expect the MFR call:
+    EXPECT_CALL(*g_DeviceStatusMock, GetPDRIFileNameUsingMFR(_, _))
+        .Times(1)
+        .WillOnce([](char* out, size_t sz){
+            strcpy(out, "mockpdri.bin");
+            return strlen(out);
+        });
+
+    // Now call and expect correct result:
+    EXPECT_EQ(GetAdditionalFwVerInfo(data, sizeof(data)), strlen("mockpdri.bin"));
+    EXPECT_STREQ(data, "mockpdri.bin");
+}
+//TODO: Need to check why v_secure_popen is not returning properly
 TEST_F(DeviceApiTestFixture,TestName_Success)
 {
     char data[64];

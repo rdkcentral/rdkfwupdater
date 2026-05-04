@@ -23,12 +23,12 @@
     #define GETRDMMANIFESTVERSION_IN_SCRIPT
 #endif
 
-#ifdef GTEST_ENABLE
-#include "rdkv_cdl_log_wrapper.h"
+#ifdef defined(IARM_ENABLED) 
+#include "iarmInterface.h"
 #endif
 
-#if defined(IARM_ENABLED)
-#include "iarmInterface.h"
+#ifdef GTEST_ENABLE
+#include "rdkv_cdl_log_wrapper.h"
 #endif
 
 #ifndef GTEST_ENABLE
