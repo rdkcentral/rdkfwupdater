@@ -19,6 +19,14 @@ export top_srcdir=`pwd`
 RESULT_DIR="/tmp/l2_test_report"
 mkdir -p "$RESULT_DIR"
 
+git clone https://github.com/rdkcentral/common_utilities.git
+cd common_utilities
+git checkout develop
+autoreconf -i
+./configure  --enable-rdkcertselector --prefix=${INSTALL_DIR} CFLAGS=" -DRDK_LOGGER "
+make && make install
+cd ../
+
 WORKDIR=`pwd`
 export ROOT=/usr
 export INSTALL_DIR=${ROOT}/local
