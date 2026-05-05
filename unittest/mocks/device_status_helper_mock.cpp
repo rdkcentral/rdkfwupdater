@@ -319,7 +319,7 @@ extern "C" void eventManager(const char *cur_event_name, const char *event_statu
 extern "C" size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
 {
     if (!g_DeviceStatusMock) {
-        cout << "GetPDRIFileNameUsingMFR g_IarmInterfaceMock object is NULL" << endl;
+        cout << "GetPDRIFileNameUsingMFR g_DeviceStatusMock object is NULL" << endl;
         return 0;
     }
     printf("Inside Mock Function GetPDRIFileNameUsingMFR\n");
