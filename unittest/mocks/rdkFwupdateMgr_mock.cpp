@@ -137,7 +137,7 @@ extern "C" size_t GetFirmwareVersion(char *pFWVersion, size_t szBufSize) {
     }
     return g_RdkFwupdateMgrMock->GetFirmwareVersion(pFWVersion, szBufSize);
 }
-
+#if 0
 extern "C" size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
 {
     if (!g_RdkFwupdateMgrMock) {
@@ -155,6 +155,7 @@ extern "C" size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
     }
     return g_RdkFwupdateMgrMock->GetPDRIFileNameUsingMFR(pPDRIFilename, szBufSize);
 }
+#endif
 // =============================================================================
 // File operations
 // =============================================================================
