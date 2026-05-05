@@ -18,6 +18,7 @@
 
 #include <stdbool.h>
 #include <pthread.h>
+#include <string.h>
 #include "rdkv_cdl_log_wrapper.h"
 #if defined(IARM_ENABLED)
 
@@ -325,11 +326,11 @@ size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
     IARM_Bus_MFRLib_GetSerializedData_Param_t param;
 
     if (pPDRIFilename == NULL) {
-        SWLOG_ERROR("GetPDRIFileName: Error, input argument NULL\n");
+        SWLOG_ERROR("GetPDRIFileNameUsingMFR: Error, input argument NULL\n");
         return 0;
     }
 
-    SWLOG_INFO("GetPDRIFileName: Fetching PDRI image name via IARM_Bus_Call (MFRMgr)");
+    SWLOG_INFO("GetPDRIFileNameUsingMFR Fetching PDRI image name via IARM_Bus_Call (MFRMgr)");
 
     memset(&param, 0, sizeof(param));
     param.type = mfrSERIALIZED_TYPE_PDRIVERSION;
@@ -341,29 +342,49 @@ size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
         sizeof(param)
     );
 
-    if (ret == IARM_RESULT_SUCCESS ) 
+    if (ret == IARM_RESULT_SUCCESS )
     {
-	SWLOG_INFO("GetPDRIFileName:  param.bufLen : %zu\n" , (size_t)param.bufLen);    
+	SWLOG_INFO("GetPDRIFileNameUsingMFR: IARM_Bus_Call Success , param.bufLen : %zu\n" , (size_t)param.bufLen);
 	if(param.bufLen > 0 && param.bufLen < szBufSize) {
             memcpy(pPDRIFilename, param.buffer, param.bufLen);
             pPDRIFilename[param.bufLen] = '\0';
             len = param.bufLen;
-            SWLOG_INFO("GetPDRIFileName: PDRI Version = %s", pPDRIFilename);
-	    t2ValNotify("PDRI_Version_split", pPDRIFilename);
+            SWLOG_INFO("GetPDRIFileNameUsingMFR: IARM_Bus_Call OK, PDRI Version = %s", pPDRIFilename);
 	}
     } else {
         // Error path: be explicit
-        SWLOG_ERROR("GetPDRIFileName: PDRI filename retrieving Failed ... (ret=%d, bufLen=%zu)\n", ret, (size_t)param.bufLen);
+        SWLOG_ERROR("GetPDRIFileNameUsingMFR: IARM_Bus_Call failed (ret=%d, bufLen=%zu). Cannot retrieve PDRI image name.", ret, (size_t)param.bufLen);
 
     }
 
     return len;
 }
-
 #else
 
 // Do nothing act as pass through function .
 // Iarm eventing is not the main purpose of the code download module
+size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize) {
+   const char *pdriFileName = "/etc/pdri/pdri_mfr.conf";  // example
+
+    if (pPDRIFilename == NULL || szBufSize == 0)
+    {
+        return 0;
+    }
+
+    size_t len = strlen(pdriFileName);
+
+    /* Not enough space (including null terminator) */
+    if (len + 1 > szBufSize)
+    {
+        pPDRIFilename[0] = '\0';
+        return 0;
+    }
+
+    /* Safe copy */
+    strcpy(pPDRIFilename, pdriFileName);
+
+    return len;  /* length excluding '\0' */
+}
 void eventManager(const char *cur_event_name, const char *event_status) {
     return ;
 }

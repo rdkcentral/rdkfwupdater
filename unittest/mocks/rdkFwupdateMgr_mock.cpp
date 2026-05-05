@@ -137,7 +137,25 @@ extern "C" size_t GetFirmwareVersion(char *pFWVersion, size_t szBufSize) {
     }
     return g_RdkFwupdateMgrMock->GetFirmwareVersion(pFWVersion, szBufSize);
 }
-
+#if 0
+extern "C" size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
+{
+    if (!g_RdkFwupdateMgrMock) {
+        cout << "GetPDRIFileNameUsingMFR g_IarmInterfaceMock object is NULL" << endl;
+        return 0;
+    }
+    printf("Inside Mock Function GetPDRIFileNameUsingMFR\n");
+    // Give a fake file name for tests unless you want to do more in your mock object
+    const char *mockPDRI = "mock-PDRI-image.bin";
+    size_t len = strlen(mockPDRI);
+    if (pPDRIFilename && szBufSize > len) {
+        strncpy(pPDRIFilename, mockPDRI, szBufSize);
+        pPDRIFilename[szBufSize - 1] = '\0';
+        return len;
+    }
+    return g_RdkFwupdateMgrMock->GetPDRIFileNameUsingMFR(pPDRIFilename, szBufSize);
+}
+#endif
 // =============================================================================
 // File operations
 // =============================================================================
@@ -325,9 +343,9 @@ extern "C" size_t lastDwnlImg(char *pLastImg, size_t szBufSize) {
 
 // v_secure_system is now in deviceutils_mock.cpp
 
-extern "C" void eventManager(int event_type, const char *event_data) {
+extern "C" void eventManager(const char *cur_event_name, const char *event_status) {
     // Stub - event manager
-    printf("EventManager: type=%d, data=%s\n", event_type, event_data ? event_data : "NULL");
+    //printf("EventManager: type=%d, data=%s\n", , event_data ? event_data : "NULL");
 }
 /*
 extern "C" int processJsonResponse(XCONFRES *response, const char *myfwversion, const char *model, const char *maint) {
