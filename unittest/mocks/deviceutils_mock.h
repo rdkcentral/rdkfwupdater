@@ -33,6 +33,7 @@
 extern "C" {
 #endif
 #include "rfcinterface.h"
+#include "iarmInterface.h"	
 #ifdef __cplusplus
 }
 #endif
