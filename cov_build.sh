@@ -10,6 +10,7 @@ autoreconf -i
 ./configure  --enable-rdkcertselector --prefix=${INSTALL_DIR} CFLAGS=" -DRDK_LOGGER "
 make && make install
 
+cd ../
 # Below dependencies are available in native build containers 
 # 1] utilities
 # 2] libsyswrapper
