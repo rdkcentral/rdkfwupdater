@@ -325,11 +325,11 @@ size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
     IARM_Bus_MFRLib_GetSerializedData_Param_t param;
 
     if (pPDRIFilename == NULL) {
-        SWLOG_ERROR("GetPDRIFileName: Error, input argument NULL\n");
+        SWLOG_ERROR("GetPDRIFileNameUsingMFR: Error, input argument NULL\n");
         return 0;
     }
 
-    SWLOG_INFO("GetPDRIFileName: Fetching PDRI image name via IARM_Bus_Call (MFRMgr)");
+    SWLOG_INFO("GetPDRIFileNameUsingMFR Fetching PDRI image name via IARM_Bus_Call (MFRMgr)");
 
     memset(&param, 0, sizeof(param));
     param.type = mfrSERIALIZED_TYPE_PDRIVERSION;
@@ -343,16 +343,16 @@ size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
 
     if (ret == IARM_RESULT_SUCCESS )
     {
-	SWLOG_INFO("GetPDRIFileName: IARM_Bus_Call Success , param.bufLen : %zu\n" , (size_t)param.bufLen);
+	SWLOG_INFO("GetPDRIFileNameUsingMFR: IARM_Bus_Call Success , param.bufLen : %zu\n" , (size_t)param.bufLen);
 	if(param.bufLen > 0 && param.bufLen < szBufSize) {
             memcpy(pPDRIFilename, param.buffer, param.bufLen);
             pPDRIFilename[param.bufLen] = '\0';
             len = param.bufLen;
-            SWLOG_INFO("GetPDRIFileName: IARM_Bus_Call OK, PDRI Version = %s", pPDRIFilename);
+            SWLOG_INFO("GetPDRIFileNameUsingMFR: IARM_Bus_Call OK, PDRI Version = %s", pPDRIFilename);
 	}
     } else {
         // Error path: be explicit
-        SWLOG_ERROR("GetPDRIFileName: IARM_Bus_Call failed (ret=%d, bufLen=%zu). Cannot retrieve PDRI image name.", ret, (size_t)param.bufLen);
+        SWLOG_ERROR("GetPDRIFileNameUsingMFR: IARM_Bus_Call failed (ret=%d, bufLen=%zu). Cannot retrieve PDRI image name.", ret, (size_t)param.bufLen);
 
     }
 
@@ -362,6 +362,9 @@ size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
 
 // Do nothing act as pass through function .
 // Iarm eventing is not the main purpose of the code download module
+size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize) {
+    return 1;	
+}
 void eventManager(const char *cur_event_name, const char *event_status) {
     return ;
 }

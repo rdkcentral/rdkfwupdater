@@ -208,34 +208,6 @@ size_t GetAdditionalFwVerInfo( char *pAdditionalFwVerInfo, size_t szBufSize )
 
             RETURN - number of characters copied to the output buffer.
 */
-#if 0
-size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
-{
-    char *pTmp;
-    size_t len = 0;
-
-    if( pPDRIFilename != NULL )
-    {
-        len = RunCommand( eMfrUtil, "--PDRIVersion", pPDRIFilename, szBufSize );
-        if( len && ((pTmp = strcasestr( pPDRIFilename, "failed" )) == NULL) )   // if "failed" is not found
-        {
-            SWLOG_INFO( "GetPDRIFileName: PDRI Version = %s\n", pPDRIFilename );
-            t2ValNotify("PDRI_Version_split", pPDRIFilename);
-        }
-        else
-        {
-            *pPDRIFilename = 0;
-            len = 0;
-            SWLOG_ERROR( "GetPDRIFileName: PDRI filename retrieving Failed ...\n" );
-        }
-    }
-    else
-    {
-        SWLOG_ERROR( "GetPDRIFileName: Error, input argument NULL\n" );
-    }
-    return len;
-}
-#endif
 
 size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
 {
@@ -244,6 +216,7 @@ size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
     len = GetPDRIFileNameUsingMFR(pPDRIFilename, szBufSize);
     if(len)
     {
+	SWLOG_INFO( "GetPDRIFileName: PDRI Version = %s\n", pPDRIFilename );    
         t2ValNotify("PDRI_Version_split", pPDRIFilename);	    
     }
     else
