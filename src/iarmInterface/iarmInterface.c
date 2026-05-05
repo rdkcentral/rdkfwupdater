@@ -18,6 +18,7 @@
 
 #include <stdbool.h>
 #include <pthread.h>
+#include <string.h>
 #include "rdkv_cdl_log_wrapper.h"
 #if defined(IARM_ENABLED)
 
