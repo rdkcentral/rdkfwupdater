@@ -242,6 +242,16 @@ size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
     size_t len = 0;
 #if defined(IARM_ENABLED)
     len = GetPDRIFileNameUsingMFR(pPDRIFilename, szBufSize);
+    if(len)
+    {
+        t2ValNotify("PDRI_Version_split", pPDRIFilename);	    
+    }
+    else
+    {
+        *pPDRIFilename = 0;
+         len = 0;
+         SWLOG_ERROR( "GetPDRIFileName: PDRI filename retrieving Failed ...\n" );
+    }
 #endif
     return len;
 }
