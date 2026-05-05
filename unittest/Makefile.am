@@ -56,6 +56,7 @@ rdkfw_main_gtest_SOURCES = basic_rdkv_main_gtest.cpp \
     ../src/chunk.c \
     ../src/flash.c \
     ../src/json_process.c \
+    ../src/iarmInterface/iarmInterface.c \ 
     ../src/deviceutils/device_api.c \
     ../src/deviceutils/deviceutils.c \
     deviceutils/json_parse.c \
