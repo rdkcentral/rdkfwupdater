@@ -181,7 +181,6 @@ include_HEADERS = \
 
 librdkFwupdateMgr_la_SOURCES = \
     ${top_srcdir}/librdkFwupdateMgr/src/rdkFwupdateMgr_process.c \
-    ${top_srcdir}/librdkFwupdateMgr/src/rdkFwupdateMgr_log.c \
     ${top_srcdir}/librdkFwupdateMgr/src/rdkFwupdateMgr_async.c \
     ${top_srcdir}/librdkFwupdateMgr/src/rdkFwupdateMgr_api.c
 
@@ -258,13 +257,17 @@ example_plugin_SOURCES = \
 
 example_plugin_CFLAGS = \
     -I${top_srcdir}/librdkFwupdateMgr/include \
+    -I${top_srcdir}/librdkFwupdateMgr/src \
+    -I${top_srcdir}/common_utilities/utils \
     $(AM_CFLAGS) \
     $(GLIB_CFLAGS)
 
 example_plugin_LDADD = \
     librdkFwupdateMgr.la \
     $(GLIB_LIBS) \
-    -lpthread
+    -lpthread \
+    -lfwutils \
+    -lrdkloggers
 
 example_plugin_LDFLAGS = \
     -L$(PKG_CONFIG_SYSROOT_DIR)/$(libdir)

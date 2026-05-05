@@ -1244,31 +1244,38 @@ int main(int argc, char *argv[]) {
 				       }
 				       */
 			    }
+			     else if(init_validate_status == INITIAL_VALIDATION_DWNL_COMPLETED){
+				    /**
+				     * A previous firmware download+flash already completed
+				     * (/tmp/fw_preparing_to_reboot was present).
+				     * The file has been cleaned up by initialValidation().
+				     * initialValidation() is also responsible for emitting
+				     * the MAINT_FWDOWNLOAD_COMPLETE event for this case.
+				     * In daemon mode, we transition to IDLE and wait for
+				     * the pending reboot or the next D-Bus request.
+				     */
+				    SWLOG_INFO("Software Update already completed (pending reboot). "
+						    "Transitioning to IDLE.\n");
+				    currentState = STATE_IDLE;
+			    }
+			    else if(init_validate_status == INITIAL_VALIDATION_DWNL_INPROGRESS){
+				    /**
+				     * Another instance is currently downloading firmware.
+				     * In the daemon model, transition to IDLE and wait.
+				     * The in-progress download will complete independently.
+				     */
+				    SWLOG_INFO("Firmware download already in progress by another process. "
+						    "Transitioning to IDLE.\n");
+				    if (0 == (strncmp(device_info.maint_status, "true", 4))) {
+					    eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_INPROGRESS);
+				    }
+				    currentState = STATE_IDLE;
+			    }
 			    else{
-				    SWLOG_ERROR("Initial validation failed\n");
+				     /* INITIAL_VALIDATION_FAIL or unknown status */
+				    SWLOG_ERROR("Initial validation failed (status=%d)\n", init_validate_status);
 				    goto cleanup_and_exit;
 			    }
-			    /*this is for sending the intermediate updates back to apps and */
-			    /*
-				if (init_validate_status == INITIAL_VALIDATION_DWNL_INPROGRESS){
-				if (!(strncmp(device_info.maint_status, "true", 4))) {
-				eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_INPROGRESS); //Sending status to maintenance manager
-				}
-				}else if(init_validate_status == INITIAL_VALIDATION_DWNL_COMPLETED) {
-				SWLOG_INFO("Software Update is completed by AS/EPG, Exiting from firmware download.\n");
-				}else if ((ret_curl_code != 0) || (json_res != 0)) {
-				if (!(strncmp(device_info.maint_status, "true", 4))) {
-				eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR); //Sending status to maintenance manager
-				}
-				if (trigger_type == 6) {
-				unsetStateRed();
-				}
-				}else {
-				if (!(strncmp(device_info.maint_status, "true", 4))) {
-				eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_COMPLETE); //Sending status to maintenance manager
-				}
-				}
-				*/
 				break;
 		    case STATE_IDLE:
 				/**

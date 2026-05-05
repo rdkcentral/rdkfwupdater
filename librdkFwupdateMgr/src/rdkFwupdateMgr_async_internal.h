@@ -71,6 +71,9 @@ extern "C" {
 #define DBUS_SIGNAL_COMPLETE     "CheckForUpdateComplete"
 #define DBUS_TIMEOUT_MS          5000
 
+/** D-Bus call timeout for synchronous register/unregister calls (10 seconds) */
+#define DBUS_SYNC_TIMEOUT_MS     10000
+
 /* ========================================================================
  * CALLBACK ENTRY STATE
  * ======================================================================== */
