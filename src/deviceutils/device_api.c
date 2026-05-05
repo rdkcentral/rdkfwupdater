@@ -219,12 +219,14 @@ size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
 	SWLOG_INFO( "GetPDRIFileName: PDRI Version = %s\n", pPDRIFilename );    
         t2ValNotify("PDRI_Version_split", pPDRIFilename);	    
     }
+#if 0
     else
     {
         *pPDRIFilename = 0;
          len = 0;
          SWLOG_ERROR( "GetPDRIFileName: PDRI filename retrieving Failed ...\n" );
     }
+#endif
 #endif
     return len;
 }
