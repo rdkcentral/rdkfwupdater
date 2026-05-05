@@ -245,7 +245,7 @@ extern "C" size_t GetModelNum( char *pModelNum, size_t szBufSize )
 extern "C" size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
 {
     if (!g_DeviceUtilsMock) {
-        cout << "GetPDRIFileNameUsingMFR g_IarmInterfaceMock object is NULL" << endl;
+        cout << "GetPDRIFileNameUsingMFR g_DeviceUtilsMock object is NULL" << endl;
         return 0;
     }
     printf("Inside Mock Function GetPDRIFileNameUsingMFR\n");

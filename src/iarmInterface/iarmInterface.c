@@ -363,7 +363,26 @@ size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
 // Do nothing act as pass through function .
 // Iarm eventing is not the main purpose of the code download module
 size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize) {
-    return 1;	
+   const char *pdriFileName = "/etc/pdri/pdri_mfr.conf";  // example
+
+    if (pPDRIFilename == NULL || szBufSize == 0)
+    {
+        return 0;
+    }
+
+    size_t len = strlen(pdriFileName);
+
+    /* Not enough space (including null terminator) */
+    if (len + 1 > szBufSize)
+    {
+        pPDRIFilename[0] = '\0';
+        return 0;
+    }
+
+    /* Safe copy */
+    strcpy(pPDRIFilename, pdriFileName);
+
+    return len;  /* length excluding '\0' */
 }
 void eventManager(const char *cur_event_name, const char *event_status) {
     return ;
