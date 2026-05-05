@@ -344,17 +344,41 @@ size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
 
     if (ret == IARM_RESULT_SUCCESS )
     {
-	SWLOG_INFO("GetPDRIFileNameUsingMFR: IARM_Bus_Call Success , param.bufLen : %zu\n" , (size_t)param.bufLen);
-	if(param.bufLen > 0 && param.bufLen < szBufSize) {
-            memcpy(pPDRIFilename, param.buffer, param.bufLen);
-            pPDRIFilename[param.bufLen] = '\0';
-            len = param.bufLen;
-            SWLOG_INFO("GetPDRIFileNameUsingMFR: IARM_Bus_Call OK, PDRI Version = %s", pPDRIFilename);
-	}
-    } else {
+	    SWLOG_INFO("GetPDRIFileNameUsingMFR: IARM_Bus_Call Success , param.bufLen : %zu\n" , (size_t)param.bufLen);
+	    if(param.bufLen > 0 && param.bufLen <= sizeof(param.buffer)) 
+	    {	
+            if (param.bufLen < szBufSize)
+            {
+		        memcpy(pPDRIFilename, param.buffer, param.bufLen);
+                pPDRIFilename[param.bufLen] = '\0';
+                len = param.bufLen;
+                SWLOG_INFO("GetPDRIFileNameUsingMFR: IARM_Bus_Call OK, PDRI Version = %s", pPDRIFilename);   
+	        }
+            else
+	        {
+		  // Truncate and null-terminate
+                memcpy(pPDRIFilename, param.buffer, szBufSize - 1);
+                pPDRIFilename[szBufSize - 1] = '\0';
+                len = szBufSize - 1;
+                SWLOG_ERROR("GetPDRIFileNameUsingMFR: Buffer too small for PDRI Version (bufLen=%zu, szBufSize=%zu) - truncated to fit",(size_t)param.bufLen, szBufSize);   
+	        }	    
+        } 
+        else 
+        {
         // Error path: be explicit
-        SWLOG_ERROR("GetPDRIFileNameUsingMFR: IARM_Bus_Call failed (ret=%d, bufLen=%zu). Cannot retrieve PDRI image name.", ret, (size_t)param.bufLen);
+	       pPDRIFilename[0] = '\0';
+           SWLOG_ERROR("GetPDRIFileNameUsingMFR: Invalid bufLen returned (bufLen=%zu, buffer size=%zu)",
+                        (size_t)param.bufLen, sizeof(param.buffer));
+            len = 0;
 
+        }
+    }
+    else
+    {
+        // Error path: be explicit
+        pPDRIFilename[0] = '\0';
+        SWLOG_ERROR("GetPDRIFileNameUsingMFR: IARM_Bus_Call failed (ret=%d, bufLen=%zu). Cannot retrieve PDRI image name.",ret, (size_t)param.bufLen);
+        len = 0;
     }
 
     return len;
