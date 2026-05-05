@@ -325,7 +325,7 @@ size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
     IARM_Result_t ret;
     IARM_Bus_MFRLib_GetSerializedData_Param_t param;
 
-    if (pPDRIFilename == NULL) {
+    if (pPDRIFilename == NULL || szBufSize == 0) {
         SWLOG_ERROR("GetPDRIFileNameUsingMFR: Error, input argument NULL\n");
         return 0;
     }
@@ -349,7 +349,7 @@ size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
 	    {	
             if (param.bufLen < szBufSize)
             {
-		        memcpy(pPDRIFilename, param.buffer, param.bufLen);
+		memcpy(pPDRIFilename, param.buffer, param.bufLen);
                 pPDRIFilename[param.bufLen] = '\0';
                 len = param.bufLen;
                 SWLOG_INFO("GetPDRIFileNameUsingMFR: IARM_Bus_Call OK, PDRI Version = %s", pPDRIFilename);   
