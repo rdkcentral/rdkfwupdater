@@ -61,8 +61,8 @@ int getDeviceProperties(DeviceProperty_t *pDevice_info);
 int getImageDetails(ImageDetails_t *pImage_detail);
 // getRFCSettings and read_RFCProperty are declared in rfcinterface.h
 int createDir(const char *dirname);
-void init_event_handler(void);
-void term_event_handler(void);
+int init_event_handler(void);
+int term_event_handler(void);
 int filePresentCheck(const char *filename);
 void setForceStop(int value);
 void eventManager(const char *event_type, const char *event_data);

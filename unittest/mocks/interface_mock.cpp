@@ -228,3 +228,14 @@ extern "C" int getJsonRpc(char *data, void *ptr)
     printf("Inside Mock Function getJsonRpc\n");
     return g_InterfaceMock->getJsonRpc(data, ptr);
 }
+
+extern "C"  int IARM_Bus_Call(const char* ownerName, int apiId, void* param, unsigned int paramLen)
+{
+    if(!g_InterfaceMock)
+    {
+	cout << "g_InterfaceMock object is NULL" << endl;  
+        return -1;	
+    } 
+    printf("Inside Mock Function IARM_Bus_Call\n");
+    return g_InterfaceMock->IARM_Bus_Call(ownerName,apiId,param,paramLen);
+}
