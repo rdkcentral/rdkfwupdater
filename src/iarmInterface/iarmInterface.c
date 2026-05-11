@@ -410,8 +410,9 @@ size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize) {
         return 0;
     }
 
-    /* Safe copy */
-    strcpy(pPDRIFilename, pdriFileName);
+    /* Bounded copy with explicit null termination */
+    strncpy(pPDRIFilename, pdriFileName, szBufSize - 1);
+    pPDRIFilename[szBufSize - 1] = '\0';
 
     SWLOG_INFO("GetPDRIFileNameUsingMFR: len before newline strip = %zu\n", len);
     /* Strip trailing newline/carriage-return if present */
