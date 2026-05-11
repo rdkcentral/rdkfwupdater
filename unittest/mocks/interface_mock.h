@@ -32,6 +32,8 @@ class FwDlInterface
     public:
         virtual ~FwDlInterface() {}
         virtual int filePresentCheck(const char *filename) = 0;
+        virtual int getFileSize(const char *filename) = 0;
+        virtual size_t getContentLength(const char *file) = 0;
         virtual int getRFCParameter(char* type, const char* key, RFC_ParamData_t *param) = 0;
         virtual int setRFCParameter(char* type, const char* key, const char *value, int datatype) = 0;
         virtual int getDevicePropertyData(const char *model, char *data, int size) = 0;
@@ -48,6 +50,7 @@ class FwDlInterface
         virtual int IARM_Bus_Term() = 0;
         virtual int allocDowndLoadDataMem(void *ptr, int size) = 0;
         virtual int getJsonRpc(char *data, void *ptr) = 0;
+	virtual int IARM_Bus_Call(const char* ownerName, int apiId, void* param, unsigned int paramLen) = 0;
 };
 
 class FwDlInterfaceMock: public FwDlInterface
@@ -55,6 +58,8 @@ class FwDlInterfaceMock: public FwDlInterface
     public:
         virtual ~FwDlInterfaceMock() {}
         MOCK_METHOD(int, filePresentCheck, (const char *filename ), ());
+        MOCK_METHOD(int, getFileSize, (const char *filename ), ());
+        MOCK_METHOD(size_t, getContentLength, (const char *file ), ());
         MOCK_METHOD(int, getRFCParameter, (char* type, const char* key, RFC_ParamData_t *param), ());
         MOCK_METHOD(int, setRFCParameter, (char* type, const char* key, const char *value, int datatype), ());
         MOCK_METHOD(int, getDevicePropertyData, (const char *model, char *data, int size), ());
@@ -71,6 +76,8 @@ class FwDlInterfaceMock: public FwDlInterface
         MOCK_METHOD(int, IARM_Bus_Term, (), ());
         MOCK_METHOD(int, allocDowndLoadDataMem, (void *ptr, int size), ());
         MOCK_METHOD(int, getJsonRpc, (char *data, void *ptr), ());
+	MOCK_METHOD(int, IARM_Bus_Call, (const char*, int, void*, unsigned int), ());
+
 };
 
 #endif

@@ -36,12 +36,12 @@ int copyFile(const char *src, const char *target);
 
 #include "miscellaneous.h"
 #include "miscellaneous_mock.cpp"
-
+#include "deviceutils_mock_global.h"
 
 #define JSON_STR_LEN        1000
 
 DeviceUtilsMock Deviceglobal;
-DeviceUtilsMock *g_DeviceUtilsMock = &Deviceglobal;
+//DeviceUtilsMock *g_DeviceUtilsMock = &Deviceglobal;
 
 #define GTEST_DEFAULT_RESULT_FILEPATH "/tmp/Gtest_Report/"
 #define GTEST_DEFAULT_RESULT_FILENAME "RdkFwDwnld_rdkvMain_gtest_report.json"
@@ -653,6 +653,80 @@ TEST(MainHelperFunctionTest,chunkDownloadgetfilesizeTestFail){
     g_DeviceUtilsMock = &Deviceglobal;
     global_mockexternal_ptr = NULL;
 }
+
+/* Test: Verify that when getFileSize() returns -1 (error), chunkDownload()
+ * cleans up both the partial image file and its .header file via unlink(). */
+TEST(MainHelperFunctionTest,chunkDownloadgetfilesizeFailCleansUpFiles){
+    DeviceUtilsMock DeviceMock;
+    g_DeviceUtilsMock = &DeviceMock;
+    MockExternal mock;
+    global_mockexternal_ptr = &mock;
+
+    int httpcode = -1;
+    int ret = 0;
+    FileDwnl_t file;
+    memset(&file, '\0', sizeof(file));
+    snprintf(file.pathname, sizeof(file.pathname),"%s", "/tmp/testfirmware_cleanup1.bin");
+
+    /* Create real files so unlink() has something to remove */
+    ret = system("echo 'partial data' > /tmp/testfirmware_cleanup1.bin");
+    ret = system("echo 'Content-Length: 1234' > /tmp/testfirmware_cleanup1.bin.header");
+
+    /* filePresentCheck returns 0 (file exists) for all checks */
+    EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(0));
+    /* getFileSize returns -1 to trigger the error/cleanup path */
+    EXPECT_CALL(DeviceMock, getFileSize(_)).WillRepeatedly(Return(-1));
+
+    EXPECT_EQ(chunkDownload(&file, NULL, 0, &httpcode), -1);
+
+    /* Verify both files were cleaned up by unlink() */
+    EXPECT_NE(access("/tmp/testfirmware_cleanup1.bin", F_OK), 0)
+        << "Partial image file should have been removed";
+    EXPECT_NE(access("/tmp/testfirmware_cleanup1.bin.header", F_OK), 0)
+        << "Header file should have been removed";
+
+    /* Safety cleanup in case test assertions fail */
+    ret = system("rm -f /tmp/testfirmware_cleanup1.bin /tmp/testfirmware_cleanup1.bin.header");
+    global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = &Deviceglobal;
+}
+
+/* Test: Verify that when content_len is 0 (no Content-Length in header)
+ * and the partial file is present, chunkDownload() cleans up both files. */
+TEST(MainHelperFunctionTest,chunkDownloadNoContentLenCleansUpFiles){
+    DeviceUtilsMock DeviceMock;
+    g_DeviceUtilsMock = &DeviceMock;
+    MockExternal mock;
+    global_mockexternal_ptr = &mock;
+
+    int httpcode = -1;
+    int ret = 0;
+    FileDwnl_t file;
+    memset(&file, '\0', sizeof(file));
+    snprintf(file.pathname, sizeof(file.pathname),"%s", "/tmp/testfirmware_cleanup2.bin");
+
+    /* Create partial image file and a header file with NO Content-Length line */
+    ret = system("echo 'partial data' > /tmp/testfirmware_cleanup2.bin");
+    ret = system("echo 'No-Content-Here' > /tmp/testfirmware_cleanup2.bin.header");
+
+    /* filePresentCheck returns 0 (file exists) for all checks */
+    EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(DeviceMock, getFileSize(_)).WillRepeatedly(Return(12));
+
+    EXPECT_EQ(chunkDownload(&file, NULL, 0, &httpcode), -1);
+
+    /* Verify both files were cleaned up by unlink() */
+    EXPECT_NE(access("/tmp/testfirmware_cleanup2.bin", F_OK), 0)
+        << "Partial image file should have been removed";
+    EXPECT_NE(access("/tmp/testfirmware_cleanup2.bin.header", F_OK), 0)
+        << "Header file should have been removed";
+
+    /* Safety cleanup in case test assertions fail */
+    ret = system("rm -f /tmp/testfirmware_cleanup2.bin /tmp/testfirmware_cleanup2.bin.header");
+    global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = &Deviceglobal;
+}
+
 TEST(MainHelperFunctionTest,chunkDownloadTestFail2){
     MockExternal mockexternal;
     global_mockexternal_ptr = &mockexternal;
