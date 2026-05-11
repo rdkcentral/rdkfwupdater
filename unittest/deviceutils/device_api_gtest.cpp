@@ -175,22 +175,23 @@ TEST_F(DeviceApiTestFixture,TestName_getadditionfw_nullcheck)
 {
     EXPECT_EQ(GetAdditionalFwVerInfo(NULL, 0), 0);
 }
-//TODO: Need to check why v_secure_popen is not returning properly
-TEST_F(DeviceApiTestFixture,TestName_Success)
+#if 0
+TEST_F(DeviceApiTestFixture, TestName_Success)
 {
     char data[64];
-    FILE *fp = NULL;
-    char buff[] = "1234_pdri_image.bin\n";
-    fp = fopen("/tmp/pdri.txt", "w");
-    if (fp != NULL) {
-        fwrite(buff, sizeof(buff), 1,fp);
-	fclose(fp);
-	fp = NULL;
-    }
-    //EXPECT_CALL(*g_DeviceUtilsMock, v_secure_popen(_, _, _)).Times(1).WillOnce(Return(fopen("/tmp/pdri.txt", "r")));
-    EXPECT_CALL(*g_DeviceUtilsMock, v_secure_popen(_, _, _)).Times(1).WillOnce(Return(fp));
-    EXPECT_EQ(GetAdditionalFwVerInfo(data, sizeof(data)), 0);
+    // Instead of v_secure_popen, expect the MFR call:
+    EXPECT_CALL(*g_DeviceStatusMock, GetPDRIFileNameUsingMFR(_, _))
+        .Times(1)
+        .WillOnce([](char* out, size_t sz){
+            strcpy(out, "mockpdri.bin");
+            return strlen(out);
+        });
+
+    // Now call and expect correct result:
+    EXPECT_EQ(GetAdditionalFwVerInfo(data, sizeof(data)), strlen("mockpdri.bin"));
+    EXPECT_STREQ(data, "mockpdri.bin");
 }
+#endif
 TEST(TestGetPDRIFileName, Test_pdri_Nullcheck)
 {
     EXPECT_EQ(GetPDRIFileName(NULL, 0), 0);

@@ -55,6 +55,7 @@ class DeviceStatusInterface
 	virtual int write_RFCProperty(const char *key, const char *value, RFCVALDATATYPE datatype) = 0;
 	virtual void uninitialize(int data) = 0;
 	virtual void eventManager(const char *cur_event_name, const char *event_status) = 0;
+	virtual size_t GetPDRIFileNameUsingMFR( char *pPDRIFilename, size_t szBufSize ) = 0;
 	virtual size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize ) = 0;
 	virtual void updateUpgradeFlag(int action) = 0;
 	virtual void t2CountNotify(char *marker) = 0;
@@ -93,6 +94,7 @@ class DeviceStatusMock: public DeviceStatusInterface
     	MOCK_METHOD(void, uninitialize, (int data), ());
     	MOCK_METHOD(void, eventManager, (const char *cur_event_name, const char *event_status), ());
     	MOCK_METHOD(size_t, GetPDRIFileName, ( char *pPDRIFilename, size_t szBufSize ), ());
+    	MOCK_METHOD(size_t, GetPDRIFileNameUsingMFR, ( char *pPDRIFilename, size_t szBufSize ), ());
     	MOCK_METHOD(void, updateUpgradeFlag, (int action), ());
     	MOCK_METHOD(void, t2CountNotify, (char *marker), ());
     	MOCK_METHOD(void, t2ValNotify, (char *marker, char *val), ());

@@ -39,6 +39,18 @@
 //#include "rdkFwupdateMgr_process.h"   /* registerProcess(), unregisterProcess() */
 #include "rdkFwupdateMgr_client.h"    /* checkForUpdate(), downloadFirmware(), 
                                          updateFirmware(), all callbacks/enums  */
+#include "rdkFwupdateMgr_log.h"       /* FWUPMGR_LOG() generic base macro */
+#include "rdkv_cdl_log_wrapper.h"     /* log_init(), log_exit() */
+
+/* ========================================================================
+ * EXAMPLE_* logging macros  use FWUPMGR_LOG with LOG.RDK.EXAMPLE module.
+ * Keeps example_plugin logs as [EXAMPLE], distinguishable from [FWUPMGR]
+ * library logs and [FWUPG] daemon logs.
+ * ======================================================================== */
+#define EXAMPLE_DEBUG(format, ...) FWUPMGR_LOG(RDK_LOG_DEBUG, "LOG.RDK.EXAMPLE", format, ##__VA_ARGS__)
+#define EXAMPLE_INFO(format, ...)  FWUPMGR_LOG(RDK_LOG_INFO,  "LOG.RDK.EXAMPLE", format, ##__VA_ARGS__)
+#define EXAMPLE_WARN(format, ...)  FWUPMGR_LOG(RDK_LOG_WARN,  "LOG.RDK.EXAMPLE", format, ##__VA_ARGS__)
+#define EXAMPLE_ERROR(format, ...) FWUPMGR_LOG(RDK_LOG_ERROR, "LOG.RDK.EXAMPLE", format, ##__VA_ARGS__)
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -104,11 +116,10 @@ static int g_exit_code = EXIT_SUCCESS;
  */
 static void on_firmware_check_callback(const FwInfoData *event_data)
 {
-    printf("\n");
-    printf("│  ✓ checkForUpdate Callback Received                 │\n");
+    EXAMPLE_INFO("checkForUpdate Callback Received\n");
 
     if (!event_data) {
-        fprintf(stderr, "[ERROR] event_data is NULL in callback!\n");
+        EXAMPLE_ERROR("event_data is NULL in callback!\n");
         pthread_mutex_lock(&g_check_mutex);
         g_check_status = FIRMWARE_CHECK_ERROR;
         g_check_done = 1;
@@ -128,40 +139,40 @@ static void on_firmware_check_callback(const FwInfoData *event_data)
         case BYPASS_OPTOUT:          status_str = "BYPASS_OPTOUT";          break;
     }
 
-    printf("\n  === Basic Firmware Info ===\n");
-    printf("  Handle              : %s\n", g_handle ? g_handle : "(null)");
-    printf("  Status Code         : %s (%d)\n", status_str, event_data->status);
-    printf("  Current FW Version  : %s\n", 
+    EXAMPLE_INFO("=== Basic Firmware Info ===\n");
+    EXAMPLE_INFO("  Handle              : %s\n", g_handle ? g_handle : "(null)");
+    EXAMPLE_INFO("  Status Code         : %s (%d)\n", status_str, event_data->status);
+    EXAMPLE_INFO("  Current FW Version  : %s\n", 
            event_data->CurrFWVersion[0] ? event_data->CurrFWVersion : "(not provided)");
 
     /* Print UpdateDetails if available (only when status == FIRMWARE_AVAILABLE) */
     if (event_data->status == FIRMWARE_AVAILABLE && event_data->UpdateDetails) {
-        printf("\n  === Update Details (Available!) ===\n");
-        printf("  FwFileName          : %s\n", 
+        EXAMPLE_INFO("=== Update Details (Available!) ===\n");
+        EXAMPLE_INFO("  FwFileName          : %s\n", 
                event_data->UpdateDetails->FwFileName[0] ? 
                event_data->UpdateDetails->FwFileName : "null");
-        printf("  FwUrl               : %s\n", 
+        EXAMPLE_INFO("  FwUrl               : %s\n", 
                event_data->UpdateDetails->FwUrl[0] ? 
                event_data->UpdateDetails->FwUrl : "null");
-        printf("  FwVersion           : %s\n", 
+        EXAMPLE_INFO("  FwVersion           : %s\n", 
                event_data->UpdateDetails->FwVersion[0] ? 
                event_data->UpdateDetails->FwVersion : "null");
-        printf("  RebootImmediately   : %s\n", 
+        EXAMPLE_INFO("  RebootImmediately   : %s\n", 
                event_data->UpdateDetails->RebootImmediately[0] ? 
                event_data->UpdateDetails->RebootImmediately : "null");
-        printf("  DelayDownload       : %s\n", 
+        EXAMPLE_INFO("  DelayDownload       : %s\n", 
                event_data->UpdateDetails->DelayDownload[0] ? 
                event_data->UpdateDetails->DelayDownload : "null");
-        printf("  PDRIVersion         : %s\n", 
+        EXAMPLE_INFO("  PDRIVersion         : %s\n", 
                event_data->UpdateDetails->PDRIVersion[0] ? 
                event_data->UpdateDetails->PDRIVersion : "null");
-        printf("  PeripheralFirmwares : %s\n", 
+        EXAMPLE_INFO("  PeripheralFirmwares : %s\n", 
                event_data->UpdateDetails->PeripheralFirmwares[0] ? 
                event_data->UpdateDetails->PeripheralFirmwares : "null");
     } else if (event_data->status == FIRMWARE_AVAILABLE && !event_data->UpdateDetails) {
-        printf("\n  ⚠ WARNING: Status is FIRMWARE_AVAILABLE but UpdateDetails is NULL!\n");
+        EXAMPLE_WARN("Status is FIRMWARE_AVAILABLE but UpdateDetails is NULL!\n");
     } else {
-        printf("\n  → No update details (status != FIRMWARE_AVAILABLE)\n");
+        EXAMPLE_INFO("No update details (status != FIRMWARE_AVAILABLE)\n");
     }
 
     /* Copy data to global state (data is only valid during this callback!) */
@@ -219,7 +230,7 @@ static void on_firmware_check_callback(const FwInfoData *event_data)
     pthread_cond_signal(&g_check_cond);
     pthread_mutex_unlock(&g_check_mutex);
 
-    printf("\n  → Firmware check data saved. Main thread will proceed.\n");
+    EXAMPLE_INFO("Firmware check data saved. Main thread will proceed.\n");
 }
 
 /* ========================================================================
@@ -246,13 +257,8 @@ static void on_download_progress_callback(int progress_per, DownloadStatus fwdwn
         case DWNL_ERROR:       status_str = "DWNL_ERROR";       break;
     }
 
-    /* Print progress bar: [████████░░░░░░░░░░░░] 40%  DWNL_IN_PROGRESS */
-    int bar_filled = progress_per / 5;  /* 20 characters = 100% */
-    printf("    [");
-    for (int i = 0; i < 20; i++) {
-        printf(i < bar_filled ? "█" : "░");
-    }
-    printf("] %3d%%  %s\n", progress_per, status_str);
+    /* Print progress: 40%  DWNL_IN_PROGRESS */
+    EXAMPLE_INFO("  Download: %3d%%  %s\n", progress_per, status_str);
 
     /* On terminal states (COMPLETED or ERROR), wake main thread */
     if (fwdwnlstatus == DWNL_COMPLETED || fwdwnlstatus == DWNL_ERROR) {
@@ -263,9 +269,9 @@ static void on_download_progress_callback(int progress_per, DownloadStatus fwdwn
         pthread_mutex_unlock(&g_download_mutex);
 
         if (fwdwnlstatus == DWNL_COMPLETED) {
-            printf("\n    ✓ Download completed successfully!\n\n");
+            EXAMPLE_INFO("  Download completed successfully!\n");
         } else {
-            printf("\n    ✗ Download failed!\n\n");
+            EXAMPLE_ERROR("  Download failed!\n");
         }
     }
 }
@@ -294,13 +300,8 @@ static void on_update_progress_callback(int progress_per, UpdateStatus fwupdates
         case UPDATE_ERROR:       status_str = "UPDATE_ERROR";       break;
     }
 
-    /* Print progress bar: [████████░░░░░░░░░░░░] 40%  UPDATE_IN_PROGRESS */
-    int bar_filled = progress_per / 5;  /* 20 characters = 100% */
-    printf("    [");
-    for (int i = 0; i < 20; i++) {
-        printf(i < bar_filled ? "▓" : "░");
-    }
-    printf("] %3d%%  %s\n", progress_per, status_str);
+    /* Print progress: 40%  UPDATE_IN_PROGRESS */
+    EXAMPLE_INFO("  Flash: %3d%%  %s\n", progress_per, status_str);
 
     /* On terminal states (COMPLETED or ERROR), wake main thread */
     if (fwupdatestatus == UPDATE_COMPLETED || fwupdatestatus == UPDATE_ERROR) {
@@ -311,9 +312,9 @@ static void on_update_progress_callback(int progress_per, UpdateStatus fwupdates
         pthread_mutex_unlock(&g_update_mutex);
 
         if (fwupdatestatus == UPDATE_COMPLETED) {
-            printf("\n    ✓ Firmware flash completed successfully!\n\n");
+            EXAMPLE_INFO("  Firmware flash completed successfully!\n");
         } else {
-            printf("\n    ✗ Firmware flash failed!\n\n");
+            EXAMPLE_ERROR("  Firmware flash failed!\n");
         }
     }
 }
@@ -334,53 +335,57 @@ int main(void)
     struct timespec timeout;
     int rc;
 
-    printf("\n");
-    printf("║   RDK Firmware Update Manager - Complete Workflow    ║\n");
+    /* Initialize logging must be first.
+     * All EXAMPLE_* and FWUPMGR_* log output goes to stdout/stderr.
+     * Shell redirect puts it in the right file:
+     *   example_plugin > /opt/logs/rdkFwupdateMgr.log 2>&1
+     */
+    log_init();
+
+    EXAMPLE_INFO("==============================\n");
+    EXAMPLE_INFO("Application starting, PID: %d\n", getpid());
 
     /* ====================================================================
      * STEP 1: Register Process with Daemon
      * ==================================================================== */
-    printf("│ STEP 1: Register with firmware daemon              │\n");
-    printf("  Process Name : ExampleApp\n");
-    printf("  Lib Version  : 1.0.0\n\n");
+    EXAMPLE_INFO("STEP 1: Register with firmware daemon\n");
+    EXAMPLE_INFO("  Process Name : ExampleApp\n");
+    EXAMPLE_INFO("  Lib Version  : 1.0.0\n");
 
     g_handle = registerProcess("ExampleApp", "1.0.0");
 
     if (g_handle == NULL) {
-        fprintf(stderr, "[ERROR] registerProcess() failed!\n");
-        fprintf(stderr, "        Ensure rdkFwupdateMgr daemon is running:\n");
-        fprintf(stderr, "        systemctl status rdkFwupdateMgr.service\n\n");
+        EXAMPLE_ERROR("registerProcess() failed!\n");
+        EXAMPLE_ERROR("Ensure rdkFwupdateMgr daemon is running:\n");
+        EXAMPLE_ERROR("systemctl status rdkFwupdateMgr.service\n");
+        log_exit();
         return EXIT_FAILURE;
     }
 
-    printf("  ✓ Registered successfully\n");
-    printf("    Handle: '%s'\n\n", g_handle);
+    EXAMPLE_INFO("Registered successfully\n");
+    EXAMPLE_INFO("  Handle: '%s'\n", g_handle);
 
     /* ====================================================================
      * STEP 2: Check for Firmware Updates (Async)
      * ==================================================================== */
-    printf("│ STEP 2: Check for firmware updates                 │\n");
-    printf("  Calling checkForUpdate()...\n");
-    printf("  (API returns immediately; callback fires when XConf query completes)\n\n");
+    EXAMPLE_INFO("STEP 2: Check for firmware updates\n");
+    EXAMPLE_INFO("  Calling checkForUpdate()...\n");
+    EXAMPLE_INFO("  (API returns immediately; callback fires when XConf query completes)\n");
 
     CheckForUpdateResult cfu_result = checkForUpdate(g_handle, on_firmware_check_callback);
 
     if (cfu_result != CHECK_FOR_UPDATE_SUCCESS) {
-        fprintf(stderr, "[ERROR] checkForUpdate() returned FAIL!\n");
-        fprintf(stderr, "        Possible reasons:\n");
-        fprintf(stderr, "          - D-Bus connection error\n");
-        fprintf(stderr, "          - Daemon not responding\n");
-        fprintf(stderr, "          - Invalid handle\n\n");
+        EXAMPLE_ERROR("checkForUpdate() returned FAIL!\n");
+        EXAMPLE_ERROR("Possible reasons: D-Bus error, daemon not responding, invalid handle\n");
         g_exit_code = EXIT_FAILURE;
         goto cleanup_unregister;
     }
 
-    printf("  ✓ checkForUpdate() returned SUCCESS\n");
-    printf("    (Daemon ACK received - waiting for actual firmware data...)\n\n");
+    EXAMPLE_INFO("checkForUpdate() returned SUCCESS\n");
+    EXAMPLE_INFO("  (Daemon ACK received - waiting for actual firmware data...)\n");
 
     /* Wait for callback with timeout (2 minutes for XConf query) */
-    printf("  Waiting for firmware check callback");
-    fflush(stdout);
+    EXAMPLE_INFO("Waiting for firmware check callback...\n");
 
     clock_gettime(CLOCK_REALTIME, &timeout);
     timeout.tv_sec += 120;  /* 2 minute timeout */
@@ -390,8 +395,8 @@ int main(void)
         rc = pthread_cond_timedwait(&g_check_cond, &g_check_mutex, &timeout);
         if (rc != 0) {
             pthread_mutex_unlock(&g_check_mutex);
-            fprintf(stderr, "\n[ERROR] Timeout waiting for checkForUpdate callback (120s)\n");
-            fprintf(stderr, "        XConf query may be taking longer than expected.\n\n");
+            EXAMPLE_ERROR("Timeout waiting for checkForUpdate callback (120s)\n");
+            EXAMPLE_ERROR("XConf query may be taking longer than expected.\n");
             g_exit_code = EXIT_FAILURE;
             goto cleanup_unregister;
         }
@@ -399,31 +404,30 @@ int main(void)
     pthread_mutex_unlock(&g_check_mutex);
 
     /* Check result */
-    printf("\n");
     if (g_check_status != FIRMWARE_AVAILABLE) {
-        printf("  ⚠ No firmware update available\n");
-        printf("    Status: %d\n", g_check_status);
-        printf("    Current Version: %s\n", g_fw_current_version);
+        EXAMPLE_WARN("No firmware update available\n");
+        EXAMPLE_INFO("  Status: %d\n", g_check_status);
+        EXAMPLE_INFO("  Current Version: %s\n", g_fw_current_version);
         
         if (g_check_status == FIRMWARE_NOT_AVAILABLE) {
-            printf("    → Already on latest version. No action needed.\n\n");
+            EXAMPLE_INFO("  Already on latest version. No action needed.\n");
             g_exit_code = EXIT_SUCCESS;
         } else {
-            printf("    → Cannot proceed with update.\n\n");
+            EXAMPLE_ERROR("  Cannot proceed with update.\n");
             g_exit_code = EXIT_FAILURE;
         }
         goto cleanup_unregister;
     }
 
-    printf("  ✓ Firmware update available!\n");
-    printf("    Current Version  : %s\n", g_fw_current_version);
-    printf("    Available Version: %s\n", g_fw_available_version);
-    printf("    → Proceeding to download...\n\n");
+    EXAMPLE_INFO("Firmware update available!\n");
+    EXAMPLE_INFO("  Current Version  : %s\n", g_fw_current_version);
+    EXAMPLE_INFO("  Available Version: %s\n", g_fw_available_version);
+    EXAMPLE_INFO("  Proceeding to download...\n");
 
     /* ====================================================================
      * STEP 3: Download Firmware (Async)
      * ==================================================================== */
-    printf("│ STEP 3: Download firmware image                    │\n");
+    EXAMPLE_INFO("STEP 3: Download firmware image\n");
 
     /* Prepare download request using data from checkForUpdate callback */
     FwDwnlReq download_req;
@@ -437,24 +441,23 @@ int main(void)
     download_req.downloadUrl = fw_url;
     download_req.TypeOfFirmware = "PCI";  /* Default to PCI type */
 
-    printf("  Firmware Name : %s\n", download_req.firmwareName);
-    printf("  Download URL  : %s\n", download_req.downloadUrl[0] ? download_req.downloadUrl : "(use XConf URL)");
-    printf("  Firmware Type : %s\n\n", download_req.TypeOfFirmware);
+    EXAMPLE_INFO("  Firmware Name : %s\n", download_req.firmwareName);
+    EXAMPLE_INFO("  Download URL  : %s\n", download_req.downloadUrl[0] ? download_req.downloadUrl : "(use XConf URL)");
+    EXAMPLE_INFO("  Firmware Type : %s\n", download_req.TypeOfFirmware);
 
-    printf("  Calling downloadFirmware()...\n\n");
+    EXAMPLE_INFO("  Calling downloadFirmware()...\n");
 
     DownloadResult dl_result = downloadFirmware(g_handle, &download_req, 
                                                  on_download_progress_callback);
 
     if (dl_result != RDKFW_DWNL_SUCCESS) {
-        fprintf(stderr, "[ERROR] downloadFirmware() returned FAIL!\n\n");
+        EXAMPLE_ERROR("downloadFirmware() returned FAIL!\n");
         g_exit_code = EXIT_FAILURE;
         goto cleanup_unregister;
     }
 
-    printf("  ✓ downloadFirmware() returned SUCCESS\n");
-    printf("    Waiting for download progress...\n\n");
-    printf("  Download Progress:\n");
+    EXAMPLE_INFO("downloadFirmware() returned SUCCESS\n");
+    EXAMPLE_INFO("  Waiting for download progress...\n");
 
     /* Wait for download completion with timeout (5 minutes) */
     clock_gettime(CLOCK_REALTIME, &timeout);
@@ -465,7 +468,7 @@ int main(void)
         rc = pthread_cond_timedwait(&g_download_cond, &g_download_mutex, &timeout);
         if (rc != 0) {
             pthread_mutex_unlock(&g_download_mutex);
-            fprintf(stderr, "[ERROR] Timeout waiting for download completion (5 min)\n\n");
+            EXAMPLE_ERROR("Timeout waiting for download completion (5 min)\n");
             g_exit_code = EXIT_FAILURE;
             goto cleanup_unregister;
         }
@@ -474,17 +477,17 @@ int main(void)
 
     /* Check download result */
     if (g_download_status != DWNL_COMPLETED) {
-        fprintf(stderr, "[ERROR] Download failed (status=%d)\n\n", g_download_status);
+        EXAMPLE_ERROR("Download failed (status=%d)\n", g_download_status);
         g_exit_code = EXIT_FAILURE;
         goto cleanup_unregister;
     }
 
-    printf("  → Download complete. Proceeding to flash...\n\n");
+    EXAMPLE_INFO("Download complete. Proceeding to flash...\n");
 
     /* ====================================================================
      * STEP 4: Update/Flash Firmware (Async)
      * ==================================================================== */
-    printf("│ STEP 4: Flash firmware to device                   │\n");
+    EXAMPLE_INFO("STEP 4: Flash firmware to device\n");
 
     /* Prepare update request */
     FwUpdateReq update_req;
@@ -506,25 +509,24 @@ int main(void)
     /* Reboot after flash: false for this example (so we can unregister cleanly) */
     update_req.rebootImmediately = false;
 
-    printf("  Firmware Name  : %s\n", update_req.firmwareName);
-    printf("  Firmware Type  : %s\n", update_req.TypeOfFirmware);
-    printf("  Location       : %s\n", update_req.LocationOfFirmware);
-    printf("  Reboot Now     : %s\n\n", update_req.rebootImmediately ? "true" : "false");
+    EXAMPLE_INFO("  Firmware Name  : %s\n", update_req.firmwareName);
+    EXAMPLE_INFO("  Firmware Type  : %s\n", update_req.TypeOfFirmware);
+    EXAMPLE_INFO("  Location       : %s\n", update_req.LocationOfFirmware);
+    EXAMPLE_INFO("  Reboot Now     : %s\n", update_req.rebootImmediately ? "true" : "false");
 
-    printf("  Calling updateFirmware()...\n\n");
+    EXAMPLE_INFO("  Calling updateFirmware()...\n");
 
     UpdateResult upd_result = updateFirmware(g_handle, &update_req,
                                               on_update_progress_callback);
 
     if (upd_result != RDKFW_UPDATE_SUCCESS) {
-        fprintf(stderr, "[ERROR] updateFirmware() returned FAIL!\n\n");
+        EXAMPLE_ERROR("updateFirmware() returned FAIL!\n");
         g_exit_code = EXIT_FAILURE;
         goto cleanup_unregister;
     }
 
-    printf("  ✓ updateFirmware() returned SUCCESS\n");
-    printf("    Waiting for flash progress...\n\n");
-    printf("  Flash Progress:\n");
+    EXAMPLE_INFO("updateFirmware() returned SUCCESS\n");
+    EXAMPLE_INFO("  Waiting for flash progress...\n");
 
     /* Wait for flash completion with timeout (10 minutes) */
     clock_gettime(CLOCK_REALTIME, &timeout);
@@ -535,7 +537,7 @@ int main(void)
         rc = pthread_cond_timedwait(&g_update_cond, &g_update_mutex, &timeout);
         if (rc != 0) {
             pthread_mutex_unlock(&g_update_mutex);
-            fprintf(stderr, "[ERROR] Timeout waiting for flash completion (10 min)\n\n");
+            EXAMPLE_ERROR("Timeout waiting for flash completion (10 min)\n");
             g_exit_code = EXIT_FAILURE;
             goto cleanup_unregister;
         }
@@ -544,42 +546,41 @@ int main(void)
 
     /* Check flash result */
     if (g_update_status != UPDATE_COMPLETED) {
-        fprintf(stderr, "[ERROR] Firmware flash failed (status=%d)\n\n", g_update_status);
+        EXAMPLE_ERROR("Firmware flash failed (status=%d)\n", g_update_status);
         g_exit_code = EXIT_FAILURE;
         goto cleanup_unregister;
     }
 
-    printf("  → Flash complete!\n\n");
+    EXAMPLE_INFO("Flash complete!\n");
 
     /* ====================================================================
      * STEP 5: Unregister and Cleanup
      * ==================================================================== */
 cleanup_unregister:
-    printf("│ STEP 5: Unregister from daemon                     │\n");
+    EXAMPLE_INFO("STEP 5: Unregister from daemon\n");
 
     if (g_handle != NULL) {
-        printf("  Calling unregisterProcess()...\n");
+        EXAMPLE_INFO("  Calling unregisterProcess()...\n");
         unregisterProcess(g_handle);
         g_handle = NULL;
-        printf("  ✓ Unregistered successfully\n\n");
+        EXAMPLE_INFO("  Unregistered successfully\n");
     }
 
     /* ====================================================================
      * Final Status
      * ==================================================================== */
     if (g_exit_code == EXIT_SUCCESS) {
-        printf("║   ✓ FIRMWARE UPDATE WORKFLOW COMPLETED               ║\n");
+        EXAMPLE_INFO("FIRMWARE UPDATE WORKFLOW COMPLETED\n");
         if (g_update_status == UPDATE_COMPLETED) {
-            printf("  ⚠ NOTE: Firmware flashed successfully.\n");
-            printf("          System reboot required to activate new firmware.\n");
-            printf("          Use: systemctl reboot\n\n");
+            EXAMPLE_INFO("  Firmware flashed successfully.\n");
+            EXAMPLE_INFO("  System reboot required to activate new firmware.\n");
         }
     } else {
-        printf("║   ✗ FIRMWARE UPDATE WORKFLOW FAILED                  ║\n");
-        printf("  Check logs for details:\n");
-        printf("    tail -f /opt/logs/rdkFwupdateMgr.log\n\n");
+        EXAMPLE_ERROR("FIRMWARE UPDATE WORKFLOW FAILED\n");
+        EXAMPLE_INFO("  Check logs for details: tail -f /opt/logs/rdkFwupdateMgr.log\n");
     }
 
+    log_exit();
     return g_exit_code;
 }
 
