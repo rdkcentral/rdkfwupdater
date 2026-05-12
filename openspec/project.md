@@ -117,7 +117,8 @@ Trigger types: `1`=Bootup, `2`=Scheduled, `3`=TR-69/SNMP, `4`=App, `5`=Delayed, 
 
 The one-shot binary performs the entire firmware update lifecycle in a single process invocation. It communicates directly with the XConf server, downloads firmware via HTTP/HTTPS, flashes the image, and exits. On fatal errors, it calls `exit()`.
 
-> **Detailed flow:** [runtime/rdkvfwupgrader-lifecycle.md](runtime/rdkvfwupgrader-lifecycle.md)
+> **Detailed flow:** [runtime/rdkvfwupgrader-lifecycle.md](runtime/rdkvfwupgrader-lifecycle.md)  
+> **Deep sequence analysis:** [runtime/rdkvfwupgrader-sequence.md](runtime/rdkvfwupgrader-sequence.md)
 
 ### 4.2 Daemon Model (`rdkFwupdateMgr`)
 
@@ -129,7 +130,9 @@ The one-shot binary performs the entire firmware update lifecycle in a single pr
 
 The daemon initializes D-Bus service, performs device validation, then enters the GLib main event loop indefinitely. All firmware operations (check, download, flash) are triggered by D-Bus method calls from client applications and executed asynchronously using GTask worker threads.
 
-> **Detailed flow:** [runtime/rdkFwupdateMgr-lifecycle.md](runtime/rdkFwupdateMgr-lifecycle.md)
+> **Detailed flow:** [runtime/rdkFwupdateMgr-lifecycle.md](runtime/rdkFwupdateMgr-lifecycle.md)  
+> **Deep sequence analysis:** [runtime/rdkFwupdateMgr-sequence.md](runtime/rdkFwupdateMgr-sequence.md)  
+> **Threading model:** [runtime/daemon-threading-model.md](runtime/daemon-threading-model.md)
 
 ### 4.3 Client Library (`librdkFwupdateMgr.so`)
 
@@ -145,7 +148,8 @@ The shared library provides a C API for applications to interact with the daemon
 
 **Threading model:** The library spawns a background GLib event loop thread at first `registerProcess()` call. This thread subscribes to D-Bus signals and dispatches callbacks. Callers typically use mutex+condvar to synchronize with callbacks.
 
-> **Detailed architecture:** [subsystems/client-library.md](subsystems/client-library.md)
+> **Detailed architecture:** [subsystems/client-library.md](subsystems/client-library.md)  
+> **End-to-end interaction flow:** [runtime/client-daemon-interaction.md](runtime/client-daemon-interaction.md)
 
 ---
 
@@ -246,6 +250,10 @@ Used to query MaintenanceManager mode via JSON-RPC over HTTP to WPEFramework's l
 | rdkFwupdateMgr Lifecycle | [runtime/rdkFwupdateMgr-lifecycle.md](runtime/rdkFwupdateMgr-lifecycle.md) | Daemon lifecycle, GLib main loop, state machine, shutdown |
 | Client Library Architecture | [subsystems/client-library.md](subsystems/client-library.md) | Library internals, callback registry, background thread, signal dispatch |
 | Firmware Update Flows | [runtime/firmware-update-flows.md](runtime/firmware-update-flows.md) | End-to-end sequence diagrams for check/download/flash operations |
+| **rdkvfwupgrader Sequence** | [runtime/rdkvfwupgrader-sequence.md](runtime/rdkvfwupgrader-sequence.md) | **Deep execution-flow analysis: blocking operations, SIGUSR1 handling, throttle interaction, Gantt timeline** |
+| **rdkFwupdateMgr Sequence** | [runtime/rdkFwupdateMgr-sequence.md](runtime/rdkFwupdateMgr-sequence.md) | **Deep daemon lifecycle: state machine, CheckForUpdate/Download/Flash GTask flows, concurrency controls, shutdown** |
+| **Client-Daemon Interaction** | [runtime/client-daemon-interaction.md](runtime/client-daemon-interaction.md) | **End-to-end flow from app→library→D-Bus→daemon→worker→signal→callback, D-Bus message formats, timing profile** |
+| **Daemon Threading Model** | [runtime/daemon-threading-model.md](runtime/daemon-threading-model.md) | **Thread inventory, synchronization primitives, cross-thread data flow, GLib async patterns (GTask, g_idle_add, GThread)** |
 | Architecture Diagrams | [diagrams/](diagrams/) | Mermaid-format sequence and interaction diagrams |
 | Gaps & Unknowns | [gaps-and-unknowns.md](gaps-and-unknowns.md) | Areas requiring manual validation, unverified assumptions |
 
