@@ -13,7 +13,7 @@
 
 The system supports three categories of firmware artifacts:
 - **PCI** — Primary Customer Image (main device firmware)
-- **PDRI** — Platform Data Runtime Image (supplementary data image)
+- **PDRI** — Primary Disaster Recovery Image (Backup working image)
 - **Peripheral** — Peripheral device firmware (e.g., remote control firmware)
 
 ---
