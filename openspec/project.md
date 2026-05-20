@@ -12,8 +12,8 @@
 `rdkfwupdater` is production-grade firmware update infrastructure for RDK-V (Reference Design Kit for Video) embedded Linux devices. It manages the complete firmware lifecycle: checking for updates via XConf cloud server, downloading firmware images over HTTP/HTTPS, flashing them to the device, and coordinating reboot.
 
 The system supports three categories of firmware artifacts:
-- **PCI** — Primary Chip Image (main device firmware)
-- **PDRI** — Platform Data Runtime Image (supplementary data image)
+- **PCI** — Primary Customer Image (main device firmware)
+- **PDRI** — Primary Disaster Recovery Image (Backup working image)
 - **Peripheral** — Peripheral device firmware (e.g., remote control firmware)
 
 ---
