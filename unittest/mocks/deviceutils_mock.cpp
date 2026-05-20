@@ -220,6 +220,14 @@ extern "C" bool isDebugServicesEnabled(void) {
         return g_DeviceUtilsMock->isDebugServicesEnabled();
     }
 
+extern "C" bool isDirectCDNEnabled(void) {
+        if (!g_DeviceUtilsMock) {
+            cout << "isDirectCDNEnabled g_DeviceUtilsMock object is NULL" << endl;
+            return false;
+        }
+        return g_DeviceUtilsMock->isDirectCDNEnabled();
+    }
+
 extern "C" size_t GetHwMacAddress( char *iface, char *pMac, size_t szBufSize )
 {
     if (!g_DeviceUtilsMock)

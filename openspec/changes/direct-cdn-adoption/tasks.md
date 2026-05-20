@@ -1,10 +1,10 @@
 ## 1. RFC Feature Gate
 
-- [ ] 1.1 Add `rfc_directcdn[RFC_VALUE_BUF_SIZE]` field to `Rfc_t` struct in `src/include/rfcinterface.h`
-- [ ] 1.2 Add `#define RFC_DIRECTCDN` macro in `src/include/rfcinterface.h`
-- [ ] 1.3 Implement `isDirectCDNEnabled()` function in `src/rfcInterface/rfcinterface.c`
-- [ ] 1.4 Add `rfc_directcdn` read to `getRFCSettings()` in `src/rfcInterface/rfcinterface.c`
-- [ ] 1.5 Add L1 unit tests for `isDirectCDNEnabled()` (true/false/absent cases)
+- [x] 1.1 Add `rfc_directcdn[RFC_VALUE_BUF_SIZE]` field to `Rfc_t` struct in `src/include/rfcinterface.h`
+- [x] 1.2 Add `#define RFC_DIRECTCDN` macro in `src/include/rfcinterface.h`
+- [x] 1.3 Implement `isDirectCDNEnabled()` function in `src/rfcInterface/rfcinterface.c`
+- [x] 1.4 Add `rfc_directcdn` read to `getRFCSettings()` in `src/rfcInterface/rfcinterface.c`
+- [x] 1.5 Add L1 unit tests for `isDirectCDNEnabled()` (true/false/absent cases)
 
 ## 2. XConf URL Path Branching & Codebig Bypass
 
