@@ -106,9 +106,7 @@ int read_RFCProperty(char* type, const char* key, char *out_value, size_t datasi
         return ret;
     }
     //SWLOG_INFO("key=%s\n", key);
-    SWLOG_INFO("read_RFCProperty: type=%s key=%s\n", type, key);
     WDMP_STATUS status = getRFCParameter(type, key, &param);
-    SWLOG_INFO("read_RFCProperty: status =%d\n", status);
     if(status == WDMP_SUCCESS || status == WDMP_ERR_DEFAULT_VALUE) {
         data_len = strlen(param.value);
         if(data_len >= 2 && (param.value[0] == '"') && (param.value[data_len - 1] == '"')) {
