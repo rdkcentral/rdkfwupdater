@@ -378,6 +378,17 @@ extern "C" void t2ValNotify(char *marker, char *val)
     return g_DeviceStatusMock->t2ValNotify(marker, val);
 }
 
+extern "C" bool isDirectCDNEnabled(void)
+{
+    if (!g_DeviceStatusMock)
+    {
+        cout << "isDirectCDNEnabled g_DeviceStatusMock object is NULL" << endl;
+        return false;
+    }
+    printf("Inside Mock Function isDirectCDNEnabled\n");
+    return g_DeviceStatusMock->isDirectCDNEnabled();
+}
+
 // Mock for swLog (logging function from common_utilities)
 extern "C" int swLog(int level, const char* format, ...)
 {

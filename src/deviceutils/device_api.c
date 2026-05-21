@@ -989,7 +989,14 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
                     GetTR181Url( eBootstrap, buf, sizeof(buf) );
                     if( *buf != 0 )
                     {
-                        len = snprintf( pServURL, szBufSize, "%s/xconf/swu/stb", buf );    // default value
+                        if( isDirectCDNEnabled() )
+                        {
+                            len = snprintf( pServURL, szBufSize, "%s/xconf/firmware/stb/", buf );
+                        }
+                        else
+                        {
+                            len = snprintf( pServURL, szBufSize, "%s/xconf/swu/stb", buf );    // default value
+                        }
                     }
                     else
                     {
@@ -1000,7 +1007,14 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
                         else
                         {
                             GetTR181Url( eXconf, buf, sizeof(buf) );
-                            len = snprintf( pServURL, szBufSize, "https://%s/xconf/swu/stb/", buf );
+                            if( isDirectCDNEnabled() )
+                            {
+                                len = snprintf( pServURL, szBufSize, "https://%s/xconf/firmware/stb/", buf );
+                            }
+                            else
+                            {
+                                len = snprintf( pServURL, szBufSize, "https://%s/xconf/swu/stb/", buf );
+                            }
                         }
                     }
                 }

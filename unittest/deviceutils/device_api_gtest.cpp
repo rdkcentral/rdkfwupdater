@@ -951,3 +951,66 @@ TEST_F(DeviceApiTestFixture,TestName_GetRemoteVers_Fail)
     char pRemoteInfo[256] = {0};
     EXPECT_EQ(GetRemoteVers(pRemoteInfo, sizeof(pRemoteInfo)), 0);
 }
+
+/* Direct CDN: GetServURL must return /xconf/firmware/stb/ when isDirectCDNEnabled() is true (bootstrap path) */
+TEST_F(DeviceApiTestFixture, TestName_GetServURL_DirectCDN_Bootstrap)
+{
+    char output[128];
+    int ret;
+    char servUrl[] = "https://xconf.example.com";
+
+    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(false));
+    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(false));
+    EXPECT_CALL(*g_DeviceUtilsMock, isDirectCDNEnabled()).WillRepeatedly(Return(true));
+
+    ret = system("echo \"BUILD_TYPE=PROD\" > /tmp/device_gtest.prop");
+    ret = system("rm -f /tmp/swupdate.conf");
+
+    /* Mock the bootstrap TR181 URL read */
+    EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _))
+        .Times(1)
+        .WillOnce(Invoke([&servUrl](char* type, const char* key, char *out_value, size_t datasize) {
+            strncpy(out_value, servUrl, datasize - 1);
+            out_value[datasize - 1] = '\0';
+            return (int)strlen(out_value);
+        }));
+
+    ret = GetServURL(output, sizeof(output));
+    EXPECT_GT(ret, 0);
+    EXPECT_NE(strstr(output, "/xconf/firmware/stb/"), nullptr);
+    EXPECT_EQ(strstr(output, "/xconf/swu/stb"), nullptr);
+
+    ret = system("rm -f /tmp/device_gtest.prop");
+    printf("DirectCDN Bootstrap URL = %s\n", output);
+}
+
+/* Direct CDN disabled: GetServURL must still return /xconf/swu/stb (bootstrap path, legacy) */
+TEST_F(DeviceApiTestFixture, TestName_GetServURL_DirectCDN_Disabled_Bootstrap)
+{
+    char output[128];
+    int ret;
+    char servUrl[] = "https://xconf.example.com";
+
+    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(false));
+    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(false));
+    EXPECT_CALL(*g_DeviceUtilsMock, isDirectCDNEnabled()).WillRepeatedly(Return(false));
+
+    ret = system("echo \"BUILD_TYPE=PROD\" > /tmp/device_gtest.prop");
+    ret = system("rm -f /tmp/swupdate.conf");
+
+    EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _))
+        .Times(1)
+        .WillOnce(Invoke([&servUrl](char* type, const char* key, char *out_value, size_t datasize) {
+            strncpy(out_value, servUrl, datasize - 1);
+            out_value[datasize - 1] = '\0';
+            return (int)strlen(out_value);
+        }));
+
+    ret = GetServURL(output, sizeof(output));
+    EXPECT_GT(ret, 0);
+    EXPECT_NE(strstr(output, "/xconf/swu/stb"), nullptr);
+    EXPECT_EQ(strstr(output, "/xconf/firmware/stb/"), nullptr);
+
+    ret = system("rm -f /tmp/device_gtest.prop");
+    printf("Legacy Bootstrap URL = %s\n", output);
+}

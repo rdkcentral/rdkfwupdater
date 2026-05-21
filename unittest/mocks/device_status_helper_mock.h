@@ -61,6 +61,7 @@ class DeviceStatusInterface
 	virtual void t2CountNotify(char *marker) = 0;
 	virtual void t2ValNotify(char *marker, char *val) = 0;
 	virtual int v_secure_system(const char *str ) = 0;
+	virtual bool isDirectCDNEnabled() = 0;
 };
 
 class DeviceStatusMock: public DeviceStatusInterface
@@ -89,6 +90,7 @@ class DeviceStatusMock: public DeviceStatusInterface
     	MOCK_METHOD(int, filePresentCheck, (const char *filename ), ());
     	MOCK_METHOD(bool, isConnectedToInternet, (), ());
     	MOCK_METHOD(int, v_secure_system, (const char *str ), ());
+    	MOCK_METHOD(bool, isDirectCDNEnabled, (), ());
     	//MOCK_METHOD(int, updateFWDownloadStatus, (struct FWDownloadStatus *fwdls, const char *disableStatsUpdate), ());
     	MOCK_METHOD(int, write_RFCProperty, (const char *key, const char *value, RFCVALDATATYPE datatype), ());
     	MOCK_METHOD(void, uninitialize, (int data), ());

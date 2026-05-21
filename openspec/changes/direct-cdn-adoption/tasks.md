@@ -8,10 +8,10 @@
 
 ## 2. XConf URL Path Branching & Codebig Bypass
 
-- [ ] 2.1 Modify `GetServURL()` in `src/deviceutils/device_api.c` to branch URL path on `isDirectCDNEnabled()`
-- [ ] 2.2 Modify `checkCodebigAccess()` in `src/device_status_helper.c` to return false when Direct CDN enabled
-- [ ] 2.3 Add L1 unit tests for `GetServURL()` path branching
-- [ ] 2.4 Add L1 unit tests for `checkCodebigAccess()` bypass
+- [x] 2.1 Modify `GetServURL()` in `src/deviceutils/device_api.c` to branch URL path on `isDirectCDNEnabled()`
+- [x] 2.2 Modify `checkCodebigAccess()` in `src/device_status_helper.c` to return false when Direct CDN enabled
+- [x] 2.3 Add L1 unit tests for `GetServURL()` path branching
+- [x] 2.4 Add L1 unit tests for `checkCodebigAccess()` bypass
 
 ## 3. Enriched XConf Response Parsing
 
