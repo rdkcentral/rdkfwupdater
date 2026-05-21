@@ -1014,3 +1014,84 @@ TEST_F(DeviceApiTestFixture, TestName_GetServURL_DirectCDN_Disabled_Bootstrap)
     ret = system("rm -f /tmp/device_gtest.prop");
     printf("Legacy Bootstrap URL = %s\n", output);
 }
+
+/* Direct CDN: GetServURL must return https://<host>/xconf/firmware/stb/ when isDirectCDNEnabled() is true
+   and bootstrap URL is empty (xconf-host path) */
+TEST_F(DeviceApiTestFixture, TestName_GetServURL_DirectCDN_XconfHost)
+{
+    char output[128];
+    int ret;
+    char xconfHost[] = "xconf-prod.example.com";
+
+    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(false));
+    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(false));
+    EXPECT_CALL(*g_DeviceUtilsMock, isDirectCDNEnabled()).WillRepeatedly(Return(true));
+
+    ret = system("echo \"BUILD_TYPE=PROD\" > /tmp/device_gtest.prop");
+    ret = system("rm -f /tmp/swupdate.conf");
+
+    /* First read_RFCProperty call: eBootstrap → failure (empty), Second: eXconf → hostname */
+    EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _))
+        .Times(2)
+        .WillOnce(Return(-1))
+        .WillOnce(Invoke([&xconfHost](char* type, const char* key, char *out_value, size_t datasize) {
+            strncpy(out_value, xconfHost, datasize - 1);
+            out_value[datasize - 1] = '\0';
+            return (int)strlen(out_value);
+        }));
+
+    ret = GetServURL(output, sizeof(output));
+    EXPECT_GT(ret, 0);
+    EXPECT_NE(strstr(output, "/xconf/firmware/stb/"), nullptr);
+    EXPECT_EQ(strstr(output, "/xconf/swu/stb"), nullptr);
+    EXPECT_NE(strstr(output, "https://"), nullptr);
+
+    ret = system("rm -f /tmp/device_gtest.prop");
+    printf("DirectCDN XconfHost URL = %s\n", output);
+}
+
+/* Direct CDN: GetServURL must return <host>/xconf/firmware/stb/ when isDirectCDNEnabled() is true
+   and device is in State Red (recovery path) */
+TEST_F(DeviceApiTestFixture, TestName_GetServURL_DirectCDN_StateRed_Recovery)
+{
+    char output[128];
+    int ret;
+    char recoveryUrl[] = "https://recovery.example.com";
+
+    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(true));
+    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(false));
+    EXPECT_CALL(*g_DeviceUtilsMock, isDirectCDNEnabled()).WillRepeatedly(Return(true));
+    EXPECT_CALL(*g_DeviceUtilsMock, getDeviceTypeRFC(_, _))
+        .Times(1)
+        .WillOnce(Invoke([](char* deviceType, size_t size) {
+            strncpy(deviceType, "test", size - 1);
+            deviceType[size - 1] = '\0';
+        }));
+    EXPECT_CALL(*g_DeviceUtilsMock, getDevicePropertyData(StrEq("LABSIGNED_ENABLED"), _, _))
+        .Times(1)
+        .WillOnce(Invoke([](const char* /*model*/, char* data, int size) {
+            strncpy(data, "true", size - 1);
+            data[size - 1] = '\0';
+            return 0;
+        }));
+
+    ret = system("echo \"BUILD_TYPE=PROD\" > /tmp/device_gtest.prop");
+    ret = system("rm -f /tmp/stateredrecovry.conf");
+
+    /* read_RFCProperty call: eRecovery → recovery host URL */
+    EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _))
+        .Times(1)
+        .WillOnce(Invoke([&recoveryUrl](char* type, const char* key, char *out_value, size_t datasize) {
+            strncpy(out_value, recoveryUrl, datasize - 1);
+            out_value[datasize - 1] = '\0';
+            return (int)strlen(out_value);
+        }));
+
+    ret = GetServURL(output, sizeof(output));
+    EXPECT_GT(ret, 0);
+    EXPECT_NE(strstr(output, "/xconf/firmware/stb/"), nullptr);
+    EXPECT_EQ(strstr(output, "/xconf/swu/stb"), nullptr);
+
+    ret = system("rm -f /tmp/device_gtest.prop");
+    printf("DirectCDN StateRed Recovery URL = %s\n", output);
+}

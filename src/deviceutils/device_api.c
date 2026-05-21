@@ -959,7 +959,19 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
             }
             if( len == 0 || *pServURL == 0 )
             {
-                len = GetTR181Url( eRecovery, pServURL, szBufSize );
+                *buf = 0;
+                GetTR181Url( eRecovery, buf, sizeof(buf) );
+                if( *buf != 0 )
+                {
+                    if( isDirectCDNEnabled() )
+                    {
+                        len = snprintf( pServURL, szBufSize, "%s/xconf/firmware/stb/", buf );
+                    }
+                    else
+                    {
+                        len = snprintf( pServURL, szBufSize, "%s/xconf/swu/stb", buf );
+                    }
+                }
             }
         }
         else
