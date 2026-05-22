@@ -15,13 +15,13 @@
 
 ## 3. Enriched XConf Response Parsing
 
-- [ ] 3.1 Add `firmwareUrl`, `pdriUrl`, `remCtrlUrl` fields to `XCONFRES` in `src/include/json_process.h`
-- [ ] 3.2 Add conditional per-artifact URL parsing to `getXconfRespData()` in `src/json_process.c`
-- [ ] 3.3 Add `getPeripheralProduct()` function to `src/deviceutils/deviceutils.c` and declare in `deviceutils.h`
-- [ ] 3.4 Cache peripheral product in `BuildRemoteInfo()` in `src/deviceutils/deviceutils.c`
-- [ ] 3.5 Add PDRI `_PDRI_` substring validation in `processJsonResponse()` in `src/json_process.c`
-- [ ] 3.6 Add L1 unit tests for enriched parsing (directCdn=true and directCdn=false)
-- [ ] 3.7 Add L1 unit tests for `getPeripheralProduct()` and PDRI validation
+- [x] 3.1 Add `firmwareUrl`, `pdriUrl`, `remCtrlUrl` fields to `XCONFRES` in `src/include/json_process.h`
+- [x] 3.2 Add conditional per-artifact URL parsing to `getXconfRespData()` in `src/json_process.c`
+- [x] 3.3 Add `getPeripheralProduct()` function to `src/deviceutils/deviceutils.c` and declare in `deviceutils.h`
+- [x] 3.4 Cache peripheral product in `BuildRemoteInfo()` in `src/deviceutils/deviceutils.c`
+- [x] 3.5 Add PDRI `_PDRI_` substring validation in `processJsonResponse()` in `src/json_process.c`
+- [x] 3.6 Add L1 unit tests for enriched parsing (directCdn=true and directCdn=false)
+- [x] 3.7 Add L1 unit tests for `getPeripheralProduct()` and PDRI validation
 
 ## 4. Per-Artifact Download Orchestration
 
