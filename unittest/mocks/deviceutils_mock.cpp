@@ -228,6 +228,15 @@ extern "C" bool isDirectCDNEnabled(void) {
         return g_DeviceUtilsMock->isDirectCDNEnabled();
     }
 
+#ifdef HANDLER_TEST_ONLY
+/* Stub for test binaries that don't link real deviceutils.c */
+extern "C" int getPeripheralProduct(char *buf, size_t szIn) {
+        if (buf == NULL || szIn == 0) return -1;
+        snprintf(buf, szIn, "%s", "remCtrl");
+        return 0;
+    }
+#endif
+
 extern "C" size_t GetHwMacAddress( char *iface, char *pMac, size_t szBufSize )
 {
     if (!g_DeviceUtilsMock)

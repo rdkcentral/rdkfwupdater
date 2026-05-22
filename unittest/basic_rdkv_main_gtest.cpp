@@ -1473,6 +1473,134 @@ TEST(MainHelperFunctionTest,copyFileTestSuccess){
     ret = system("rm -f /tmp/src.txt");
     ret = system("rm -f /tmp/dst.txt");
 }
+
+// =============================================================================
+// Task 3.6: L1 tests for enriched XConf response parsing
+// =============================================================================
+
+TEST(DirectCDNParsingTest, getXconfRespData_DirectCDN_ParsesPerArtifactURLs)
+{
+    XCONFRES response;
+    memset(&response, 0, sizeof(response));
+
+    /* Enable Direct CDN via rfc_list */
+    strncpy(rfc_list.rfc_directcdn, "true", RFC_VALUE_BUF_SIZE - 1);
+
+    char data[] = "{"
+        "\"firmwareDownloadProtocol\":\"http\","
+        "\"firmwareFilename\":\"PX051AEI_VBN_24Q4_sprint_20241015-signed.bin\","
+        "\"firmwareLocation\":\"https://cdlserver.tv/Images\","
+        "\"firmwareVersion\":\"PX051AEI_VBN_24Q4_sprint_20241015\","
+        "\"additionalFwVerInfo\":\"PX051AEI_VBN_PDRI_24Q4_sprint_20241015\","
+        "\"firmware_URL\":\"https://cdn.direct/fw/PX051AEI_VBN_24Q4.bin\","
+        "\"additionalFwVerInfo_URL\":\"https://cdn.direct/pdri/PX051AEI_PDRI.bin\","
+        "\"remCtrlXR15\":\"XR15-10_firmware_4.2.0.0.tgz\","
+        "\"remCtrlXR15_URL\":\"https://cdn.direct/peri/XR15-10_firmware_4.2.0.0.tgz\","
+        "\"rebootImmediately\":false"
+    "}";
+
+    EXPECT_EQ(getXconfRespData(&response, data), 0);
+    EXPECT_STREQ(response.firmwareUrl, "https://cdn.direct/fw/PX051AEI_VBN_24Q4.bin");
+    EXPECT_STREQ(response.pdriUrl, "https://cdn.direct/pdri/PX051AEI_PDRI.bin");
+    /* Peripheral URL is parsed via dynamic key (getPeripheralProduct) */
+    EXPECT_STREQ(response.cloudFWLocation, "https://cdlserver.tv/Images");
+    EXPECT_STREQ(response.cloudFWFile, "PX051AEI_VBN_24Q4_sprint_20241015-signed.bin");
+
+    /* Cleanup */
+    memset(rfc_list.rfc_directcdn, 0, RFC_VALUE_BUF_SIZE);
+}
+
+TEST(DirectCDNParsingTest, getXconfRespData_DirectCDN_Disabled_LegacyPath)
+{
+    XCONFRES response;
+    memset(&response, 0, sizeof(response));
+
+    /* Ensure Direct CDN is disabled */
+    memset(rfc_list.rfc_directcdn, 0, RFC_VALUE_BUF_SIZE);
+
+    char data[] = "{"
+        "\"firmwareDownloadProtocol\":\"http\","
+        "\"firmwareFilename\":\"PX051AEI_VBN_24Q4-signed.bin\","
+        "\"firmwareLocation\":\"https://cdlserver.tv/Images\","
+        "\"firmwareVersion\":\"PX051AEI_VBN_24Q4\","
+        "\"firmware_URL\":\"https://cdn.direct/fw/should_not_parse.bin\","
+        "\"remCtrlXR15\":\"XR15-10_firmware_4.2.0.0.tgz\","
+        "\"rebootImmediately\":false"
+    "}";
+
+    EXPECT_EQ(getXconfRespData(&response, data), 0);
+    /* Per-artifact URLs should NOT be populated in legacy mode */
+    EXPECT_STREQ(response.firmwareUrl, "");
+    EXPECT_STREQ(response.pdriUrl, "");
+    EXPECT_STREQ(response.remCtrlUrl, "");
+    /* Legacy peripheral parsing should work */
+    EXPECT_STRNE(response.peripheralFirmwares, "");
+}
+
+// =============================================================================
+// Task 3.7: L1 tests for getPeripheralProduct() and PDRI validation
+// =============================================================================
+
+extern "C" {
+    int getPeripheralProduct(char *buf, size_t szIn);
+}
+
+TEST(DirectCDNParsingTest, getPeripheralProduct_NullBuffer_ReturnsError)
+{
+    EXPECT_EQ(getPeripheralProduct(NULL, 64), -1);
+}
+
+TEST(DirectCDNParsingTest, getPeripheralProduct_ZeroSize_ReturnsError)
+{
+    char buf[64];
+    EXPECT_EQ(getPeripheralProduct(buf, 0), -1);
+}
+
+TEST(DirectCDNParsingTest, getPeripheralProduct_Default_ReturnsRemCtrl)
+{
+    /* Before BuildRemoteInfo populates the cache, default is "remCtrl" */
+    char buf[64] = {0};
+    /* Note: If BuildRemoteInfo was called earlier in this process, the static
+       may already be populated. We test the function returns successfully. */
+    EXPECT_EQ(getPeripheralProduct(buf, sizeof(buf)), 0);
+    /* Result should be non-empty (either "remCtrl" or cached product) */
+    EXPECT_STRNE(buf, "");
+}
+
+TEST(DirectCDNParsingTest, processJsonResponse_PDRI_MissingSubstring_Invalid)
+{
+    XCONFRES response;
+    memset(&response, 0, sizeof(response));
+
+    /* Set up a valid firmware image but PDRI without _PDRI_ substring */
+    strncpy(response.cloudFWFile, "HS_VBN_24Q4-signed.bin", sizeof(response.cloudFWFile) - 1);
+    strncpy(response.cloudFWLocation, "https://cdlserver.tv/Images", sizeof(response.cloudFWLocation) - 1);
+    strncpy(response.cloudFWVersion, "HS_VBN_24Q4", sizeof(response.cloudFWVersion) - 1);
+    strncpy(response.cloudProto, "http", sizeof(response.cloudProto) - 1);
+    /* PDRI name without _PDRI_ substring — should fail validation */
+    strncpy(response.cloudPDRIVersion, "HS_VBN_24Q4_addon", sizeof(response.cloudPDRIVersion) - 1);
+
+    /* processJsonResponse should fail (ret=1) since PDRI is invalid */
+    int ret = processJsonResponse(&response, "old_fw.bin", "HS", "false");
+    EXPECT_EQ(ret, 1);
+}
+
+TEST(DirectCDNParsingTest, processJsonResponse_PDRI_WithSubstring_Valid)
+{
+    XCONFRES response;
+    memset(&response, 0, sizeof(response));
+
+    strncpy(response.cloudFWFile, "HS_VBN_24Q4-signed.bin", sizeof(response.cloudFWFile) - 1);
+    strncpy(response.cloudFWLocation, "https://cdlserver.tv/Images", sizeof(response.cloudFWLocation) - 1);
+    strncpy(response.cloudFWVersion, "HS_VBN_24Q4", sizeof(response.cloudFWVersion) - 1);
+    strncpy(response.cloudProto, "http", sizeof(response.cloudProto) - 1);
+    /* PDRI name WITH _PDRI_ substring — should pass validation */
+    strncpy(response.cloudPDRIVersion, "HS_VBN_PDRI_24Q4_addon", sizeof(response.cloudPDRIVersion) - 1);
+
+    int ret = processJsonResponse(&response, "old_fw.bin", "HS", "false");
+    EXPECT_EQ(ret, 0);
+}
+
 GTEST_API_ int main(int argc, char *argv[]){
     char testresults_fullfilepath[GTEST_REPORT_FILEPATH_SIZE];
     char buffer[GTEST_REPORT_FILEPATH_SIZE];

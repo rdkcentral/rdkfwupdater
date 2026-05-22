@@ -1030,10 +1030,13 @@ TEST_F(DeviceApiTestFixture, TestName_GetServURL_DirectCDN_XconfHost)
     ret = system("echo \"BUILD_TYPE=PROD\" > /tmp/device_gtest.prop");
     ret = system("rm -f /tmp/swupdate.conf");
 
-    /* First read_RFCProperty call: eBootstrap → failure (empty), Second: eXconf → hostname */
+    /* First read_RFCProperty call: eBootstrap → failure (buffer cleared), Second: eXconf → hostname */
     EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _))
         .Times(2)
-        .WillOnce(Return(-1))
+        .WillOnce(Invoke([](char* type, const char* key, char *out_value, size_t datasize) {
+            out_value[0] = '\0';  /* Ensure buffer is empty on bootstrap failure */
+            return -1;
+        }))
         .WillOnce(Invoke([&xconfHost](char* type, const char* key, char *out_value, size_t datasize) {
             strncpy(out_value, xconfHost, datasize - 1);
             out_value[datasize - 1] = '\0';
