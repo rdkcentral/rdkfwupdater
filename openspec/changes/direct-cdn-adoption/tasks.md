@@ -25,14 +25,14 @@
 
 ## 4. Per-Artifact Download Orchestration
 
-- [ ] 4.1 Add `bool direct_cdn` field to `RdkUpgradeContext_t` in `src/include/rdkv_upgrade.h`
-- [ ] 4.2 Add `DIRECT_CDN_RETRY_ERR` define to `src/include/rdkv_cdl.h`
-- [ ] 4.3 Change `checkTriggerUpgrade()` signature to add `int upgrade_type` parameter in `src/include/rdkv_cdl.h`
-- [ ] 4.4 Update `checkTriggerUpgrade()` implementation in `src/rdkv_main.c` for per-artifact mode
-- [ ] 4.5 Update existing callers of `checkTriggerUpgrade()` to pass `upgrade_type=0` (legacy mode)
-- [ ] 4.6 Create `src/directcdn.c` with `DirectCDNDownload()` orchestrator function
-- [ ] 4.7 Create header declaration for `DirectCDNDownload()` (in `src/include/rdkv_cdl.h` or new header)
-- [ ] 4.8 Add `src/directcdn.c` to `Makefile.am` (`rdkvfwupgrader_SOURCES`)
+- [x] 4.1 Add `bool direct_cdn` field to `RdkUpgradeContext_t` in `src/include/rdkv_upgrade.h`
+- [x] 4.2 Add `DIRECT_CDN_RETRY_ERR` define to `src/include/rdkv_cdl.h`
+- [x] 4.3 Change `checkTriggerUpgrade()` signature to add `int upgrade_type` parameter in `src/include/rdkv_cdl.h`
+- [x] 4.4 Update `checkTriggerUpgrade()` implementation in `src/rdkv_main.c` for per-artifact mode
+- [x] 4.5 Update existing callers of `checkTriggerUpgrade()` to pass `upgrade_type=0` (legacy mode)
+- [x] 4.6 Create `src/directcdn.c` with `DirectCDNDownload()` orchestrator function
+- [x] 4.7 Create header declaration for `DirectCDNDownload()` (in `src/include/rdkv_cdl.h` or new header)
+- [x] 4.8 Add `src/directcdn.c` to `Makefile.am` (`rdkvfwupgrader_SOURCES`)
 
 ## 5. One-Shot & Daemon Integration
 

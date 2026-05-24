@@ -563,7 +563,7 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
     return iRet;
 }
 
-int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
+int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type)
 {
     int http_code;
     int upgrade_status = -1;
@@ -582,6 +582,74 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
         SWLOG_ERROR("%s : Parameter is NULL\n", __FUNCTION__);
         return upgrade_status;
     }
+
+    /* Per-artifact mode (Direct CDN): handle a single artifact type */
+    if (upgrade_type != 0) {
+        const char *artifact_url = NULL;
+        const char *artifact_file = NULL;
+        int artifact_upgrade_type = upgrade_type;
+
+        switch (upgrade_type) {
+            case PCI_UPGRADE:
+                artifact_url = pResponse->firmwareUrl;
+                artifact_file = pResponse->cloudFWFile;
+                break;
+            case PDRI_UPGRADE:
+                artifact_url = pResponse->pdriUrl;
+                artifact_file = pResponse->cloudPDRIVersion;
+                break;
+            case PERIPHERAL_UPGRADE:
+                artifact_url = pResponse->remCtrlUrl;
+                artifact_file = pResponse->peripheralFirmwares;
+                break;
+            default:
+                SWLOG_ERROR("%s: Unknown upgrade_type %d\n", __FUNCTION__, upgrade_type);
+                return -1;
+        }
+
+        if (artifact_url == NULL || artifact_url[0] == '\0') {
+            SWLOG_INFO("%s: No URL for upgrade_type %d, skipping\n", __FUNCTION__, upgrade_type);
+            return 0;
+        }
+        if (artifact_file == NULL || artifact_file[0] == '\0') {
+            SWLOG_INFO("%s: No file for upgrade_type %d, skipping\n", __FUNCTION__, upgrade_type);
+            return 0;
+        }
+
+        snprintf(imageHTTPURL, sizeof(imageHTTPURL), "%s", artifact_url);
+        snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s", device_info.difw_path, artifact_file);
+
+        RdkUpgradeContext_t artifact_ctx = {0};
+        artifact_ctx.upgrade_type = artifact_upgrade_type;
+        artifact_ctx.server_type = HTTP_SSR_DIRECT;
+        artifact_ctx.artifactLocationUrl = imageHTTPURL;
+        artifact_ctx.dwlloc = dwlpath_filename;
+        artifact_ctx.pPostFields = NULL;
+        artifact_ctx.immed_reboot_flag = immed_reboot_flag;
+        artifact_ctx.delay_dwnl = delay_dwnl;
+        artifact_ctx.lastrun = lastrun;
+        artifact_ctx.disableStatsUpdate = disableStatsUpdate;
+        artifact_ctx.device_info = &device_info;
+        artifact_ctx.force_exit = &force_exit;
+        artifact_ctx.trigger_type = trigger_type;
+        artifact_ctx.rfc_list = &rfc_list;
+        artifact_ctx.direct_cdn = true;
+
+        int curl_ret = rdkv_upgrade_request(&artifact_ctx, &curl, &http_code);
+
+        if (curl_ret == 0 && (http_code == HTTP_SUCCESS || http_code == HTTP_CHUNK_SUCCESS)) {
+            return 0;
+        }
+        /* Transient failures → retryable */
+        if (curl_ret == CURL_COULDNT_RESOLVE_HOST || curl_ret == CURL_CONNECTIVITY_ISSUE ||
+            curl_ret == CURLTIMEOUT || curl_ret == CURL_RECV_ERROR) {
+            return DIRECT_CDN_RETRY_ERR;
+        }
+        /* Permanent failure */
+        return -1;
+    }
+
+    /* Legacy mode (upgrade_type == 0): existing behavior unchanged */
     if (true == isUpgradeInProgress()) {
         SWLOG_ERROR("Exiting from DEVICE INITIATED HTTP CDL\nAnother upgrade is in progress\n");
         if (!(strncmp(device_info.maint_status, "true", 4))) {
@@ -1166,7 +1234,7 @@ int main(int argc, char *argv[]) {
                 proto = 0;
             }
             if ((proto == 1) && (json_res == 0)) {
-                ret_curl_code = checkTriggerUpgrade(&response, device_info.model);
+                ret_curl_code = checkTriggerUpgrade(&response, device_info.model, 0);
 
                 char *msg = printCurlError(ret_curl_code);
                 if (msg != NULL) {

@@ -66,7 +66,7 @@ extern "C" {
     int retryDownload(const RdkUpgradeContext_t* context, int retry_cnt, int delay, int *httpCode, void **curl);
 
     int downloadFile(const RdkUpgradeContext_t* context, int *httpCode, void **curl);
-    int checkTriggerUpgrade(XCONFRES *response, const char *model_num);
+    int checkTriggerUpgrade(XCONFRES *response, const char *model_num, int upgrade_type);
     void setForceStop(int value);
     T2ERROR t2_event_s(char* marker, char* value);
     T2ERROR t2_event_d(char* marker, int value);
@@ -812,7 +812,7 @@ TEST(checkTriggerUpgradeTest, ReturnsZeroWhenSuccessful) {
     // ...
 
     // Call the function to test
-    int result = checkTriggerUpgrade(&response, "testModel");
+    int result = checkTriggerUpgrade(&response, "testModel", 0);
 
     // Check the result
     EXPECT_EQ(result, 0);
@@ -902,7 +902,7 @@ TEST(checkTriggerUpgradeTest, ReturnsZeroWhenSuccessful) {
     XCONFRES response;
 
     // Call the function to test
-    int result = checkTriggerUpgrade(&response, "testModel");
+    int result = checkTriggerUpgrade(&response, "testModel", 0);
 
     // Check the result
     EXPECT_EQ(result, 0);
@@ -912,7 +912,7 @@ TEST(checkTriggerUpgradeTest, ReturnsZeroWhenSuccessful) {
 
 TEST(checkTriggerUpgradeTest, TestFailNull) {
     XCONFRES response;
-    int result = checkTriggerUpgrade(&response, NULL);
+    int result = checkTriggerUpgrade(&response, NULL, 0);
     EXPECT_EQ(result, -1);
 }
 TEST(checkTriggerUpgradeTest, ReturnsZeroWhenSuccessful404) {
@@ -931,7 +931,7 @@ TEST(checkTriggerUpgradeTest, ReturnsZeroWhenSuccessful404) {
     XCONFRES response;
 
     // Call the function to test
-    int result = checkTriggerUpgrade(&response, "testModel");
+    int result = checkTriggerUpgrade(&response, "testModel", 0);
 
     // Check the result
     EXPECT_EQ(result, 0);
@@ -958,7 +958,7 @@ TEST(checkTriggerUpgradeTest, TestValidPciUpgradeSuccess) {
     EXPECT_CALL(mockexternal,updateFWDownloadStatus(_,_)).Times(1);
     EXPECT_CALL(mockexternal, isPDRIEnable()).WillOnce(Return(true));
     EXPECT_CALL(mockdownloadfileops, downloadFile(_,_,_,_,_)).WillRepeatedly(Return(0));
-    int result = checkTriggerUpgrade(&response, "testModel");
+    int result = checkTriggerUpgrade(&response, "testModel", 0);
     EXPECT_EQ(result, 0);
     global_mockexternal_ptr = NULL;
     global_mockdownloadfileops_ptr = NULL;
@@ -982,7 +982,7 @@ TEST(checkTriggerUpgradeTest, TestPdriUpgradeSuccess) {
     EXPECT_CALL(mockexternal,updateFWDownloadStatus(_,_)).Times(1);
     EXPECT_CALL(mockexternal, isPDRIEnable()).WillOnce(Return(true));
     EXPECT_CALL(mockdownloadfileops, downloadFile(_,_,_,_,_)).WillRepeatedly(Return(0));
-    int result = checkTriggerUpgrade(&response, "testModel");
+    int result = checkTriggerUpgrade(&response, "testModel", 0);
     EXPECT_EQ(result, 0);
     global_mockexternal_ptr = NULL;
     global_mockdownloadfileops_ptr = NULL;
