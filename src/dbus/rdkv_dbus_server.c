@@ -2956,8 +2956,12 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     upgrade_ctx.lastrun = lastrun;
     SWLOG_INFO("[DOWNLOAD_WORKER]   lastrun = \"\" (empty string, EXACT PARITY with rdkv_main.c)\n");
     
-    upgrade_ctx.disableStatsUpdate = "yes";
-    SWLOG_INFO("[DOWNLOAD_WORKER]   disableStatsUpdate = \"yes\" (D-Bus handles telemetry)\n");
+    // Set disableStatsUpdate based on firmware type for parity with legacy binary:
+    // PCI: "no" -> enables chunk download + status file writes (matches rdkv_main.c)
+    // PDRI/PERIPHERAL: "yes" -> suppresses both (matches rdkv_main.c PDRI path)
+    upgrade_ctx.disableStatsUpdate = (upgrade_ctx.upgrade_type == PCI_UPGRADE) ? "no" : "yes";
+    SWLOG_INFO("[DOWNLOAD_WORKER]   disableStatsUpdate = \"%s\" (PCI=\"no\" for chunk download parity, others=\"yes\")\n",
+               upgrade_ctx.disableStatsUpdate);
     
     upgrade_ctx.device_info = &device_info;
     SWLOG_INFO("[DOWNLOAD_WORKER]   device_info = %p (device properties loaded)\n", 
