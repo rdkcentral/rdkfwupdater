@@ -1601,6 +1601,204 @@ TEST(DirectCDNParsingTest, processJsonResponse_PDRI_WithSubstring_Valid)
     EXPECT_EQ(ret, 0);
 }
 
+/* =========================================================================
+ * Task 5 Unit Tests: Direct CDN main-flow routing & Codebig bypass
+ * ========================================================================= */
+
+/**
+ * @brief Task 5.7: When direct_cdn=true and direct download fails with
+ * connectivity issue, Codebig fallback must NOT be attempted.
+ */
+TEST(DirectCDNBypassTest, DirectCDN_SkipsCodebigFallback) {
+    MockDownloadFileOps mockfileops;
+    global_mockdownloadfileops_ptr = &mockfileops;
+    MockExternal mockexternal;
+    global_mockexternal_ptr = &mockexternal;
+    DeviceUtilsMock DeviceMock;
+    g_DeviceUtilsMock = &DeviceMock;
+
+    int http_code = 0;
+    int local_force_exit = 0;
+    void *test_curl = NULL;
+    Rfc_t local_rfc = {0};
+    strncpy(local_rfc.rfc_throttle, "false", sizeof(local_rfc.rfc_throttle) - 1);
+
+    RdkUpgradeContext_t context = {0};
+    context.upgrade_type = PCI_UPGRADE;
+    context.server_type = HTTP_SSR_DIRECT;
+    context.artifactLocationUrl = "https://cdn.example.com/firmware.bin";
+    context.dwlloc = "/tmp/firmware.bin";
+    context.pPostFields = NULL;
+    context.immed_reboot_flag = "false";
+    context.delay_dwnl = 0;
+    context.lastrun = "0";
+    context.disableStatsUpdate = (char*)"true";
+    context.device_info = &device_info;
+    context.force_exit = &local_force_exit;
+    context.trigger_type = 1;
+    context.rfc_list = &local_rfc;
+    context.direct_cdn = true;  /* KEY: Direct CDN enabled */
+
+    /* downloadFile fails with connectivity issue (curl error 7) */
+    EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _))
+        .WillRepeatedly(testing::DoAll(testing::SetArgPointee<4>(0), testing::Return(CURL_CONNECTIVITY_ISSUE)));
+
+    /* codebigdownloadFile should NEVER be called — this is the assertion */
+    EXPECT_CALL(mockfileops, codebigdownloadFile(_, _, _, _, _)).Times(0);
+
+    /* Mock supporting calls */
+    EXPECT_CALL(DeviceMock, isDwnlBlock(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
+    EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isUpgradeInProgress()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isMmgbleNotifyEnabled()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, updateFWDownloadStatus(_, _)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal, logMilestone(_)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, eventManager(_, _)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, checkPDRIUpgrade(_)).WillRepeatedly(Return(true));
+    EXPECT_CALL(DeviceMock, getDevicePropertyData(_, _, _)).WillRepeatedly(Return(-1));
+    EXPECT_CALL(mockexternal, CheckIProuteConnectivity(_)).WillRepeatedly(Return(false));
+
+    int result = rdkv_upgrade_request(&context, &test_curl, &http_code);
+    /* Download should fail (no fallback available) */
+    EXPECT_NE(result, CURL_SUCCESS);
+
+    global_mockdownloadfileops_ptr = NULL;
+    global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = &Deviceglobal;
+}
+
+/**
+ * @brief Task 5.7: When direct_cdn=false and direct download fails with
+ * connectivity issue, Codebig fallback MUST be attempted (legacy behavior).
+ */
+TEST(DirectCDNBypassTest, LegacyMode_AttempsCodebigFallback) {
+    MockDownloadFileOps mockfileops;
+    global_mockdownloadfileops_ptr = &mockfileops;
+    MockExternal mockexternal;
+    global_mockexternal_ptr = &mockexternal;
+    DeviceUtilsMock DeviceMock;
+    g_DeviceUtilsMock = &DeviceMock;
+
+    int http_code = 0;
+    int local_force_exit = 0;
+    void *test_curl = NULL;
+    Rfc_t local_rfc = {0};
+    strncpy(local_rfc.rfc_throttle, "false", sizeof(local_rfc.rfc_throttle) - 1);
+
+    RdkUpgradeContext_t context = {0};
+    context.upgrade_type = PCI_UPGRADE;
+    context.server_type = HTTP_SSR_DIRECT;
+    context.artifactLocationUrl = "https://cdn.example.com/firmware.bin";
+    context.dwlloc = "/tmp/firmware.bin";
+    context.pPostFields = NULL;
+    context.immed_reboot_flag = "false";
+    context.delay_dwnl = 0;
+    context.lastrun = "0";
+    context.disableStatsUpdate = (char*)"true";
+    context.device_info = &device_info;
+    context.force_exit = &local_force_exit;
+    context.trigger_type = 1;
+    context.rfc_list = &local_rfc;
+    context.direct_cdn = false;  /* KEY: Direct CDN disabled (legacy) */
+
+    /* downloadFile fails with connectivity issue (curl error 7) */
+    EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _))
+        .WillRepeatedly(testing::DoAll(testing::SetArgPointee<4>(0), testing::Return(CURL_CONNECTIVITY_ISSUE)));
+
+    /* codebigdownloadFile SHOULD be called as fallback — at least once */
+    EXPECT_CALL(mockfileops, codebigdownloadFile(_, _, _, _, _))
+        .Times(testing::AtLeast(1))
+        .WillRepeatedly(testing::DoAll(testing::SetArgPointee<4>(200), testing::Return(CURL_SUCCESS)));
+
+    /* Mock supporting calls */
+    EXPECT_CALL(DeviceMock, isDwnlBlock(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
+    EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isUpgradeInProgress()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isMmgbleNotifyEnabled()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, updateFWDownloadStatus(_, _)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal, logMilestone(_)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, eventManager(_, _)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, checkPDRIUpgrade(_)).WillRepeatedly(Return(true));
+    EXPECT_CALL(DeviceMock, getDevicePropertyData(_, _, _)).WillRepeatedly(Return(-1));
+    EXPECT_CALL(mockexternal, CheckIProuteConnectivity(_)).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, checkCodebigAccess()).WillRepeatedly(Return(true));
+
+    int result = rdkv_upgrade_request(&context, &test_curl, &http_code);
+    /* Should succeed via Codebig fallback */
+    EXPECT_EQ(result, CURL_SUCCESS);
+
+    global_mockdownloadfileops_ptr = NULL;
+    global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = &Deviceglobal;
+}
+
+/**
+ * @brief Task 5.7: When direct_cdn=true and download succeeds on first attempt,
+ * no fallback is triggered and result is success.
+ */
+TEST(DirectCDNBypassTest, DirectCDN_SuccessNoFallbackNeeded) {
+    MockDownloadFileOps mockfileops;
+    global_mockdownloadfileops_ptr = &mockfileops;
+    MockExternal mockexternal;
+    global_mockexternal_ptr = &mockexternal;
+    DeviceUtilsMock DeviceMock;
+    g_DeviceUtilsMock = &DeviceMock;
+
+    int http_code = 0;
+    int local_force_exit = 0;
+    void *test_curl = NULL;
+    Rfc_t local_rfc = {0};
+    strncpy(local_rfc.rfc_throttle, "false", sizeof(local_rfc.rfc_throttle) - 1);
+
+    RdkUpgradeContext_t context = {0};
+    context.upgrade_type = PCI_UPGRADE;
+    context.server_type = HTTP_SSR_DIRECT;
+    context.artifactLocationUrl = "https://cdn.example.com/firmware.bin";
+    context.dwlloc = "/tmp/firmware.bin";
+    context.pPostFields = NULL;
+    context.immed_reboot_flag = "false";
+    context.delay_dwnl = 0;
+    context.lastrun = "0";
+    context.disableStatsUpdate = (char*)"true";
+    context.device_info = &device_info;
+    context.force_exit = &local_force_exit;
+    context.trigger_type = 1;
+    context.rfc_list = &local_rfc;
+    context.direct_cdn = true;
+
+    /* downloadFile succeeds */
+    EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _))
+        .WillOnce(testing::DoAll(testing::SetArgPointee<4>(200), testing::Return(CURL_SUCCESS)));
+
+    /* codebigdownloadFile should NEVER be called */
+    EXPECT_CALL(mockfileops, codebigdownloadFile(_, _, _, _, _)).Times(0);
+
+    /* Mock supporting calls */
+    EXPECT_CALL(DeviceMock, isDwnlBlock(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
+    EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isUpgradeInProgress()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isMmgbleNotifyEnabled()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, updateFWDownloadStatus(_, _)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal, logMilestone(_)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, eventManager(_, _)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, checkPDRIUpgrade(_)).WillRepeatedly(Return(true));
+    EXPECT_CALL(DeviceMock, getDevicePropertyData(_, _, _)).WillRepeatedly(Return(-1));
+
+    int result = rdkv_upgrade_request(&context, &test_curl, &http_code);
+    EXPECT_EQ(result, CURL_SUCCESS);
+    EXPECT_EQ(http_code, 200);
+
+    global_mockdownloadfileops_ptr = NULL;
+    global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = &Deviceglobal;
+}
+
 GTEST_API_ int main(int argc, char *argv[]){
     char testresults_fullfilepath[GTEST_REPORT_FILEPATH_SIZE];
     char buffer[GTEST_REPORT_FILEPATH_SIZE];

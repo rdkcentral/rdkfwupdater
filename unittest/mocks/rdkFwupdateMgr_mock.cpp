@@ -94,6 +94,14 @@ extern "C" int getRFCSettings(Rfc_t *rfc_list) {
     return 0;
 }
 
+extern "C" bool isDirectCDNEnabled(void) {
+    /* Default to false (legacy behavior) when mock is not set up */
+    if (!g_RdkFwupdateMgrMock) {
+        return false;
+    }
+    return g_RdkFwupdateMgrMock->isDirectCDNEnabled();
+}
+
 // =============================================================================
 // Device/Image information functions
 // =============================================================================

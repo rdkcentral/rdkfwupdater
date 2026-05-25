@@ -2784,13 +2784,30 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
         }
         
         // Extract download URL from XConf response
-        const char *download_location = xconf_response.cloudFWLocation[0] ? 
-                                        xconf_response.cloudFWLocation : NULL;
+        // Direct CDN mode: use per-artifact URL based on firmware type
+        const char *download_location = NULL;
+        if (isDirectCDNEnabled()) {
+            if (g_strcmp0(ctx->type_of_firmware, "PCI") == 0 && xconf_response.firmwareUrl[0]) {
+                download_location = xconf_response.firmwareUrl;
+                SWLOG_INFO("[DOWNLOAD_WORKER] Direct CDN: using firmwareUrl for PCI\n");
+            } else if (g_strcmp0(ctx->type_of_firmware, "PDRI") == 0 && xconf_response.pdriUrl[0]) {
+                download_location = xconf_response.pdriUrl;
+                SWLOG_INFO("[DOWNLOAD_WORKER] Direct CDN: using pdriUrl for PDRI\n");
+            } else if (g_strcmp0(ctx->type_of_firmware, "PERIPHERAL") == 0 && xconf_response.remCtrlUrl[0]) {
+                download_location = xconf_response.remCtrlUrl;
+                SWLOG_INFO("[DOWNLOAD_WORKER] Direct CDN: using remCtrlUrl for PERIPHERAL\n");
+            }
+        }
+        // Fallback to legacy cloudFWLocation if per-artifact URL not available
+        if (download_location == NULL && xconf_response.cloudFWLocation[0]) {
+            download_location = xconf_response.cloudFWLocation;
+            SWLOG_INFO("[DOWNLOAD_WORKER] Using legacy cloudFWLocation\n");
+        }
         
         // Validate URL
         if (download_location == NULL || strlen(download_location) == 0) {
             SWLOG_ERROR("[DOWNLOAD_WORKER] ERROR: XConf cache has no firmware download URL\n");
-            SWLOG_ERROR("[DOWNLOAD_WORKER]   - cloudFWLocation is empty or NULL\n");
+            SWLOG_ERROR("[DOWNLOAD_WORKER]   - No per-artifact URL and cloudFWLocation is empty\n");
             
             // Emit error signal
             ProgressUpdate *error_update = g_new0(ProgressUpdate, 1);
@@ -2981,6 +2998,10 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     // *** CRITICAL FIELDS FOR D-BUS ***
     upgrade_ctx.download_only = 1;
     SWLOG_INFO("[DOWNLOAD_WORKER]   download_only = 1 *** CRITICAL: SKIP FLASHING in rdkv_upgrade_request()! ***\n");
+    
+    // Direct CDN mode: skip Codebig fallback on download failure
+    upgrade_ctx.direct_cdn = isDirectCDNEnabled();
+    SWLOG_INFO("[DOWNLOAD_WORKER]   direct_cdn = %s\n", upgrade_ctx.direct_cdn ? "true" : "false");
     
     //upgrade_ctx.progress_callback = download_progress_callback;
     //SWLOG_INFO("[DOWNLOAD_WORKER]   progress_callback = %p (download_progress_callback)\n", 

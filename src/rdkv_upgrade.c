@@ -518,6 +518,10 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
                 (*pHttp_code != HTTP_SUCCESS && *pHttp_code != HTTP_CHUNK_SUCCESS && *pHttp_code != HTTP_PAGE_NOT_FOUND)) {
                 ret_curl_code = retryDownload(context, RETRY_COUNT, 60, pHttp_code, curl);
                 if (ret_curl_code == CURL_CONNECTIVITY_ISSUE || *pHttp_code == 0) {
+                    /* Direct CDN mode: skip Codebig fallback */
+                    if (context->direct_cdn) {
+                        SWLOG_INFO("%s : Direct CDN mode - skipping Codebig fallback\n", __FUNCTION__);
+                    } else {
                     if (server_type == HTTP_SSR_DIRECT) {
                         SWLOG_ERROR("%s : Direct Image upgrade Failed: http_code:%d, attempting codebig\n", __FUNCTION__, *pHttp_code);
                     }else {
@@ -533,6 +537,7 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
                         fallback_context.server_type = HTTP_XCONF_CODEBIG;
                     }
                     ret_curl_code = fallBack(&fallback_context, pHttp_code, curl);
+                    }
                 }
             }
         }

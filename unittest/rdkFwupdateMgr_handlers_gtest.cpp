@@ -1827,3 +1827,107 @@ TEST_F(RdkFwupdateMgrHandlersTest, FlashWorker_NullContext_ReturnsImmediately) {
     /* Note: This validates the CRITICAL_VALIDATION check at thread entry */
     /* Real thread business logic will be tested via UpdateFirmware handler tests */
 }
+
+/* =========================================================================
+ * Task 5.6: Direct CDN daemon routing tests
+ * ========================================================================= */
+
+/**
+ * @test fetch_xconf_firmware_info sets direct_cdn=true when RFC enabled
+ * @brief Verifies the daemon XConf handler propagates Direct CDN flag to context
+ */
+TEST_F(FetchXconfFirmwareInfoTest, DirectCDN_Enabled_SetsContextFlag) {
+    const char* test_url = "http://xconf.test.example.com/xconf/firmware/stb/";
+    const char* test_json = "{\"estbMacAddress\":\"AA:BB:CC:DD:EE:FF\"}";
+    const char* xconf_response = MOCK_XCONF_RESPONSE_UPDATE_AVAILABLE;
+
+    /* isDirectCDNEnabled returns true */
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, isDirectCDNEnabled())
+        .WillRepeatedly(Return(true));
+
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, createJsonString(testing::_, JSON_STR_LEN))
+        .WillOnce(testing::Invoke([test_json](char* pJSONStr, size_t szBufSize) {
+            strncpy(pJSONStr, test_json, szBufSize - 1);
+            pJSONStr[szBufSize - 1] = '\0';
+            return strlen(test_json);
+        }));
+
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, allocDowndLoadDataMem(testing::_, DEFAULT_DL_ALLOC))
+        .WillOnce(testing::Invoke([xconf_response](DownloadData* pDwnLoc, int size) {
+            pDwnLoc->pvOut = malloc(strlen(xconf_response) + 1);
+            strcpy((char*)pDwnLoc->pvOut, xconf_response);
+            pDwnLoc->datasize = strlen(xconf_response);
+            pDwnLoc->memsize = strlen(xconf_response) + 1;
+            return 0;
+        }));
+
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, GetServURL(testing::_, URL_MAX_LEN))
+        .WillOnce(testing::Invoke([test_url](char* pServURL, size_t szBufSize) {
+            strncpy(pServURL, test_url, szBufSize - 1);
+            pServURL[szBufSize - 1] = '\0';
+            return strlen(test_url);
+        }));
+
+    /* KEY ASSERTION: Verify context->direct_cdn == true when passed to rdkv_upgrade_request */
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
+        .WillOnce(testing::Invoke([](const RdkUpgradeContext_t* context, void** curl, int* pHttp_code) {
+            EXPECT_TRUE(context->direct_cdn)
+                << "Context direct_cdn must be true when RFC is enabled";
+            *pHttp_code = 200;
+            return 0;
+        }));
+
+    int result = fetch_xconf_firmware_info(&response, 0, &http_code);
+    EXPECT_EQ(result, 0);
+    EXPECT_EQ(http_code, 200);
+}
+
+/**
+ * @test fetch_xconf_firmware_info sets direct_cdn=false when RFC disabled
+ * @brief Verifies legacy behavior: direct_cdn flag is false when Direct CDN RFC disabled
+ */
+TEST_F(FetchXconfFirmwareInfoTest, DirectCDN_Disabled_ContextFlagIsFalse) {
+    const char* test_url = "http://xconf.test.example.com/xconf/swu/stb";
+    const char* test_json = "{\"estbMacAddress\":\"AA:BB:CC:DD:EE:FF\"}";
+    const char* xconf_response = MOCK_XCONF_RESPONSE_UPDATE_AVAILABLE;
+
+    /* isDirectCDNEnabled returns false (legacy) */
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, isDirectCDNEnabled())
+        .WillRepeatedly(Return(false));
+
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, createJsonString(testing::_, JSON_STR_LEN))
+        .WillOnce(testing::Invoke([test_json](char* pJSONStr, size_t szBufSize) {
+            strncpy(pJSONStr, test_json, szBufSize - 1);
+            pJSONStr[szBufSize - 1] = '\0';
+            return strlen(test_json);
+        }));
+
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, allocDowndLoadDataMem(testing::_, DEFAULT_DL_ALLOC))
+        .WillOnce(testing::Invoke([xconf_response](DownloadData* pDwnLoc, int size) {
+            pDwnLoc->pvOut = malloc(strlen(xconf_response) + 1);
+            strcpy((char*)pDwnLoc->pvOut, xconf_response);
+            pDwnLoc->datasize = strlen(xconf_response);
+            pDwnLoc->memsize = strlen(xconf_response) + 1;
+            return 0;
+        }));
+
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, GetServURL(testing::_, URL_MAX_LEN))
+        .WillOnce(testing::Invoke([test_url](char* pServURL, size_t szBufSize) {
+            strncpy(pServURL, test_url, szBufSize - 1);
+            pServURL[szBufSize - 1] = '\0';
+            return strlen(test_url);
+        }));
+
+    /* KEY ASSERTION: Verify context->direct_cdn == false when RFC is disabled */
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
+        .WillOnce(testing::Invoke([](const RdkUpgradeContext_t* context, void** curl, int* pHttp_code) {
+            EXPECT_FALSE(context->direct_cdn)
+                << "Context direct_cdn must be false when RFC is disabled";
+            *pHttp_code = 200;
+            return 0;
+        }));
+
+    int result = fetch_xconf_firmware_info(&response, 0, &http_code);
+    EXPECT_EQ(result, 0);
+    EXPECT_EQ(http_code, 200);
+}

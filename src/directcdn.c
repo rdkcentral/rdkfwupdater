@@ -43,7 +43,6 @@
 #define JSON_STR_LEN 1000
 
 /* Externs from rdkv_main.c — shared globals used by the orchestrator */
-extern DeviceProperty_t device_info;
 extern Rfc_t rfc_list;
 extern char immed_reboot_flag[];
 extern char disableStatsUpdate[];
@@ -69,7 +68,7 @@ int getTriggerType(void);
  *         - Returns 0 on success.
  *         - Returns a non-zero value if an error occurs during the download process.
  */
-int DirectCDNDownload( XCONFRES *response, char *cur_img_name, DeviceProperty_t *pdevice_info, int server_type, int *pHttp_code )
+int DirectCDNDownload( XCONFRES *response, char *cur_img_name, DeviceProperty_t *device_info, int server_type, int *pHttp_code )
 {
     int curl_ret_code  = -1;
     DownloadData DwnLoc;
@@ -118,7 +117,7 @@ int DirectCDNDownload( XCONFRES *response, char *cur_img_name, DeviceProperty_t 
                     xconf_ctx.delay_dwnl = delay_dwnl;
                     xconf_ctx.lastrun = lastrun;
                     xconf_ctx.disableStatsUpdate = disableStatsUpdate;
-                    xconf_ctx.device_info = pdevice_info;
+                    xconf_ctx.device_info = device_info;
                     xconf_ctx.force_exit = &force_exit;
                     xconf_ctx.trigger_type = getTriggerType();
                     xconf_ctx.rfc_list = &rfc_list;
@@ -133,22 +132,22 @@ int DirectCDNDownload( XCONFRES *response, char *cur_img_name, DeviceProperty_t 
                         SWLOG_INFO( "DirectCDNDownload: DownloadData Size = %zu\n", DwnLoc.datasize );
                         xconf_ret = getXconfRespData( response, (char *)DwnLoc.pvOut );
             		SWLOG_INFO("DirectCDNDownload: XCONF Download Success ret=%d\n", xconf_ret);
-                        json_res = processJsonResponse(response, cur_img_name, pdevice_info->model, pdevice_info->maint_status);
+                        json_res = processJsonResponse(response, cur_img_name, device_info->model, device_info->maint_status);
                         SWLOG_INFO("DirectCDNDownload: processJsonResponse returned %d\n", json_res);
                         if (0 == (strncmp(response->cloudProto, "tftp", 4))) {
                             proto = 0;
                         }
                         if ((proto == 1) && (json_res == 0)) {
 		            if (pci_upgrade_status == DIRECT_CDN_RETRY_ERR) {
-                                pci_upgrade_status = checkTriggerUpgrade(response, pdevice_info->model, PCI_UPGRADE);
+                                pci_upgrade_status = checkTriggerUpgrade(response, device_info->model, PCI_UPGRADE);
                                 SWLOG_INFO("DirectCDNDownload: pci_upgrade_status %d\n", pci_upgrade_status);
 			    }
 			    if (pdri_upgrade_status == DIRECT_CDN_RETRY_ERR) {
-                                pdri_upgrade_status = checkTriggerUpgrade(response, pdevice_info->model, PDRI_UPGRADE);
+                                pdri_upgrade_status = checkTriggerUpgrade(response, device_info->model, PDRI_UPGRADE);
                                 SWLOG_INFO("DirectCDNDownload: pdri_upgrade_status %d\n", pdri_upgrade_status);
 			    }
 			    if (peri_upgrade_status != 0) {
-                                peri_upgrade_status = checkTriggerUpgrade(response, pdevice_info->model, PERIPHERAL_UPGRADE);
+                                peri_upgrade_status = checkTriggerUpgrade(response, device_info->model, PERIPHERAL_UPGRADE);
                                 SWLOG_INFO("DirectCDNDownload: peri_upgrade_status %d\n", peri_upgrade_status);
 			    }
 			    if ((pci_upgrade_status == 0) && (pdri_upgrade_status == 0)) {

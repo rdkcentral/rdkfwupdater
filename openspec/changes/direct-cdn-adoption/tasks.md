@@ -36,9 +36,9 @@
 
 ## 5. One-Shot & Daemon Integration
 
-- [ ] 5.1 Add Direct CDN branch in one-shot main flow (`src/rdkv_main.c`) after `initialValidation()`
-- [ ] 5.2 Set `context.direct_cdn = true` in daemon download handler (`src/dbus/rdkFwupdateMgr_handlers.c`)
-- [ ] 5.3 Modify `rdkv_upgrade_request()` to skip Codebig fallback when `context->direct_cdn == true`
+- [x] 5.1 Add Direct CDN branch in one-shot main flow (`src/rdkv_main.c`) after `initialValidation()`
+- [x] 5.2 Set `context.direct_cdn = true` in daemon download handler (`src/dbus/rdkFwupdateMgr_handlers.c`)
+- [x] 5.3 Modify `rdkv_upgrade_request()` to skip Codebig fallback when `context->direct_cdn == true`
 
 ## 6. Selective Retry Logic
 

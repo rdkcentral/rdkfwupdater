@@ -1222,35 +1222,45 @@ int main(int argc, char *argv[]) {
 	  }
         }
 	eventManager(FW_STATE_EVENT, FW_STATE_REQUESTING);
-        ret_curl_code = MakeXconfComms( &response, server_type, &http_code );
 
-        SWLOG_INFO("XCONF Download completed with curl code:%d\n", ret_curl_code);
-        if( ret_curl_code == 0 && http_code == 200)
-        {
-            SWLOG_INFO("XCONF Download Success\n");
-            json_res = processJsonResponse(&response, cur_img_detail.cur_img_name, device_info.model, device_info.maint_status);
-            SWLOG_INFO("processJsonResponse returned %d\n", json_res);
-            if (0 == (strncmp(response.cloudProto, "tftp", 4))) {
-                proto = 0;
-            }
-            if ((proto == 1) && (json_res == 0)) {
-                ret_curl_code = checkTriggerUpgrade(&response, device_info.model, 0);
+        /* Direct CDN path: RFC-gated, uses per-artifact orchestration */
+        if (isDirectCDNEnabled()) {
+            SWLOG_INFO("Direct CDN mode enabled, calling DirectCDNDownload\n");
+            ret_curl_code = DirectCDNDownload(&response, cur_img_detail.cur_img_name,
+                                              &device_info, server_type, &http_code);
+            SWLOG_INFO("DirectCDNDownload returned %d\n", ret_curl_code);
+        } else {
+            /* Legacy path: XConf query + sequential download (unchanged) */
+            ret_curl_code = MakeXconfComms( &response, server_type, &http_code );
 
-                char *msg = printCurlError(ret_curl_code);
-                if (msg != NULL) {
-                    SWLOG_INFO("curl return code =%d and error message=%s\n", ret_curl_code, msg);
-                    t2CountNotify("CurlRet_split", ret_curl_code);
+            SWLOG_INFO("XCONF Download completed with curl code:%d\n", ret_curl_code);
+            if( ret_curl_code == 0 && http_code == 200)
+            {
+                SWLOG_INFO("XCONF Download Success\n");
+                json_res = processJsonResponse(&response, cur_img_detail.cur_img_name, device_info.model, device_info.maint_status);
+                SWLOG_INFO("processJsonResponse returned %d\n", json_res);
+                if (0 == (strncmp(response.cloudProto, "tftp", 4))) {
+                    proto = 0;
                 }
-                SWLOG_INFO("rdkvfwupgrader daemon exit curl code: %d\n", ret_curl_code);
-            } else if (proto == 0) {    // tftp = 0
-               SWLOG_INFO("tftp protocol support not present.\n");
+                if ((proto == 1) && (json_res == 0)) {
+                    ret_curl_code = checkTriggerUpgrade(&response, device_info.model, 0);
+
+                    char *msg = printCurlError(ret_curl_code);
+                    if (msg != NULL) {
+                        SWLOG_INFO("curl return code =%d and error message=%s\n", ret_curl_code, msg);
+                        t2CountNotify("CurlRet_split", ret_curl_code);
+                    }
+                    SWLOG_INFO("rdkvfwupgrader daemon exit curl code: %d\n", ret_curl_code);
+                } else if (proto == 0) {    // tftp = 0
+                   SWLOG_INFO("tftp protocol support not present.\n");
+                }
+                else {
+                   SWLOG_INFO("Invalid JSON Response.\n");
+                }
+            }else {
+                SWLOG_INFO("XCONF Download Fail\n");
             }
-            else {
-               SWLOG_INFO("Invalid JSON Response.\n");
-            }
-	}else {
-            SWLOG_INFO("XCONF Download Fail\n");
-	}
+        }
     }
     if (init_validate_status == INITIAL_VALIDATION_DWNL_INPROGRESS){
         if (!(strncmp(device_info.maint_status, "true", 4))) {
