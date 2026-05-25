@@ -42,9 +42,9 @@
 
 ## 6. Selective Retry Logic
 
-- [ ] 6.1 Implement transient vs permanent error classification in per-artifact `checkTriggerUpgrade()` path
-- [ ] 6.2 Verify retry loop in `DirectCDNDownload()` correctly skips succeeded artifacts
-- [ ] 6.3 Add L1 unit tests for retry scenarios (fail→fail→succeed, permanent failure, max retry exceeded)
+- [x] 6.1 Implement transient vs permanent error classification in per-artifact `checkTriggerUpgrade()` path
+- [x] 6.2 Verify retry loop in `DirectCDNDownload()` correctly skips succeeded artifacts
+- [x] 6.3 Add L1 unit tests for retry scenarios (fail→fail→succeed, permanent failure, max retry exceeded)
 
 ## 7. L1 Unit Tests (Integration)
 

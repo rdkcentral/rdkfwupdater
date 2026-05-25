@@ -812,7 +812,7 @@ TEST(checkTriggerUpgradeTest, ReturnsZeroWhenSuccessful) {
     // ...
 
     // Call the function to test
-    int result = checkTriggerUpgrade(&response, "testModel", 0);
+    int result = checkTriggerUpgrade(&response, "testModel", LEGACY_ALL_UPGRADE);
 
     // Check the result
     EXPECT_EQ(result, 0);
@@ -902,7 +902,7 @@ TEST(checkTriggerUpgradeTest, ReturnsZeroWhenSuccessful) {
     XCONFRES response;
 
     // Call the function to test
-    int result = checkTriggerUpgrade(&response, "testModel", 0);
+    int result = checkTriggerUpgrade(&response, "testModel", LEGACY_ALL_UPGRADE);
 
     // Check the result
     EXPECT_EQ(result, 0);
@@ -912,7 +912,7 @@ TEST(checkTriggerUpgradeTest, ReturnsZeroWhenSuccessful) {
 
 TEST(checkTriggerUpgradeTest, TestFailNull) {
     XCONFRES response;
-    int result = checkTriggerUpgrade(&response, NULL, 0);
+    int result = checkTriggerUpgrade(&response, NULL, LEGACY_ALL_UPGRADE);
     EXPECT_EQ(result, -1);
 }
 TEST(checkTriggerUpgradeTest, ReturnsZeroWhenSuccessful404) {
@@ -931,7 +931,7 @@ TEST(checkTriggerUpgradeTest, ReturnsZeroWhenSuccessful404) {
     XCONFRES response;
 
     // Call the function to test
-    int result = checkTriggerUpgrade(&response, "testModel", 0);
+    int result = checkTriggerUpgrade(&response, "testModel", LEGACY_ALL_UPGRADE);
 
     // Check the result
     EXPECT_EQ(result, 0);
@@ -958,7 +958,7 @@ TEST(checkTriggerUpgradeTest, TestValidPciUpgradeSuccess) {
     EXPECT_CALL(mockexternal,updateFWDownloadStatus(_,_)).Times(1);
     EXPECT_CALL(mockexternal, isPDRIEnable()).WillOnce(Return(true));
     EXPECT_CALL(mockdownloadfileops, downloadFile(_,_,_,_,_)).WillRepeatedly(Return(0));
-    int result = checkTriggerUpgrade(&response, "testModel", 0);
+    int result = checkTriggerUpgrade(&response, "testModel", LEGACY_ALL_UPGRADE);
     EXPECT_EQ(result, 0);
     global_mockexternal_ptr = NULL;
     global_mockdownloadfileops_ptr = NULL;
@@ -982,7 +982,7 @@ TEST(checkTriggerUpgradeTest, TestPdriUpgradeSuccess) {
     EXPECT_CALL(mockexternal,updateFWDownloadStatus(_,_)).Times(1);
     EXPECT_CALL(mockexternal, isPDRIEnable()).WillOnce(Return(true));
     EXPECT_CALL(mockdownloadfileops, downloadFile(_,_,_,_,_)).WillRepeatedly(Return(0));
-    int result = checkTriggerUpgrade(&response, "testModel", 0);
+    int result = checkTriggerUpgrade(&response, "testModel", LEGACY_ALL_UPGRADE);
     EXPECT_EQ(result, 0);
     global_mockexternal_ptr = NULL;
     global_mockdownloadfileops_ptr = NULL;
@@ -1797,6 +1797,383 @@ TEST(DirectCDNBypassTest, DirectCDN_SuccessNoFallbackNeeded) {
     global_mockdownloadfileops_ptr = NULL;
     global_mockexternal_ptr = NULL;
     g_DeviceUtilsMock = &Deviceglobal;
+}
+
+/* =========================================================================
+ * Task 6 Unit Tests: Selective Retry Logic — Error Classification
+ * ========================================================================= */
+
+/**
+ * @brief Task 6.1: Per-artifact PCI download success returns 0.
+ * When downloadFile returns 0 and HTTP 200, checkTriggerUpgrade returns success.
+ */
+TEST(DirectCDNRetryTest, PerArtifact_PCI_Success_ReturnsZero) {
+    MockDownloadFileOps mockfileops;
+    global_mockdownloadfileops_ptr = &mockfileops;
+    MockExternal mockexternal;
+    global_mockexternal_ptr = &mockexternal;
+    DeviceUtilsMock DeviceMock;
+    g_DeviceUtilsMock = &DeviceMock;
+
+    XCONFRES response;
+    memset(&response, 0, sizeof(response));
+    strncpy(response.firmwareUrl, "https://cdn.example.com/fw.bin", sizeof(response.firmwareUrl) - 1);
+    strncpy(response.cloudFWFile, "testModel_fw.bin", sizeof(response.cloudFWFile) - 1);
+
+    /* downloadFile succeeds with HTTP 200 */
+    EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _))
+        .WillOnce(testing::DoAll(testing::SetArgPointee<4>(200), testing::Return(0)));
+
+    /* Mock supporting calls required by rdkv_upgrade_request */
+    EXPECT_CALL(DeviceMock, isDwnlBlock(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
+    EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isMmgbleNotifyEnabled()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, updateFWDownloadStatus(_, _)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal, logMilestone(_)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, eventManager(_, _)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, checkPDRIUpgrade(_)).WillRepeatedly(Return(true));
+    EXPECT_CALL(DeviceMock, getDevicePropertyData(_, _, _)).WillRepeatedly(Return(-1));
+
+    int result = checkTriggerUpgrade(&response, "testModel", PCI_UPGRADE);
+    EXPECT_EQ(result, 0);
+
+    global_mockdownloadfileops_ptr = NULL;
+    global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = &Deviceglobal;
+}
+
+/**
+ * @brief Task 6.1: Per-artifact PCI transient curl error returns DIRECT_CDN_RETRY_ERR.
+ * Network connectivity issue (curl error 7) is classified as retryable.
+ */
+TEST(DirectCDNRetryTest, PerArtifact_PCI_TransientCurlError_ReturnsRetryErr) {
+    MockDownloadFileOps mockfileops;
+    global_mockdownloadfileops_ptr = &mockfileops;
+    MockExternal mockexternal;
+    global_mockexternal_ptr = &mockexternal;
+    DeviceUtilsMock DeviceMock;
+    g_DeviceUtilsMock = &DeviceMock;
+
+    XCONFRES response;
+    memset(&response, 0, sizeof(response));
+    strncpy(response.firmwareUrl, "https://cdn.example.com/fw.bin", sizeof(response.firmwareUrl) - 1);
+    strncpy(response.cloudFWFile, "testModel_fw.bin", sizeof(response.cloudFWFile) - 1);
+
+    /* downloadFile fails with CURL_CONNECTIVITY_ISSUE (7) — retryable */
+    EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _))
+        .WillRepeatedly(testing::DoAll(testing::SetArgPointee<4>(0), testing::Return(CURL_CONNECTIVITY_ISSUE)));
+
+    /* Mock supporting calls */
+    EXPECT_CALL(DeviceMock, isDwnlBlock(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
+    EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isMmgbleNotifyEnabled()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, updateFWDownloadStatus(_, _)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal, logMilestone(_)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, eventManager(_, _)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, checkPDRIUpgrade(_)).WillRepeatedly(Return(true));
+    EXPECT_CALL(DeviceMock, getDevicePropertyData(_, _, _)).WillRepeatedly(Return(-1));
+    EXPECT_CALL(mockexternal, CheckIProuteConnectivity(_)).WillRepeatedly(Return(false));
+
+    int result = checkTriggerUpgrade(&response, "testModel", PCI_UPGRADE);
+    EXPECT_EQ(result, DIRECT_CDN_RETRY_ERR);
+
+    global_mockdownloadfileops_ptr = NULL;
+    global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = &Deviceglobal;
+}
+
+/**
+ * @brief Task 6.1: Per-artifact PCI timeout error returns DIRECT_CDN_RETRY_ERR.
+ * CURLTIMEOUT (28) is classified as retryable.
+ */
+TEST(DirectCDNRetryTest, PerArtifact_PCI_Timeout_ReturnsRetryErr) {
+    MockDownloadFileOps mockfileops;
+    global_mockdownloadfileops_ptr = &mockfileops;
+    MockExternal mockexternal;
+    global_mockexternal_ptr = &mockexternal;
+    DeviceUtilsMock DeviceMock;
+    g_DeviceUtilsMock = &DeviceMock;
+
+    XCONFRES response;
+    memset(&response, 0, sizeof(response));
+    strncpy(response.firmwareUrl, "https://cdn.example.com/fw.bin", sizeof(response.firmwareUrl) - 1);
+    strncpy(response.cloudFWFile, "testModel_fw.bin", sizeof(response.cloudFWFile) - 1);
+
+    /* downloadFile fails with CURLTIMEOUT (28) — retryable */
+    EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _))
+        .WillRepeatedly(testing::DoAll(testing::SetArgPointee<4>(0), testing::Return(CURLTIMEOUT)));
+
+    /* Mock supporting calls */
+    EXPECT_CALL(DeviceMock, isDwnlBlock(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
+    EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isMmgbleNotifyEnabled()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, updateFWDownloadStatus(_, _)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal, logMilestone(_)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, eventManager(_, _)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, checkPDRIUpgrade(_)).WillRepeatedly(Return(true));
+    EXPECT_CALL(DeviceMock, getDevicePropertyData(_, _, _)).WillRepeatedly(Return(-1));
+    EXPECT_CALL(mockexternal, CheckIProuteConnectivity(_)).WillRepeatedly(Return(false));
+
+    int result = checkTriggerUpgrade(&response, "testModel", PCI_UPGRADE);
+    EXPECT_EQ(result, DIRECT_CDN_RETRY_ERR);
+
+    global_mockdownloadfileops_ptr = NULL;
+    global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = &Deviceglobal;
+}
+
+/**
+ * @brief Task 6.1: Per-artifact PCI low-bandwidth error returns DIRECT_CDN_RETRY_ERR.
+ * CURL_LOW_BANDWIDTH (18) is classified as retryable.
+ */
+TEST(DirectCDNRetryTest, PerArtifact_PCI_LowBandwidth_ReturnsRetryErr) {
+    MockDownloadFileOps mockfileops;
+    global_mockdownloadfileops_ptr = &mockfileops;
+    MockExternal mockexternal;
+    global_mockexternal_ptr = &mockexternal;
+    DeviceUtilsMock DeviceMock;
+    g_DeviceUtilsMock = &DeviceMock;
+
+    XCONFRES response;
+    memset(&response, 0, sizeof(response));
+    strncpy(response.firmwareUrl, "https://cdn.example.com/fw.bin", sizeof(response.firmwareUrl) - 1);
+    strncpy(response.cloudFWFile, "testModel_fw.bin", sizeof(response.cloudFWFile) - 1);
+
+    /* downloadFile fails with CURL_LOW_BANDWIDTH (18) — retryable */
+    EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _))
+        .WillRepeatedly(testing::DoAll(testing::SetArgPointee<4>(0), testing::Return(CURL_LOW_BANDWIDTH)));
+
+    /* Mock supporting calls */
+    EXPECT_CALL(DeviceMock, isDwnlBlock(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
+    EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isMmgbleNotifyEnabled()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, updateFWDownloadStatus(_, _)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal, logMilestone(_)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, eventManager(_, _)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, checkPDRIUpgrade(_)).WillRepeatedly(Return(true));
+    EXPECT_CALL(DeviceMock, getDevicePropertyData(_, _, _)).WillRepeatedly(Return(-1));
+
+    int result = checkTriggerUpgrade(&response, "testModel", PCI_UPGRADE);
+    EXPECT_EQ(result, DIRECT_CDN_RETRY_ERR);
+
+    global_mockdownloadfileops_ptr = NULL;
+    global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = &Deviceglobal;
+}
+
+/**
+ * @brief Task 6.1: Per-artifact transient HTTP 503 returns DIRECT_CDN_RETRY_ERR.
+ * Server-side Service Unavailable is classified as retryable.
+ */
+TEST(DirectCDNRetryTest, PerArtifact_PCI_Http503_ReturnsRetryErr) {
+    MockDownloadFileOps mockfileops;
+    global_mockdownloadfileops_ptr = &mockfileops;
+    MockExternal mockexternal;
+    global_mockexternal_ptr = &mockexternal;
+    DeviceUtilsMock DeviceMock;
+    g_DeviceUtilsMock = &DeviceMock;
+
+    XCONFRES response;
+    memset(&response, 0, sizeof(response));
+    strncpy(response.firmwareUrl, "https://cdn.example.com/fw.bin", sizeof(response.firmwareUrl) - 1);
+    strncpy(response.cloudFWFile, "testModel_fw.bin", sizeof(response.cloudFWFile) - 1);
+
+    /* downloadFile returns curl 0 (ok) but HTTP 503 (Service Unavailable) — retryable */
+    EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _))
+        .WillRepeatedly(testing::DoAll(testing::SetArgPointee<4>(503), testing::Return(0)));
+
+    /* Mock supporting calls */
+    EXPECT_CALL(DeviceMock, isDwnlBlock(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
+    EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isMmgbleNotifyEnabled()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, updateFWDownloadStatus(_, _)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal, logMilestone(_)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, eventManager(_, _)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, checkPDRIUpgrade(_)).WillRepeatedly(Return(true));
+    EXPECT_CALL(DeviceMock, getDevicePropertyData(_, _, _)).WillRepeatedly(Return(-1));
+
+    int result = checkTriggerUpgrade(&response, "testModel", PCI_UPGRADE);
+    EXPECT_EQ(result, DIRECT_CDN_RETRY_ERR);
+
+    global_mockdownloadfileops_ptr = NULL;
+    global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = &Deviceglobal;
+}
+
+/**
+ * @brief Task 6.1: Per-artifact permanent HTTP 404 returns -1.
+ * HTTP Not Found is classified as non-retryable permanent failure.
+ */
+TEST(DirectCDNRetryTest, PerArtifact_PCI_Http404_ReturnsPermanentFailure) {
+    MockDownloadFileOps mockfileops;
+    global_mockdownloadfileops_ptr = &mockfileops;
+    MockExternal mockexternal;
+    global_mockexternal_ptr = &mockexternal;
+    DeviceUtilsMock DeviceMock;
+    g_DeviceUtilsMock = &DeviceMock;
+
+    XCONFRES response;
+    memset(&response, 0, sizeof(response));
+    strncpy(response.firmwareUrl, "https://cdn.example.com/fw.bin", sizeof(response.firmwareUrl) - 1);
+    strncpy(response.cloudFWFile, "testModel_fw.bin", sizeof(response.cloudFWFile) - 1);
+
+    /* downloadFile returns curl 0 but HTTP 404 — permanent failure */
+    EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _))
+        .WillRepeatedly(testing::DoAll(testing::SetArgPointee<4>(404), testing::Return(0)));
+
+    /* Mock supporting calls */
+    EXPECT_CALL(DeviceMock, isDwnlBlock(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
+    EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isMmgbleNotifyEnabled()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, updateFWDownloadStatus(_, _)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal, logMilestone(_)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, eventManager(_, _)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, checkPDRIUpgrade(_)).WillRepeatedly(Return(true));
+    EXPECT_CALL(DeviceMock, getDevicePropertyData(_, _, _)).WillRepeatedly(Return(-1));
+
+    int result = checkTriggerUpgrade(&response, "testModel", PCI_UPGRADE);
+    EXPECT_EQ(result, -1);
+
+    global_mockdownloadfileops_ptr = NULL;
+    global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = &Deviceglobal;
+}
+
+/**
+ * @brief Task 6.2: Per-artifact with empty URL returns 0 (skip).
+ * When artifact URL is empty, checkTriggerUpgrade skips and returns success.
+ */
+TEST(DirectCDNRetryTest, PerArtifact_EmptyUrl_SkipsAndReturnsZero) {
+    XCONFRES response;
+    memset(&response, 0, sizeof(response));
+    /* firmwareUrl is empty — PCI should be skipped */
+    strncpy(response.cloudFWFile, "testModel_fw.bin", sizeof(response.cloudFWFile) - 1);
+
+    int result = checkTriggerUpgrade(&response, "testModel", PCI_UPGRADE);
+    EXPECT_EQ(result, 0);
+}
+
+/**
+ * @brief Task 6.2: Per-artifact with empty filename returns 0 (skip).
+ * When artifact filename is empty, checkTriggerUpgrade skips and returns success.
+ */
+TEST(DirectCDNRetryTest, PerArtifact_EmptyFilename_SkipsAndReturnsZero) {
+    XCONFRES response;
+    memset(&response, 0, sizeof(response));
+    strncpy(response.firmwareUrl, "https://cdn.example.com/fw.bin", sizeof(response.firmwareUrl) - 1);
+    /* cloudFWFile is empty — PCI should be skipped */
+
+    int result = checkTriggerUpgrade(&response, "testModel", PCI_UPGRADE);
+    EXPECT_EQ(result, 0);
+}
+
+/**
+ * @brief Task 6.1: Per-artifact PDRI download success returns 0.
+ * Validates PDRI path uses pdriUrl correctly.
+ */
+TEST(DirectCDNRetryTest, PerArtifact_PDRI_Success_ReturnsZero) {
+    MockDownloadFileOps mockfileops;
+    global_mockdownloadfileops_ptr = &mockfileops;
+    MockExternal mockexternal;
+    global_mockexternal_ptr = &mockexternal;
+    DeviceUtilsMock DeviceMock;
+    g_DeviceUtilsMock = &DeviceMock;
+
+    XCONFRES response;
+    memset(&response, 0, sizeof(response));
+    strncpy(response.pdriUrl, "https://cdn.example.com/pdri.bin", sizeof(response.pdriUrl) - 1);
+    strncpy(response.cloudPDRIVersion, "testModel_PDRI_v2.bin", sizeof(response.cloudPDRIVersion) - 1);
+
+    /* downloadFile succeeds */
+    EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _))
+        .WillOnce(testing::DoAll(testing::SetArgPointee<4>(200), testing::Return(0)));
+
+    /* Mock supporting calls */
+    EXPECT_CALL(DeviceMock, isDwnlBlock(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
+    EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isMmgbleNotifyEnabled()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, updateFWDownloadStatus(_, _)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal, logMilestone(_)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, eventManager(_, _)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, checkPDRIUpgrade(_)).WillRepeatedly(Return(true));
+    EXPECT_CALL(DeviceMock, getDevicePropertyData(_, _, _)).WillRepeatedly(Return(-1));
+
+    int result = checkTriggerUpgrade(&response, "testModel", PDRI_UPGRADE);
+    EXPECT_EQ(result, 0);
+
+    global_mockdownloadfileops_ptr = NULL;
+    global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = &Deviceglobal;
+}
+
+/**
+ * @brief Task 6.1: Per-artifact PDRI transient error returns DIRECT_CDN_RETRY_ERR.
+ * DNS resolution failure is classified as retryable for PDRI.
+ */
+TEST(DirectCDNRetryTest, PerArtifact_PDRI_TransientError_ReturnsRetryErr) {
+    MockDownloadFileOps mockfileops;
+    global_mockdownloadfileops_ptr = &mockfileops;
+    MockExternal mockexternal;
+    global_mockexternal_ptr = &mockexternal;
+    DeviceUtilsMock DeviceMock;
+    g_DeviceUtilsMock = &DeviceMock;
+
+    XCONFRES response;
+    memset(&response, 0, sizeof(response));
+    strncpy(response.pdriUrl, "https://cdn.example.com/pdri.bin", sizeof(response.pdriUrl) - 1);
+    strncpy(response.cloudPDRIVersion, "testModel_PDRI_v2.bin", sizeof(response.cloudPDRIVersion) - 1);
+
+    /* downloadFile fails with DNS resolution error (6) */
+    EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _))
+        .WillRepeatedly(testing::DoAll(testing::SetArgPointee<4>(0), testing::Return(CURL_COULDNT_RESOLVE_HOST)));
+
+    /* Mock supporting calls */
+    EXPECT_CALL(DeviceMock, isDwnlBlock(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
+    EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isMmgbleNotifyEnabled()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, updateFWDownloadStatus(_, _)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal, logMilestone(_)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, eventManager(_, _)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, checkPDRIUpgrade(_)).WillRepeatedly(Return(true));
+    EXPECT_CALL(DeviceMock, getDevicePropertyData(_, _, _)).WillRepeatedly(Return(-1));
+    EXPECT_CALL(mockexternal, CheckIProuteConnectivity(_)).WillRepeatedly(Return(false));
+
+    int result = checkTriggerUpgrade(&response, "testModel", PDRI_UPGRADE);
+    EXPECT_EQ(result, DIRECT_CDN_RETRY_ERR);
+
+    global_mockdownloadfileops_ptr = NULL;
+    global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = &Deviceglobal;
+}
+
+/**
+ * @brief Task 6.1: Per-artifact PERIPHERAL empty URL returns 0 (skip).
+ * Peripheral with no URL available is skipped (does not gate retry loop).
+ */
+TEST(DirectCDNRetryTest, PerArtifact_Peripheral_EmptyUrl_SkipsReturnsZero) {
+    XCONFRES response;
+    memset(&response, 0, sizeof(response));
+    /* remCtrlUrl is empty — PERIPHERAL should be skipped */
+    strncpy(response.peripheralFirmwares, "remCtrl_fw.bin", sizeof(response.peripheralFirmwares) - 1);
+
+    int result = checkTriggerUpgrade(&response, "testModel", PERIPHERAL_UPGRADE);
+    EXPECT_EQ(result, 0);
 }
 
 GTEST_API_ int main(int argc, char *argv[]){

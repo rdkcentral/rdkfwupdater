@@ -1225,7 +1225,7 @@ int main(int argc, char *argv[]) {
 				       proto = 0;
 				       }
 				       if ((proto == 1) && (json_res == 0)) {
-				       ret_curl_code = checkTriggerUpgrade(&response, device_info.model, 0);
+				       ret_curl_code = checkTriggerUpgrade(&response, device_info.model, LEGACY_ALL_UPGRADE);
 
 				       char *msg = printCurlError(ret_curl_code);
 				       if (msg != NULL) {

@@ -584,7 +584,7 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type
     }
 
     /* Per-artifact mode (Direct CDN): handle a single artifact type */
-    if (upgrade_type != 0) {
+    if (upgrade_type != LEGACY_ALL_UPGRADE) {
         const char *artifact_url = NULL;
         const char *artifact_file = NULL;
         int artifact_upgrade_type = upgrade_type;
@@ -638,14 +638,26 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type
         int curl_ret = rdkv_upgrade_request(&artifact_ctx, &curl, &http_code);
 
         if (curl_ret == 0 && (http_code == HTTP_SUCCESS || http_code == HTTP_CHUNK_SUCCESS)) {
+            SWLOG_INFO("%s: upgrade_type %d succeeded (http %d)\n", __FUNCTION__, upgrade_type, http_code);
             return 0;
         }
-        /* Transient failures → retryable */
+        /* Transient curl-level failures → retryable */
         if (curl_ret == CURL_COULDNT_RESOLVE_HOST || curl_ret == CURL_CONNECTIVITY_ISSUE ||
-            curl_ret == CURLTIMEOUT || curl_ret == CURL_RECV_ERROR) {
+            curl_ret == CURLTIMEOUT || curl_ret == CURL_LOW_BANDWIDTH ||
+            curl_ret == CURL_RECV_ERROR) {
+            SWLOG_WARN("%s: upgrade_type %d transient curl error %d, retryable\n",
+                       __FUNCTION__, upgrade_type, curl_ret);
             return DIRECT_CDN_RETRY_ERR;
         }
-        /* Permanent failure */
+        /* Transient HTTP-level failures → retryable (server-side temporary errors) */
+        if (curl_ret == 0 && (http_code == 502 || http_code == 503)) {
+            SWLOG_WARN("%s: upgrade_type %d transient HTTP %d, retryable\n",
+                       __FUNCTION__, upgrade_type, http_code);
+            return DIRECT_CDN_RETRY_ERR;
+        }
+        /* Permanent failure (HTTP 404, validation errors, etc.) */
+        SWLOG_ERROR("%s: upgrade_type %d permanent failure curl=%d http=%d\n",
+                    __FUNCTION__, upgrade_type, curl_ret, http_code);
         return -1;
     }
 
@@ -1243,7 +1255,7 @@ int main(int argc, char *argv[]) {
                     proto = 0;
                 }
                 if ((proto == 1) && (json_res == 0)) {
-                    ret_curl_code = checkTriggerUpgrade(&response, device_info.model, 0);
+                    ret_curl_code = checkTriggerUpgrade(&response, device_info.model, LEGACY_ALL_UPGRADE);
 
                     char *msg = printCurlError(ret_curl_code);
                     if (msg != NULL) {

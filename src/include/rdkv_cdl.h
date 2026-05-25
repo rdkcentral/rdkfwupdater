@@ -79,6 +79,7 @@ typedef struct deviceproperty DeviceProperty_t;
 #define XCONF_UPGRADE 2
 #define PERIPHERAL_UPGRADE  3
 #define DIRECT_CDN_RETRY_ERR -2
+#define LEGACY_ALL_UPGRADE -1  /* Legacy mode: all artifacts in sequence */
 
 #define INITIAL_VALIDATION_SUCCESS 0
 #define INITIAL_VALIDATION_FAIL 1

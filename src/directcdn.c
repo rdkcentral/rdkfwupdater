@@ -105,6 +105,8 @@ int DirectCDNDownload( XCONFRES *response, char *cur_img_name, DeviceProperty_t 
             {
                 len = createJsonString( pJSONStr, JSON_STR_LEN );
 		while(cnt < total_retry_cnt && ((pci_upgrade_status == DIRECT_CDN_RETRY_ERR) || (pdri_upgrade_status == DIRECT_CDN_RETRY_ERR)) ) {
+                    SWLOG_INFO("DirectCDNDownload: retry iteration %d/%d (pci=%d pdri=%d)\n",
+                               cnt + 1, total_retry_cnt, pci_upgrade_status, pdri_upgrade_status);
 
                     // Build context struct for XConf query (refactored API)
                     RdkUpgradeContext_t xconf_ctx = {0};
@@ -141,11 +143,15 @@ int DirectCDNDownload( XCONFRES *response, char *cur_img_name, DeviceProperty_t 
 		            if (pci_upgrade_status == DIRECT_CDN_RETRY_ERR) {
                                 pci_upgrade_status = checkTriggerUpgrade(response, device_info->model, PCI_UPGRADE);
                                 SWLOG_INFO("DirectCDNDownload: pci_upgrade_status %d\n", pci_upgrade_status);
-			    }
+			    } else {
+                                SWLOG_INFO("DirectCDNDownload: PCI already succeeded, skipping\n");
+                            }
 			    if (pdri_upgrade_status == DIRECT_CDN_RETRY_ERR) {
                                 pdri_upgrade_status = checkTriggerUpgrade(response, device_info->model, PDRI_UPGRADE);
                                 SWLOG_INFO("DirectCDNDownload: pdri_upgrade_status %d\n", pdri_upgrade_status);
-			    }
+			    } else {
+                                SWLOG_INFO("DirectCDNDownload: PDRI already succeeded, skipping\n");
+                            }
 			    if (peri_upgrade_status != 0) {
                                 peri_upgrade_status = checkTriggerUpgrade(response, device_info->model, PERIPHERAL_UPGRADE);
                                 SWLOG_INFO("DirectCDNDownload: peri_upgrade_status %d\n", peri_upgrade_status);
@@ -168,6 +174,10 @@ int DirectCDNDownload( XCONFRES *response, char *cur_img_name, DeviceProperty_t 
 		    }
 		    cnt++;
 		}
+                if (cnt >= total_retry_cnt && (pci_upgrade_status == DIRECT_CDN_RETRY_ERR || pdri_upgrade_status == DIRECT_CDN_RETRY_ERR)) {
+                    SWLOG_ERROR("DirectCDNDownload: max retries (%d) exhausted (pci=%d pdri=%d)\n",
+                                total_retry_cnt, pci_upgrade_status, pdri_upgrade_status);
+                }
             }
             else
             {
