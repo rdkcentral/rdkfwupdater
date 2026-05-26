@@ -1647,7 +1647,7 @@ TEST(DirectCDNBypassTest, DirectCDN_SkipsCodebigFallback) {
     EXPECT_CALL(mockfileops, codebigdownloadFile(_, _, _, _, _)).Times(0);
 
     /* Mock supporting calls */
-    EXPECT_CALL(DeviceMock, isDwnlBlock(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal, isDwnlBlock(_)).WillRepeatedly(Return(0));
     EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
     EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
     EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
@@ -1713,7 +1713,7 @@ TEST(DirectCDNBypassTest, LegacyMode_AttempsCodebigFallback) {
         .WillRepeatedly(testing::DoAll(testing::SetArgPointee<4>(200), testing::Return(CURL_SUCCESS)));
 
     /* Mock supporting calls */
-    EXPECT_CALL(DeviceMock, isDwnlBlock(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal, isDwnlBlock(_)).WillRepeatedly(Return(0));
     EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
     EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
     EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
@@ -1778,7 +1778,7 @@ TEST(DirectCDNBypassTest, DirectCDN_SuccessNoFallbackNeeded) {
     EXPECT_CALL(mockfileops, codebigdownloadFile(_, _, _, _, _)).Times(0);
 
     /* Mock supporting calls */
-    EXPECT_CALL(DeviceMock, isDwnlBlock(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal, isDwnlBlock(_)).WillRepeatedly(Return(0));
     EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
     EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
     EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
@@ -1825,7 +1825,7 @@ TEST(DirectCDNRetryTest, PerArtifact_PCI_Success_ReturnsZero) {
         .WillOnce(testing::DoAll(testing::SetArgPointee<4>(200), testing::Return(0)));
 
     /* Mock supporting calls required by rdkv_upgrade_request */
-    EXPECT_CALL(DeviceMock, isDwnlBlock(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal, isDwnlBlock(_)).WillRepeatedly(Return(0));
     EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
     EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
     EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
@@ -1866,7 +1866,7 @@ TEST(DirectCDNRetryTest, PerArtifact_PCI_TransientCurlError_ReturnsRetryErr) {
         .WillRepeatedly(testing::DoAll(testing::SetArgPointee<4>(0), testing::Return(CURL_CONNECTIVITY_ISSUE)));
 
     /* Mock supporting calls */
-    EXPECT_CALL(DeviceMock, isDwnlBlock(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal, isDwnlBlock(_)).WillRepeatedly(Return(0));
     EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
     EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
     EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
@@ -1908,7 +1908,7 @@ TEST(DirectCDNRetryTest, PerArtifact_PCI_Timeout_ReturnsRetryErr) {
         .WillRepeatedly(testing::DoAll(testing::SetArgPointee<4>(0), testing::Return(CURLTIMEOUT)));
 
     /* Mock supporting calls */
-    EXPECT_CALL(DeviceMock, isDwnlBlock(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal, isDwnlBlock(_)).WillRepeatedly(Return(0));
     EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
     EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
     EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
@@ -1950,7 +1950,7 @@ TEST(DirectCDNRetryTest, PerArtifact_PCI_LowBandwidth_ReturnsRetryErr) {
         .WillRepeatedly(testing::DoAll(testing::SetArgPointee<4>(0), testing::Return(CURL_LOW_BANDWIDTH)));
 
     /* Mock supporting calls */
-    EXPECT_CALL(DeviceMock, isDwnlBlock(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal, isDwnlBlock(_)).WillRepeatedly(Return(0));
     EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
     EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
     EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
@@ -1991,7 +1991,7 @@ TEST(DirectCDNRetryTest, PerArtifact_PCI_Http503_ReturnsRetryErr) {
         .WillRepeatedly(testing::DoAll(testing::SetArgPointee<4>(503), testing::Return(0)));
 
     /* Mock supporting calls */
-    EXPECT_CALL(DeviceMock, isDwnlBlock(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal, isDwnlBlock(_)).WillRepeatedly(Return(0));
     EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
     EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
     EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
@@ -2032,7 +2032,7 @@ TEST(DirectCDNRetryTest, PerArtifact_PCI_Http404_ReturnsPermanentFailure) {
         .WillRepeatedly(testing::DoAll(testing::SetArgPointee<4>(404), testing::Return(0)));
 
     /* Mock supporting calls */
-    EXPECT_CALL(DeviceMock, isDwnlBlock(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal, isDwnlBlock(_)).WillRepeatedly(Return(0));
     EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
     EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
     EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
@@ -2101,7 +2101,7 @@ TEST(DirectCDNRetryTest, PerArtifact_PDRI_Success_ReturnsZero) {
         .WillOnce(testing::DoAll(testing::SetArgPointee<4>(200), testing::Return(0)));
 
     /* Mock supporting calls */
-    EXPECT_CALL(DeviceMock, isDwnlBlock(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal, isDwnlBlock(_)).WillRepeatedly(Return(0));
     EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
     EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
     EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
@@ -2142,7 +2142,7 @@ TEST(DirectCDNRetryTest, PerArtifact_PDRI_TransientError_ReturnsRetryErr) {
         .WillRepeatedly(testing::DoAll(testing::SetArgPointee<4>(0), testing::Return(CURL_COULDNT_RESOLVE_HOST)));
 
     /* Mock supporting calls */
-    EXPECT_CALL(DeviceMock, isDwnlBlock(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal, isDwnlBlock(_)).WillRepeatedly(Return(0));
     EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
     EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
     EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
