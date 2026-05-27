@@ -48,7 +48,7 @@
 
 ## 7. L1 Unit Tests (Integration)
 
-- [ ] 7.1 Add `DirectCDNDownload()` unit tests to `unittest/` (mock XConf + per-artifact downloads)
+- [x] 7.1 Add `DirectCDNDownload()` unit tests to `unittest/` (mock XConf + per-artifact downloads)
 - [ ] 7.2 Update `getRFCParameter` mock `Times()` expectations in existing tests
 - [ ] 7.3 Add `checkTriggerUpgrade()` per-artifact mode unit tests
 - [ ] 7.4 Verify all existing unit tests still pass with signature changes

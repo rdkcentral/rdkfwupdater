@@ -67,6 +67,7 @@ extern "C" {
 
     int downloadFile(const RdkUpgradeContext_t* context, int *httpCode, void **curl);
     int checkTriggerUpgrade(XCONFRES *response, const char *model_num, int upgrade_type);
+    int DirectCDNDownload(XCONFRES *response, char *cur_img_name, DeviceProperty_t *device_info, int server_type, int *pHttp_code);
     void setForceStop(int value);
     T2ERROR t2_event_s(char* marker, char* value);
     T2ERROR t2_event_d(char* marker, int value);
@@ -2174,6 +2175,229 @@ TEST(DirectCDNRetryTest, PerArtifact_Peripheral_EmptyUrl_SkipsReturnsZero) {
 
     int result = checkTriggerUpgrade(&response, "testModel", PERIPHERAL_UPGRADE);
     EXPECT_EQ(result, 0);
+}
+
+/* =========================================================================
+ * Task 7.1 Unit Tests: DirectCDNDownload orchestrator coverage
+ * ========================================================================= */
+
+class DirectCDNOrchestratorTest : public ::testing::Test {
+protected:
+    MockDownloadFileOps mockfileops;
+    MockExternal mockexternal;
+    DeviceUtilsMock DeviceMock;
+    DeviceProperty_t local_device_info;
+    int http_code;
+    char cur_img_name[64];
+
+    void SetUp() override {
+        global_mockdownloadfileops_ptr = &mockfileops;
+        global_mockexternal_ptr = &mockexternal;
+        g_DeviceUtilsMock = &DeviceMock;
+
+        /* Direct CDN JSON parsing path uses global RFC cache state */
+        memset(rfc_list.rfc_directcdn, 0, RFC_VALUE_BUF_SIZE);
+        strncpy(rfc_list.rfc_directcdn, "true", RFC_VALUE_BUF_SIZE - 1);
+
+        memset(&local_device_info, 0, sizeof(local_device_info));
+        strncpy(local_device_info.model, "testModel", sizeof(local_device_info.model) - 1);
+        strncpy(local_device_info.maint_status, "false", sizeof(local_device_info.maint_status) - 1);
+        strncpy(local_device_info.difw_path, "/tmp", sizeof(local_device_info.difw_path) - 1);
+
+        /* checkTriggerUpgrade() per-artifact path uses global device_info */
+        strncpy(device_info.model, "testModel", sizeof(device_info.model) - 1);
+        strncpy(device_info.maint_status, "false", sizeof(device_info.maint_status) - 1);
+        strncpy(device_info.difw_path, "/tmp", sizeof(device_info.difw_path) - 1);
+
+        strncpy(cur_img_name, "testModel_current.bin", sizeof(cur_img_name) - 1);
+        cur_img_name[sizeof(cur_img_name) - 1] = '\0';
+        http_code = 0;
+
+        EXPECT_CALL(mockexternal, isDwnlBlock(_)).WillRepeatedly(Return(0));
+        EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
+        EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
+        EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
+        EXPECT_CALL(mockexternal, isMmgbleNotifyEnabled()).WillRepeatedly(Return(false));
+        EXPECT_CALL(mockexternal, updateFWDownloadStatus(_, _)).WillRepeatedly(Return(0));
+        EXPECT_CALL(mockexternal, logMilestone(_)).Times(testing::AnyNumber());
+        EXPECT_CALL(mockexternal, eventManager(_, _)).Times(testing::AnyNumber());
+        EXPECT_CALL(mockexternal, checkPDRIUpgrade(_)).WillRepeatedly(Return(true));
+        EXPECT_CALL(mockexternal, CheckIProuteConnectivity(_)).WillRepeatedly(Return(false));
+        EXPECT_CALL(DeviceMock, getDevicePropertyData(_, _, _)).WillRepeatedly(Return(-1));
+        EXPECT_CALL(DeviceMock, isDirectCDNEnabled()).WillRepeatedly(Return(true));
+    }
+
+    void TearDown() override {
+        memset(rfc_list.rfc_directcdn, 0, RFC_VALUE_BUF_SIZE);
+        global_mockdownloadfileops_ptr = NULL;
+        global_mockexternal_ptr = NULL;
+        g_DeviceUtilsMock = &Deviceglobal;
+    }
+};
+
+TEST_F(DirectCDNOrchestratorTest, HappyPath_AllArtifactsSucceed_ReturnsZero) {
+    const char *xconf_json = "{"
+        "\"firmwareDownloadProtocol\":\"http\"," 
+        "\"firmwareFilename\":\"testModel_fw.bin\"," 
+        "\"firmwareLocation\":\"https://legacy.example.com/fw\"," 
+        "\"firmwareVersion\":\"testModel_VBN_24Q4\"," 
+        "\"additionalFwVerInfo\":\"testModel_PDRI_24Q4.bin\"," 
+        "\"firmware_URL\":\"https://cdn.example.com/pci.bin\"," 
+        "\"additionalFwVerInfo_URL\":\"https://cdn.example.com/pdri.bin\"," 
+        "\"remCtrl\":\"peri_fw.bin\"," 
+        "\"remCtrl_URL\":\"https://cdn.example.com/peri.bin\"," 
+        "\"rebootImmediately\":false"
+    "}";
+
+    int xconf_calls = 0;
+    int pci_calls = 0;
+    int pdri_calls = 0;
+    int peri_calls = 0;
+
+    EXPECT_CALL(mockfileops, codebigdownloadFile(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _))
+        .WillRepeatedly(testing::Invoke([&](int, const char *url, const void *dwlloc, char *post, int *http) {
+            if (post != NULL) {
+                DownloadData *dl = (DownloadData *)dwlloc;
+                size_t max_copy = dl->memsize > 0 ? dl->memsize - 1 : 0;
+                xconf_calls++;
+                if (dl != NULL && dl->pvOut != NULL && max_copy > 0) {
+                    strncpy((char *)dl->pvOut, xconf_json, max_copy);
+                    ((char *)dl->pvOut)[max_copy] = '\0';
+                    dl->datasize = strlen((char *)dl->pvOut);
+                }
+                *http = 200;
+                return 0;
+            }
+
+            if (url != NULL && strstr(url, "pci.bin") != NULL) {
+                pci_calls++;
+            } else if (url != NULL && strstr(url, "pdri.bin") != NULL) {
+                pdri_calls++;
+            } else if (url != NULL && strstr(url, "peri.bin") != NULL) {
+                peri_calls++;
+            }
+
+            *http = 200;
+            return 0;
+        }));
+
+    XCONFRES response;
+    memset(&response, 0, sizeof(response));
+
+    int ret = DirectCDNDownload(&response, cur_img_name, &local_device_info, HTTP_XCONF_DIRECT, &http_code);
+    EXPECT_EQ(ret, 0);
+    EXPECT_STRNE(response.firmwareUrl, "");
+    EXPECT_EQ(xconf_calls, 1);
+    EXPECT_EQ(pci_calls, 1);
+    EXPECT_EQ(pdri_calls, 1);
+    EXPECT_EQ(peri_calls, 1);
+}
+
+TEST_F(DirectCDNOrchestratorTest, SelectiveRetry_SkipsSucceededArtifactOnNextIteration) {
+    const char *xconf_json = "{"
+        "\"firmwareDownloadProtocol\":\"http\"," 
+        "\"firmwareFilename\":\"testModel_fw.bin\"," 
+        "\"firmwareLocation\":\"https://legacy.example.com/fw\"," 
+        "\"firmwareVersion\":\"testModel_VBN_24Q4\"," 
+        "\"additionalFwVerInfo\":\"testModel_PDRI_24Q4.bin\"," 
+        "\"firmware_URL\":\"https://cdn.example.com/pci.bin\"," 
+        "\"additionalFwVerInfo_URL\":\"https://cdn.example.com/pdri.bin\"," 
+        "\"remCtrl\":\"peri_fw.bin\"," 
+        "\"remCtrl_URL\":\"https://cdn.example.com/peri.bin\"," 
+        "\"rebootImmediately\":false"
+    "}";
+
+    int xconf_calls = 0;
+    int pci_calls = 0;
+    int pdri_calls = 0;
+
+    EXPECT_CALL(mockfileops, codebigdownloadFile(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _))
+        .WillRepeatedly(testing::Invoke([&](int, const char *url, const void *dwlloc, char *post, int *http) {
+            if (post != NULL) {
+                DownloadData *dl = (DownloadData *)dwlloc;
+                size_t max_copy = dl->memsize > 0 ? dl->memsize - 1 : 0;
+                xconf_calls++;
+                if (dl != NULL && dl->pvOut != NULL && max_copy > 0) {
+                    strncpy((char *)dl->pvOut, xconf_json, max_copy);
+                    ((char *)dl->pvOut)[max_copy] = '\0';
+                    dl->datasize = strlen((char *)dl->pvOut);
+                }
+                *http = 200;
+                return 0;
+            }
+
+            if (url != NULL && strstr(url, "pci.bin") != NULL) {
+                pci_calls++;
+                *http = 200;
+                return 0;
+            }
+
+            if (url != NULL && strstr(url, "pdri.bin") != NULL) {
+                pdri_calls++;
+                if (xconf_calls < 2) {
+                    *http = 0;
+                    return CURLTIMEOUT;
+                }
+                *http = 200;
+                return 0;
+            }
+
+            *http = 200;
+            return 0;
+        }));
+
+    XCONFRES response;
+    memset(&response, 0, sizeof(response));
+
+    int ret = DirectCDNDownload(&response, cur_img_name, &local_device_info, HTTP_XCONF_DIRECT, &http_code);
+    EXPECT_EQ(ret, 0);
+    EXPECT_GE(xconf_calls, 2);
+    EXPECT_EQ(pci_calls, 1) << "PCI must not be retried after first success";
+    EXPECT_GE(pdri_calls, 2);
+}
+
+TEST_F(DirectCDNOrchestratorTest, MaxRetryExhaustion_ReturnsFailure) {
+    const char *xconf_json = "{"
+        "\"firmwareDownloadProtocol\":\"http\"," 
+        "\"firmwareFilename\":\"testModel_fw.bin\"," 
+        "\"firmwareLocation\":\"https://legacy.example.com/fw\"," 
+        "\"firmwareVersion\":\"testModel_VBN_24Q4\"," 
+        "\"additionalFwVerInfo\":\"testModel_PDRI_24Q4.bin\"," 
+        "\"firmware_URL\":\"https://cdn.example.com/pci.bin\"," 
+        "\"additionalFwVerInfo_URL\":\"https://cdn.example.com/pdri.bin\"," 
+        "\"rebootImmediately\":false"
+    "}";
+
+    int xconf_calls = 0;
+
+    EXPECT_CALL(mockfileops, codebigdownloadFile(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _))
+        .WillRepeatedly(testing::Invoke([&](int, const char *, const void *dwlloc, char *post, int *http) {
+            if (post != NULL) {
+                DownloadData *dl = (DownloadData *)dwlloc;
+                size_t max_copy = dl->memsize > 0 ? dl->memsize - 1 : 0;
+                xconf_calls++;
+                if (dl != NULL && dl->pvOut != NULL && max_copy > 0) {
+                    strncpy((char *)dl->pvOut, xconf_json, max_copy);
+                    ((char *)dl->pvOut)[max_copy] = '\0';
+                    dl->datasize = strlen((char *)dl->pvOut);
+                }
+                *http = 200;
+                return 0;
+            }
+
+            *http = 0;
+            return CURLTIMEOUT;
+        }));
+
+    XCONFRES response;
+    memset(&response, 0, sizeof(response));
+
+    int ret = DirectCDNDownload(&response, cur_img_name, &local_device_info, HTTP_XCONF_DIRECT, &http_code);
+    EXPECT_NE(ret, 0);
+    EXPECT_EQ(xconf_calls, 3);
 }
 
 GTEST_API_ int main(int argc, char *argv[]){
