@@ -96,8 +96,14 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
         remainlen = szPostFieldOut - totlen;
         totlen += snprintf( (pTmpPost + totlen), remainlen, "env=%s", tmpbuf );
     }
-    SWLOG_INFO("Calling GetModelNum function\n");
-    len = GetModelNum( tmpbuf, sizeof(tmpbuf) );
+    SWLOG_INFO("Calling GetModelNameUsingMFR function\n");
+    len = GetModelNameUsingMFR(tmpbuf, sizeof(tmpbuf));
+    if (!len)
+    {
+        SWLOG_INFO("GetModelNameUsingMFR failed, calling GetModelNum function\n");
+        len = GetModelNum(tmpbuf, sizeof(tmpbuf));
+    }
+
     if( len )
     {
         if( totlen )

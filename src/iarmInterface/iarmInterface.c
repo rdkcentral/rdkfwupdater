@@ -390,7 +390,7 @@ size_t GetModelNameUsingMFR(char *pModelName, size_t szBufSize)
     IARM_Result_t ret;
     IARM_Bus_MFRLib_GetSerializedData_Param_t param;
 
-    if (pPDRIFilename == NULL || szBufSize == 0) {
+    if (pModelName == NULL || szBufSize == 0) {
         SWLOG_ERROR("GetModelNameUsingMFR: Error, input argument NULL\n");
         return 0;
     }
