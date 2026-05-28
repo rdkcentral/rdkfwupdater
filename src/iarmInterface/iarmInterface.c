@@ -383,6 +383,71 @@ size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
 
     return len;
 }
+
+size_t GetModelNameUsingMFR(char *pModelName, size_t szBufSize)
+{
+    size_t len = 0;
+    IARM_Result_t ret;
+    IARM_Bus_MFRLib_GetSerializedData_Param_t param;
+
+    if (pPDRIFilename == NULL || szBufSize == 0) {
+        SWLOG_ERROR("GetModelNameUsingMFR: Error, input argument NULL\n");
+        return 0;
+    }
+
+    SWLOG_INFO("GetModelNameUsingMFR Fetching Model name via IARM_Bus_Call (MFRMgr)");
+
+    memset(&param, 0, sizeof(param));
+    param.type = mfrSERIALIZED_TYPE_MODELNAME;
+
+    ret = IARM_Bus_Call(
+        IARM_BUS_MFRLIB_NAME,
+        IARM_BUS_MFRLIB_API_GetSerializedData,
+        (void *)&param,
+        sizeof(param)
+    );
+
+    if (ret == IARM_RESULT_SUCCESS )
+    {
+	    SWLOG_INFO("GetPDRIFileNameUsingMFR: IARM_Bus_Call Success , param.bufLen : %zu\n" , (size_t)param.bufLen);
+	    if(param.bufLen > 0 && param.bufLen <= sizeof(param.buffer))
+	    {
+            if (param.bufLen < szBufSize)
+            {
+		memcpy(pModelName, param.buffer, param.bufLen);
+                pModelName[param.bufLen] = '\0';
+                len = param.bufLen;
+                SWLOG_INFO("GetModelNameUsingMFR: IARM_Bus_Call OK, Model name = %s", pModelName);
+	        }
+            else
+	        {
+		  // Truncate and null-terminate
+                memcpy(pModelName, param.buffer, szBufSize - 1);
+                pModelName[szBufSize - 1] = '\0';
+                len = szBufSize - 1;
+                SWLOG_ERROR("GetModelNameUsingMFR: Buffer too small for PDRI Version (bufLen=%zu, szBufSize=%zu) - truncated to fit",(size_t)param.bufLen, szBufSize);
+	        }
+        }
+        else
+        {
+        // Error path: be explicit
+	       pModelName[0] = '\0';
+           SWLOG_ERROR("GetModelNameUsingMFR: Invalid bufLen returned (bufLen=%zu, buffer size=%zu)",
+                        (size_t)param.bufLen, sizeof(param.buffer));
+            len = 0;
+
+        }
+    }
+    else
+    {
+        // Error path: be explicit
+        pModelName[0] = '\0';
+        SWLOG_ERROR("GetModelNameUsingMFR: IARM_Bus_Call failed (ret=%d, bufLen=%zu). Cannot retrieve model name.",ret, (size_t)param.bufLen);
+        len = 0;
+    }
+
+    return len;
+}
 #else
 
 // Do nothing act as pass through function .

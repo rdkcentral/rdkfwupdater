@@ -148,4 +148,5 @@ int init_event_handler(void);
 void interuptDwnl(int app_mode);
 bool isConnectedToInternet (void);
 size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize);
+size_t GetModelNameUsingMFR(char *pModelName, size_t szBufSize);
 #endif /* VIDEO_IARMINTERFACE_IARMINTERFACE_H_ */
