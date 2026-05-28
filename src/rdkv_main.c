@@ -572,7 +572,7 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type
     int pdri_curl_code = -1;
     int peripheral_curl_code = -1;
     char imageHTTPURL[URL_MAX_LEN1];
-    char dwlpath_filename[DWNL_PATH_FILE_LEN1];
+    char dwlpath_filename[MAX_BUFF_SIZE];
     FILE *fp = NULL;
     int optout = -1;
 
