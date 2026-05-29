@@ -2400,6 +2400,198 @@ TEST_F(DirectCDNOrchestratorTest, MaxRetryExhaustion_ReturnsFailure) {
     EXPECT_EQ(xconf_calls, 3);
 }
 
+/**
+ * @brief When isDwnlBlock forces server_type flip to CODEBIG while Direct CDN
+ * is active, codebigdownloadFile rejects the request and the download fails.
+ */
+TEST(DirectCDNBypassTest, DirectCDN_WhenDwnlBlockForcesCodebig_RequestFails) {
+    MockDownloadFileOps mockfileops;
+    global_mockdownloadfileops_ptr = &mockfileops;
+    MockExternal mockexternal;
+    global_mockexternal_ptr = &mockexternal;
+    DeviceUtilsMock DeviceMock;
+    g_DeviceUtilsMock = &DeviceMock;
+
+    int http_code = 0;
+    int local_force_exit = 0;
+    void *test_curl = NULL;
+    Rfc_t local_rfc = {0};
+    strncpy(local_rfc.rfc_throttle, "false", sizeof(local_rfc.rfc_throttle) - 1);
+
+    RdkUpgradeContext_t context = {0};
+    context.upgrade_type = PCI_UPGRADE;
+    context.server_type = HTTP_SSR_DIRECT;
+    context.artifactLocationUrl = "https://cdn.example.com/firmware.bin";
+    context.dwlloc = "/tmp/firmware.bin";
+    context.pPostFields = NULL;
+    context.immed_reboot_flag = "false";
+    context.delay_dwnl = 0;
+    context.lastrun = "0";
+    context.disableStatsUpdate = (char*)"true";
+    context.device_info = &device_info;
+    context.force_exit = &local_force_exit;
+    context.trigger_type = 1;
+    context.rfc_list = &local_rfc;
+    context.direct_cdn = true;
+
+    /* isDwnlBlock forces server_type flip from DIRECT to CODEBIG */
+    EXPECT_CALL(mockexternal, isDwnlBlock(HTTP_SSR_DIRECT)).WillOnce(Return(1));
+    EXPECT_CALL(mockexternal, isDwnlBlock(HTTP_SSR_CODEBIG)).WillOnce(Return(0));
+
+    /* codebigdownloadFile is entered but returns -1 (direct_cdn guard) */
+    EXPECT_CALL(mockfileops, codebigdownloadFile(_, _, _, _, _))
+        .Times(1)
+        .WillOnce(testing::DoAll(testing::SetArgPointee<4>(0), testing::Return(-1)));
+
+    EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _)).Times(0);
+
+    EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
+    EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isUpgradeInProgress()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isMmgbleNotifyEnabled()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, updateFWDownloadStatus(_, _)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal, logMilestone(_)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, eventManager(_, _)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, checkPDRIUpgrade(_)).WillRepeatedly(Return(true));
+    EXPECT_CALL(DeviceMock, getDevicePropertyData(_, _, _)).WillRepeatedly(Return(-1));
+
+    int result = rdkv_upgrade_request(&context, &test_curl, &http_code);
+    EXPECT_NE(result, CURL_SUCCESS);
+
+    global_mockdownloadfileops_ptr = NULL;
+    global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = &Deviceglobal;
+}
+
+/**
+ * @brief Per-artifact PDRI download without .bin suffix gets .bin appended
+ * to the local save path.
+ */
+TEST(DirectCDNRetryTest, PerArtifact_PDRI_WhenNoBinSuffix_AppendsBinToPath) {
+    MockDownloadFileOps mockfileops;
+    global_mockdownloadfileops_ptr = &mockfileops;
+    MockExternal mockexternal;
+    global_mockexternal_ptr = &mockexternal;
+    DeviceUtilsMock DeviceMock;
+    g_DeviceUtilsMock = &DeviceMock;
+
+    XCONFRES response;
+    memset(&response, 0, sizeof(response));
+    strncpy(response.pdriUrl, "https://cdn.example.com/pdri_image", sizeof(response.pdriUrl) - 1);
+    strncpy(response.cloudPDRIVersion, "testModel_PDRI_v2", sizeof(response.cloudPDRIVersion) - 1);
+
+    EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _))
+        .WillOnce(testing::Invoke([](int, const char *, const void *dwlloc, char *, int *http) {
+            const char *path = (const char *)dwlloc;
+            EXPECT_NE(strstr(path, "testModel_PDRI_v2.bin"), nullptr);
+            *http = 200;
+            return 0;
+        }));
+
+    EXPECT_CALL(mockexternal, isDwnlBlock(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
+    EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isMmgbleNotifyEnabled()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, updateFWDownloadStatus(_, _)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal, logMilestone(_)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, eventManager(_, _)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, checkPDRIUpgrade(_)).WillRepeatedly(Return(true));
+    EXPECT_CALL(DeviceMock, getDevicePropertyData(_, _, _)).WillRepeatedly(Return(-1));
+
+    int result = checkTriggerUpgrade(&response, "testModel", PDRI_UPGRADE);
+    EXPECT_EQ(result, 0);
+
+    global_mockdownloadfileops_ptr = NULL;
+    global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = &Deviceglobal;
+}
+
+/**
+ * @brief Per-artifact PDRI download with existing .bin suffix does not
+ * double-append (no .bin.bin in the local save path).
+ */
+TEST(DirectCDNRetryTest, PerArtifact_PDRI_WhenBinSuffixPresent_PathUnchanged) {
+    MockDownloadFileOps mockfileops;
+    global_mockdownloadfileops_ptr = &mockfileops;
+    MockExternal mockexternal;
+    global_mockexternal_ptr = &mockexternal;
+    DeviceUtilsMock DeviceMock;
+    g_DeviceUtilsMock = &DeviceMock;
+
+    XCONFRES response;
+    memset(&response, 0, sizeof(response));
+    strncpy(response.pdriUrl, "https://cdn.example.com/pdri_image.bin", sizeof(response.pdriUrl) - 1);
+    strncpy(response.cloudPDRIVersion, "testModel_PDRI_v2.bin", sizeof(response.cloudPDRIVersion) - 1);
+
+    EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _))
+        .WillOnce(testing::Invoke([](int, const char *, const void *dwlloc, char *, int *http) {
+            const char *path = (const char *)dwlloc;
+            EXPECT_NE(strstr(path, "testModel_PDRI_v2.bin"), nullptr);
+            EXPECT_EQ(strstr(path, ".bin.bin"), nullptr);
+            *http = 200;
+            return 0;
+        }));
+
+    EXPECT_CALL(mockexternal, isDwnlBlock(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
+    EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isMmgbleNotifyEnabled()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, updateFWDownloadStatus(_, _)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal, logMilestone(_)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, eventManager(_, _)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, checkPDRIUpgrade(_)).WillRepeatedly(Return(true));
+    EXPECT_CALL(DeviceMock, getDevicePropertyData(_, _, _)).WillRepeatedly(Return(-1));
+
+    int result = checkTriggerUpgrade(&response, "testModel", PDRI_UPGRADE);
+    EXPECT_EQ(result, 0);
+
+    global_mockdownloadfileops_ptr = NULL;
+    global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = &Deviceglobal;
+}
+
+/**
+ * @brief Per-artifact download receiving HTTP 403 (token expiry) is classified
+ * as retryable so the orchestrator can re-query XConf for fresh URLs.
+ */
+TEST(DirectCDNRetryTest, PerArtifact_WhenHttp403Received_ReturnsRetryErr) {
+    MockDownloadFileOps mockfileops;
+    global_mockdownloadfileops_ptr = &mockfileops;
+    MockExternal mockexternal;
+    global_mockexternal_ptr = &mockexternal;
+    DeviceUtilsMock DeviceMock;
+    g_DeviceUtilsMock = &DeviceMock;
+
+    XCONFRES response;
+    memset(&response, 0, sizeof(response));
+    strncpy(response.firmwareUrl, "https://cdn.example.com/fw.bin", sizeof(response.firmwareUrl) - 1);
+    strncpy(response.cloudFWFile, "testModel_fw.bin", sizeof(response.cloudFWFile) - 1);
+
+    EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _))
+        .WillRepeatedly(testing::DoAll(testing::SetArgPointee<4>(403), testing::Return(0)));
+
+    EXPECT_CALL(mockexternal, isDwnlBlock(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
+    EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isMmgbleNotifyEnabled()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, updateFWDownloadStatus(_, _)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal, logMilestone(_)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, eventManager(_, _)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, checkPDRIUpgrade(_)).WillRepeatedly(Return(true));
+    EXPECT_CALL(DeviceMock, getDevicePropertyData(_, _, _)).WillRepeatedly(Return(-1));
+
+    int result = checkTriggerUpgrade(&response, "testModel", PCI_UPGRADE);
+    EXPECT_EQ(result, DIRECT_CDN_RETRY_ERR);
+
+    global_mockdownloadfileops_ptr = NULL;
+    global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = &Deviceglobal;
+}
+
 GTEST_API_ int main(int argc, char *argv[]){
     char testresults_fullfilepath[GTEST_REPORT_FILEPATH_SIZE];
     char buffer[GTEST_REPORT_FILEPATH_SIZE];

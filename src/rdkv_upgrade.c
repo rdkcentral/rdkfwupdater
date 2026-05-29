@@ -704,6 +704,11 @@ int codebigdownloadFile(
         return curl_ret_code;
     }
 
+    /* Direct CDN mode must never enter Codebig path */
+    if (context->direct_cdn) {
+        SWLOG_INFO("%s: Direct CDN mode - Codebig path not permitted, returning\n", __FUNCTION__);
+        return curl_ret_code;
+    }
 
     int server_type = context->server_type;
     const char* artifactLocationUrl = context->artifactLocationUrl;

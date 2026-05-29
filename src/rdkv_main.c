@@ -617,7 +617,13 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type
         }
 
         snprintf(imageHTTPURL, sizeof(imageHTTPURL), "%s", artifact_url);
-        snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s", device_info.difw_path, artifact_file);
+
+        /* PDRI filename normalization: ensure .bin suffix on local save path */
+        if (upgrade_type == PDRI_UPGRADE && strstr(artifact_file, ".bin") == NULL) {
+            snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s.bin", device_info.difw_path, artifact_file);
+        } else {
+            snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s", device_info.difw_path, artifact_file);
+        }
 
         RdkUpgradeContext_t artifact_ctx = {0};
         artifact_ctx.upgrade_type = artifact_upgrade_type;
@@ -652,6 +658,12 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type
         /* Transient HTTP-level failures → retryable (server-side temporary errors) */
         if (curl_ret == 0 && (http_code == 502 || http_code == 503)) {
             SWLOG_WARN("%s: upgrade_type %d transient HTTP %d, retryable\n",
+                       __FUNCTION__, upgrade_type, http_code);
+            return DIRECT_CDN_RETRY_ERR;
+        }
+        /* HTTP 403 → retryable (token expiry, requires fresh XConf query for new URL) */
+        if (curl_ret == 0 && http_code == 403) {
+            SWLOG_WARN("%s: upgrade_type %d HTTP 403 (token expired), retryable\n",
                        __FUNCTION__, upgrade_type, http_code);
             return DIRECT_CDN_RETRY_ERR;
         }
