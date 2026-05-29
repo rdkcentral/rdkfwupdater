@@ -1211,6 +1211,7 @@ TEST(MainHelperFunctionTest,flashImageTest){
     //int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint)
     EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "false", "2", 0, "false",2), 0);
     global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = nullptr;
 }
 TEST(MainHelperFunctionTest,flashImageTestRedState){
     MockExternal mockexternal;
@@ -1227,6 +1228,7 @@ TEST(MainHelperFunctionTest,flashImageTestRedState){
     //int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint)
     EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "false", "2", 0, "false",6), 0);
     global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = nullptr;
 }
 TEST(MainHelperFunctionTest,flashImageTestFail){
     MockExternal mockexternal;
@@ -1243,6 +1245,7 @@ TEST(MainHelperFunctionTest,flashImageTestFail){
     //int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint)
     EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "false", "2", 0, "false",3), 1);
     global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = nullptr;
 }
 TEST(MainHelperFunctionTest,flashImageTestFail1){
     MockExternal mockexternal;
@@ -1259,6 +1262,7 @@ TEST(MainHelperFunctionTest,flashImageTestFail1){
     //int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint)
     EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "false", "2", 0, "false",1), 1);
     global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = nullptr;
 }
 TEST(MainHelperFunctionTest,flashImageTestFail2){
     MockExternal mockexternal;
@@ -1275,6 +1279,7 @@ TEST(MainHelperFunctionTest,flashImageTestFail2){
     //int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint)
     EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "false", "2", 0, "false",5), 1);
     global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = nullptr;
 }
 TEST(MainHelperFunctionTest,flashImageTestRebootTrue){
     MockExternal mockexternal;
@@ -1290,6 +1295,7 @@ TEST(MainHelperFunctionTest,flashImageTestRebootTrue){
     //int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint)
     EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "true", "2", 0, "false",2), 0);
     global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = nullptr;
 }
 TEST(MainHelperFunctionTest,flashImageTestPdri){
     MockExternal mockexternal;
@@ -1305,6 +1311,7 @@ TEST(MainHelperFunctionTest,flashImageTestPdri){
     //int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint)
     EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "false", "2", 1, "false",6), 0);
     global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = nullptr;
 }
 
 TEST(MainHelperFunctionTest,flashImageTestMaintTrue){
@@ -1321,6 +1328,7 @@ TEST(MainHelperFunctionTest,flashImageTestMaintTrue){
     //int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint)
     EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "true", "2", 0, "true",1), 0);
     global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = nullptr;
 }
 TEST(MainHelperFunctionTest,flashImageTestMaintFalse){
     MockExternal mockexternal;
@@ -1336,6 +1344,7 @@ TEST(MainHelperFunctionTest,flashImageTestMaintFalse){
     //int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint)
     EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "true", "2", 0, "false",2), 0);
     global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = nullptr;
 }
 TEST(MainHelperFunctionTest,getXconfResTest){
     XCONFRES response;
