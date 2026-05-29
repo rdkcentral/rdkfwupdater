@@ -32,8 +32,6 @@
 #include "deviceutils.h"
 #include "device_api.h"
 
-extern Rfc_t rfc_list;
-
 #ifndef HANDLER_TEST_ONLY
 // TODO: Convert to array of function pointer calls to reduce size of this function
 size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
@@ -281,7 +279,7 @@ int getXconfRespData( XCONFRES *pResponse, char *pJsonStr )
             GetJsonVal( pJson, "additionalFwVerInfo", pResponse->cloudPDRIVersion, sizeof(pResponse->cloudPDRIVersion) );
             GetJsonVal( pJson, "delayDownload", pResponse->cloudDelayDownload, sizeof(pResponse->cloudDelayDownload) );
 
-            if (strncmp(rfc_list.rfc_directcdn, "true", 4) == 0) {
+            if (isDirectCDNEnabled()) {
                 /* Direct CDN mode: parse per-artifact URLs */
                 GetJsonVal( pJson, "firmware_URL", pResponse->firmwareUrl, sizeof(pResponse->firmwareUrl) );
                 GetJsonVal( pJson, "additionalFwVerInfo_URL", pResponse->pdriUrl, sizeof(pResponse->pdriUrl) );

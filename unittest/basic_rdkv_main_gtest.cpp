@@ -1484,8 +1484,10 @@ TEST(DirectCDNParsingTest, getXconfRespData_DirectCDN_ParsesPerArtifactURLs)
     XCONFRES response;
     memset(&response, 0, sizeof(response));
 
-    /* Enable Direct CDN via rfc_list */
-    strncpy(rfc_list.rfc_directcdn, "true", RFC_VALUE_BUF_SIZE - 1);
+    /* Enable Direct CDN via mock */
+    DeviceUtilsMock localMock;
+    g_DeviceUtilsMock = &localMock;
+    EXPECT_CALL(localMock, isDirectCDNEnabled()).WillRepeatedly(Return(true));
 
     char data[] = "{"
         "\"firmwareDownloadProtocol\":\"http\","
@@ -1508,7 +1510,7 @@ TEST(DirectCDNParsingTest, getXconfRespData_DirectCDN_ParsesPerArtifactURLs)
     EXPECT_STREQ(response.cloudFWFile, "PX051AEI_VBN_24Q4_sprint_20241015-signed.bin");
 
     /* Cleanup */
-    memset(rfc_list.rfc_directcdn, 0, RFC_VALUE_BUF_SIZE);
+    g_DeviceUtilsMock = nullptr;
 }
 
 TEST(DirectCDNParsingTest, getXconfRespData_DirectCDN_Disabled_LegacyPath)
@@ -1516,8 +1518,10 @@ TEST(DirectCDNParsingTest, getXconfRespData_DirectCDN_Disabled_LegacyPath)
     XCONFRES response;
     memset(&response, 0, sizeof(response));
 
-    /* Ensure Direct CDN is disabled */
-    memset(rfc_list.rfc_directcdn, 0, RFC_VALUE_BUF_SIZE);
+    /* Direct CDN disabled via mock */
+    DeviceUtilsMock localMock;
+    g_DeviceUtilsMock = &localMock;
+    EXPECT_CALL(localMock, isDirectCDNEnabled()).WillRepeatedly(Return(false));
 
     char data[] = "{"
         "\"firmwareDownloadProtocol\":\"http\","
@@ -1536,6 +1540,9 @@ TEST(DirectCDNParsingTest, getXconfRespData_DirectCDN_Disabled_LegacyPath)
     EXPECT_STREQ(response.remCtrlUrl, "");
     /* Legacy peripheral parsing should work */
     EXPECT_STRNE(response.peripheralFirmwares, "");
+
+    /* Cleanup */
+    g_DeviceUtilsMock = nullptr;
 }
 
 // =============================================================================
@@ -2195,10 +2202,6 @@ protected:
         global_mockexternal_ptr = &mockexternal;
         g_DeviceUtilsMock = &DeviceMock;
 
-        /* Direct CDN JSON parsing path uses global RFC cache state */
-        memset(rfc_list.rfc_directcdn, 0, RFC_VALUE_BUF_SIZE);
-        strncpy(rfc_list.rfc_directcdn, "true", RFC_VALUE_BUF_SIZE - 1);
-
         memset(&local_device_info, 0, sizeof(local_device_info));
         strncpy(local_device_info.model, "testModel", sizeof(local_device_info.model) - 1);
         strncpy(local_device_info.maint_status, "false", sizeof(local_device_info.maint_status) - 1);
@@ -2228,7 +2231,6 @@ protected:
     }
 
     void TearDown() override {
-        memset(rfc_list.rfc_directcdn, 0, RFC_VALUE_BUF_SIZE);
         global_mockdownloadfileops_ptr = NULL;
         global_mockexternal_ptr = NULL;
         g_DeviceUtilsMock = &Deviceglobal;
