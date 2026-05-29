@@ -663,8 +663,7 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type
         }
         /* HTTP 403 → retryable (token expiry, requires fresh XConf query for new URL) */
         if (curl_ret == 0 && http_code == 403) {
-            SWLOG_WARN("%s: upgrade_type %d HTTP 403 (token expired), retryable\n",
-                       __FUNCTION__, upgrade_type, http_code);
+            SWLOG_WARN("%s: upgrade_type %d HTTP 403 (token expired), retryable\n",__FUNCTION__, upgrade_type);
             return DIRECT_CDN_RETRY_ERR;
         }
         /* Permanent failure (HTTP 404, validation errors, etc.) */
