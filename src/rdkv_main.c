@@ -672,7 +672,7 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type
         return -1;
     }
 
-    /* Legacy mode (upgrade_type == 0): existing behavior unchanged */
+    /* Legacy mode (upgrade_type == -1): existing behavior unchanged */
     if (true == isUpgradeInProgress()) {
         SWLOG_ERROR("Exiting from DEVICE INITIATED HTTP CDL\nAnother upgrade is in progress\n");
         if (!(strncmp(device_info.maint_status, "true", 4))) {
