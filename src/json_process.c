@@ -290,7 +290,7 @@ int getXconfRespData( XCONFRES *pResponse, char *pJsonStr )
                 int peri_ret = getPeripheralProduct(peripheral_product, sizeof(peripheral_product));
                 if (peri_ret != -1 && peripheral_product[0] != '\0') {
                     snprintf(peripheral_product_url, sizeof(peripheral_product_url), "%s_URL", peripheral_product);
-                    GetJsonValContaining( pJson, "remCtrl", pResponse->peripheralFirmwares, sizeof(pResponse->peripheralFirmwares) );
+                    GetJsonVal( pJson, peripheral_product, pResponse->peripheralFirmwares, sizeof(pResponse->peripheralFirmwares) );
                     GetJsonVal( pJson, peripheral_product_url, pResponse->remCtrlUrl, sizeof(pResponse->remCtrlUrl) );
                 }
             } else {
