@@ -281,6 +281,7 @@ int getXconfRespData( XCONFRES *pResponse, char *pJsonStr )
 
             if (isDirectCDNEnabled()) {
                 /* Direct CDN mode: parse per-artifact URLs */
+                //TODO : Check the cases where we have multiple firmware images for the same model
                 GetJsonVal( pJson, "firmware_URL", pResponse->firmwareUrl, sizeof(pResponse->firmwareUrl) );
                 GetJsonVal( pJson, "additionalFwVerInfo_URL", pResponse->pdriUrl, sizeof(pResponse->pdriUrl) );
 
@@ -291,7 +292,9 @@ int getXconfRespData( XCONFRES *pResponse, char *pJsonStr )
                 if (peri_ret != -1 && peripheral_product[0] != '\0') {
                     snprintf(peripheral_product_url, sizeof(peripheral_product_url), "%s_URL", peripheral_product);
                     GetJsonVal( pJson, peripheral_product, pResponse->peripheralFirmwares, sizeof(pResponse->peripheralFirmwares) );
+                    SWLOG_INFO("remctrl with buf %s= %s\n", peripheral_product, pResponse->peripheralFirmwares);
                     GetJsonVal( pJson, peripheral_product_url, pResponse->remCtrlUrl, sizeof(pResponse->remCtrlUrl) );
+                    SWLOG_INFO("remctrl with buf url %s= %s\n", peripheral_product_url, pResponse->remCtrlUrl);
                 }
             } else {
                 /* Legacy mode: use containing-match for peripheral */
