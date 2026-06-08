@@ -345,3 +345,79 @@ flowchart TD
 - [UNKNOWN] Maintenance Manager retry interval and maximum attempts
 - [UNKNOWN] Whether client-sdk provides any timeout/retry assistance to applications
 - [UNKNOWN] Behavior when CDN doesn't support Range (returns 200 instead of 206)
+
+---
+
+## ADDED Requirements (from direct-cdn-parity-guards)
+
+### Requirement: HTTP 403 classified as retryable for Direct CDN per-artifact downloads
+The per-artifact download error classification SHALL treat HTTP 403 as a transient retryable error (`DIRECT_CDN_RETRY_ERR`) when operating in Direct CDN per-artifact mode. This enables the `DirectCDNDownload()` retry loop to re-query XConf for fresh token-bearing URLs.
+
+#### Scenario: HTTP 403 triggers retry with XConf re-query
+- **WHEN** a per-artifact download receives HTTP 403 response
+- **THEN** `checkTriggerUpgrade()` SHALL return `DIRECT_CDN_RETRY_ERR`
+- **AND** the `DirectCDNDownload()` orchestrator SHALL re-query XConf on the next iteration to obtain fresh per-artifact URLs
+
+#### Scenario: HTTP 403 respects maximum retry count
+- **WHEN** per-artifact downloads receive HTTP 403 on all retry iterations
+- **THEN** the orchestrator SHALL fail permanently after 3 total iterations (existing retry cap)
+
+#### Scenario: HTTP 404 remains permanent failure (unchanged)
+- **WHEN** a per-artifact download receives HTTP 404 response
+- **THEN** `checkTriggerUpgrade()` SHALL return -1 (permanent failure, non-retryable)
+
+---
+
+## ADDED Requirements (from direct-cdn-adoption)
+
+### Requirement: Direct CDN per-artifact selective retry
+The Direct CDN orchestrator SHALL implement a per-artifact retry mechanism: only artifacts that failed with a transient error are re-attempted on subsequent iterations.
+
+#### Scenario: Successful artifact not re-attempted
+- **WHEN** PCI download succeeds on iteration 1 but PDRI fails with a transient error
+- **THEN** on iteration 2 the orchestrator SHALL skip PCI and only re-attempt PDRI
+
+#### Scenario: Maximum 3 retry iterations
+- **WHEN** an artifact fails with a transient error on all iterations
+- **THEN** the orchestrator SHALL attempt at most 3 total iterations before declaring failure
+
+#### Scenario: Both PCI and PDRI succeed stops retry loop
+- **WHEN** both PCI and PDRI downloads succeed within a retry iteration
+- **THEN** the orchestrator SHALL exit the retry loop immediately regardless of peripheral status
+
+### Requirement: Transient vs permanent failure classification
+The per-artifact download mode SHALL classify errors as transient (retryable) or permanent (non-retryable) based on the curl error code.
+
+#### Scenario: Connection timeout is transient
+- **WHEN** `rdkv_upgrade_request()` returns `CURLE_OPERATION_TIMEDOUT`
+- **THEN** the per-artifact caller SHALL return `DIRECT_CDN_RETRY_ERR` (retryable)
+
+#### Scenario: Connection refused is transient
+- **WHEN** `rdkv_upgrade_request()` returns `CURLE_COULDNT_CONNECT`
+- **THEN** the per-artifact caller SHALL return `DIRECT_CDN_RETRY_ERR` (retryable)
+
+#### Scenario: Receive error is transient
+- **WHEN** `rdkv_upgrade_request()` returns `CURLE_RECV_ERROR`
+- **THEN** the per-artifact caller SHALL return `DIRECT_CDN_RETRY_ERR` (retryable)
+
+#### Scenario: HTTP 404 is permanent
+- **WHEN** the HTTP response code is 404
+- **THEN** the per-artifact caller SHALL return -1 (non-retryable, permanent failure)
+
+### Requirement: XConf re-query per retry iteration
+The Direct CDN orchestrator SHALL perform a fresh XConf query on each retry iteration to obtain current per-artifact URLs.
+
+#### Scenario: Fresh XConf data per iteration
+- **WHEN** the retry loop begins a new iteration
+- **THEN** it SHALL call `rdkv_upgrade_request()` with `XCONF_UPGRADE` type and re-parse the response before attempting per-artifact downloads
+
+### Requirement: Peripheral failure does not block overall success
+Peripheral download failure SHALL NOT prevent the overall `DirectCDNDownload()` from reporting success, provided PCI and PDRI both succeeded.
+
+#### Scenario: PCI+PDRI success with peripheral failure
+- **WHEN** PCI and PDRI downloads succeed but peripheral download fails
+- **THEN** `DirectCDNDownload()` SHALL return 0 (success)
+
+#### Scenario: Peripheral retried within loop but non-blocking
+- **WHEN** peripheral download fails on one iteration
+- **THEN** it SHALL be re-attempted on subsequent iterations but SHALL NOT contribute to the retry-gate condition

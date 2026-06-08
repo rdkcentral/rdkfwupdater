@@ -401,3 +401,44 @@ sequenceDiagram
 - [UNKNOWN] Whether partial file integrity is validated before resume (checksum?)
 - [UNKNOWN] Timeout values for curl operations (connect timeout, transfer timeout)
 - [UNKNOWN] Whether concurrent downloads of different types are ever attempted in daemon mode
+
+---
+
+## ADDED Requirements (from direct-cdn-parity-guards)
+
+### Requirement: Codebig entry-point guard for Direct CDN mode
+The `codebigdownloadFile()` function SHALL reject requests where `context->direct_cdn == true` by returning immediately before any Codebig signing or download logic executes. This provides defense-in-depth against `isDwnlBlock()` server_type flips that could redirect a Direct CDN download into the Codebig path.
+
+#### Scenario: Direct CDN request blocked at Codebig entry point
+- **WHEN** `codebigdownloadFile()` is called with `context->direct_cdn == true`
+- **THEN** the function SHALL log an informational message and return -1 without performing any Codebig URL signing or download attempt
+
+#### Scenario: Non-Direct-CDN request proceeds normally
+- **WHEN** `codebigdownloadFile()` is called with `context->direct_cdn == false`
+- **THEN** the function SHALL proceed with its existing Codebig signing and download logic unchanged
+
+#### Scenario: isDwnlBlock flip does not bypass guard
+- **WHEN** `isDwnlBlock()` flips `server_type` from `HTTP_SSR_DIRECT` to `HTTP_SSR_CODEBIG` AND `context->direct_cdn == true`
+- **THEN** the resulting call to `codebigdownloadFile()` SHALL still be blocked by the entry-point guard
+
+---
+
+## ADDED Requirements (from direct-cdn-adoption)
+
+### Requirement: Direct CDN download mode skips Codebig fallback
+When the `direct_cdn` flag is set in `RdkUpgradeContext_t`, the download engine SHALL attempt only the direct URL download without the mTLS → direct → Codebig fallback chain.
+
+#### Scenario: direct_cdn true bypasses Codebig
+- **WHEN** `rdkv_upgrade_request()` is called with `context->direct_cdn == true`
+- **THEN** the engine SHALL perform a single direct HTTPS download attempt using `context->artifactLocationUrl` without Codebig signing or fallback
+
+#### Scenario: direct_cdn false preserves existing fallback
+- **WHEN** `rdkv_upgrade_request()` is called with `context->direct_cdn == false`
+- **THEN** the engine SHALL execute the existing fallback chain: mTLS → direct → Codebig (unchanged behavior)
+
+### Requirement: RdkUpgradeContext_t includes direct_cdn field
+The `RdkUpgradeContext_t` structure SHALL include a `bool direct_cdn` field. Callers that zero-initialize the struct SHALL get `false` (legacy behavior) by default.
+
+#### Scenario: Zero-initialized context defaults to legacy
+- **WHEN** a caller creates `RdkUpgradeContext_t ctx = {0}` without setting `direct_cdn`
+- **THEN** `ctx.direct_cdn` SHALL be false, preserving the full fallback chain behavior
