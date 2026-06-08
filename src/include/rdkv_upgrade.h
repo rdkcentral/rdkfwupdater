@@ -39,6 +39,7 @@ typedef enum {
     RDKV_UPGRADE_SUCCESS = 0,
     RDKV_UPGRADE_ERROR_THROTTLE_ZERO = -100,  // Throttle speed = 0
     RDKV_UPGRADE_ERROR_FORCE_EXIT = -101,      // Force exit (curl 23)
+    RDKV_UPGRADE_ERROR_STATE_RED = -102,       // State red entered, skip retry
 } rdkv_upgrade_error_t;
 
 /**

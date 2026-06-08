@@ -2603,6 +2603,135 @@ TEST(DirectCDNRetryTest, PerArtifact_WhenHttp403Received_ReturnsRetryErr) {
     g_DeviceUtilsMock = &Deviceglobal;
 }
 
+/**
+ * @brief When downloadFile returns RDKV_UPGRADE_ERROR_STATE_RED, rdkv_upgrade_request
+ * must short-circuit immediately without calling retryDownload or codebig fallback.
+ * This verifies the state-red guard prevents retry loops after uninitialize() was called.
+ */
+TEST(StateRedShortCircuitTest, DirectPath_SkipsRetryWhenStateRedReturned) {
+    MockDownloadFileOps mockfileops;
+    global_mockdownloadfileops_ptr = &mockfileops;
+    MockExternal mockexternal;
+    global_mockexternal_ptr = &mockexternal;
+    DeviceUtilsMock DeviceMock;
+    g_DeviceUtilsMock = &DeviceMock;
+
+    int local_force_exit = 0;
+    int http_code = 0;
+    void *test_curl = NULL;
+    Rfc_t local_rfc = {0};
+    strncpy(local_rfc.rfc_throttle, "false", sizeof(local_rfc.rfc_throttle) - 1);
+
+    RdkUpgradeContext_t context = {0};
+    context.upgrade_type = PCI_UPGRADE;
+    context.server_type = HTTP_SSR_DIRECT;
+    context.artifactLocationUrl = "https://cdn.example.com/firmware.bin";
+    context.dwlloc = "/tmp/firmware.bin";
+    context.pPostFields = NULL;
+    context.immed_reboot_flag = "false";
+    context.delay_dwnl = 0;
+    context.lastrun = "0";
+    context.disableStatsUpdate = (char*)"true";
+    context.device_info = &device_info;
+    context.force_exit = &local_force_exit;
+    context.trigger_type = 1;
+    context.rfc_list = &local_rfc;
+    context.direct_cdn = false;
+
+    /* downloadFile returns STATE_RED — should be called exactly once (no retry) */
+    EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _))
+        .Times(1)
+        .WillOnce(testing::DoAll(testing::SetArgPointee<4>(0), testing::Return(RDKV_UPGRADE_ERROR_STATE_RED)));
+
+    /* codebigdownloadFile should NEVER be called — no fallback after state red */
+    EXPECT_CALL(mockfileops, codebigdownloadFile(_, _, _, _, _)).Times(0);
+
+    /* Mock supporting calls */
+    EXPECT_CALL(mockexternal, isDwnlBlock(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
+    EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isUpgradeInProgress()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isMmgbleNotifyEnabled()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, updateFWDownloadStatus(_, _)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal, logMilestone(_)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, eventManager(_, _)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, checkPDRIUpgrade(_)).WillRepeatedly(Return(true));
+    EXPECT_CALL(DeviceMock, getDevicePropertyData(_, _, _)).WillRepeatedly(Return(-1));
+    EXPECT_CALL(mockexternal, CheckIProuteConnectivity(_)).WillRepeatedly(Return(false));
+
+    int result = rdkv_upgrade_request(&context, &test_curl, &http_code);
+    EXPECT_EQ(result, RDKV_UPGRADE_ERROR_STATE_RED);
+
+    global_mockdownloadfileops_ptr = NULL;
+    global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = &Deviceglobal;
+}
+
+/**
+ * @brief When codebigdownloadFile returns RDKV_UPGRADE_ERROR_STATE_RED on the codebig
+ * path, rdkv_upgrade_request must short-circuit without retrying.
+ */
+TEST(StateRedShortCircuitTest, CodebigPath_SkipsRetryWhenStateRedReturned) {
+    MockDownloadFileOps mockfileops;
+    global_mockdownloadfileops_ptr = &mockfileops;
+    MockExternal mockexternal;
+    global_mockexternal_ptr = &mockexternal;
+    DeviceUtilsMock DeviceMock;
+    g_DeviceUtilsMock = &DeviceMock;
+
+    int local_force_exit = 0;
+    int http_code = 0;
+    void *test_curl = NULL;
+    Rfc_t local_rfc = {0};
+    strncpy(local_rfc.rfc_throttle, "false", sizeof(local_rfc.rfc_throttle) - 1);
+
+    RdkUpgradeContext_t context = {0};
+    context.upgrade_type = PCI_UPGRADE;
+    context.server_type = HTTP_SSR_CODEBIG;
+    context.artifactLocationUrl = "https://cdn.example.com/firmware.bin";
+    context.dwlloc = "/tmp/firmware.bin";
+    context.pPostFields = NULL;
+    context.immed_reboot_flag = "false";
+    context.delay_dwnl = 0;
+    context.lastrun = "0";
+    context.disableStatsUpdate = (char*)"true";
+    context.device_info = &device_info;
+    context.force_exit = &local_force_exit;
+    context.trigger_type = 1;
+    context.rfc_list = &local_rfc;
+    context.direct_cdn = false;
+
+    /* codebigdownloadFile returns STATE_RED — should be called exactly once (no retry) */
+    EXPECT_CALL(mockfileops, codebigdownloadFile(_, _, _, _, _))
+        .Times(1)
+        .WillOnce(testing::DoAll(testing::SetArgPointee<4>(0), testing::Return(RDKV_UPGRADE_ERROR_STATE_RED)));
+
+    /* downloadFile should NEVER be called — no fallback after state red */
+    EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _)).Times(0);
+
+    /* Mock supporting calls */
+    EXPECT_CALL(mockexternal, isDwnlBlock(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
+    EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isUpgradeInProgress()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, isMmgbleNotifyEnabled()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mockexternal, updateFWDownloadStatus(_, _)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal, logMilestone(_)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, eventManager(_, _)).Times(testing::AnyNumber());
+    EXPECT_CALL(mockexternal, checkPDRIUpgrade(_)).WillRepeatedly(Return(true));
+    EXPECT_CALL(DeviceMock, getDevicePropertyData(_, _, _)).WillRepeatedly(Return(-1));
+    EXPECT_CALL(mockexternal, CheckIProuteConnectivity(_)).WillRepeatedly(Return(false));
+
+    int result = rdkv_upgrade_request(&context, &test_curl, &http_code);
+    EXPECT_EQ(result, RDKV_UPGRADE_ERROR_STATE_RED);
+
+    global_mockdownloadfileops_ptr = NULL;
+    global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = &Deviceglobal;
+}
+
 GTEST_API_ int main(int argc, char *argv[]){
     char testresults_fullfilepath[GTEST_REPORT_FILEPATH_SIZE];
     char buffer[GTEST_REPORT_FILEPATH_SIZE];
