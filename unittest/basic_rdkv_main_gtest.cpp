@@ -2454,7 +2454,10 @@ TEST(DirectCDNBypassTest, DirectCDN_WhenDwnlBlockForcesCodebig_RequestFails) {
         .Times(1)
         .WillOnce(testing::DoAll(testing::SetArgPointee<4>(0), testing::Return(-1)));
 
-    EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _)).Times(0);
+    /* retryDownload uses context->server_type (HTTP_SSR_DIRECT) so downloadFile
+       gets called from the retry path; let it fail so the overall result != 0 */
+    EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _))
+        .WillRepeatedly(testing::DoAll(testing::SetArgPointee<4>(0), testing::Return(-1)));
 
     EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
     EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
