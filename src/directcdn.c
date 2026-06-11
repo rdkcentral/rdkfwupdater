@@ -104,6 +104,16 @@ int DirectCDNDownload( XCONFRES *response, char *cur_img_name, DeviceProperty_t 
             if( len )
             {
                 len = createJsonString( pJSONStr, JSON_STR_LEN );
+                if (len >= JSON_STR_LEN) {
+                    SWLOG_ERROR("DirectCDNDownload: JSON buffer overflow: %zu >= %d\n", len, JSON_STR_LEN);
+                    free( pServURL );
+                    free( pJSONStr );
+                    if( DwnLoc.pvOut != NULL )
+                    {
+                        free( DwnLoc.pvOut );
+                    }
+                    return curl_ret_code;
+                }
 		while(cnt < total_retry_cnt && ((pci_upgrade_status == DIRECT_CDN_RETRY_ERR) || (pdri_upgrade_status == DIRECT_CDN_RETRY_ERR)) ) {
                     SWLOG_INFO("DirectCDNDownload: retry iteration %d/%d (pci=%d pdri=%d)\n",
                                cnt + 1, total_retry_cnt, pci_upgrade_status, pdri_upgrade_status);
