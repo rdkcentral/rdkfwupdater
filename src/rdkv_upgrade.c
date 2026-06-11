@@ -709,7 +709,7 @@ int codebigdownloadFile(
         SWLOG_ERROR("%s: curl parameter (pointer) is NULL\n", __FUNCTION__);
         return curl_ret_code;
     }
-
+     *httpCode = 0;
     /* Direct CDN mode must never enter Codebig path */
     if (context->direct_cdn) {
         SWLOG_INFO("%s: Direct CDN mode - Codebig path not permitted, returning\n", __FUNCTION__);
@@ -732,7 +732,7 @@ int codebigdownloadFile(
         SWLOG_ERROR("%s: artifactLocationUrl or localDownloadLocation is NULL\n", __FUNCTION__);
         return curl_ret_code;
     }
-    *httpCode = 0;
+   
 
 #ifdef DEBUG_CODEBIG_CDL
     if( filePresentCheck( "/tmp/.forceCodebigFailure" ) == RDK_API_SUCCESS )
