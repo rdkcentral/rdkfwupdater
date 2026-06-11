@@ -712,7 +712,6 @@ int codebigdownloadFile(
 
     /* Direct CDN mode must never enter Codebig path */
     if (context->direct_cdn) {
-        *httpCode = 0;
         SWLOG_INFO("%s: Direct CDN mode - Codebig path not permitted, returning\n", __FUNCTION__);
         return curl_ret_code;
     }
