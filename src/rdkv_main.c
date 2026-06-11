@@ -582,7 +582,14 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type
         SWLOG_ERROR("%s : Parameter is NULL\n", __FUNCTION__);
         return upgrade_status;
     }
-
+     if (true == isUpgradeInProgress()) {
+        SWLOG_ERROR("Exiting from DEVICE INITIATED HTTP CDL\nAnother upgrade is in progress\n");
+        if (!(strncmp(device_info.maint_status, "true", 4))) {
+            eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR);
+        }
+        uninitialize(INITIAL_VALIDATION_SUCCESS);
+        exit(1);
+    }
     /* Per-artifact mode (Direct CDN): handle a single artifact type */
     if (upgrade_type != LEGACY_ALL_UPGRADE) {
         const char *artifact_url = NULL;
@@ -673,14 +680,6 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type
     }
 
     /* Legacy mode (upgrade_type == -1): existing behavior unchanged */
-    if (true == isUpgradeInProgress()) {
-        SWLOG_ERROR("Exiting from DEVICE INITIATED HTTP CDL\nAnother upgrade is in progress\n");
-        if (!(strncmp(device_info.maint_status, "true", 4))) {
-            eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR);
-        }
-        uninitialize(INITIAL_VALIDATION_SUCCESS);
-        exit(1);
-    }
     if ((strstr(pResponse->cloudFWVersion, model)) == NULL) {
         SWLOG_INFO("cloudFWVersion is empty. Do Nothing\n");
         eventManager(FW_STATE_EVENT, FW_STATE_FAILED);
