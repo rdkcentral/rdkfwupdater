@@ -134,6 +134,10 @@ int DirectCDNDownload( XCONFRES *response, char *cur_img_name, DeviceProperty_t 
                         SWLOG_INFO( "DirectCDNDownload: DownloadData Size = %zu\n", DwnLoc.datasize );
                         xconf_ret = getXconfRespData( response, (char *)DwnLoc.pvOut );
             		SWLOG_INFO("DirectCDNDownload: XCONF Download Success ret=%d\n", xconf_ret);
+                        if (xconf_ret != 0) {
+                            SWLOG_ERROR("DirectCDNDownload: failed to parse XConf response ret=%d\n", xconf_ret);
+                            break;
+                        }
                         json_res = processJsonResponse(response, cur_img_name, device_info->model, device_info->maint_status);
                         SWLOG_INFO("DirectCDNDownload: processJsonResponse returned %d\n", json_res);
                         if (0 == (strncmp(response->cloudProto, "tftp", 4))) {
