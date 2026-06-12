@@ -1250,6 +1250,8 @@ int main(int argc, char *argv[]) {
             SWLOG_INFO("Direct CDN mode enabled, calling DirectCDNDownload\n");
             ret_curl_code = DirectCDNDownload(&response, cur_img_detail.cur_img_name,
                                               &device_info, server_type, &http_code);
+            /* DirectCDNDownload already performs JSON parsing/validation internally */
+            json_res = (ret_curl_code == 0) ? 0 : -1;
             SWLOG_INFO("DirectCDNDownload returned %d\n", ret_curl_code);
         } else {
             /* Legacy path: XConf query + sequential download (unchanged) */
