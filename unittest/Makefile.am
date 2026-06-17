@@ -52,6 +52,7 @@ rdkfw_deviceutils_gtest_SOURCES = deviceutils/device_api_gtest.cpp deviceutils/d
 # Note: The original design (develop/) also excluded these helper files, relying on mocks
 rdkfw_main_gtest_SOURCES = basic_rdkv_main_gtest.cpp \
     ../src/rdkv_main.c \
+    ../src/directcdn.c \
     ../src/rdkv_upgrade.c \
     ../src/chunk.c \
     ../src/flash.c \

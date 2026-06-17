@@ -22,7 +22,13 @@
 #include <gmock/gmock.h>
 
 #include "rdkv_cdl_log_wrapper.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include "rfcinterface.h"
+#ifdef __cplusplus
+}
+#endif
 //#include "rdk_fwdl_utils.h"  // Add this for BUILDTYPE from system library
 #define RDK_API_SUCCESS 0
 //int getDevicePropertyData(const char *model, char *data, int size);
@@ -52,7 +58,7 @@ class DeviceStatusInterface
 	virtual int filePresentCheck(const char *filename) = 0;
 	virtual bool isConnectedToInternet () = 0;
 	//virtual int updateFWDownloadStatus(struct FWDownloadStatus *fwdls, const char *disableStatsUpdate) = 0;
-	virtual int write_RFCProperty(const char *key, const char *value, RFCVALDATATYPE datatype) = 0;
+	virtual int write_RFCProperty(char* type, const char *key, const char *value, RFCVALDATATYPE datatype) = 0;
 	virtual void uninitialize(int data) = 0;
 	virtual void eventManager(const char *cur_event_name, const char *event_status) = 0;
 	virtual size_t GetPDRIFileNameUsingMFR( char *pPDRIFilename, size_t szBufSize ) = 0;
@@ -61,6 +67,7 @@ class DeviceStatusInterface
 	virtual void t2CountNotify(char *marker) = 0;
 	virtual void t2ValNotify(char *marker, char *val) = 0;
 	virtual int v_secure_system(const char *str ) = 0;
+	virtual bool isDirectCDNEnabled() = 0;
 };
 
 class DeviceStatusMock: public DeviceStatusInterface
@@ -89,8 +96,9 @@ class DeviceStatusMock: public DeviceStatusInterface
     	MOCK_METHOD(int, filePresentCheck, (const char *filename ), ());
     	MOCK_METHOD(bool, isConnectedToInternet, (), ());
     	MOCK_METHOD(int, v_secure_system, (const char *str ), ());
+    	MOCK_METHOD(bool, isDirectCDNEnabled, (), ());
     	//MOCK_METHOD(int, updateFWDownloadStatus, (struct FWDownloadStatus *fwdls, const char *disableStatsUpdate), ());
-    	MOCK_METHOD(int, write_RFCProperty, (const char *key, const char *value, RFCVALDATATYPE datatype), ());
+    	MOCK_METHOD(int, write_RFCProperty, (char* type, const char *key, const char *value, RFCVALDATATYPE datatype), ());
     	MOCK_METHOD(void, uninitialize, (int data), ());
     	MOCK_METHOD(void, eventManager, (const char *cur_event_name, const char *event_status), ());
     	MOCK_METHOD(size_t, GetPDRIFileName, ( char *pPDRIFilename, size_t szBufSize ), ());

@@ -563,7 +563,7 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
     return iRet;
 }
 
-int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
+int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type)
 {
     int http_code;
     int upgrade_status = -1;
@@ -572,7 +572,7 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
     int pdri_curl_code = -1;
     int peripheral_curl_code = -1;
     char imageHTTPURL[URL_MAX_LEN1];
-    char dwlpath_filename[DWNL_PATH_FILE_LEN1];
+    char dwlpath_filename[MAX_BUFF_SIZE];
     FILE *fp = NULL;
     int optout = -1;
 
@@ -582,7 +582,7 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
         SWLOG_ERROR("%s : Parameter is NULL\n", __FUNCTION__);
         return upgrade_status;
     }
-    if (true == isUpgradeInProgress()) {
+     if (true == isUpgradeInProgress()) {
         SWLOG_ERROR("Exiting from DEVICE INITIATED HTTP CDL\nAnother upgrade is in progress\n");
         if (!(strncmp(device_info.maint_status, "true", 4))) {
             eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR);
@@ -590,6 +590,96 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
         uninitialize(INITIAL_VALIDATION_SUCCESS);
         exit(1);
     }
+    /* Per-artifact mode (Direct CDN): handle a single artifact type */
+    if (upgrade_type != LEGACY_ALL_UPGRADE) {
+        const char *artifact_url = NULL;
+        const char *artifact_file = NULL;
+        int artifact_upgrade_type = upgrade_type;
+
+        switch (upgrade_type) {
+            case PCI_UPGRADE:
+                artifact_url = pResponse->firmwareUrl;
+                artifact_file = pResponse->cloudFWFile;
+                break;
+            case PDRI_UPGRADE:
+                artifact_url = pResponse->pdriUrl;
+                artifact_file = pResponse->cloudPDRIVersion;
+                break;
+            case PERIPHERAL_UPGRADE:
+                artifact_url = pResponse->remCtrlUrl;
+                artifact_file = pResponse->peripheralFirmwares;
+                break;
+            default:
+                SWLOG_ERROR("%s: Unknown upgrade_type %d\n", __FUNCTION__, upgrade_type);
+                return -1;
+        }
+
+        if (artifact_url == NULL || artifact_url[0] == '\0') {
+            SWLOG_INFO("%s: No URL for upgrade_type %d, skipping\n", __FUNCTION__, upgrade_type);
+            return 0;
+        }
+        if (artifact_file == NULL || artifact_file[0] == '\0') {
+            SWLOG_INFO("%s: No file for upgrade_type %d, skipping\n", __FUNCTION__, upgrade_type);
+            return 0;
+        }
+
+        snprintf(imageHTTPURL, sizeof(imageHTTPURL), "%s", artifact_url);
+
+        /* PDRI filename normalization: ensure .bin suffix on local save path */
+        if (upgrade_type == PDRI_UPGRADE && strstr(artifact_file, ".bin") == NULL) {
+            snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s.bin", device_info.difw_path, artifact_file);
+        } else {
+            snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s", device_info.difw_path, artifact_file);
+        }
+
+        RdkUpgradeContext_t artifact_ctx = {0};
+        artifact_ctx.upgrade_type = artifact_upgrade_type;
+        artifact_ctx.server_type = HTTP_SSR_DIRECT;
+        artifact_ctx.artifactLocationUrl = imageHTTPURL;
+        artifact_ctx.dwlloc = dwlpath_filename;
+        artifact_ctx.pPostFields = NULL;
+        artifact_ctx.immed_reboot_flag = immed_reboot_flag;
+        artifact_ctx.delay_dwnl = delay_dwnl;
+        artifact_ctx.lastrun = lastrun;
+        artifact_ctx.disableStatsUpdate = disableStatsUpdate;
+        artifact_ctx.device_info = &device_info;
+        artifact_ctx.force_exit = &force_exit;
+        artifact_ctx.trigger_type = trigger_type;
+        artifact_ctx.rfc_list = &rfc_list;
+        artifact_ctx.direct_cdn = true;
+
+        int curl_ret = rdkv_upgrade_request(&artifact_ctx, &curl, &http_code);
+
+        if (curl_ret == 0 && (http_code == HTTP_SUCCESS || http_code == HTTP_CHUNK_SUCCESS)) {
+            SWLOG_INFO("%s: upgrade_type %d succeeded (http %d)\n", __FUNCTION__, upgrade_type, http_code);
+            return 0;
+        }
+        /* Transient curl-level failures → retryable */
+        if (curl_ret == CURL_COULDNT_RESOLVE_HOST || curl_ret == CURL_CONNECTIVITY_ISSUE ||
+            curl_ret == CURLTIMEOUT || curl_ret == CURL_LOW_BANDWIDTH ||
+            curl_ret == CURL_RECV_ERROR) {
+            SWLOG_WARN("%s: upgrade_type %d transient curl error %d, retryable\n",
+                       __FUNCTION__, upgrade_type, curl_ret);
+            return DIRECT_CDN_RETRY_ERR;
+        }
+        /* Transient HTTP-level failures → retryable (server-side temporary errors) */
+        if (curl_ret == 0 && (http_code == 502 || http_code == 503)) {
+            SWLOG_WARN("%s: upgrade_type %d transient HTTP %d, retryable\n",
+                       __FUNCTION__, upgrade_type, http_code);
+            return DIRECT_CDN_RETRY_ERR;
+        }
+        /* HTTP 403 → retryable (token expiry, requires fresh XConf query for new URL) */
+        if (curl_ret == 0 && http_code == 403) {
+            SWLOG_WARN("%s: upgrade_type %d HTTP 403 (token expired), retryable\n",__FUNCTION__, upgrade_type);
+            return DIRECT_CDN_RETRY_ERR;
+        }
+        /* Permanent failure (HTTP 404, validation errors, etc.) */
+        SWLOG_ERROR("%s: upgrade_type %d permanent failure curl=%d http=%d\n",
+                    __FUNCTION__, upgrade_type, curl_ret, http_code);
+        return -1;
+    }
+
+    /* Legacy mode (upgrade_type == -1): existing behavior unchanged */
     if ((strstr(pResponse->cloudFWVersion, model)) == NULL) {
         SWLOG_INFO("cloudFWVersion is empty. Do Nothing\n");
         eventManager(FW_STATE_EVENT, FW_STATE_FAILED);
@@ -1154,35 +1244,47 @@ int main(int argc, char *argv[]) {
 	  }
         }
 	eventManager(FW_STATE_EVENT, FW_STATE_REQUESTING);
-        ret_curl_code = MakeXconfComms( &response, server_type, &http_code );
 
-        SWLOG_INFO("XCONF Download completed with curl code:%d\n", ret_curl_code);
-        if( ret_curl_code == 0 && http_code == 200)
-        {
-            SWLOG_INFO("XCONF Download Success\n");
-            json_res = processJsonResponse(&response, cur_img_detail.cur_img_name, device_info.model, device_info.maint_status);
-            SWLOG_INFO("processJsonResponse returned %d\n", json_res);
-            if (0 == (strncmp(response.cloudProto, "tftp", 4))) {
-                proto = 0;
-            }
-            if ((proto == 1) && (json_res == 0)) {
-                ret_curl_code = checkTriggerUpgrade(&response, device_info.model);
+        /* Direct CDN path: RFC-gated, uses per-artifact orchestration */
+        if (isDirectCDNEnabled()) {
+            SWLOG_INFO("Direct CDN mode enabled, calling DirectCDNDownload\n");
+            ret_curl_code = DirectCDNDownload(&response, cur_img_detail.cur_img_name,
+                                              &device_info, server_type, &http_code);
+            /* DirectCDNDownload already performs JSON parsing/validation internally */
+            json_res = (ret_curl_code == 0) ? 0 : -1;
+            SWLOG_INFO("DirectCDNDownload returned %d\n", ret_curl_code);
+        } else {
+            /* Legacy path: XConf query + sequential download (unchanged) */
+            ret_curl_code = MakeXconfComms( &response, server_type, &http_code );
 
-                char *msg = printCurlError(ret_curl_code);
-                if (msg != NULL) {
-                    SWLOG_INFO("curl return code =%d and error message=%s\n", ret_curl_code, msg);
-                    t2CountNotify("CurlRet_split", ret_curl_code);
+            SWLOG_INFO("XCONF Download completed with curl code:%d\n", ret_curl_code);
+            if( ret_curl_code == 0 && http_code == 200)
+            {
+                SWLOG_INFO("XCONF Download Success\n");
+                json_res = processJsonResponse(&response, cur_img_detail.cur_img_name, device_info.model, device_info.maint_status);
+                SWLOG_INFO("processJsonResponse returned %d\n", json_res);
+                if (0 == (strncmp(response.cloudProto, "tftp", 4))) {
+                    proto = 0;
                 }
-                SWLOG_INFO("rdkvfwupgrader daemon exit curl code: %d\n", ret_curl_code);
-            } else if (proto == 0) {    // tftp = 0
-               SWLOG_INFO("tftp protocol support not present.\n");
+                if ((proto == 1) && (json_res == 0)) {
+                    ret_curl_code = checkTriggerUpgrade(&response, device_info.model, LEGACY_ALL_UPGRADE);
+
+                    char *msg = printCurlError(ret_curl_code);
+                    if (msg != NULL) {
+                        SWLOG_INFO("curl return code =%d and error message=%s\n", ret_curl_code, msg);
+                        t2CountNotify("CurlRet_split", ret_curl_code);
+                    }
+                    SWLOG_INFO("rdkvfwupgrader daemon exit curl code: %d\n", ret_curl_code);
+                } else if (proto == 0) {    // tftp = 0
+                   SWLOG_INFO("tftp protocol support not present.\n");
+                }
+                else {
+                   SWLOG_INFO("Invalid JSON Response.\n");
+                }
+            }else {
+                SWLOG_INFO("XCONF Download Fail\n");
             }
-            else {
-               SWLOG_INFO("Invalid JSON Response.\n");
-            }
-	}else {
-            SWLOG_INFO("XCONF Download Fail\n");
-	}
+        }
     }
     if (init_validate_status == INITIAL_VALIDATION_DWNL_INPROGRESS){
         if (!(strncmp(device_info.maint_status, "true", 4))) {
@@ -1203,7 +1305,9 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    uninitialize(init_validate_status);
+    if (ret_curl_code != RDKV_UPGRADE_ERROR_STATE_RED) {
+        uninitialize(init_validate_status);
+    }
     exit(ret_curl_code);
 }
 

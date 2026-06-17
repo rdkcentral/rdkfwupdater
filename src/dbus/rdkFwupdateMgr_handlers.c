@@ -491,7 +491,8 @@ static int fetch_xconf_firmware_info( XCONFRES *pResponse, int server_type, int 
                     xconf_context.device_info = &device_info;      // Uses extern global
                     xconf_context.force_exit = &local_force_exit;
                     xconf_context.trigger_type = local_trigger_type;
-                    xconf_context.rfc_list = &local_rfc_list;  
+                    xconf_context.rfc_list = &local_rfc_list;
+                    xconf_context.direct_cdn = isDirectCDNEnabled();
 
                     SWLOG_INFO("fetch_xconf_firmware_info: Initiating XConf request with server_type=%d\n", server_type);
                     SWLOG_INFO("fetch_xconf_firmware_info: Context setup - device_info=%p, rfc_list=%p\n", 

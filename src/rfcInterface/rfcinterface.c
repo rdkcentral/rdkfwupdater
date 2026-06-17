@@ -78,6 +78,14 @@ int getRFCSettings(Rfc_t *rfc_list) {
     strncpy(rfc_list->rfc_mtls, "true", RFC_VALUE_BUF_SIZE - 1);
     rfc_list->rfc_mtls[RFC_VALUE_BUF_SIZE - 1] = '\0';
 #endif
+    ret = read_RFCProperty("DIRECTCDN", RFC_DIRECTCDN, data, sizeof(data));
+    if(ret == -1) {
+        SWLOG_ERROR("getRFCSettings() rfc= %s failed Status %d\n", RFC_DIRECTCDN, ret);
+    }else {
+        strncpy(rfc_list->rfc_directcdn, data, RFC_VALUE_BUF_SIZE - 1);
+        rfc_list->rfc_directcdn[RFC_VALUE_BUF_SIZE - 1] = '\0';
+        SWLOG_INFO("getRFCSettings() rfc DirectCDN= %s\n", rfc_list->rfc_directcdn);
+    }
     return 0;
 }
 
@@ -303,6 +311,25 @@ bool isDebugServicesEnabled(void)
         SWLOG_ERROR("%s: rfc Debug services =%s failed Status %d\n", __FUNCTION__, RFC_DEBUGSRV, ret);	
     } else {
         SWLOG_INFO("%s: rfc Debug services = %s\n", __FUNCTION__, rfc_data);
+        if ((strncmp(rfc_data, "true", 4)) == 0) {
+            status = true;
+        }
+    }
+    return status;
+}
+
+bool isDirectCDNEnabled(void)
+{
+    bool status = false;
+    int ret = -1;
+    char rfc_data[RFC_VALUE_BUF_SIZE];
+
+    *rfc_data = 0;
+    ret = read_RFCProperty("DIRECTCDN", RFC_DIRECTCDN, rfc_data, sizeof(rfc_data));
+    if (ret == -1) {
+        SWLOG_ERROR("%s: rfc DirectCDN =%s failed Status %d\n", __FUNCTION__, RFC_DIRECTCDN, ret);
+    } else {
+        SWLOG_INFO("%s: rfc DirectCDN= %s\n", __FUNCTION__, rfc_data);
         if ((strncmp(rfc_data, "true", 4)) == 0) {
             status = true;
         }
