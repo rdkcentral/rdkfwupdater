@@ -22,6 +22,7 @@
 #include "download_status_helper.h"
 #include "device_status_helper.h"
 #include "iarmInterface.h"
+#include "rfcinterface.h"
 #ifndef GTEST_ENABLE
 #include "rdk_fwdl_utils.h"
 #include "system_utils.h"
@@ -31,8 +32,154 @@
 #include "deviceutils.h"
 #include "device_api.h"
 
+#define RDM_VERSIONED_PACKAGES_CONF "/opt/rdm-versioned-packages.conf"
+#define RDM_BUNDLE_ARG_MAX_LEN 1024
+
+static int trim_whitespace_inplace(char *str)
+{
+    char *src = NULL;
+    char *dst = NULL;
+
+    if (str == NULL) {
+        return -1;
+    }
+
+    src = str;
+    dst = str;
+
+    while (*src != '\0') {
+        if (*src != ' ' && *src != '\t' && *src != '\n' && *src != '\r') {
+            *dst++ = *src;
+        }
+        src++;
+    }
+    *dst = '\0';
+    return 0;
+}
+
+static int read_rdm_bundle_config(char *out, size_t out_size)
+{
+    FILE *fp = NULL;
+
+    if (out == NULL || out_size == 0) {
+        return -1;
+    }
+
+    out[0] = '\0';
+
+    fp = fopen(RDM_VERSIONED_PACKAGES_CONF, "r");
+    if (fp == NULL) {
+        SWLOG_INFO("%s not found\n", RDM_VERSIONED_PACKAGES_CONF);
+        return -1;
+    }
+
+    if (fgets(out, out_size, fp) == NULL) {
+        fclose(fp);
+        SWLOG_INFO("%s is empty\n", RDM_VERSIONED_PACKAGES_CONF);
+        return -1;
+    }
+    fclose(fp);
+
+    trim_whitespace_inplace(out);
+
+    if (out[0] == '\0') {
+        SWLOG_INFO("%s is empty after trimming whitespace\n", RDM_VERSIONED_PACKAGES_CONF);
+        return -1;
+    }
+
+    return 0;
+}
+
+static int normalize_rdm_bundle_args(const char *input, char *output, size_t output_size)
+{
+    int ret = 0;
+
+    if (input == NULL || output == NULL || output_size == 0) {
+        return -1;
+    }
+
+    if (strstr(input, "dlAppBundle=") != NULL || strstr(input, "dlCertBundle=") != NULL) {
+        ret = snprintf(output, output_size, "%s", input);
+    } else {
+        ret = snprintf(output, output_size, "dlAppBundle=%s", input);
+    }
+
+    if (ret < 0 || (size_t)ret >= output_size) {
+        SWLOG_ERROR("RDM bundle argument too long, truncation occurred\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+static int build_xconf_rdm_bundle_args(const XCONFRES *response, char *dlBundle, size_t bundle_size)
+{
+    size_t available = 0;
+    size_t current_len = 0;
+    int retval = 0;
+
+    if (response == NULL || dlBundle == NULL || bundle_size == 0) {
+        return -1;
+    }
+
+    dlBundle[0] = '\0';
+    available = bundle_size;
+
+    if (response->dlCertBundle[0] != '\0') {
+        retval = snprintf(dlBundle, available, "dlCertBundle=%s", response->dlCertBundle);
+        if (retval < 0 || (size_t)retval >= available) {
+            SWLOG_ERROR("dlCertBundle string too long, truncation occurred\n");
+            return -1;
+        }
+    }
+
+    if (response->dlAppBundle[0] != '\0') {
+        current_len = strlen(dlBundle);
+        available = bundle_size - current_len;
+
+        if (dlBundle[0] != '\0') {
+            retval = snprintf(dlBundle + current_len, available, "|dlAppBundle=%s", response->dlAppBundle);
+        } else {
+            retval = snprintf(dlBundle + current_len, available, "dlAppBundle=%s", response->dlAppBundle);
+        }
+
+        if (retval < 0 || (size_t)retval >= available) {
+            SWLOG_ERROR("dlAppBundle string too long, truncation occurred\n");
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+static int get_effective_rdm_bundle_args(const XCONFRES *response, char *dlBundle, size_t bundle_size)
+{
+    char buildType[32] = {0};
+    BUILDTYPE eBuildType;
+    char fileBundle[RDM_BUNDLE_ARG_MAX_LEN] = {0};
+
+    if (response == NULL || dlBundle == NULL || bundle_size == 0) {
+        return -1;
+    }
+
+    dlBundle[0] = '\0';
+    GetBuildType(buildType, sizeof(buildType), &eBuildType);
+
+    if (eBuildType != ePROD) {
+        if (read_rdm_bundle_config(fileBundle, sizeof(fileBundle)) == 0) {
+            if (normalize_rdm_bundle_args(fileBundle, dlBundle, bundle_size) == 0) {
+                SWLOG_INFO("Using RDM bundle config from %s\n", RDM_VERSIONED_PACKAGES_CONF);
+                return 0;
+            }
+            return -1;
+        }
+        SWLOG_INFO("Falling back to XConf bundle configuration\n");
+    }
+
+    return build_xconf_rdm_bundle_args(response, dlBundle, bundle_size);
+}
+
 #ifndef HANDLER_TEST_ONLY
-// TODO: Convert to array of function pointer calls to reduce size of this function
 size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
 {
     char *pTmpPost = pPostFieldOut;     // keep original pointer in case needed
@@ -132,7 +279,7 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
         remainlen = szPostFieldOut - totlen;
         totlen += snprintf( (pTmpPost + totlen), remainlen, "&activationInProgress=false" );
     }
-    else    // there's no partner ID (kind of impossible since there's a default
+    else
     {
         if( totlen )
         {
@@ -232,7 +379,6 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
     }
     remainlen = szPostFieldOut - totlen;
     totlen += snprintf( (pTmpPost + totlen), remainlen, "rdmCatalogueVersion=%s", tmpbuf );
-    //TODO: WAREHOUSE_ENV="$RAMDISK_PATH/warehouse_mode_active" this is not present then call
     len = GetTimezone( tmpbuf, cpuarch, sizeof(tmpbuf) );
     if( len )
     {
@@ -244,7 +390,7 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
         remainlen = szPostFieldOut - totlen;
         totlen += snprintf( (pTmpPost + totlen), remainlen, "timezone=%s", tmpbuf );
     }
-    waitForNtp(); // Waiting for ntp server to start
+    waitForNtp();
     len = GetCapabilities( tmpbuf, sizeof(tmpbuf) );
     if( len )
     {
@@ -261,138 +407,6 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
 }
 #endif
 
-static void trimWhitespaceInPlace(char *str)
-{
-    char *start = str;
-    char *end = NULL;
-
-    if (str == NULL || *str == '\0') {
-        return;
-    }
-
-    while (*start && isspace((unsigned char)*start)) {
-        start++;
-    }
-
-    if (*start == '\0') {
-        *str = '\0';
-        return;
-    }
-
-    end = start + strlen(start) - 1;
-    while (end > start && isspace((unsigned char)*end)) {
-        end--;
-    }
-    *(end + 1) = '\0';
-
-    if (start != str) {
-        memmove(str, start, strlen(start) + 1);
-    }
-}
-static void trimWhitespaceInPlace(char *str)
-{
-    char *start = str;
-    char *end = NULL;
-
-    if (str == NULL || *str == '\0') {
-        return;
-    }
-
-    while (*start && isspace((unsigned char)*start)) {
-        start++;
-    }
-
-    if (*start == '\0') {
-        *str = '\0';
-        return;
-    }
-
-    end = start + strlen(start) - 1;
-    while (end > start && isspace((unsigned char)*end)) {
-        end--;
-    }
-    *(end + 1) = '\0';
-
-    if (start != str) {
-        memmove(str, start, strlen(start) + 1);
-    }
-}
-static int hasExplicitBundlePrefix(const char *input)
-{
-    if (input == NULL) {
-        return 0;
-    }
-
-    if (strstr(input, "dlAppBundle=") != NULL) {
-        return 1;
-    }
-    if (strstr(input, "dlCertBundle=") != NULL) {
-        return 1;
-    }
-
-    return 0;
-}
-static int normalizeRdmBundleArgs(const char *input, char *output, size_t output_len)
-{
-    char temp[RDM_BUNDLE_STR_MAX_LEN] = {0};
-    int ret = 0;
-
-    if (input == NULL || output == NULL || output_len == 0) {
-        SWLOG_ERROR("%s: invalid parameter\n", __FUNCTION__);
-        return -1;
-    }
-
-    ret = snprintf(temp, sizeof(temp), "%s", input);
-    if (ret < 0 || (size_t)ret >= sizeof(temp)) {
-        SWLOG_ERROR("%s: input too long\n", __FUNCTION__);
-        return -1;
-    }
-
-    trimWhitespaceInPlace(temp);
-
-    if (temp[0] == '\0') {
-        SWLOG_INFO("%s: empty bundle string after trim\n", __FUNCTION__);
-        return -1;
-    }
-
-    if (hasExplicitBundlePrefix(temp)) {
-        ret = snprintf(output, output_len, "%s", temp);
-    } else {
-        ret = snprintf(output, output_len, "dlAppBundle=%s", temp);
-    }
-
-    if (ret < 0 || (size_t)ret >= output_len) {
-        SWLOG_ERROR("%s: output truncated\n", __FUNCTION__);
-        return -1;
-    }
-
-    return 0;
-}
-static int readRdmVersionedPackagesConf(char *output, size_t output_len)
-{
-    FILE *fp = NULL;
-    char raw[RDM_BUNDLE_STR_MAX_LEN] = {0};
-
-    if (output == NULL || output_len == 0) {
-        SWLOG_ERROR("%s: invalid parameter\n", __FUNCTION__);
-        return -1;
-    }
-
-    fp = fopen(RDM_CONF_PATH, "r");
-    if (fp == NULL) {
-        SWLOG_INFO("%s: file not found: %s\n", __FUNCTION__, RDM_CONF_PATH);
-        return -1;
-    }
-
-    if (fgets(raw, sizeof(raw), fp) == NULL) {
-        fclose(fp);
-        SWLOG_INFO("%s: file empty: %s\n", __FUNCTION__, RDM_CONF_PATH);
-        return -1;
-    }
-
-    fclose(fp);
-    return normalizeRdmBundleArgs(raw, output, output_len);
-}
 int getXconfRespData( XCONFRES *pResponse, char *pJsonStr )
 {
     JSON *pJson = NULL;
@@ -409,7 +423,25 @@ int getXconfRespData( XCONFRES *pResponse, char *pJsonStr )
             GetJsonVal( pJson, "rebootImmediately", pResponse->cloudImmediateRebootFlag, sizeof(pResponse->cloudImmediateRebootFlag) );
             GetJsonVal( pJson, "additionalFwVerInfo", pResponse->cloudPDRIVersion, sizeof(pResponse->cloudPDRIVersion) );
             GetJsonVal( pJson, "delayDownload", pResponse->cloudDelayDownload, sizeof(pResponse->cloudDelayDownload) );
-            GetJsonValContaining( pJson, "remCtrl", pResponse->peripheralFirmwares, sizeof(pResponse->peripheralFirmwares) );
+
+            if (isDirectCDNEnabled()) {
+                GetJsonVal( pJson, "firmware_URL", pResponse->firmwareUrl, sizeof(pResponse->firmwareUrl) );
+                GetJsonVal( pJson, "additionalFwVerInfo_URL", pResponse->pdriUrl, sizeof(pResponse->pdriUrl) );
+
+                char peripheral_product[64] = {0};
+                char peripheral_product_url[100] = {0};
+                int peri_ret = getPeripheralProduct(peripheral_product, sizeof(peripheral_product));
+                if (peri_ret != -1 && peripheral_product[0] != '\0') {
+                    snprintf(peripheral_product_url, sizeof(peripheral_product_url), "%s_URL", peripheral_product);
+                    GetJsonVal( pJson, peripheral_product, pResponse->peripheralFirmwares, sizeof(pResponse->peripheralFirmwares) );
+                    SWLOG_INFO("remctrl with buf %s= %s\n", peripheral_product, pResponse->peripheralFirmwares);
+                    GetJsonVal( pJson, peripheral_product_url, pResponse->remCtrlUrl, sizeof(pResponse->remCtrlUrl) );
+                    SWLOG_INFO("remctrl with buf url %s= %s\n", peripheral_product_url, pResponse->remCtrlUrl);
+                }
+            } else {
+                GetJsonValContaining( pJson, "remCtrl", pResponse->peripheralFirmwares, sizeof(pResponse->peripheralFirmwares) );
+            }
+
             t2ValNotify("SYST_INFO_PRXR_Ver_split", pResponse->peripheralFirmwares);
             GetJsonVal( pJson, "dlCertBundle", pResponse->dlCertBundle, sizeof(pResponse->dlCertBundle) );
             GetJsonVal( pJson, "dlAppBundle", pResponse->dlAppBundle, sizeof(pResponse->dlAppBundle) );
@@ -441,13 +473,6 @@ bool validateImage(const char *image_name, const char *model)
     return status;
 }
 
-/* Description: Use For processing data received from xconf
- * @param: response : Pointer to xconf response data
- * @param: myfwversion : Running firmware version
- * @param: model : Device model
- * @param: maint : maintenance manager enable or disable
- * @return int:
- * */
 int processJsonResponse(XCONFRES *response, const char *myfwversion, const char *model, const char *maint)
 {
     bool valid_img = false;
@@ -455,6 +480,7 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
     bool ret_status = false;
     char last_dwnl_img[64];
     char current_img[64];
+    char dlBundle[RDM_BUNDLE_ARG_MAX_LEN] = {0};
     FILE *fp = NULL;
     int ret = -1;
 
@@ -465,7 +491,6 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
     {
         makeHttpHttps( response->cloudFWLocation, sizeof(response->cloudFWLocation) );
         makeHttpHttps( response->ipv6cloudFWLocation, sizeof(response->ipv6cloudFWLocation) );
-        //check_pdri = isPDRIEnable(); 
         SWLOG_INFO("cloudFWFile: %s\n", response->cloudFWFile);
         SWLOG_INFO("cloudFWLocation: %s\n", response->cloudFWLocation);
         SWLOG_INFO("ipv6cloudFWLocation: %s\n", response->ipv6cloudFWLocation);
@@ -485,64 +510,37 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
             fclose(fp);
         }
 
-        if( *response->rdmCatalogueVersion && 
+        if( *response->rdmCatalogueVersion &&
             (fp=fopen( "/tmp/.xconfRdmCatalogueVersion", "w" )) != NULL )
         {
-            SWLOG_INFO(  "Updating RDM Catalogue version %s from XCONF in /tmp/.xconfRdmCatalogueVersion file\n", response->rdmCatalogueVersion );
-            fprintf( fp, "%s\n", response->rdmCatalogueVersion );
-            fclose( fp );
-        }
-	char confBundle[RDM_BUNDLE_STR_MAX_LEN] = {0};
-        if (readRdmVersionedPackagesConf(confBundle, sizeof(confBundle)) == 0) {
-            SWLOG_INFO("Using bundle args from /opt/rdm-versioned-packages.conf: %s\n", confBundle);
+            SWLOG_INFO("Updating RDM Catalogue version %s from XCONF in /tmp/.xconfRdmCatalogueVersion file\n", response->rdmCatalogueVersion);
+            fprintf(fp, "%s\n", response->rdmCatalogueVersion);
+            fclose(fp);
         }
 
-        if (response->dlCertBundle[0] != 0 || response->dlAppBundle[0] != '\0') {
+        if (get_effective_rdm_bundle_args(response, dlBundle, sizeof(dlBundle)) == 0 &&
+            dlBundle[0] != '\0') {
             SWLOG_INFO("Calling rdm Versioned_app download to process bundle update\n");
-	    
-	    char dlBundle[1024] = {0};
-            size_t available = sizeof(dlBundle);
+            SWLOG_INFO("Effective RDM bundle args: %s\n", dlBundle);
 
-            if (response->dlCertBundle[0] != '\0') {
-                int retval = snprintf(dlBundle, available, "dlCertBundle=%s", response->dlCertBundle);
-                if (retval < 0 || retval >= available) {
-                    SWLOG_ERROR("dlCertBundle string too long, truncation occurred\n");
-                    return ret;
-                }
-            }
-
-            if (response->dlAppBundle[0] != '\0') {
-                size_t current_len = strlen(dlBundle);
-                available = sizeof(dlBundle) - current_len;
-
-                int retval;
-                if (dlBundle[0] != '\0') {
-                    retval = snprintf(dlBundle + current_len, available, "|dlAppBundle=%s", response->dlAppBundle);
-                } else {
-                    retval = snprintf(dlBundle + current_len, available, "dlAppBundle=%s", response->dlAppBundle);
-                }
-
-                if (retval < 0 || retval >= available) {
-                    SWLOG_ERROR("dlAppBundle string too long, truncation occurred\n");
-                    return ret;
-                }
-            }
-
-	    if ((access("/usr/bin/rdm", F_OK) == 0) && (strlen(dlBundle) > 0)) {
-    	        // file exists
-		SWLOG_INFO("RDM binary is present\n");
-		v_secure_system("rdm -v \"%s\" >> /opt/logs/rdm_status.log 2>&1", dlBundle);
-		SWLOG_INFO("RDM Versioned app Download started and completed\n");
-	    } else {
-                // file doesn't exist
-		SWLOG_INFO(" File Not Present .. Download Failed \n");
+            if (access("/usr/bin/rdm", F_OK) == 0) {
+                SWLOG_INFO("RDM binary is present\n");
+                v_secure_system("rdm -v \"%s\" >> /opt/logs/rdm_status.log 2>&1", dlBundle);
+                SWLOG_INFO("RDM Versioned app Download started and completed\n");
+            } else {
+                SWLOG_INFO("File Not Present .. Download Failed\n");
             }
         }
+
         valid_img = validateImage(response->cloudFWFile, model);
-	if ((*(response->cloudPDRIVersion)) != 0) {
-	    SWLOG_INFO("Validate PDRI image with device model number\n");
+        if ((*(response->cloudPDRIVersion)) != 0) {
+            SWLOG_INFO("Validate PDRI image with device model number\n");
             valid_pdri_img = validateImage(response->cloudPDRIVersion, model);
-	}
+            if (valid_pdri_img && (strstr(response->cloudPDRIVersion, "_PDRI_")) == NULL) {
+                SWLOG_INFO("Invalid PDRI image: missing _PDRI_ substring\n");
+                valid_pdri_img = false;
+            }
+        }
         if ((false == valid_img) || (false == valid_pdri_img)) {
             SWLOG_INFO("Image configured is not of model %s.. Skipping the upgrade\nExiting from Image Upgrade process..!\n", model);
             eventManager(FW_STATE_EVENT, FW_STATE_FAILED);
@@ -555,9 +553,9 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
             ret = 0;
         }
         ret_status = lastDwnlImg(last_dwnl_img, sizeof(last_dwnl_img));
-	SWLOG_INFO("last_dwnl_status=%i\n", ret_status);
+        SWLOG_INFO("last_dwnl_status=%i\n", ret_status);
         ret_status = currentImg(current_img, sizeof(current_img));
-	SWLOG_INFO("current_img_status=%i\n", ret_status);
+        SWLOG_INFO("current_img_status=%i\n", ret_status);
         SWLOG_INFO("myFWVersion = %s\n", myfwversion);
         SWLOG_INFO("myFWFile = %s\n", current_img);
         SWLOG_INFO("lastDnldFile = %s\n", last_dwnl_img);

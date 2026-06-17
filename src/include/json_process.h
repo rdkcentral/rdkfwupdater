@@ -27,6 +27,8 @@
 #define CLD_URL_MAX_LEN 512
 #define RDM_BUNDLE_STR_MAX_LEN 1024
 #define RDM_CONF_PATH "/opt/rdm-versioned-packages.conf"
+#define PROD_BUILD_STR "PROD"
+#define PROD_BUILD_STR_LOWER "prod"
 
 typedef struct xconf_response {
 	char cloudFWFile[128];
@@ -37,8 +39,8 @@ typedef struct xconf_response {
 	char cloudProto[6];
 	char cloudImmediateRebootFlag[12];
 	char peripheralFirmwares[256];
-	char dlCertBundle[64];
-	char dlAppBundle[64];
+	char dlCertBundle[256];
+	char dlAppBundle[256];
 	char cloudPDRIVersion[64];
     char rdmCatalogueVersion[512];
 } XCONFRES;
