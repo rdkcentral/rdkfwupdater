@@ -947,12 +947,6 @@ static int MakeXconfComms( XCONFRES *pResponse, int server_type, int *pHttp_code
                             uninitialize(INITIAL_VALIDATION_SUCCESS);
                             exit(1);
                         }
-			if (ret == RDKV_UPGRADE_ERROR_STATE_RED) {
-   				 SWLOG_INFO("%s: State red entered, notifying maintenance manager\n", __FUNCTION__);
-    				 eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR);  //notify before exit
-    				 uninitialize(INITIAL_VALIDATION_SUCCESS);
-    				 exit(1);
-                        }
                         // For non-fatal errors, ret is already < 0, will be handled by existing error logic
                     } else if( ret == 0 && *pHttp_code == 200 && DwnLoc.pvOut != NULL )
                     {
