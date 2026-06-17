@@ -261,6 +261,138 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
 }
 #endif
 
+static void trimWhitespaceInPlace(char *str)
+{
+    char *start = str;
+    char *end = NULL;
+
+    if (str == NULL || *str == '\0') {
+        return;
+    }
+
+    while (*start && isspace((unsigned char)*start)) {
+        start++;
+    }
+
+    if (*start == '\0') {
+        *str = '\0';
+        return;
+    }
+
+    end = start + strlen(start) - 1;
+    while (end > start && isspace((unsigned char)*end)) {
+        end--;
+    }
+    *(end + 1) = '\0';
+
+    if (start != str) {
+        memmove(str, start, strlen(start) + 1);
+    }
+}
+static void trimWhitespaceInPlace(char *str)
+{
+    char *start = str;
+    char *end = NULL;
+
+    if (str == NULL || *str == '\0') {
+        return;
+    }
+
+    while (*start && isspace((unsigned char)*start)) {
+        start++;
+    }
+
+    if (*start == '\0') {
+        *str = '\0';
+        return;
+    }
+
+    end = start + strlen(start) - 1;
+    while (end > start && isspace((unsigned char)*end)) {
+        end--;
+    }
+    *(end + 1) = '\0';
+
+    if (start != str) {
+        memmove(str, start, strlen(start) + 1);
+    }
+}
+static int hasExplicitBundlePrefix(const char *input)
+{
+    if (input == NULL) {
+        return 0;
+    }
+
+    if (strstr(input, "dlAppBundle=") != NULL) {
+        return 1;
+    }
+    if (strstr(input, "dlCertBundle=") != NULL) {
+        return 1;
+    }
+
+    return 0;
+}
+static int normalizeRdmBundleArgs(const char *input, char *output, size_t output_len)
+{
+    char temp[RDM_BUNDLE_STR_MAX_LEN] = {0};
+    int ret = 0;
+
+    if (input == NULL || output == NULL || output_len == 0) {
+        SWLOG_ERROR("%s: invalid parameter\n", __FUNCTION__);
+        return -1;
+    }
+
+    ret = snprintf(temp, sizeof(temp), "%s", input);
+    if (ret < 0 || (size_t)ret >= sizeof(temp)) {
+        SWLOG_ERROR("%s: input too long\n", __FUNCTION__);
+        return -1;
+    }
+
+    trimWhitespaceInPlace(temp);
+
+    if (temp[0] == '\0') {
+        SWLOG_INFO("%s: empty bundle string after trim\n", __FUNCTION__);
+        return -1;
+    }
+
+    if (hasExplicitBundlePrefix(temp)) {
+        ret = snprintf(output, output_len, "%s", temp);
+    } else {
+        ret = snprintf(output, output_len, "dlAppBundle=%s", temp);
+    }
+
+    if (ret < 0 || (size_t)ret >= output_len) {
+        SWLOG_ERROR("%s: output truncated\n", __FUNCTION__);
+        return -1;
+    }
+
+    return 0;
+}
+static int readRdmVersionedPackagesConf(char *output, size_t output_len)
+{
+    FILE *fp = NULL;
+    char raw[RDM_BUNDLE_STR_MAX_LEN] = {0};
+
+    if (output == NULL || output_len == 0) {
+        SWLOG_ERROR("%s: invalid parameter\n", __FUNCTION__);
+        return -1;
+    }
+
+    fp = fopen(RDM_CONF_PATH, "r");
+    if (fp == NULL) {
+        SWLOG_INFO("%s: file not found: %s\n", __FUNCTION__, RDM_CONF_PATH);
+        return -1;
+    }
+
+    if (fgets(raw, sizeof(raw), fp) == NULL) {
+        fclose(fp);
+        SWLOG_INFO("%s: file empty: %s\n", __FUNCTION__, RDM_CONF_PATH);
+        return -1;
+    }
+
+    fclose(fp);
+    return normalizeRdmBundleArgs(raw, output, output_len);
+}
 int getXconfRespData( XCONFRES *pResponse, char *pJsonStr )
 {
     JSON *pJson = NULL;
@@ -360,6 +492,11 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
             fprintf( fp, "%s\n", response->rdmCatalogueVersion );
             fclose( fp );
         }
+	char confBundle[RDM_BUNDLE_STR_MAX_LEN] = {0};
+        if (readRdmVersionedPackagesConf(confBundle, sizeof(confBundle)) == 0) {
+            SWLOG_INFO("Using bundle args from /opt/rdm-versioned-packages.conf: %s\n", confBundle);
+        }
+
         if (response->dlCertBundle[0] != 0 || response->dlAppBundle[0] != '\0') {
             SWLOG_INFO("Calling rdm Versioned_app download to process bundle update\n");
 	    

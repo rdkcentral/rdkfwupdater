@@ -20,10 +20,13 @@
 #define _JSON_PROCESS_H_
 
 #include <stddef.h>
+#include <ctype.h>
 #ifndef GTEST_ENABLE
 #include "common_device_api.h"
 #endif
 #define CLD_URL_MAX_LEN 512
+#define RDM_BUNDLE_STR_MAX_LEN 1024
+#define RDM_CONF_PATH "/opt/rdm-versioned-packages.conf"
 
 typedef struct xconf_response {
 	char cloudFWFile[128];
