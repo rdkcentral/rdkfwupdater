@@ -34,7 +34,10 @@
 
 #define RDM_VERSIONED_PACKAGES_CONF "/opt/rdm-versioned-packages.conf"
 #define RDM_BUNDLE_ARG_MAX_LEN 1024
-
+#define RDM_BINARY_PATH              "/usr/bin/rdm"
+#define RDM_STATUS_LOG_PATH          "/opt/logs/meminsight.log"
+#define BUILD_TYPE_MAX_LEN           32
+#define RDM_BUNDLE_MAX_LEN           1024
 static int trim_whitespace_inplace(char *str)
 {
     char *src = NULL;
@@ -407,6 +410,7 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
 }
 #endif
 
+#if 0
 int getXconfRespData( XCONFRES *pResponse, char *pJsonStr )
 {
     JSON *pJson = NULL;
@@ -442,6 +446,41 @@ int getXconfRespData( XCONFRES *pResponse, char *pJsonStr )
                 GetJsonValContaining( pJson, "remCtrl", pResponse->peripheralFirmwares, sizeof(pResponse->peripheralFirmwares) );
             }
 
+            t2ValNotify("SYST_INFO_PRXR_Ver_split", pResponse->peripheralFirmwares);
+            GetJsonVal( pJson, "dlCertBundle", pResponse->dlCertBundle, sizeof(pResponse->dlCertBundle) );
+            GetJsonVal( pJson, "dlAppBundle", pResponse->dlAppBundle, sizeof(pResponse->dlAppBundle) );
+            strncmp(pResponse->dlCertBundle, "lxyupdate-bundle:", 17)?1:t2ValNotify("lxybundleversion_split", pResponse->dlCertBundle + 17);
+            GetJsonVal( pJson, "rdmCatalogueVersion", pResponse->rdmCatalogueVersion, sizeof(pResponse->rdmCatalogueVersion) );
+            GetJsonVal( pJson, "ipv6FirmwareLocation", pResponse->ipv6cloudFWLocation, sizeof(pResponse->ipv6cloudFWLocation) );
+
+            FreeJson( pJson );
+            ret = 0;
+        }
+    }
+    else
+    {
+        SWLOG_INFO("getXconfRespData: input parameter is NULL\n");
+    }
+    return ret;
+}
+#endif
+int getXconfRespData( XCONFRES *pResponse, char *pJsonStr )
+{
+    JSON *pJson = NULL;
+    int ret = -1;
+    if( pResponse != NULL )
+    {
+        pJson = ParseJsonStr( pJsonStr );
+        if( pJson != NULL )
+        {
+            GetJsonVal( pJson, "firmwareDownloadProtocol", pResponse->cloudProto, sizeof(pResponse->cloudProto) );
+            GetJsonVal( pJson, "firmwareFilename", pResponse->cloudFWFile, sizeof(pResponse->cloudFWFile) );
+            GetJsonVal( pJson, "firmwareLocation", pResponse->cloudFWLocation, sizeof(pResponse->cloudFWLocation) );
+            GetJsonVal( pJson, "firmwareVersion", pResponse->cloudFWVersion, sizeof(pResponse->cloudFWVersion) );
+            GetJsonVal( pJson, "rebootImmediately", pResponse->cloudImmediateRebootFlag, sizeof(pResponse->cloudImmediateRebootFlag) );
+            GetJsonVal( pJson, "additionalFwVerInfo", pResponse->cloudPDRIVersion, sizeof(pResponse->cloudPDRIVersion) );
+            GetJsonVal( pJson, "delayDownload", pResponse->cloudDelayDownload, sizeof(pResponse->cloudDelayDownload) );
+            GetJsonValContaining( pJson, "remCtrl", pResponse->peripheralFirmwares, sizeof(pResponse->peripheralFirmwares) );
             t2ValNotify("SYST_INFO_PRXR_Ver_split", pResponse->peripheralFirmwares);
             GetJsonVal( pJson, "dlCertBundle", pResponse->dlCertBundle, sizeof(pResponse->dlCertBundle) );
             GetJsonVal( pJson, "dlAppBundle", pResponse->dlAppBundle, sizeof(pResponse->dlAppBundle) );
