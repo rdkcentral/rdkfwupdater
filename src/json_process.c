@@ -348,6 +348,7 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
     char current_img[64];
     FILE *fp = NULL;
     int ret = -1;
+    BUILDTYPE eBuildType;
 
     last_dwnl_img[0] = 0;
     current_img[0] = 0;
@@ -408,6 +409,21 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
                     retval = snprintf(dlBundle + current_len, available, "dlAppBundle=%s", response->dlAppBundle);
                 }
 
+                if (GetBuildType(eBuildType, sizeof(eBuildType), NULL) > 0 &&
+                               (eBuildType != ePROD)) {
+                    FILE *bundleFp = fopen("/opt/rdm-versioned-packages.conf", "r");
+                    if (bundleFp != NULL) {
+                        if (fgets(dlBundle, sizeof(dlBundle), bundleFp) != NULL) {
+                            char *newline = strchr(dlBundle, '\n');
+                            if (newline != NULL) {
+                                *newline = '\0';
+                            }
+                            SWLOG_INFO("Non-prod build: overriding dlBundle with /opt/rdm-versioned-packages.conf: %s\n", dlBundle);
+                        }
+                        fclose(bundleFp);
+                    }
+                }       
+                
                 if (retval < 0 || retval >= available) {
                     SWLOG_ERROR("dlAppBundle string too long, truncation occurred\n");
                     return ret;
