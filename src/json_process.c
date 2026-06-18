@@ -409,7 +409,7 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
                     retval = snprintf(dlBundle + current_len, available, "dlAppBundle=%s", response->dlAppBundle);
                 }
 
-                if (GetBuildType(eBuildType, sizeof(eBuildType), NULL) > 0 &&
+                if (GetBuildType(NULL, sizeof(eBuildType), &eBuildType) > 0 &&
                                (eBuildType != ePROD)) {
                     FILE *bundleFp = fopen("/opt/rdm-versioned-packages.conf", "r");
                     if (bundleFp != NULL) {
