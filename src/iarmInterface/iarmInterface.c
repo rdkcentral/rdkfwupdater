@@ -381,8 +381,8 @@ size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
         len = 0;
     }
 
-    SWLOG_INFO("GetPDRIFileNameUsingMFR: len before newline strip = %zu\n", len);
     /* Strip trailing newline/carriage-return if present (MFR may include them) */
+    len = strnlen(pPDRIFilename, szBufSize);
     while (len > 0 && (pPDRIFilename[len - 1] == '\n' || pPDRIFilename[len - 1] == '\r')) {
         pPDRIFilename[--len] = '\0';
     }
