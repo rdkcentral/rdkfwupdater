@@ -349,6 +349,7 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
     FILE *fp = NULL;
     int ret = -1;
     BUILDTYPE eBuildType;
+	char buf[400];
 
     last_dwnl_img[0] = 0;
     current_img[0] = 0;
@@ -409,7 +410,7 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
                     retval = snprintf(dlBundle + current_len, available, "dlAppBundle=%s", response->dlAppBundle);
                 }
 
-                if (GetBuildType(NULL, sizeof(eBuildType), &eBuildType) > 0 &&
+                if (GetBuildType(buf, sizeof(buf), &eBuildType) > 0 &&
                                (eBuildType != ePROD)) {
                     FILE *bundleFp = fopen("/opt/rdm-versioned-packages.conf", "r");
                     if (bundleFp != NULL) {
