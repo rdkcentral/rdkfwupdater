@@ -47,6 +47,7 @@ public:
     
     // RFC settings mock
     virtual void getRFCSettings(Rfc_t *rfc_list) = 0;
+    virtual bool isDirectCDNEnabled() = 0;
     
     // Image details mocks
     virtual size_t currentImg(char *pCurImg, size_t szBufSize) = 0;
@@ -74,6 +75,7 @@ public:
     MOCK_METHOD(int, allocDowndLoadDataMem, (DownloadData *pDwnLoc, int size), ());
     MOCK_METHOD(void, freeDownLoadMem, (DownloadData *pDwnLoc), ());
     MOCK_METHOD(void, getRFCSettings, (Rfc_t *rfc_list), ());
+    MOCK_METHOD(bool, isDirectCDNEnabled, (), ());
     MOCK_METHOD(size_t, currentImg, (char *pCurImg, size_t szBufSize), ());
     MOCK_METHOD(size_t, GetFirmwareVersion, (char *pFWVersion, size_t szBufSize), ());
     MOCK_METHOD(int, filePresentCheck, (const char *filename), ());

@@ -614,7 +614,7 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
 }
 
 
-int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
+int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type)
 {
     int http_code;
     int upgrade_status = -1;
@@ -1225,7 +1225,7 @@ int main(int argc, char *argv[]) {
 				       proto = 0;
 				       }
 				       if ((proto == 1) && (json_res == 0)) {
-				       ret_curl_code = checkTriggerUpgrade(&response, device_info.model);
+				       ret_curl_code = checkTriggerUpgrade(&response, device_info.model, LEGACY_ALL_UPGRADE);
 
 				       char *msg = printCurlError(ret_curl_code);
 				       if (msg != NULL) {
