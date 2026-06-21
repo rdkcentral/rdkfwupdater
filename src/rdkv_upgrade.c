@@ -1256,6 +1256,9 @@ int retryDownload(
                 break;
             } else if(curl_ret_code == DWNL_BLOCK) {
                 break;
+            } else if (*httpCode == 403 && context->direct_cdn) {
+                SWLOG_INFO("%s: HTTP 403 with Direct CDN - token expired, breaking retry loop\n", __FUNCTION__);
+                break;
             } else {
                 (server_type == HTTP_SSR_DIRECT) ? SWLOG_INFO("%s : Direct Image upgrade return: retry=%d ret:%d http_code:%d\n", __FUNCTION__, retry_completed, curl_ret_code, *httpCode) : SWLOG_INFO("%s : Direct Image upgrade connection return: retry=%d ret:%d http_code:%d\n", __FUNCTION__, retry_completed, curl_ret_code, *httpCode);
             }

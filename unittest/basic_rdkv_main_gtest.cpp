@@ -2607,6 +2607,142 @@ TEST(DirectCDNRetryTest, PerArtifact_WhenHttp403Received_ReturnsRetryErr) {
 }
 
 /**
+ * @brief Subtask 4.1: When direct_cdn=true and downloadFile returns HTTP 403,
+ * retryDownload() must break immediately (token expired — no point retrying stale URL).
+ * Uses retry_cnt=2 with Times(1) to prove the break fires after first iteration.
+ */
+TEST(DirectCDNRetryDownloadTest, Http403_DirectCDN_BreaksRetryImmediately) {
+    MockDownloadFileOps mockfileops;
+    global_mockdownloadfileops_ptr = &mockfileops;
+
+    /* downloadFile called exactly ONCE — proves break fires before 2nd iteration */
+    EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _))
+        .Times(1)
+        .WillOnce(testing::DoAll(testing::SetArgPointee<4>(403), testing::Return(CURL_SUCCESS)));
+
+    int code = 0;
+    int force_exit = 0;
+    int dummy_curl = 0;
+    void *curl = &dummy_curl;
+
+    RdkUpgradeContext_t context = {};
+    context.server_type = HTTP_SSR_DIRECT;
+    context.artifactLocationUrl = "https://cdn.example.com/fw.bin?token=expired";
+    context.dwlloc = "/tmp/firmware.bin";
+    context.pPostFields = (char*)"";
+    context.force_exit = &force_exit;
+    context.direct_cdn = true;
+
+    int result = retryDownload(&context, 2, 0, &code, &curl);
+    EXPECT_EQ(result, CURL_SUCCESS);
+    EXPECT_EQ(code, 403);
+
+    global_mockdownloadfileops_ptr = NULL;
+}
+
+/**
+ * @brief Subtask 4.2: When direct_cdn=false and downloadFile returns HTTP 403,
+ * retryDownload() must NOT break — it retries normally (legacy behavior preserved).
+ * Uses retry_cnt=2 with Times(2) to prove both iterations execute.
+ */
+TEST(DirectCDNRetryDownloadTest, Http403_LegacyMode_RetriesNormally) {
+    MockDownloadFileOps mockfileops;
+    global_mockdownloadfileops_ptr = &mockfileops;
+
+    /* downloadFile called TWICE — proves no break fires, loop retries normally */
+    EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _))
+        .Times(2)
+        .WillRepeatedly(testing::DoAll(testing::SetArgPointee<4>(403), testing::Return(CURL_SUCCESS)));
+
+    int code = 0;
+    int force_exit = 0;
+    int dummy_curl = 0;
+    void *curl = &dummy_curl;
+
+    RdkUpgradeContext_t context = {};
+    context.server_type = HTTP_SSR_DIRECT;
+    context.artifactLocationUrl = "https://cdn.example.com/fw.bin";
+    context.dwlloc = "/tmp/firmware.bin";
+    context.pPostFields = (char*)"";
+    context.force_exit = &force_exit;
+    context.direct_cdn = false;
+
+    int result = retryDownload(&context, 2, 0, &code, &curl);
+    EXPECT_EQ(result, CURL_SUCCESS);
+    EXPECT_EQ(code, 403);
+
+    global_mockdownloadfileops_ptr = NULL;
+}
+
+/**
+ * @brief Subtask 4.3: When direct_cdn=true and downloadFile returns HTTP 200,
+ * the existing success break still fires (no regression from 403 change).
+ * Uses retry_cnt=2 with Times(1) to prove success break fires first.
+ */
+TEST(DirectCDNRetryDownloadTest, Http200_DirectCDN_SuccessBreakUnchanged) {
+    MockDownloadFileOps mockfileops;
+    global_mockdownloadfileops_ptr = &mockfileops;
+
+    /* downloadFile called exactly ONCE — success break fires */
+    EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _))
+        .Times(1)
+        .WillOnce(testing::DoAll(testing::SetArgPointee<4>(HTTP_SUCCESS), testing::Return(CURL_SUCCESS)));
+
+    int code = 0;
+    int force_exit = 0;
+    int dummy_curl = 0;
+    void *curl = &dummy_curl;
+
+    RdkUpgradeContext_t context = {};
+    context.server_type = HTTP_SSR_DIRECT;
+    context.artifactLocationUrl = "https://cdn.example.com/fw.bin?token=valid";
+    context.dwlloc = "/tmp/firmware.bin";
+    context.pPostFields = (char*)"";
+    context.force_exit = &force_exit;
+    context.direct_cdn = true;
+
+    int result = retryDownload(&context, 2, 0, &code, &curl);
+    EXPECT_EQ(result, CURL_SUCCESS);
+    EXPECT_EQ(code, HTTP_SUCCESS);
+
+    global_mockdownloadfileops_ptr = NULL;
+}
+
+/**
+ * @brief Subtask 4.4: When direct_cdn=true and downloadFile returns HTTP 404,
+ * the existing 404 break still fires (no regression from 403 change).
+ * Uses retry_cnt=2 with Times(1) to prove 404 break fires first.
+ */
+TEST(DirectCDNRetryDownloadTest, Http404_DirectCDN_NotFoundBreakUnchanged) {
+    MockDownloadFileOps mockfileops;
+    global_mockdownloadfileops_ptr = &mockfileops;
+
+    /* downloadFile called exactly ONCE — 404 break fires */
+    EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _))
+        .Times(1)
+        .WillOnce(testing::DoAll(testing::SetArgPointee<4>(HTTP_PAGE_NOT_FOUND), testing::Return(!CURL_SUCCESS)));
+
+    int code = 0;
+    int force_exit = 0;
+    int dummy_curl = 0;
+    void *curl = &dummy_curl;
+
+    RdkUpgradeContext_t context = {};
+    context.server_type = HTTP_SSR_DIRECT;
+    context.artifactLocationUrl = "https://cdn.example.com/fw.bin?token=valid";
+    context.dwlloc = "/tmp/firmware.bin";
+    context.pPostFields = (char*)"";
+    context.force_exit = &force_exit;
+    context.direct_cdn = true;
+
+    int result = retryDownload(&context, 2, 0, &code, &curl);
+    EXPECT_NE(result, CURL_SUCCESS);
+    EXPECT_EQ(code, HTTP_PAGE_NOT_FOUND);
+
+    global_mockdownloadfileops_ptr = NULL;
+}
+
+/**
  * @brief When downloadFile returns RDKV_UPGRADE_ERROR_STATE_RED, rdkv_upgrade_request
  * must short-circuit immediately without calling retryDownload or codebig fallback.
  * This verifies the state-red guard prevents retry loops after uninitialize() was called.
