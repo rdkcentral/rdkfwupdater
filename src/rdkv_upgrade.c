@@ -517,6 +517,14 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
 		    return RDKV_UPGRADE_ERROR_STATE_RED;
 	    }
 
+            /* Direct CDN: HTTP 403 means token expired — return immediately
+             * so outer DirectCDNDownload() loop can re-query XConf for fresh URL.
+             * Matches RDKV-reference rdkv_main.c lines 1114-1119. */
+            if (ret_curl_code == CURL_SUCCESS && *pHttp_code == 403 && context->direct_cdn) {
+                SWLOG_INFO("%s: Direct CDN HTTP 403 (token expired) - returning to refresh URL\n", __FUNCTION__);
+                return ret_curl_code;
+            }
+
             if (ret_curl_code != CURL_SUCCESS ||
                 (*pHttp_code != HTTP_SUCCESS && *pHttp_code != HTTP_CHUNK_SUCCESS && *pHttp_code != HTTP_PAGE_NOT_FOUND)) {
                 ret_curl_code = retryDownload(context, RETRY_COUNT, 60, pHttp_code, curl);
@@ -1269,7 +1277,7 @@ int retryDownload(
                 break;
             } else if(curl_ret_code == DWNL_BLOCK) {
                 break;
-            } else if (*httpCode == 403 && context->direct_cdn) {
+            } else if (curl_ret_code == CURL_SUCCESS && *httpCode == 403 && context->direct_cdn) {
                 SWLOG_INFO("%s: HTTP 403 with Direct CDN - token expired, breaking retry loop\n", __FUNCTION__);
                 break;
             } else {
