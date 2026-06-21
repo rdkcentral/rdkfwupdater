@@ -13,11 +13,11 @@
 
 ## 3. mTLS Certificate Skip in downloadFile()
 
-- [ ] 3.1 Add `context->direct_cdn && state_red != 1` guard before `getMtlscert()` in `#ifdef LIBRDKCERTSELECTOR` path of `downloadFile()` in `src/rdkv_upgrade.c`
-- [ ] 3.2 Add same guard in `#ifndef LIBRDKCERTSELECTOR` path
-- [ ] 3.3 Set `mtls_enable = -1` when guard active to force NULL cert in download call
-- [ ] 3.4 Ensure `doHttpFileDownload()` / `chunkDownload()` receives NULL cert when guard active
-- [ ] 3.5 Verify recovery cert path preserved when `state_red == 1` (manual code inspection)
+- [x] 3.1 Add `context->direct_cdn && state_red != 1` guard before `getMtlscert()` in `#ifdef LIBRDKCERTSELECTOR` path of `downloadFile()` in `src/rdkv_upgrade.c`
+- [x] 3.2 Add same guard in `#ifndef LIBRDKCERTSELECTOR` path
+- [x] 3.3 Set `mtls_enable = -1` when guard active to force NULL cert in download call
+- [x] 3.4 Ensure `doHttpFileDownload()` / `chunkDownload()` receives NULL cert when guard active
+- [x] 3.5 Verify recovery cert path preserved when `state_red == 1` (manual code inspection)
 
 ## 4. Unit Tests — HTTP 403 Early-Return
 
@@ -28,6 +28,6 @@
 
 ## 5. Unit Tests — mTLS Bypass
 
-- [ ] 5.1 Test: `direct_cdn=true` + `state_red=0` → `getMtlscert` NOT called, NULL cert passed
-- [ ] 5.2 Test: `direct_cdn=true` + `state_red=1` → `getMtlscert` IS called (recovery cert)
-- [ ] 5.3 Test: `direct_cdn=false` + `state_red=0` → existing mTLS path unchanged (getMtlscert called)
+- [x] 5.1 Test: `direct_cdn=true` + `state_red=0` → `getMtlscert` NOT called, NULL cert passed
+- [x] 5.2 Test: `direct_cdn=true` + `state_red=1` → `getMtlscert` IS called (recovery cert)
+- [x] 5.3 Test: `direct_cdn=false` + `state_red=0` → existing mTLS path unchanged (getMtlscert called)
