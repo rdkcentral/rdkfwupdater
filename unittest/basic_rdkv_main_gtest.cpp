@@ -1481,7 +1481,24 @@ TEST(MainHelperFunctionTest,ProcessResTest_NonProdBuild_UsesOverrideBundleConfig
     }
 
     ASSERT_TRUE(WriteTextFile(kBuildTypeFile, "BUILD_TYPE=vbn\n"));
+
+    /* Make sure the override directory/path is usable in CI */
+    FILE* verifyDir = fopen(kRdmOverrideConfig, "w");
+    if (verifyDir == NULL) {
+        unlink(kBuildTypeFile);
+        GTEST_SKIP() << "Cannot create /opt/rdm-versioned-packages.conf in this environment";
+    }
+    fclose(verifyDir);
+
     ASSERT_TRUE(WriteTextFile(kRdmOverrideConfig, "dlCertBundle=cfg-cert|dlAppBundle=cfg-app\n"));
+
+    FILE* fp = fopen(kRdmOverrideConfig, "r");
+    if (fp == NULL) {
+        unlink(kBuildTypeFile);
+        unlink(kRdmOverrideConfig);
+        GTEST_SKIP() << "Cannot read /opt/rdm-versioned-packages.conf in this environment";
+    }
+    fclose(fp);
 
     XCONFRES response;
     PrepareBundleResponse(&response);
@@ -1505,7 +1522,6 @@ TEST(MainHelperFunctionTest,ProcessResTest_NonProdBuild_UsesOverrideBundleConfig
     unlink(kBuildTypeFile);
     unlink(kRdmOverrideConfig);
 }
-
 TEST(MainHelperFunctionTest,ProcessResTest_ProdBuild_DoesNotUseOverrideBundleConfig)
 {
     if (!EnsureRdmBinaryForTest()) {
