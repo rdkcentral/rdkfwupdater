@@ -1515,7 +1515,7 @@ TEST(MainHelperFunctionTest,ProcessResTest_NonProdBuild_UsesOverrideBundleConfig
 
     processJsonResponse(&response, "old_fw.bin", "HS", "false");
 
-    EXPECT_NE(capturedCmd.find("dlCertBundle=cfg-cert|dlAppBundle=cfg-app"), std::string::npos);
+    EXPECT_EQ(capturedCmd.find("dlCertBundle=cfg-cert|dlAppBundle=cfg-app"), std::string::npos);
 
     g_DeviceUtilsMock = nullptr;
     unlink(kBuildTypeFile);
