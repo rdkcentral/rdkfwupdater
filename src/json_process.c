@@ -410,24 +410,39 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
                     retval = snprintf(dlBundle + current_len, available, "dlAppBundle=%s", response->dlAppBundle);
                 }
 
-                if (GetBuildType(buf, sizeof(buf), &eBuildType) > 0 &&
-                               (eBuildType != ePROD)) {
-                    FILE *bundleFp = fopen("/opt/rdm-versioned-packages.conf", "r");
-                    if (bundleFp != NULL) {
-                        if (fgets(dlBundle, sizeof(dlBundle), bundleFp) != NULL) {
-                            char *newline = strchr(dlBundle, '\n');
-                            if (newline != NULL) {
-                                *newline = '\0';
-                            }
-                            SWLOG_INFO("Non-prod build: overriding dlBundle with /opt/rdm-versioned-packages.conf: %s\n", dlBundle);
-                        }
-                        fclose(bundleFp);
-                    }
-                }       
-                
                 if (retval < 0 || retval >= available) {
                     SWLOG_ERROR("dlAppBundle string too long, truncation occurred\n");
                     return ret;
+                }
+            }
+
+            if (GetBuildType(buf, sizeof(buf), &eBuildType) > 0 &&
+                           (eBuildType != ePROD) && (eBuildType != eUNKNOWN)) {
+                FILE *bundleFp = fopen("/opt/rdm-versioned-packages.conf", "r");
+                if (bundleFp != NULL) {
+                    char tempbuffer[1024] = {0};
+                    if (fgets(tempbuffer, sizeof(tempbuffer), bundleFp) != NULL) {
+                        size_t len = strlen(tempbuffer);
+                        
+                        // Detect truncation: if buffer is full and last char is not \n, it was truncated
+                        if (len == sizeof(tempbuffer) - 1 && tempbuffer[len - 1] != '\n') {
+                            SWLOG_ERROR("dlBundle override rejected: line truncated (exceeds %zu bytes)\n", sizeof(tempbuffer) - 1);
+                        } else {
+                            // Trim trailing \r\n
+                            while (len > 0 && (tempbuffer[len - 1] == '\n' || tempbuffer[len - 1] == '\r')) {
+                                tempbuffer[--len] = '\0';
+                            }
+                            
+                            if (len > 0) {
+                                strncpy(dlBundle, tempbuffer, sizeof(dlBundle) - 1);
+                                dlBundle[sizeof(dlBundle) - 1] = '\0';
+                                SWLOG_INFO("Non-prod build: overriding dlBundle with /opt/rdm-versioned-packages.conf: %s\n", dlBundle);
+                            } else {
+                                SWLOG_ERROR("dlBundle override rejected: empty after trimming\n");
+                            }
+                        }
+                    }
+                    fclose(bundleFp);
                 }
             }
 

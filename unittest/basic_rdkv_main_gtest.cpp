@@ -18,7 +18,6 @@
 
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
-#include <gtest/gtest.h> 
 #include <iostream>
 #include <unistd.h>
 #include <string>
@@ -1527,6 +1526,12 @@ TEST(MainHelperFunctionTest,ProcessResTest_ProdBuild_DoesNotUseOverrideBundleCon
     if (!EnsureRdmBinaryForTest()) {
         GTEST_SKIP() << "Cannot create/access /usr/bin/rdm in this environment";
     }
+
+    FILE* verifyDir = fopen(kRdmOverrideConfig, "w");
+    if (verifyDir == NULL) {
+         GTEST_SKIP() << "Cannot create /opt/rdm-versioned-packages.conf in this environment";
+    }
+    fclose(verifyDir);
 
     ASSERT_TRUE(WriteTextFile(kRdmOverrideConfig, "dlCertBundle=cfg-cert|dlAppBundle=cfg-app\n"));
 
