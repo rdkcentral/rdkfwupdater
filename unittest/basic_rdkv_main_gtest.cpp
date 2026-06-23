@@ -21,6 +21,8 @@
 #include <gtest/gtest.h> 
 #include <iostream>
 #include <unistd.h>
+#include <string>
+#include <sys/stat.h>
 
 #include "rdkv_cdl_log_wrapper.h"
 extern "C" {
@@ -94,6 +96,48 @@ extern "C" {
     int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* pHttp_code);
     size_t getContentLength(const char *file);
     int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_limit, int *httpcode);
+}
+
+static const char* kBuildTypeFile = "/tmp/device_gtest.prop";
+static const char* kRdmOverrideConfig = "/opt/rdm-versioned-packages.conf";
+static const char* kRdmBinaryPath = "/usr/bin/rdm";
+
+static bool WriteTextFile(const char* path, const std::string& content)
+{
+    FILE* fp = fopen(path, "w");
+    if (fp == NULL) {
+        return false;
+    }
+    const size_t written = fwrite(content.c_str(), 1, content.size(), fp);
+    fclose(fp);
+    return written == content.size();
+}
+
+static bool EnsureRdmBinaryForTest()
+{
+    if (access(kRdmBinaryPath, F_OK) == 0) {
+        return true;
+    }
+
+    FILE* fp = fopen(kRdmBinaryPath, "w");
+    if (fp == NULL) {
+        return false;
+    }
+    fputs("#!/bin/sh\nexit 0\n", fp);
+    fclose(fp);
+    chmod(kRdmBinaryPath, 0755);
+    return (access(kRdmBinaryPath, F_OK) == 0);
+}
+
+static void PrepareBundleResponse(XCONFRES* response)
+{
+    memset(response, 0, sizeof(*response));
+    snprintf(response->cloudFWFile, sizeof(response->cloudFWFile), "%s", "HS_bundle_test-signed.bin");
+    snprintf(response->cloudFWLocation, sizeof(response->cloudFWLocation), "%s", "https://cdlserver.tv/Images");
+    snprintf(response->cloudFWVersion, sizeof(response->cloudFWVersion), "%s", "HS_bundle_test");
+    snprintf(response->cloudProto, sizeof(response->cloudProto), "%s", "http");
+    snprintf(response->dlCertBundle, sizeof(response->dlCertBundle), "%s", "xconf-cert");
+    snprintf(response->dlAppBundle, sizeof(response->dlAppBundle), "%s", "xconf-app");
 }
 
 TEST(getContentLengthTest,TestSuccess){
@@ -1429,6 +1473,71 @@ TEST(MainHelperFunctionTest,ProcessResTestMaintFalse){
 }
 TEST(MainHelperFunctionTest,ProcessResTestNull){
     EXPECT_EQ(processJsonResponse(NULL, NULL,NULL, NULL), -1);
+}
+TEST(MainHelperFunctionTest,ProcessResTest_NonProdBuild_UsesOverrideBundleConfig)
+{
+    if (!EnsureRdmBinaryForTest()) {
+        GTEST_SKIP() << "Cannot create/access /usr/bin/rdm in this environment";
+    }
+
+    ASSERT_TRUE(WriteTextFile(kBuildTypeFile, "BUILD_TYPE=vbn\n"));
+    ASSERT_TRUE(WriteTextFile(kRdmOverrideConfig, "dlCertBundle=cfg-cert|dlAppBundle=cfg-app\n"));
+
+    XCONFRES response;
+    PrepareBundleResponse(&response);
+
+    DeviceUtilsMock DeviceMock;
+    g_DeviceUtilsMock = &DeviceMock;
+    std::string capturedCmd;
+    EXPECT_CALL(DeviceMock, v_secure_system(_, _, _))
+        .WillOnce(testing::Invoke([&capturedCmd](const char* mode, const char* cmd, const char* opt) -> FILE* {
+            (void)mode;
+            (void)opt;
+            capturedCmd = (cmd != NULL) ? cmd : "";
+            return (FILE*)1;
+        }));
+
+    processJsonResponse(&response, "old_fw.bin", "HS", "false");
+
+    EXPECT_NE(capturedCmd.find("dlCertBundle=cfg-cert|dlAppBundle=cfg-app"), std::string::npos);
+
+    g_DeviceUtilsMock = nullptr;
+    unlink(kBuildTypeFile);
+    unlink(kRdmOverrideConfig);
+}
+
+TEST(MainHelperFunctionTest,ProcessResTest_ProdBuild_DoesNotUseOverrideBundleConfig)
+{
+    if (!EnsureRdmBinaryForTest()) {
+        GTEST_SKIP() << "Cannot create/access /usr/bin/rdm in this environment";
+    }
+
+    ASSERT_TRUE(WriteTextFile(kRdmOverrideConfig, "dlCertBundle=cfg-cert|dlAppBundle=cfg-app\n"));
+
+    ASSERT_TRUE(WriteTextFile(kBuildTypeFile, "BUILD_TYPE=prod\n"));
+
+    XCONFRES response;
+    PrepareBundleResponse(&response);
+
+    DeviceUtilsMock DeviceMock;
+    g_DeviceUtilsMock = &DeviceMock;
+    std::string capturedCmd;
+    EXPECT_CALL(DeviceMock, v_secure_system(_, _, _))
+        .WillOnce(testing::Invoke([&capturedCmd](const char* mode, const char* cmd, const char* opt) -> FILE* {
+            (void)mode;
+            (void)opt;
+            capturedCmd = (cmd != NULL) ? cmd : "";
+            return (FILE*)1;
+        }));
+
+    processJsonResponse(&response, "old_fw.bin", "HS", "false");
+
+    EXPECT_NE(capturedCmd.find("dlCertBundle=xconf-cert|dlAppBundle=xconf-app"), std::string::npos);
+    EXPECT_EQ(capturedCmd.find("dlCertBundle=cfg-cert|dlAppBundle=cfg-app"), std::string::npos);
+    g_DeviceUtilsMock = nullptr;
+
+    unlink(kBuildTypeFile);
+    unlink(kRdmOverrideConfig);
 }
 TEST(MainHelperFunctionTest,initialValidationTestSuccess){
     MockExternal mockexternal;
