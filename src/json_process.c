@@ -349,7 +349,7 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
     FILE *fp = NULL;
     int ret = -1;
     BUILDTYPE eBuildType;
-	char buf[400];
+	char buf[64];
 
     last_dwnl_img[0] = 0;
     current_img[0] = 0;
