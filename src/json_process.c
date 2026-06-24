@@ -420,7 +420,8 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
                            (eBuildType != ePROD) && (eBuildType != eUNKNOWN)) {
                 FILE *bundleFp = fopen("/opt/rdm-versioned-packages.conf", "r");
                 if (bundleFp != NULL) {
-                    char tempbuffer[1024] = {0};
+                    char tempbuffer[1024];
+                    tempbuffer[0] = 0;
                     if (fgets(tempbuffer, sizeof(tempbuffer), bundleFp) != NULL) {
                         size_t len = strlen(tempbuffer);
                         
@@ -434,9 +435,13 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
                             }
                             
                             if (len > 0) {
-                                strncpy(dlBundle, tempbuffer, sizeof(dlBundle) - 1);
-                                dlBundle[sizeof(dlBundle) - 1] = '\0';
-                                SWLOG_INFO("Non-prod build: overriding dlBundle with /opt/rdm-versioned-packages.conf: %s\n", dlBundle);
+                                if (strpbrk(tempbuffer, "\"\\`$") != NULL) {
+                                    SWLOG_ERROR("dlBundle override rejected: contains unsafe character(s) [\"\\`$]\n");
+                                } else {
+                                    strncpy(dlBundle, tempbuffer, sizeof(dlBundle) - 1);
+                                    dlBundle[sizeof(dlBundle) - 1] = '\0';
+                                    SWLOG_INFO("Non-prod build: overriding dlBundle with /opt/rdm-versioned-packages.conf: %s\n", dlBundle);
+                                }
                             } else {
                                 SWLOG_ERROR("dlBundle override rejected: empty after trimming\n");
                             }
