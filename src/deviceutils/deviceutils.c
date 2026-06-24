@@ -165,6 +165,8 @@ size_t RunCommand( SYSCMD eSysCmd, const char *pArgs, char *pResult, size_t szRe
            case eMfrUtil :
                if( pArgs != NULL )
                {
+                   SWLOG_INFO( "Enters eMfrUtil case\n" );
+                   SWLOG_INFO( "RunCommand: Executing command: /usr/bin/mfr_util %s\n", pArgs );
                    fp = v_secure_popen( "r", MFRUTIL, pArgs );
                }
                else
