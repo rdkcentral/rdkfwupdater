@@ -309,10 +309,17 @@ size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
 
     if( pPDRIFilename != NULL )
     {
-        len = RunCommand( eMfrUtil, "--PDRIVersion", pPDRIFilename, szBufSize );
-        if( len && ((pTmp = strcasestr( pPDRIFilename, "failed" )) == NULL) )   // if "failed" is not found
+        size_t raw_len = RunCommand( eMfrUtil, "--PDRIVersion", pPDRIFilename, szBufSize );
+        if( raw_len && ((pTmp = strcasestr( pPDRIFilename, "failed" )) == NULL) )   // if "failed" is not found
         {
-            SWLOG_INFO( "GetPDRIFileName: PDRI Version = %s\n", pPDRIFilename );
+            if (raw_len > 0 && (pPDRIFilename[raw_len - 1] == '\n' || pPDRIFilename[raw_len - 1] == '\r'))
+            {
+                SWLOG_INFO("GetPDRIFileName: raw output has trailing control char (raw_len=%zu, last_char=0x%02X), calling stripinvalidchar\n",
+                           raw_len, (unsigned char)pPDRIFilename[raw_len - 1]);
+            }
+            len = stripinvalidchar(pPDRIFilename, raw_len);
+            SWLOG_INFO("GetPDRIFileName: PDRI Version = %s (len=%zu, stripped %zu chars)\n",
+                       pPDRIFilename, len, raw_len - len);
             t2ValNotify("PDRI_Version_split", pPDRIFilename);
         }
         else
