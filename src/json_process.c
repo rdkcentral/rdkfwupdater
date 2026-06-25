@@ -22,6 +22,7 @@
 #include "download_status_helper.h"
 #include "device_status_helper.h"
 #include "iarmInterface.h"
+#include "rfcinterface.h"
 #ifndef GTEST_ENABLE
 #include "rdk_fwdl_utils.h"
 #include "system_utils.h"
@@ -277,7 +278,29 @@ int getXconfRespData( XCONFRES *pResponse, char *pJsonStr )
             GetJsonVal( pJson, "rebootImmediately", pResponse->cloudImmediateRebootFlag, sizeof(pResponse->cloudImmediateRebootFlag) );
             GetJsonVal( pJson, "additionalFwVerInfo", pResponse->cloudPDRIVersion, sizeof(pResponse->cloudPDRIVersion) );
             GetJsonVal( pJson, "delayDownload", pResponse->cloudDelayDownload, sizeof(pResponse->cloudDelayDownload) );
-            GetJsonValContaining( pJson, "remCtrl", pResponse->peripheralFirmwares, sizeof(pResponse->peripheralFirmwares) );
+
+            if (isDirectCDNEnabled()) {
+                /* Direct CDN mode: parse per-artifact URLs */
+                //TODO : Check the cases where we have multiple firmware images for the same model
+                GetJsonVal( pJson, "firmware_URL", pResponse->firmwareUrl, sizeof(pResponse->firmwareUrl) );
+                GetJsonVal( pJson, "additionalFwVerInfo_URL", pResponse->pdriUrl, sizeof(pResponse->pdriUrl) );
+
+                /* Dynamic peripheral key */
+                char peripheral_product[64] = {0};
+                char peripheral_product_url[100] = {0};
+                int peri_ret = getPeripheralProduct(peripheral_product, sizeof(peripheral_product));
+                if (peri_ret != -1 && peripheral_product[0] != '\0') {
+                    snprintf(peripheral_product_url, sizeof(peripheral_product_url), "%s_URL", peripheral_product);
+                    GetJsonVal( pJson, peripheral_product, pResponse->peripheralFirmwares, sizeof(pResponse->peripheralFirmwares) );
+                    SWLOG_INFO("remctrl with buf %s= %s\n", peripheral_product, pResponse->peripheralFirmwares);
+                    GetJsonVal( pJson, peripheral_product_url, pResponse->remCtrlUrl, sizeof(pResponse->remCtrlUrl) );
+                    SWLOG_INFO("remctrl with buf url %s= %s\n", peripheral_product_url, pResponse->remCtrlUrl);
+                }
+            } else {
+                /* Legacy mode: use containing-match for peripheral */
+                GetJsonValContaining( pJson, "remCtrl", pResponse->peripheralFirmwares, sizeof(pResponse->peripheralFirmwares) );
+            }
+
             t2ValNotify("SYST_INFO_PRXR_Ver_split", pResponse->peripheralFirmwares);
             GetJsonVal( pJson, "dlCertBundle", pResponse->dlCertBundle, sizeof(pResponse->dlCertBundle) );
             GetJsonVal( pJson, "dlAppBundle", pResponse->dlAppBundle, sizeof(pResponse->dlAppBundle) );
@@ -325,6 +348,8 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
     char current_img[64];
     FILE *fp = NULL;
     int ret = -1;
+    BUILDTYPE eBuildType;
+	char buf[64];
 
     last_dwnl_img[0] = 0;
     current_img[0] = 0;
@@ -391,6 +416,36 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
                 }
             }
 
+            if (GetBuildType(buf, sizeof(buf), &eBuildType) > 0 &&
+                           (eBuildType != ePROD) && (eBuildType != eUNKNOWN)) {
+                FILE *bundleFp = fopen("/opt/rdm-versioned-packages.conf", "r");
+                if (bundleFp != NULL) {
+                    char tempbuffer[1024] = {0};
+                    if (fgets(tempbuffer, sizeof(tempbuffer), bundleFp) != NULL) {
+                        size_t len = strlen(tempbuffer);
+                        
+                        // Detect truncation: if buffer is full and last char is not \n, it was truncated
+                        if (len == sizeof(tempbuffer) - 1 && tempbuffer[len - 1] != '\n') {
+                            SWLOG_ERROR("dlBundle override rejected: line truncated (exceeds %zu bytes)\n", sizeof(tempbuffer) - 1);
+                        } else {
+                            // Trim trailing \r\n
+                            while (len > 0 && (tempbuffer[len - 1] == '\n' || tempbuffer[len - 1] == '\r')) {
+                                tempbuffer[--len] = '\0';
+                            }
+                            
+                            if (len > 0) {
+                                strncpy(dlBundle, tempbuffer, sizeof(dlBundle) - 1);
+                                dlBundle[sizeof(dlBundle) - 1] = '\0';
+                                SWLOG_INFO("Non-prod build: overriding dlBundle with /opt/rdm-versioned-packages.conf: %s\n", dlBundle);
+                            } else {
+                                SWLOG_ERROR("dlBundle override rejected: empty after trimming\n");
+                            }
+                        }
+                    }
+                    fclose(bundleFp);
+                }
+            }
+
 	    if ((access("/usr/bin/rdm", F_OK) == 0) && (strlen(dlBundle) > 0)) {
     	        // file exists
 		SWLOG_INFO("RDM binary is present\n");
@@ -405,6 +460,10 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
 	if ((*(response->cloudPDRIVersion)) != 0) {
 	    SWLOG_INFO("Validate PDRI image with device model number\n");
             valid_pdri_img = validateImage(response->cloudPDRIVersion, model);
+            if (valid_pdri_img && (strstr(response->cloudPDRIVersion, "_PDRI_")) == NULL) {
+                SWLOG_INFO("Invalid PDRI image: missing _PDRI_ substring\n");
+                valid_pdri_img = false;
+            }
 	}
         if ((false == valid_img) || (false == valid_pdri_img)) {
             SWLOG_INFO("Image configured is not of model %s.. Skipping the upgrade\nExiting from Image Upgrade process..!\n", model);

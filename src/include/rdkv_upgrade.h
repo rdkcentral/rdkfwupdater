@@ -39,6 +39,7 @@ typedef enum {
     RDKV_UPGRADE_SUCCESS = 0,
     RDKV_UPGRADE_ERROR_THROTTLE_ZERO = -100,  // Throttle speed = 0
     RDKV_UPGRADE_ERROR_FORCE_EXIT = -101,      // Force exit (curl 23)
+    RDKV_UPGRADE_ERROR_STATE_RED = -102,       // State red entered, skip retry
 } rdkv_upgrade_error_t;
 
 /**
@@ -67,6 +68,7 @@ typedef struct {
     int trigger_type;                        //    Trigger type
     const Rfc_t* rfc_list;                  //     RFC list
     int download_only;                       //     If non-zero, skip flashing (download-only mode for D-Bus API)
+    bool direct_cdn;                         //     Direct CDN mode flag (skip Codebig fallback)
     //void (*progress_callback)(unsigned long long current_bytes, unsigned long long total_bytes, void* user_data); // Progress callback
     //void* progress_callback_data;            //     User data for progress callback
 } RdkUpgradeContext_t;

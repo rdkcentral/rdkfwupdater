@@ -513,11 +513,18 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
 	    else if (ret_curl_code == RDKV_UPGRADE_ERROR_FORCE_EXIT) {
 		    return RDKV_UPGRADE_ERROR_FORCE_EXIT;
 	    }
+	    else if (ret_curl_code == RDKV_UPGRADE_ERROR_STATE_RED) {
+		    return RDKV_UPGRADE_ERROR_STATE_RED;
+	    }
 
             if (ret_curl_code != CURL_SUCCESS ||
                 (*pHttp_code != HTTP_SUCCESS && *pHttp_code != HTTP_CHUNK_SUCCESS && *pHttp_code != HTTP_PAGE_NOT_FOUND)) {
                 ret_curl_code = retryDownload(context, RETRY_COUNT, 60, pHttp_code, curl);
                 if (ret_curl_code == CURL_CONNECTIVITY_ISSUE || *pHttp_code == 0) {
+                    /* Direct CDN mode: skip Codebig fallback */
+                    if (context->direct_cdn) {
+                        SWLOG_INFO("%s : Direct CDN mode - skipping Codebig fallback\n", __FUNCTION__);
+                    } else {
                     if (server_type == HTTP_SSR_DIRECT) {
                         SWLOG_ERROR("%s : Direct Image upgrade Failed: http_code:%d, attempting codebig\n", __FUNCTION__, *pHttp_code);
                     }else {
@@ -533,6 +540,7 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
                         fallback_context.server_type = HTTP_XCONF_CODEBIG;
                     }
                     ret_curl_code = fallBack(&fallback_context, pHttp_code, curl);
+                    }
                 }
             }
         }
@@ -543,6 +551,9 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
             }
             else if (ret_curl_code == RDKV_UPGRADE_ERROR_FORCE_EXIT) {
                     return RDKV_UPGRADE_ERROR_FORCE_EXIT;
+            }
+            else if (ret_curl_code == RDKV_UPGRADE_ERROR_STATE_RED) {
+                    return RDKV_UPGRADE_ERROR_STATE_RED;
             }
             if (ret_curl_code != CURL_SUCCESS ||
                 (*pHttp_code != HTTP_SUCCESS && *pHttp_code != HTTP_CHUNK_SUCCESS && *pHttp_code != HTTP_PAGE_NOT_FOUND)) {
@@ -698,7 +709,12 @@ int codebigdownloadFile(
         SWLOG_ERROR("%s: curl parameter (pointer) is NULL\n", __FUNCTION__);
         return curl_ret_code;
     }
-
+     *httpCode = 0;
+    /* Direct CDN mode must never enter Codebig path */
+    if (context->direct_cdn) {
+        SWLOG_INFO("%s: Direct CDN mode - Codebig path not permitted, returning\n", __FUNCTION__);
+        return curl_ret_code;
+    }
 
     int server_type = context->server_type;
     const char* artifactLocationUrl = context->artifactLocationUrl;
@@ -716,7 +732,7 @@ int codebigdownloadFile(
         SWLOG_ERROR("%s: artifactLocationUrl or localDownloadLocation is NULL\n", __FUNCTION__);
         return curl_ret_code;
     }
-    *httpCode = 0;
+   
 
 #ifdef DEBUG_CODEBIG_CDL
     if( filePresentCheck( "/tmp/.forceCodebigFailure" ) == RDK_API_SUCCESS )
@@ -1019,7 +1035,7 @@ int downloadFile(
         chunk_dwnl = isIncremetalCDLEnable(file_dwnl.pathname);
     }
 #ifndef LIBRDKCERTSELECTOR	
-    SWLOG_INFO("1 Fetching MTLS credential for SSR/XCONF\n");
+    SWLOG_INFO("Fetching MTLS credential for SSR/XCONF\n");
     ret = getMtlscert(&sec);
     if (-1 == ret) {
         SWLOG_ERROR("%s : getMtlscert() Featching MTLS fail. Going For NON MTLS:%d\n", __FUNCTION__, ret);
@@ -1042,7 +1058,7 @@ int downloadFile(
             if (checkAndEnterStateRed(CURL_MTLS_LOCAL_CERTPROBLEM, disableStatsUpdate) != 0) {
                 SWLOG_ERROR("%s : State red entered due to MTLS cert problem\n", __FUNCTION__);
             }
-            return curl_ret_code;
+            return RDKV_UPGRADE_ERROR_STATE_RED;
         } else if (ret == STATE_RED_CERT_FETCH_FAILURE) {
             SWLOG_ERROR("%s : State red cert failed.\n", __FUNCTION__);
             return curl_ret_code;
@@ -1164,6 +1180,10 @@ int downloadFile(
         SWLOG_ERROR("%s : Direct Image upgrade Fail: curl ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *httpCode);
         (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_FAILED) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_FAILED);
         dwnlError(curl_ret_code, *httpCode, server_type,device_info,lastrun,disableStatsUpdate);
+        if (filePresentCheck(STATEREDFLAG) == 0) {
+            SWLOG_INFO("%s : State red entered during download, skipping retry\n", __FUNCTION__);
+            return RDKV_UPGRADE_ERROR_STATE_RED;
+        }
         if( *(file_dwnl.pathname) != 0 )
         {
             unlink(file_dwnl.pathname);

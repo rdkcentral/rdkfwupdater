@@ -52,15 +52,15 @@ extern "C" size_t GetEstbMac(char *pEstbMac, size_t szBufSize)
     //snprintf(pEstbMac, szBufSize, "%s", "aa:bb:cc:dd:ee");
     return g_DeviceStatusMock->GetEstbMac(pEstbMac, szBufSize);
 }
-extern "C" int write_RFCProperty(const char *key, const char *value, RFCVALDATATYPE datatype)
+extern "C" int write_RFCProperty(char* type, const char *key, const char *value, RFCVALDATATYPE datatype)
 {
     if (!g_DeviceStatusMock)
     {
-	cout << "GetEstbMac g_DeviceStatusMock object is NULL" << endl;
+	cout << "write_RFCProperty g_DeviceStatusMock object is NULL" << endl;
         return 0;
     }
     printf("Inside Mock Function write_RFCProperty\n");
-    return g_DeviceStatusMock->write_RFCProperty(key, value, datatype);
+    return g_DeviceStatusMock->write_RFCProperty(type, key, value, datatype);
 }
 
 extern "C" size_t GetFirmwareVersion( char *pFWVersion, size_t szBufSize )
@@ -376,6 +376,17 @@ extern "C" void t2ValNotify(char *marker, char *val)
     }
     printf("Inside Mock Function t2ValNotify\n");
     return g_DeviceStatusMock->t2ValNotify(marker, val);
+}
+
+extern "C" bool isDirectCDNEnabled(void)
+{
+    if (!g_DeviceStatusMock)
+    {
+        cout << "isDirectCDNEnabled g_DeviceStatusMock object is NULL" << endl;
+        return false;
+    }
+    printf("Inside Mock Function isDirectCDNEnabled\n");
+    return g_DeviceStatusMock->isDirectCDNEnabled();
 }
 
 // Mock for swLog (logging function from common_utilities)

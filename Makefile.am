@@ -207,6 +207,7 @@ bin_PROGRAMS = rdkvfwupgrader rdkFwupdateMgr testClient
 
 rdkvfwupgrader_SOURCES = \
     ${top_srcdir}/src/rdkv_main.c \
+    ${top_srcdir}/src/directcdn.c \
     ${top_srcdir}/src/chunk.c \
     ${top_srcdir}/src/device_status_helper.c \
     ${top_srcdir}/src/rbusInterface/rbusInterface.c
@@ -222,6 +223,7 @@ rdkvfwupgrader_CPPFLAGS = -I${top_srcdir}/src/include -I${top_srcdir}/src/device
 rdkFwupdateMgr_SOURCES = \
     ${top_srcdir}/src/rdkFwupdateMgr.c\
     ${top_srcdir}/src/chunk.c \
+    ${top_srcdir}/src/directcdn.c \
     ${top_srcdir}/src/device_status_helper.c \
     ${top_srcdir}/src/rbusInterface/rbusInterface.c \
     ${top_srcdir}/src/dbus/rdkv_dbus_server.c \

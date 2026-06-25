@@ -292,6 +292,10 @@ bool checkCodebigAccess(void)
 {
     int ret = -1;
     bool codebigEnable = false;
+    if (isDirectCDNEnabled()) {
+        SWLOG_INFO("CodebigAccess Not Present For direct cdn\n");
+        return false;
+    }
     ret = v_secure_system("GetServiceUrl 2 temp");
     SWLOG_INFO("Exit code for codebigcheck:%d\n", ret);
     if (ret == 0) {

@@ -235,6 +235,16 @@ int filePresentCheck(const char *filepath) {
 // ============================================================================
 
 /**
+ * @brief Mock implementation of isDirectCDNEnabled
+ */
+bool isDirectCDNEnabled(void) {
+    if (mock_rfc_interface) {
+        return mock_rfc_interface->isDirectCDNEnabled();
+    }
+    return false;
+}
+
+/**
  * @brief Mock implementation of getRFCSettings
  */
 int getRFCSettings(Rfc_t *pRfc) {
