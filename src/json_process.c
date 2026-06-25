@@ -349,7 +349,8 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
     FILE *fp = NULL;
     int ret = -1;
     BUILDTYPE eBuildType;
-	char buf[64];
+    char buf[64];
+    bool is_dev_build = false;
 
     last_dwnl_img[0] = 0;
     current_img[0] = 0;
@@ -385,7 +386,13 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
             fprintf( fp, "%s\n", response->rdmCatalogueVersion );
             fclose( fp );
         }
-        if (response->dlCertBundle[0] != 0 || response->dlAppBundle[0] != '\0') {
+
+        if (GetBuildType(buf, sizeof(buf), &eBuildType) > 0 &&
+                    (eBuildType != ePROD) && (eBuildType != eUNKNOWN)) {
+            is_dev_build = true;
+        }
+
+        if (response->dlCertBundle[0] != 0 || response->dlAppBundle[0] != '\0' || is_dev_build) {
             SWLOG_INFO("Calling rdm Versioned_app download to process bundle update\n");
 	    
 	    char dlBundle[1024] = {0};
@@ -416,8 +423,7 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
                 }
             }
 
-            if (GetBuildType(buf, sizeof(buf), &eBuildType) > 0 &&
-                           (eBuildType != ePROD) && (eBuildType != eUNKNOWN)) {
+            if (is_dev_build) {
                 FILE *bundleFp = fopen("/opt/rdm-versioned-packages.conf", "r");
                 if (bundleFp != NULL) {
                     char tempbuffer[1024];
@@ -438,6 +444,11 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
                                 if (strpbrk(tempbuffer, "\"\\`$") != NULL) {
                                     SWLOG_ERROR("dlBundle override rejected: contains unsafe character(s) [\"\\`$]\n");
                                 } else {
+                                    if (response->dlCertBundle[0] == '\0' && response->dlAppBundle[0] == '\0') {
+                                        SWLOG_INFO("Non-prod build: XCONF bundle values empty, using /opt/rdm-versioned-packages.conf\n");
+                                    } else {
+                                        SWLOG_INFO("Non-prod build: overriding XCONF bundle values using /opt/rdm-versioned-packages.conf\n");
+                                    }
                                     strncpy(dlBundle, tempbuffer, sizeof(dlBundle) - 1);
                                     dlBundle[sizeof(dlBundle) - 1] = '\0';
                                     SWLOG_INFO("Non-prod build: overriding dlBundle with /opt/rdm-versioned-packages.conf: %s\n", dlBundle);
