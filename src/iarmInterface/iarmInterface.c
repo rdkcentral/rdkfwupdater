@@ -383,9 +383,15 @@ size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
 
     /* Strip trailing newline/carriage-return if present (MFR may include them) */
     len = strnlen(pPDRIFilename, szBufSize);
+    SWLOG_INFO("%s: Before trim (MFR): file='%s', len=%zu\n", __FUNCTION__, pPDRIFilename, len);
     while (len > 0 && (pPDRIFilename[len - 1] == '\n' || pPDRIFilename[len - 1] == '\r')) {
+        SWLOG_INFO("%s: Trailing %s detected at index %zu, stripping\n",
+                   __FUNCTION__,
+                   (pPDRIFilename[len - 1] == '\n') ? "\\n" : "\\r",
+                   len - 1);
         pPDRIFilename[--len] = '\0';
     }
+    SWLOG_INFO("%s: After trim (MFR): file='%s', len=%zu\n", __FUNCTION__, pPDRIFilename, len);
 
     return len;
 }
@@ -416,9 +422,15 @@ size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize) {
 
     /* Strip trailing newline/carriage-return if present */
     len = strnlen(pPDRIFilename, szBufSize);
+    SWLOG_INFO("%s: Before trim (fallback): file='%s', len=%zu\n", __FUNCTION__, pPDRIFilename, len);
     while (len > 0 && (pPDRIFilename[len - 1] == '\n' || pPDRIFilename[len - 1] == '\r')) {
+        SWLOG_INFO("%s: Trailing %s detected at index %zu, stripping\n",
+                   __FUNCTION__,
+                   (pPDRIFilename[len - 1] == '\n') ? "\\n" : "\\r",
+                   len - 1);
         pPDRIFilename[--len] = '\0';
     }
+    SWLOG_INFO("%s: After trim (fallback): file='%s', len=%zu\n", __FUNCTION__, pPDRIFilename, len);
 
     return len;  /* length excluding '\0' */
 }
