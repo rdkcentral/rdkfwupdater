@@ -392,7 +392,7 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
             is_dev_build = true;
         }
 
-        if (response->dlCertBundle[0] != 0 || response->dlAppBundle[0] != '\0' || is_dev_build) {
+        if (response->dlCertBundle[0] != '\0' || response->dlAppBundle[0] != '\0' || (is_dev_build && access("/opt/rdm-versioned-packages.conf", R_OK) == 0)) {
             SWLOG_INFO("Calling rdm Versioned_app download to process bundle update\n");
 	    
 	    char dlBundle[1024] = {0};
