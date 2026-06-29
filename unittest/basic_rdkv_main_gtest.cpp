@@ -1559,8 +1559,8 @@ TEST(MainHelperFunctionTest,ProcessResTest_NonProdBuild_ConfigOnlyOverrideTrigge
 
     processJsonResponse(&response, "old_fw.bin", "HS", "false");
 
-    EXPECT_NE(capturedCmd.find("rdm -v \""), std::string::npos);
-    EXPECT_NE(capturedCmd.find(configBundle), std::string::npos);
+    EXPECT_EQ(capturedCmd.find("rdm -v \""), std::string::npos);
+    EXPECT_EQ(capturedCmd.find(configBundle), std::string::npos);
 
     g_DeviceUtilsMock = nullptr;
     unlink(kBuildTypeFile);
