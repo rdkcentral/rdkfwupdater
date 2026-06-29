@@ -1527,7 +1527,7 @@ TEST(MainHelperFunctionTest,ProcessResTest_NonProdBuild_ConfigOnlyOverrideTrigge
         GTEST_SKIP() << "Cannot create/access /usr/bin/rdm in this environment";
     }
 
-    ASSERT_TRUE(WriteTextFile(kBuildTypeFile, "BUILD_TYPE=vbn\n"));
+    ASSERT_TRUE(WriteTextFile(kBuildTypeFile, "BUILD_TYPE=dev\n"));
 
     FILE* verifyDir = fopen(kRdmOverrideConfig, "w");
     if (verifyDir == NULL) {
