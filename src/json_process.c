@@ -406,6 +406,10 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
             if (response->dlCertBundle[0] != '\0') {
                 int retval = snprintf(dlBundle, available, "dlCertBundle=%s", response->dlCertBundle);
                 if (retval < 0 || retval >= available) {
+                    if (bundleFp != NULL) {
+                        fclose(bundleFp);
+                        bundleFp = NULL;
+                    }
                     SWLOG_ERROR("dlCertBundle string too long, truncation occurred\n");
                     return ret;
                 }
@@ -423,6 +427,10 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
                 }
 
                 if (retval < 0 || retval >= available) {
+                    if (bundleFp != NULL) {
+                        fclose(bundleFp);
+                        bundleFp = NULL;
+                    }
                     SWLOG_ERROR("dlAppBundle string too long, truncation occurred\n");
                     return ret;
                 }
