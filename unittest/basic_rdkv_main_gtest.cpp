@@ -1523,6 +1523,14 @@ TEST(MainHelperFunctionTest,ProcessResTest_NonProdBuild_UsesOverrideBundleConfig
 }
 TEST(MainHelperFunctionTest,ProcessResTest_NonProdBuild_ConfigOnlyOverrideTriggersRdm)
 {
+    MockExternal mockexternal;
+    global_mockexternal_ptr = &mockexternal;
+    EXPECT_CALL(mockexternal, GetBuildType(_, _))
+	    .WillRepeatedly(testing::Invoke([](char* buf, size_t size) -> int {
+             snprintf(buf, size, "dev");
+	     return 3;
+    }));
+ 
     if (!EnsureRdmBinaryForTest()) {
         GTEST_SKIP() << "Cannot create/access /usr/bin/rdm in this environment";
     }
@@ -1559,9 +1567,10 @@ TEST(MainHelperFunctionTest,ProcessResTest_NonProdBuild_ConfigOnlyOverrideTrigge
 
     processJsonResponse(&response, "old_fw.bin", "HS", "false");
 
-    EXPECT_EQ(capturedCmd.find("rdm -v \""), std::string::npos);
-    EXPECT_EQ(capturedCmd.find(configBundle), std::string::npos);
+    EXPECT_NE(capturedCmd.find("rdm -v \""), std::string::npos);
+    EXPECT_NE(capturedCmd.find(configBundle), std::string::npos);
 
+    global_mockexternal_ptr = nullptr;
     g_DeviceUtilsMock = nullptr;
     unlink(kBuildTypeFile);
     unlink(kRdmOverrideConfig);
