@@ -1521,6 +1521,60 @@ TEST(MainHelperFunctionTest,ProcessResTest_NonProdBuild_UsesOverrideBundleConfig
     unlink(kBuildTypeFile);
     unlink(kRdmOverrideConfig);
 }
+TEST(MainHelperFunctionTest,ProcessResTest_NonProdBuild_ConfigOnlyOverrideTriggersRdm)
+{
+    MockExternal mockexternal;
+    global_mockexternal_ptr = &mockexternal;
+    EXPECT_CALL(mockexternal, GetBuildType(_, _))
+	    .WillRepeatedly(testing::Invoke([](char* buf, size_t size) -> int {
+             snprintf(buf, size, "dev");
+	     return 3;
+    }));
+ 
+    if (!EnsureRdmBinaryForTest()) {
+        GTEST_SKIP() << "Cannot create/access /usr/bin/rdm in this environment";
+    }
+
+    ASSERT_TRUE(WriteTextFile(kBuildTypeFile, "BUILD_TYPE=dev\n"));
+
+    FILE* verifyDir = fopen(kRdmOverrideConfig, "w");
+    if (verifyDir == NULL) {
+        unlink(kBuildTypeFile);
+        GTEST_SKIP() << "Cannot create /opt/rdm-versioned-packages.conf in this environment";
+    }
+    fclose(verifyDir);
+
+    const std::string configBundle = "dlCertBundle=cfg-only-cert|dlAppBundle=cfg-only-app";
+    ASSERT_TRUE(WriteTextFile(kRdmOverrideConfig, configBundle + "\n"));
+
+    XCONFRES response;
+    PrepareBundleResponse(&response);
+    response.dlCertBundle[0] = '\0';
+    response.dlAppBundle[0] = '\0';
+
+    DeviceUtilsMock DeviceMock;
+    g_DeviceUtilsMock = &DeviceMock;
+
+    std::string capturedCmd;
+    EXPECT_CALL(DeviceMock, v_secure_system(_, _, _))
+        .Times(1)
+        .WillOnce(testing::Invoke([&capturedCmd](const char* mode, const char* cmd, const char* opt) -> FILE* {
+            (void)mode;
+            (void)opt;
+            capturedCmd = (cmd != NULL) ? cmd : "";
+            return (FILE*)1;
+        }));
+
+    processJsonResponse(&response, "old_fw.bin", "HS", "false");
+
+    EXPECT_NE(capturedCmd.find("rdm -v \""), std::string::npos);
+    EXPECT_NE(capturedCmd.find(configBundle), std::string::npos);
+
+    global_mockexternal_ptr = nullptr;
+    g_DeviceUtilsMock = nullptr;
+    unlink(kBuildTypeFile);
+    unlink(kRdmOverrideConfig);
+}
 TEST(MainHelperFunctionTest,ProcessResTest_ProdBuild_DoesNotUseOverrideBundleConfig)
 {
     if (!EnsureRdmBinaryForTest()) {

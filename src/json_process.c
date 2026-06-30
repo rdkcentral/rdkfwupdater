@@ -349,7 +349,8 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
     FILE *fp = NULL;
     int ret = -1;
     BUILDTYPE eBuildType;
-	char buf[64];
+    char buf[64];
+    bool is_dev_build = false;
 
     last_dwnl_img[0] = 0;
     current_img[0] = 0;
@@ -385,7 +386,18 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
             fprintf( fp, "%s\n", response->rdmCatalogueVersion );
             fclose( fp );
         }
-        if (response->dlCertBundle[0] != 0 || response->dlAppBundle[0] != '\0') {
+
+        if (GetBuildType(buf, sizeof(buf), &eBuildType) > 0 &&
+                    (eBuildType != ePROD) && (eBuildType != eUNKNOWN)) {
+            is_dev_build = true;
+        }
+
+	FILE *bundleFp = NULL;
+        if (is_dev_build) {
+            bundleFp = fopen("/opt/rdm-versioned-packages.conf", "r");
+        }
+
+        if (response->dlCertBundle[0] != '\0' || response->dlAppBundle[0] != '\0' || bundleFp != NULL) {
             SWLOG_INFO("Calling rdm Versioned_app download to process bundle update\n");
 	    
 	    char dlBundle[1024] = {0};
@@ -394,6 +406,10 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
             if (response->dlCertBundle[0] != '\0') {
                 int retval = snprintf(dlBundle, available, "dlCertBundle=%s", response->dlCertBundle);
                 if (retval < 0 || retval >= available) {
+                    if (bundleFp != NULL) {
+                        fclose(bundleFp);
+                        bundleFp = NULL;
+                    }
                     SWLOG_ERROR("dlCertBundle string too long, truncation occurred\n");
                     return ret;
                 }
@@ -411,39 +427,49 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
                 }
 
                 if (retval < 0 || retval >= available) {
+                    if (bundleFp != NULL) {
+                        fclose(bundleFp);
+                        bundleFp = NULL;
+                    }
                     SWLOG_ERROR("dlAppBundle string too long, truncation occurred\n");
                     return ret;
                 }
             }
 
-            if (GetBuildType(buf, sizeof(buf), &eBuildType) > 0 &&
-                           (eBuildType != ePROD) && (eBuildType != eUNKNOWN)) {
-                FILE *bundleFp = fopen("/opt/rdm-versioned-packages.conf", "r");
-                if (bundleFp != NULL) {
-                    char tempbuffer[1024] = {0};
-                    if (fgets(tempbuffer, sizeof(tempbuffer), bundleFp) != NULL) {
-                        size_t len = strlen(tempbuffer);
-                        
-                        // Detect truncation: if buffer is full and last char is not \n, it was truncated
-                        if (len == sizeof(tempbuffer) - 1 && tempbuffer[len - 1] != '\n') {
-                            SWLOG_ERROR("dlBundle override rejected: line truncated (exceeds %zu bytes)\n", sizeof(tempbuffer) - 1);
-                        } else {
-                            // Trim trailing \r\n
-                            while (len > 0 && (tempbuffer[len - 1] == '\n' || tempbuffer[len - 1] == '\r')) {
-                                tempbuffer[--len] = '\0';
-                            }
-                            
-                            if (len > 0) {
+            if (bundleFp != NULL) {
+                char tempbuffer[1024];
+                tempbuffer[0] = 0;
+                if (fgets(tempbuffer, sizeof(tempbuffer), bundleFp) != NULL) {
+                    size_t len = strlen(tempbuffer);
+
+                    // Detect truncation: full buffer with no trailing \n is truncated only if not EOF
+                    if (len == sizeof(tempbuffer) - 1 && tempbuffer[len - 1] != '\n' && !feof(bundleFp)) {
+                        SWLOG_ERROR("dlBundle override rejected: line truncated (exceeds %zu bytes)\n", sizeof(tempbuffer) - 1);
+                    } else {
+                        // Trim trailing \r\n
+                        while (len > 0 && (tempbuffer[len - 1] == '\n' || tempbuffer[len - 1] == '\r')) {
+                            tempbuffer[--len] = '\0';
+                        }
+
+                        if (len > 0) {
+                            if (strpbrk(tempbuffer, "\"\\`$") != NULL) {
+                                SWLOG_ERROR("dlBundle override rejected: contains unsafe character(s) [\"\\`$]\n");
+                            } else {
+                                if (response->dlCertBundle[0] == '\0' && response->dlAppBundle[0] == '\0') {
+                                    SWLOG_INFO("Non-prod build: XCONF bundle values empty, using /opt/rdm-versioned-packages.conf\n");
+                                } else {
+                                    SWLOG_INFO("Non-prod build: overriding XCONF bundle values using /opt/rdm-versioned-packages.conf\n");
+                                }
                                 strncpy(dlBundle, tempbuffer, sizeof(dlBundle) - 1);
                                 dlBundle[sizeof(dlBundle) - 1] = '\0';
                                 SWLOG_INFO("Non-prod build: overriding dlBundle with /opt/rdm-versioned-packages.conf: %s\n", dlBundle);
-                            } else {
-                                SWLOG_ERROR("dlBundle override rejected: empty after trimming\n");
                             }
+                        } else {
+                            SWLOG_ERROR("dlBundle override rejected: empty after trimming\n");
                         }
                     }
-                    fclose(bundleFp);
                 }
+                fclose(bundleFp);
             }
 
 	    if ((access("/usr/bin/rdm", F_OK) == 0) && (strlen(dlBundle) > 0)) {
