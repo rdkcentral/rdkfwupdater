@@ -18,6 +18,7 @@
 
 #include <stdbool.h>
 #include <pthread.h>
+#include <string.h>
 #include "rdkv_cdl_log_wrapper.h"
 #if defined(IARM_ENABLED)
 
@@ -318,10 +319,109 @@ bool isConnectedToInternet (void)
     return isconnected;
 }
 
+size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
+{
+    size_t len = 0;
+    IARM_Result_t ret;
+    IARM_Bus_MFRLib_GetSerializedData_Param_t param;
+
+    if (pPDRIFilename == NULL || szBufSize == 0) {
+        SWLOG_ERROR("GetPDRIFileNameUsingMFR: Error, input argument NULL\n");
+        return 0;
+    }
+
+    SWLOG_INFO("GetPDRIFileNameUsingMFR Fetching PDRI image name via IARM_Bus_Call (MFRMgr)");
+
+    memset(&param, 0, sizeof(param));
+    param.type = mfrSERIALIZED_TYPE_PDRIVERSION;
+
+    ret = IARM_Bus_Call(
+        IARM_BUS_MFRLIB_NAME,
+        IARM_BUS_MFRLIB_API_GetSerializedData,
+        (void *)&param,
+        sizeof(param)
+    );
+
+    if (ret == IARM_RESULT_SUCCESS )
+    {
+	    SWLOG_INFO("GetPDRIFileNameUsingMFR: IARM_Bus_Call Success , param.bufLen : %zu\n" , (size_t)param.bufLen);
+	    if(param.bufLen > 0 && param.bufLen <= sizeof(param.buffer)) 
+	    {	
+            if (param.bufLen < szBufSize)
+            {
+		memcpy(pPDRIFilename, param.buffer, param.bufLen);
+                pPDRIFilename[param.bufLen] = '\0';
+                len = param.bufLen;
+                SWLOG_INFO("GetPDRIFileNameUsingMFR: IARM_Bus_Call OK, PDRI Version = %s", pPDRIFilename);   
+	        }
+            else
+	        {
+		  // Truncate and null-terminate
+                memcpy(pPDRIFilename, param.buffer, szBufSize - 1);
+                pPDRIFilename[szBufSize - 1] = '\0';
+                len = szBufSize - 1;
+                SWLOG_ERROR("GetPDRIFileNameUsingMFR: Buffer too small for PDRI Version (bufLen=%zu, szBufSize=%zu) - truncated to fit",(size_t)param.bufLen, szBufSize);   
+	        }	    
+        } 
+        else 
+        {
+        // Error path: be explicit
+	       pPDRIFilename[0] = '\0';
+           SWLOG_ERROR("GetPDRIFileNameUsingMFR: Invalid bufLen returned (bufLen=%zu, buffer size=%zu)",
+                        (size_t)param.bufLen, sizeof(param.buffer));
+            len = 0;
+
+        }
+    }
+    else
+    {
+        // Error path: be explicit
+        pPDRIFilename[0] = '\0';
+        SWLOG_ERROR("GetPDRIFileNameUsingMFR: IARM_Bus_Call failed (ret=%d, bufLen=%zu). Cannot retrieve PDRI image name.",ret, (size_t)param.bufLen);
+        len = 0;
+    }
+
+    /* Strip trailing newline/carriage-return if present (MFR may include them) */
+    len = strnlen(pPDRIFilename, szBufSize);
+    while (len > 0 && (pPDRIFilename[len - 1] == '\n' || pPDRIFilename[len - 1] == '\r')) {
+        pPDRIFilename[--len] = '\0';
+    }
+
+    return len;
+}
 #else
 
 // Do nothing act as pass through function .
 // Iarm eventing is not the main purpose of the code download module
+size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize) {
+   const char *pdriFileName = "/etc/pdri/pdri_mfr.conf";  // example
+
+    if (pPDRIFilename == NULL || szBufSize == 0)
+    {
+        return 0;
+    }
+
+    size_t len = strlen(pdriFileName);
+
+    /* Not enough space (including null terminator) */
+    if (len + 1 > szBufSize)
+    {
+        pPDRIFilename[0] = '\0';
+        return 0;
+    }
+
+    /* Bounded copy with explicit null termination */
+    strncpy(pPDRIFilename, pdriFileName, szBufSize - 1);
+    pPDRIFilename[szBufSize - 1] = '\0';
+
+    /* Strip trailing newline/carriage-return if present */
+    len = strnlen(pPDRIFilename, szBufSize);
+    while (len > 0 && (pPDRIFilename[len - 1] == '\n' || pPDRIFilename[len - 1] == '\r')) {
+        pPDRIFilename[--len] = '\0';
+    }
+
+    return len;  /* length excluding '\0' */
+}
 void eventManager(const char *cur_event_name, const char *event_status) {
     return ;
 }
