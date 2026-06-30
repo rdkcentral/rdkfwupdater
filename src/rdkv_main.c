@@ -1305,9 +1305,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    if (ret_curl_code != RDKV_UPGRADE_ERROR_STATE_RED) {
-        uninitialize(init_validate_status);
-    }
+    uninitialize(init_validate_status);
     exit(ret_curl_code);
 }
 

@@ -2739,7 +2739,7 @@ TEST(DirectCDNRetryTest, PerArtifact_WhenHttp403Received_ReturnsRetryErr) {
 /**
  * @brief When downloadFile returns RDKV_UPGRADE_ERROR_STATE_RED, rdkv_upgrade_request
  * must short-circuit immediately without calling retryDownload or codebig fallback.
- * This verifies the state-red guard prevents retry loops after uninitialize() was called.
+ * This verifies the state-red guard prevents retry loops after state-red entry.
  */
 TEST(StateRedShortCircuitTest, DirectPath_SkipsRetryWhenStateRedReturned) {
     MockDownloadFileOps mockfileops;

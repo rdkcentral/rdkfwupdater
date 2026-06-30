@@ -411,7 +411,8 @@ int checkAndEnterStateRed(int curlret, const char *disableStatsUpdate) {
         //TODO sprintf(fwdls.DelayDownload, "DelayDownload|%s\n", delaydnld); // This data should come from script as a argument
         updateFWDownloadStatus(&fwdls, disableStatsUpdate);
 
-        uninitialize(INITIAL_VALIDATION_SUCCESS);
+        SWLOG_INFO("Deleting DIFD.pid file\n");
+        unlink(DIFDPID);
         fp = fopen(STATEREDFLAG, "w");
         if(fp != NULL) {
             fclose(fp);
