@@ -517,6 +517,14 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
 		    return RDKV_UPGRADE_ERROR_STATE_RED;
 	    }
 
+            /* Direct CDN: HTTP 403 means token expired — return immediately
+             * so outer DirectCDNDownload() loop can re-query XConf for fresh URL.
+             * Matches RDKV-reference rdkv_main.c lines 1114-1119. */
+            if (ret_curl_code == CURL_SUCCESS && *pHttp_code == 403 && context->direct_cdn) {
+                SWLOG_INFO("%s: Direct CDN HTTP 403 (token expired) - returning to refresh URL\n", __FUNCTION__);
+                return ret_curl_code;
+            }
+
             if (ret_curl_code != CURL_SUCCESS ||
                 (*pHttp_code != HTTP_SUCCESS && *pHttp_code != HTTP_CHUNK_SUCCESS && *pHttp_code != HTTP_PAGE_NOT_FOUND)) {
                 ret_curl_code = retryDownload(context, RETRY_COUNT, 60, pHttp_code, curl);
@@ -940,17 +948,22 @@ int downloadFile(
     state_red = isInStateRed();
 #ifdef LIBRDKCERTSELECTOR
     static rdkcertselector_h thisCertSel = NULL;
-    if (thisCertSel == NULL) {
-        const char* certGroup = (state_red == 1) ? "RCVRY" : "MTLS";
-        thisCertSel = rdkcertselector_new(DEFAULT_CONFIG, DEFAULT_HROT, certGroup);
-        if (thisCertSel == NULL) {
-            SWLOG_ERROR("%s, %s Cert selector initialization failed\n", __FUNCTION__, (state_red == 1) ? "State red" : "normal state");
-            return curl_ret_code;
-        } else {
-            SWLOG_INFO("%s, %s Cert selector initialized successfully\n", __FUNCTION__, (state_red == 1) ? "State red" : "normal state");
-        }
+    if (context->direct_cdn && state_red != 1) {
+        SWLOG_INFO("%s: Direct CDN mode (non-state-red) - skipping cert selector init\n", __FUNCTION__);
+        mtls_enable = -1;
     } else {
-        SWLOG_INFO("%s, Cert selector already initialized, reusing the existing instance\n", __FUNCTION__);
+        if (thisCertSel == NULL) {
+            const char* certGroup = (state_red == 1) ? "RCVRY" : "MTLS";
+            thisCertSel = rdkcertselector_new(DEFAULT_CONFIG, DEFAULT_HROT, certGroup);
+            if (thisCertSel == NULL) {
+                SWLOG_ERROR("%s, %s Cert selector initialization failed\n", __FUNCTION__, (state_red == 1) ? "State red" : "normal state");
+                return curl_ret_code;
+            } else {
+                SWLOG_INFO("%s, %s Cert selector initialized successfully\n", __FUNCTION__, (state_red == 1) ? "State red" : "normal state");
+            }
+        } else {
+            SWLOG_INFO("%s, Cert selector already initialized, reusing the existing instance\n", __FUNCTION__);
+        }
     }
 #endif
     
@@ -1034,38 +1047,45 @@ int downloadFile(
     if (disableStatsUpdate != NULL && (strcmp(disableStatsUpdate, "yes")) && (server_type == HTTP_SSR_DIRECT)) {
         chunk_dwnl = isIncremetalCDLEnable(file_dwnl.pathname);
     }
-#ifndef LIBRDKCERTSELECTOR	
-    SWLOG_INFO("Fetching MTLS credential for SSR/XCONF\n");
-    ret = getMtlscert(&sec);
-    if (-1 == ret) {
-        SWLOG_ERROR("%s : getMtlscert() Featching MTLS fail. Going For NON MTLS:%d\n", __FUNCTION__, ret);
-        mtls_enable = -1;//If certificate or key featching fail try with non mtls
-    }else {
-        SWLOG_INFO("MTLS is enable\nMTLS creds for SSR fetched ret=%d\n", ret);
-        Upgradet2CountNotify("SYS_INFO_MTLS_enable", 1);
+#ifndef LIBRDKCERTSELECTOR
+    if (context->direct_cdn && state_red != 1) {
+        SWLOG_INFO("%s: Direct CDN mode (non-state-red) - skipping mTLS cert fetch\n", __FUNCTION__);
+        mtls_enable = -1;
+    } else {
+        SWLOG_INFO("Fetching MTLS credential for SSR/XCONF\n");
+        ret = getMtlscert(&sec);
+        if (-1 == ret) {
+            SWLOG_ERROR("%s : getMtlscert() Featching MTLS fail. Going For NON MTLS:%d\n", __FUNCTION__, ret);
+            mtls_enable = -1;//If certificate or key featching fail try with non mtls
+        }else {
+            SWLOG_INFO("MTLS is enable\nMTLS creds for SSR fetched ret=%d\n", ret);
+            Upgradet2CountNotify("SYS_INFO_MTLS_enable", 1);
+        }
     }
 #endif	
     (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_INIT) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_INIT);
 #ifdef LIBRDKCERTSELECTOR
     do {
-        SWLOG_INFO("Fetching MTLS credential for SSR/XCONF\n");
-        ret = getMtlscert(&sec, &thisCertSel);
-        SWLOG_INFO("%s, getMtlscert function ret value = %d\n", __FUNCTION__, ret);
+        if (!(context->direct_cdn && state_red != 1)) {
+            SWLOG_INFO("Fetching MTLS credential for SSR/XCONF\n");
+            ret = getMtlscert(&sec, &thisCertSel);
+            SWLOG_INFO("%s, getMtlscert function ret value = %d\n", __FUNCTION__, ret);
 
-        if (ret == MTLS_CERT_FETCH_FAILURE) {
-            SWLOG_ERROR("%s : ret=%d\n", __FUNCTION__, ret);
-            SWLOG_ERROR("%s : All MTLS certs are failed. Falling back to state red.\n", __FUNCTION__);
-            if (checkAndEnterStateRed(CURL_MTLS_LOCAL_CERTPROBLEM, disableStatsUpdate) != 0) {
-                SWLOG_ERROR("%s : State red entered due to MTLS cert problem\n", __FUNCTION__);
+            if (ret == MTLS_CERT_FETCH_FAILURE) {
+                SWLOG_ERROR("%s : ret=%d\n", __FUNCTION__, ret);
+                SWLOG_ERROR("%s : All MTLS certs are failed. Falling back to state red.\n", __FUNCTION__);
+                if (checkAndEnterStateRed(CURL_MTLS_LOCAL_CERTPROBLEM, disableStatsUpdate) != 0) {
+                    SWLOG_ERROR("%s : State red entered due to MTLS cert problem\n", __FUNCTION__);
+                }
+                return RDKV_UPGRADE_ERROR_STATE_RED;
+            } else if (ret == STATE_RED_CERT_FETCH_FAILURE) {
+                SWLOG_ERROR("%s : State red cert failed.\n", __FUNCTION__);
+                return curl_ret_code;
+            } else {
+                SWLOG_INFO("MTLS is enabled\nMTLS creds for SSR fetched ret=%d\n", ret);
+                Upgradet2CountNotify("SYS_INFO_MTLS_enable", 1);
             }
-            return RDKV_UPGRADE_ERROR_STATE_RED;
-        } else if (ret == STATE_RED_CERT_FETCH_FAILURE) {
-            SWLOG_ERROR("%s : State red cert failed.\n", __FUNCTION__);
-            return curl_ret_code;
-        } else {
-            SWLOG_INFO("MTLS is enabled\nMTLS creds for SSR fetched ret=%d\n", ret);
-            Upgradet2CountNotify("SYS_INFO_MTLS_enable", 1);
-	}
+        }
 #endif
         do {
             if ((1 == state_red)) {
@@ -1158,7 +1178,8 @@ int downloadFile(
             // Sleep for 10 seconds in case of curl 56 (CURL_RECV_ERROR) for network to stabilize if this is due to network issue. 
         } while(chunk_dwnl && (CURL_LOW_BANDWIDTH == curl_ret_code || CURLTIMEOUT == curl_ret_code || ((CURL_RECV_ERROR == curl_ret_code) && !sleep(10)) ));
 #ifdef LIBRDKCERTSELECTOR
-    } while (rdkcertselector_setCurlStatus(thisCertSel, curl_ret_code, file_dwnl.url) == TRY_ANOTHER);
+    } while (!(context->direct_cdn && state_red != 1) &&
+             rdkcertselector_setCurlStatus(thisCertSel, curl_ret_code, file_dwnl.url) == TRY_ANOTHER);
 #endif
     if((filePresentCheck(CURL_PROGRESS_FILE)) == 0) {
         SWLOG_INFO("%s : Curl Progress data...\n", __FUNCTION__);
@@ -1255,6 +1276,9 @@ int retryDownload(
                 (server_type == HTTP_SSR_DIRECT) ? SWLOG_INFO("%s : Received 404 response for Direct Image upgrade, Retry logic not needed\n", __FUNCTION__) : SWLOG_INFO("%s : Received 404 response Direct Image upgrade from xconf, Retry logic not needed\n", __FUNCTION__);
                 break;
             } else if(curl_ret_code == DWNL_BLOCK) {
+                break;
+            } else if (curl_ret_code == CURL_SUCCESS && *httpCode == 403 && context->direct_cdn) {
+                SWLOG_INFO("%s: HTTP 403 with Direct CDN - token expired, breaking retry loop\n", __FUNCTION__);
                 break;
             } else {
                 (server_type == HTTP_SSR_DIRECT) ? SWLOG_INFO("%s : Direct Image upgrade return: retry=%d ret:%d http_code:%d\n", __FUNCTION__, retry_completed, curl_ret_code, *httpCode) : SWLOG_INFO("%s : Direct Image upgrade connection return: retry=%d ret:%d http_code:%d\n", __FUNCTION__, retry_completed, curl_ret_code, *httpCode);
