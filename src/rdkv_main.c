@@ -596,6 +596,11 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type
         const char *artifact_file = NULL;
         int artifact_upgrade_type = upgrade_type;
 
+        /* Propagate reboot/delay flags from XConf response (mirrors legacy branch) */
+        snprintf(immed_reboot_flag, sizeof(immed_reboot_flag), "%s", pResponse->cloudImmediateRebootFlag);
+        delay_dwnl = atoi(pResponse->cloudDelayDownload);
+        SWLOG_INFO("%s: reboot_flag=%s delay_dwnl=%d\n", __FUNCTION__, immed_reboot_flag, delay_dwnl);
+
         switch (upgrade_type) {
             case PCI_UPGRADE:
                 artifact_url = pResponse->firmwareUrl;
@@ -1305,6 +1310,12 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    if (ret_curl_code == RDKV_UPGRADE_ERROR_STATE_RED) {
+        FILE *state_red_fp = fopen(STATEREDFLAG, "w");
+        if (state_red_fp != NULL) {
+            fclose(state_red_fp);
+        }
+    }
     uninitialize(init_validate_status);
     exit(ret_curl_code);
 }

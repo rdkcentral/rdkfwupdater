@@ -19,6 +19,7 @@
 #include "device_status_helper.h"
 #include "rdkv_cdl.h"
 #include "rdkv_cdl_log_wrapper.h"
+#include "rdkv_upgrade.h"
 #ifndef GTEST_ENABLE
 #include "rdk_fwdl_utils.h"
 #include "json_parse.h"
@@ -366,7 +367,7 @@ void unsetStateRed(void)
  * */
 int checkAndEnterStateRed(int curlret, const char *disableStatsUpdate) {
     int ret = -1;
-    FILE *fp = NULL;
+    //FILE *fp = NULL;
     struct FWDownloadStatus fwdls;
     ret = isStateRedSupported();
     if(ret == 0) {
@@ -411,14 +412,8 @@ int checkAndEnterStateRed(int curlret, const char *disableStatsUpdate) {
         //TODO sprintf(fwdls.DelayDownload, "DelayDownload|%s\n", delaydnld); // This data should come from script as a argument
         updateFWDownloadStatus(&fwdls, disableStatsUpdate);
 
-        SWLOG_INFO("Deleting DIFD.pid file\n");
-        unlink(DIFDPID);
-        fp = fopen(STATEREDFLAG, "w");
-        if(fp != NULL) {
-            fclose(fp);
-        }
         SWLOG_ERROR("RED checkAndEnterStateRed: State red entered due to TLS/SSL error %d. Returning error to caller.\n", curlret);
-        return -1;
+        return RDKV_UPGRADE_ERROR_STATE_RED;
     } else {
         //Recovery completed event send for the failure case but not due to fatal error
         if( (filePresentCheck( RED_STATE_REBOOT ) == RDK_API_SUCCESS) ) {
