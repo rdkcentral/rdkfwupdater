@@ -88,7 +88,7 @@ extern "C" {
     int doCurlPutRequest(void *in_curl, FileDwnl_t *pfile_dwnl, char *jsonrpc_auth_token, int *out_httpCode);
     int getOPTOUTValue(const char *filename);
     void getPidStore(const char *key, const char *value);
-    void dwnlError(int curl_code, int http_code, int server_type, const DeviceProperty_t *device_info, const char *lastrun, char *disableStatsUpdate);
+    int dwnlError(int curl_code, int http_code, int server_type, const DeviceProperty_t *device_info, const char *lastrun, char *disableStatsUpdate);
     int peripheral_firmware_dndl(char *pCloudFWLocation, char *pPeripheralFirmwares);
     int fallBack(const RdkUpgradeContext_t* context, int *httpCode, void **curl);
     void saveHTTPCode(int http_code, const char *lastrun);
