@@ -208,6 +208,12 @@ int dwnlError(int curl_code, int http_code, int server_type,const DeviceProperty
             SWLOG_ERROR("%s : State red entered due to curl error %d\n", __FUNCTION__, curl_code);
         }
     }
+    /* If device is already in state red (Instance B recovery), checkAndEnterStateRed
+     * returns 0 early. Still signal callers to skip retries — retrying with the same
+     * broken cert/TLS config is pointless. */
+    if (state_red_ret == 0 && isInStateRed() == 1) {
+        state_red_ret = RDKV_UPGRADE_ERROR_STATE_RED;
+    }
     return state_red_ret;
 }
 
