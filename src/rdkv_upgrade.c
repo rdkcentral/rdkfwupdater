@@ -189,7 +189,7 @@ int dwnlError(int curl_code, int http_code, int server_type,const DeviceProperty
         snprintf(fwdls.dnldVersn, sizeof(fwdls.dnldVersn), "DnldVersn|\n");
         snprintf(fwdls.dnldfile, sizeof(fwdls.dnldfile), "DnldFile|\n");
         snprintf(fwdls.dnldurl, sizeof(fwdls.dnldurl), "DnldURL|\n");
-        snprintf(fwdls.lastrun, sizeof(fwdls.lastrun), "LastRun|%s\n", lastrun); // lastrun his data should come from script as a argument
+        snprintf(fwdls.lastrun, sizeof(fwdls.lastrun), "LastRun|%s\n", lastrun ? lastrun : "");
         snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Failed\n");
         snprintf(fwdls.DelayDownload, sizeof(fwdls.DelayDownload), "DelayDownload|\n"); // This data should come from script as a argument
         updateFWDownloadStatus(&fwdls, disableStatsUpdate);
