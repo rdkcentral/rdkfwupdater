@@ -759,6 +759,10 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type
                 uninitialize(INITIAL_VALIDATION_SUCCESS);
                 exit(1);
             }
+            if (pci_curl_code == RDKV_UPGRADE_ERROR_STATE_RED) {
+                upgrade_status = RDKV_UPGRADE_ERROR_STATE_RED;
+                return upgrade_status;
+            }
         }
     } else {
         SWLOG_INFO("checkForValidPCIUpgrade return false\n");
@@ -814,6 +818,10 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type
                     SWLOG_INFO("%s: Fatal library error, exiting process\n", __FUNCTION__);
                     uninitialize(INITIAL_VALIDATION_SUCCESS);
                     exit(1);
+                }
+                if (pdri_curl_code == RDKV_UPGRADE_ERROR_STATE_RED) {
+                    upgrade_status = RDKV_UPGRADE_ERROR_STATE_RED;
+                    return upgrade_status;
                 }
             }
             
