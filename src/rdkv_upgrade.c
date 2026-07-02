@@ -118,19 +118,20 @@ bool checkForTlsErrors(int curl_code, const char *type)
 /* Description:Use for store download error and send telemetry
  * @param: curl_code : curl return status
  * @param: http_code : http return status
- * @return void:
+ * @return int: RDKV_UPGRADE_ERROR_STATE_RED if state red entered, 0 otherwise
  * */
-void dwnlError(int curl_code, int http_code, int server_type,const DeviceProperty_t *device_info,const char *lastrun,char *disableStatsUpdate)
+int dwnlError(int curl_code, int http_code, int server_type,const DeviceProperty_t *device_info,const char *lastrun,char *disableStatsUpdate)
 {
     char telemetry_data[32];
     char device_type[32];
     struct FWDownloadStatus fwdls;
     char failureReason[128];
     char *type = "Direct"; //TODO: Need to pass this type as a function parameter
+    int state_red_ret = 0;
 
     if (device_info == NULL) {
         SWLOG_ERROR("%s: device_info parameter is NULL\n", __FUNCTION__);
-        return;
+        return 0;
     }
 
     *failureReason = 0;
@@ -188,7 +189,7 @@ void dwnlError(int curl_code, int http_code, int server_type,const DevicePropert
         snprintf(fwdls.dnldVersn, sizeof(fwdls.dnldVersn), "DnldVersn|\n");
         snprintf(fwdls.dnldfile, sizeof(fwdls.dnldfile), "DnldFile|\n");
         snprintf(fwdls.dnldurl, sizeof(fwdls.dnldurl), "DnldURL|\n");
-        snprintf(fwdls.lastrun, sizeof(fwdls.lastrun), "LastRun|%s\n", lastrun); // lastrun his data should come from script as a argument
+        snprintf(fwdls.lastrun, sizeof(fwdls.lastrun), "LastRun|%s\n", lastrun ? lastrun : "");
         snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Failed\n");
         snprintf(fwdls.DelayDownload, sizeof(fwdls.DelayDownload), "DelayDownload|\n"); // This data should come from script as a argument
         updateFWDownloadStatus(&fwdls, disableStatsUpdate);
@@ -196,15 +197,24 @@ void dwnlError(int curl_code, int http_code, int server_type,const DevicePropert
     // HTTP CODE 495 - Expired client certificate not in servers allow list
     if( http_code == 495 ) {
         SWLOG_INFO("%s : Calling checkAndEnterStateRed() with code:%d\n", __FUNCTION__, http_code);
-        if (checkAndEnterStateRed(http_code, disableStatsUpdate) != 0) {
+        state_red_ret = checkAndEnterStateRed(http_code, disableStatsUpdate);
+        if (state_red_ret != 0) {
             SWLOG_ERROR("%s : State red entered due to HTTP error %d\n", __FUNCTION__, http_code);
         }
     }else {
         SWLOG_INFO("%s : Calling checkAndEnterStateRed() with code:%d\n", __FUNCTION__, curl_code);
-        if (checkAndEnterStateRed(curl_code, disableStatsUpdate) != 0) {
+        state_red_ret = checkAndEnterStateRed(curl_code, disableStatsUpdate);
+        if (state_red_ret != 0) {
             SWLOG_ERROR("%s : State red entered due to curl error %d\n", __FUNCTION__, curl_code);
         }
     }
+    /* If device is already in state red (Instance B recovery), checkAndEnterStateRed
+     * returns 0 early. Still signal callers to skip retries — retrying with the same
+     * broken cert/TLS config is pointless. */
+    if (state_red_ret == 0 && isInStateRed() == 1) {
+        state_red_ret = RDKV_UPGRADE_ERROR_STATE_RED;
+    }
+    return state_red_ret;
 }
 
 /* Description: Save http value inside file
@@ -1179,8 +1189,8 @@ int downloadFile(
     }else {
         SWLOG_ERROR("%s : Direct Image upgrade Fail: curl ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *httpCode);
         (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_FAILED) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_FAILED);
-        dwnlError(curl_ret_code, *httpCode, server_type,device_info,lastrun,disableStatsUpdate);
-        if (filePresentCheck(STATEREDFLAG) == 0) {
+        int state_red_ret = dwnlError(curl_ret_code, *httpCode, server_type,device_info,lastrun,disableStatsUpdate);
+        if (state_red_ret == RDKV_UPGRADE_ERROR_STATE_RED) {
             SWLOG_INFO("%s : State red entered during download, skipping retry\n", __FUNCTION__);
             return RDKV_UPGRADE_ERROR_STATE_RED;
         }

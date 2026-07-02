@@ -88,7 +88,7 @@ extern "C" {
     int doCurlPutRequest(void *in_curl, FileDwnl_t *pfile_dwnl, char *jsonrpc_auth_token, int *out_httpCode);
     int getOPTOUTValue(const char *filename);
     void getPidStore(const char *key, const char *value);
-    void dwnlError(int curl_code, int http_code, int server_type, const DeviceProperty_t *device_info, const char *lastrun, char *disableStatsUpdate);
+    int dwnlError(int curl_code, int http_code, int server_type, const DeviceProperty_t *device_info, const char *lastrun, char *disableStatsUpdate);
     int peripheral_firmware_dndl(char *pCloudFWLocation, char *pPeripheralFirmwares);
     int fallBack(const RdkUpgradeContext_t* context, int *httpCode, void **curl);
     void saveHTTPCode(int http_code, const char *lastrun);
@@ -2793,7 +2793,7 @@ TEST(DirectCDNRetryTest, PerArtifact_WhenHttp403Received_ReturnsRetryErr) {
 /**
  * @brief When downloadFile returns RDKV_UPGRADE_ERROR_STATE_RED, rdkv_upgrade_request
  * must short-circuit immediately without calling retryDownload or codebig fallback.
- * This verifies the state-red guard prevents retry loops after uninitialize() was called.
+ * This verifies the state-red guard prevents retry loops after state-red entry.
  */
 TEST(StateRedShortCircuitTest, DirectPath_SkipsRetryWhenStateRedReturned) {
     MockDownloadFileOps mockfileops;
