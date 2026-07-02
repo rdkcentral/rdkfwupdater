@@ -360,14 +360,13 @@ void unsetStateRed(void)
 }
 
 
-/* Description: If state red support is present eneter to state red
- * @param curlret: Receving curl status from Caller
+/* Description: If state red support is present enter state red recovery
+ * @param curlret: Receiving curl status from Caller
  * @return: 0 on success (no state red entry needed or flag already set)
- *         -1 on TLS/SSL error (state red entered, process should terminate in CLI mode)
+ *         RDKV_UPGRADE_ERROR_STATE_RED on TLS/SSL error (state red entered, caller should short-circuit)
  * */
 int checkAndEnterStateRed(int curlret, const char *disableStatsUpdate) {
     int ret = -1;
-    //FILE *fp = NULL;
     struct FWDownloadStatus fwdls;
     ret = isStateRedSupported();
     if(ret == 0) {
