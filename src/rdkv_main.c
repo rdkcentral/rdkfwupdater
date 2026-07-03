@@ -1322,6 +1322,8 @@ int main(int argc, char *argv[]) {
         FILE *state_red_fp = fopen(STATEREDFLAG, "w");
         if (state_red_fp != NULL) {
             fclose(state_red_fp);
+        } else {
+            SWLOG_ERROR("%s: failed to create %s\n", __FUNCTION__, STATEREDFLAG);
         }
     }
     uninitialize(init_validate_status);
