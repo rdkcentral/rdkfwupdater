@@ -490,6 +490,7 @@ TEST(DwnlErrorTest, HandlesCurlCode0) {
     int server_type = 0;
     DeviceProperty_t device_info = {0};
     strcpy(device_info.dev_type, "mediaclient");
+    g_DeviceUtilsMock = nullptr;
     MockExternal mockexternal;
     global_mockexternal_ptr = &mockexternal;
     EXPECT_CALL(mockexternal,checkAndEnterStateRed(_,_)).Times(1);
@@ -504,6 +505,7 @@ TEST(DwnlErrorTest, HandlesCurlCode22) {
     int server_type = 0;
     DeviceProperty_t device_info = {0};
     strcpy(device_info.dev_type, "mediaclient");
+    g_DeviceUtilsMock = nullptr;
     MockExternal mockexternal;
     global_mockexternal_ptr = &mockexternal;
     EXPECT_CALL(mockexternal,eventManager(_,_)).Times(1);
@@ -520,6 +522,7 @@ TEST(DwnlErrorTest, HandlesCurlCode18) {
     int server_type = 0;
     DeviceProperty_t device_info = {0};
     strcpy(device_info.dev_type, "mediaclient");
+    g_DeviceUtilsMock = nullptr;
     MockExternal mockexternal;
     global_mockexternal_ptr = &mockexternal;
     strcpy(device_info.dev_type,"mediaclient");
@@ -537,6 +540,7 @@ TEST(DwnlErrorTest, HandlesCurlCode91) {
     int server_type = 0;
     DeviceProperty_t device_info = {0};
     strcpy(device_info.dev_type, "mediaclient1");
+    g_DeviceUtilsMock = nullptr;
     MockExternal mockexternal;
     global_mockexternal_ptr = &mockexternal;
     EXPECT_CALL(mockexternal,eventManager(_,_)).Times(1);
