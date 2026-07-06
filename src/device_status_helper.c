@@ -19,6 +19,7 @@
 #include "device_status_helper.h"
 #include "rdkv_cdl.h"
 #include "rdkv_cdl_log_wrapper.h"
+#include "rdkv_upgrade.h"
 #ifndef GTEST_ENABLE
 #include "rdk_fwdl_utils.h"
 #include "json_parse.h"
@@ -359,14 +360,13 @@ void unsetStateRed(void)
 }
 
 
-/* Description: If state red support is present eneter to state red
- * @param curlret: Receving curl status from Caller
+/* Description: If state red support is present enter state red recovery
+ * @param curlret: Receiving curl status from Caller
  * @return: 0 on success (no state red entry needed or flag already set)
- *         -1 on TLS/SSL error (state red entered, process should terminate in CLI mode)
+ *         RDKV_UPGRADE_ERROR_STATE_RED on TLS/SSL error (state red entered, caller should short-circuit)
  * */
 int checkAndEnterStateRed(int curlret, const char *disableStatsUpdate) {
     int ret = -1;
-    FILE *fp = NULL;
     struct FWDownloadStatus fwdls;
     ret = isStateRedSupported();
     if(ret == 0) {
@@ -381,7 +381,7 @@ int checkAndEnterStateRed(int curlret, const char *disableStatsUpdate) {
     if((curlret == 35) || (curlret == 51) || (curlret == 53) || (curlret == 54) || (curlret == 58) || (curlret == 59) || (curlret == 60)
             || (curlret == 64) || (curlret == 66) || (curlret == 77) || (curlret == 80) || (curlret == 82) || (curlret == 83) || (curlret == 90)
             || (curlret == 91)|| (curlret == 495)) {
-        SWLOG_INFO("RED checkAndEnterStateRed: Curl SSL/TLS error %d. Set State Red Recovery Flag and Exit!!!", curlret);
+        SWLOG_INFO("RED checkAndEnterStateRed: Curl SSL/TLS error %d. Entering state red recovery.", curlret);
         t2CountNotify("CDLrdkportal_split", curlret);
 	t2CountNotify("RED_STATE_REASON", curlret);
         //CID:280507-Unchecked return value
@@ -411,13 +411,8 @@ int checkAndEnterStateRed(int curlret, const char *disableStatsUpdate) {
         //TODO sprintf(fwdls.DelayDownload, "DelayDownload|%s\n", delaydnld); // This data should come from script as a argument
         updateFWDownloadStatus(&fwdls, disableStatsUpdate);
 
-        uninitialize(INITIAL_VALIDATION_SUCCESS);
-        fp = fopen(STATEREDFLAG, "w");
-        if(fp != NULL) {
-            fclose(fp);
-        }
         SWLOG_ERROR("RED checkAndEnterStateRed: State red entered due to TLS/SSL error %d. Returning error to caller.\n", curlret);
-        return -1;
+        return RDKV_UPGRADE_ERROR_STATE_RED;
     } else {
         //Recovery completed event send for the failure case but not due to fatal error
         if( (filePresentCheck( RED_STATE_REBOOT ) == RDK_API_SUCCESS) ) {

@@ -596,6 +596,11 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type
         const char *artifact_file = NULL;
         int artifact_upgrade_type = upgrade_type;
 
+        /* Propagate reboot/delay flags from XConf response (mirrors legacy branch) */
+        snprintf(immed_reboot_flag, sizeof(immed_reboot_flag), "%s", pResponse->cloudImmediateRebootFlag);
+        delay_dwnl = atoi(pResponse->cloudDelayDownload);
+        SWLOG_INFO("%s: reboot_flag=%s delay_dwnl=%d\n", __FUNCTION__, immed_reboot_flag, delay_dwnl);
+
         switch (upgrade_type) {
             case PCI_UPGRADE:
                 artifact_url = pResponse->firmwareUrl;
@@ -754,6 +759,10 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type
                 uninitialize(INITIAL_VALIDATION_SUCCESS);
                 exit(1);
             }
+            if (pci_curl_code == RDKV_UPGRADE_ERROR_STATE_RED) {
+                upgrade_status = RDKV_UPGRADE_ERROR_STATE_RED;
+                return upgrade_status;
+            }
         }
     } else {
         SWLOG_INFO("checkForValidPCIUpgrade return false\n");
@@ -809,6 +818,10 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type
                     SWLOG_INFO("%s: Fatal library error, exiting process\n", __FUNCTION__);
                     uninitialize(INITIAL_VALIDATION_SUCCESS);
                     exit(1);
+                }
+                if (pdri_curl_code == RDKV_UPGRADE_ERROR_STATE_RED) {
+                    upgrade_status = RDKV_UPGRADE_ERROR_STATE_RED;
+                    return upgrade_status;
                 }
             }
             
@@ -1305,9 +1318,15 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    if (ret_curl_code != RDKV_UPGRADE_ERROR_STATE_RED) {
-        uninitialize(init_validate_status);
+    if (ret_curl_code == RDKV_UPGRADE_ERROR_STATE_RED) {
+        FILE *state_red_fp = fopen(STATEREDFLAG, "w");
+        if (state_red_fp != NULL) {
+            fclose(state_red_fp);
+        } else {
+            SWLOG_ERROR("%s: failed to create %s\n", __FUNCTION__, STATEREDFLAG);
+        }
     }
+    uninitialize(init_validate_status);
     exit(ret_curl_code);
 }
 
