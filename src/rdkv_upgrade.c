@@ -520,7 +520,8 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
             /* Direct CDN: HTTP 403 means token expired — return immediately
              * so outer DirectCDNDownload() loop can re-query XConf for fresh URL.
              * Matches RDKV-reference rdkv_main.c lines 1114-1119. */
-            if (ret_curl_code == CURL_SUCCESS && *pHttp_code == 403 && context->direct_cdn) {
+            if (ret_curl_code == CURL_SUCCESS && *pHttp_code == 403 && context->direct_cdn &&
+                server_type == HTTP_SSR_DIRECT) {
                 SWLOG_INFO("%s: Direct CDN HTTP 403 (token expired) - returning to refresh URL\n", __FUNCTION__);
                 return ret_curl_code;
             }
