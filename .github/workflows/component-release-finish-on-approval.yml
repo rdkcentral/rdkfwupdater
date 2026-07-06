@@ -1,0 +1,115 @@
+name: Component Release Finish On Approval
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-finish-${{ github.event.pull_request.head.ref }}
+  cancel-in-progress: false
+
+jobs:
+  finish-release:
+    name: Finish release when PR is approved
+    if: >
+      github.event.review.state == 'approved' &&
+      github.event.pull_request.base.ref == 'develop' &&
+      startsWith(github.event.pull_request.head.ref, 'release/')
+    runs-on: ubuntu-latest
+    env:
+      REPO: ${{ github.repository }}
+      ACTOR: ${{ github.event.review.user.login }}
+      GH_TOKEN: ${{ secrets.RDKCM_RDKE }}
+      RELEASE_BRANCH: ${{ github.event.pull_request.head.ref }}
+
+    steps:
+      - name: Check approval status
+        id: approvals
+        run: |
+          set -euo pipefail
+          pr_number="${{ github.event.pull_request.number }}"
+          decision=$(gh pr view --repo "${REPO}" "${pr_number}" --json reviewDecision -q '.reviewDecision')
+          echo "PR #${pr_number} review decision: ${decision}"
+          if [ "${decision}" = "APPROVED" ]; then
+            echo "should_finish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "PR is not fully approved yet. Waiting."
+            echo "should_finish=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout repository
+        if: steps.approvals.outputs.should_finish == 'true'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ssh-key: ${{ secrets.RDKCM_DEPLOY_KEY }}
+
+      - name: Install release tools
+        if: steps.approvals.outputs.should_finish == 'true'
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y git-flow
+
+      - name: Configure git identity
+        if: steps.approvals.outputs.should_finish == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name "${ACTOR}"
+          git config user.email "${ACTOR}@users.noreply.github.com"
+
+      - name: Finish release and push
+        if: steps.approvals.outputs.should_finish == 'true'
+        run: |
+          set -euo pipefail
+          release_version="${RELEASE_BRANCH#release/}"
+
+          git fetch --prune origin
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${release_version}" >/dev/null 2>&1; then
+            echo "Tag ${release_version} already exists on origin. Skipping release finish."
+            exit 0
+          fi
+
+          if git show-ref --verify --quiet "refs/heads/${RELEASE_BRANCH}"; then
+            git checkout "${RELEASE_BRANCH}"
+          elif git ls-remote --exit-code --heads origin "${RELEASE_BRANCH}" >/dev/null 2>&1; then
+            git checkout -b "${RELEASE_BRANCH}" "origin/${RELEASE_BRANCH}"
+          else
+            echo "${RELEASE_BRANCH} does not exist locally or on origin."
+            exit 1
+          fi
+
+          git checkout main 2>/dev/null || git checkout -b main origin/main
+          git checkout develop 2>/dev/null || git checkout -b develop origin/develop
+          git checkout "${RELEASE_BRANCH}"
+
+          git flow init -d
+
+          git flow release finish -m "Release ${release_version}" "${release_version}"
+          git push origin main
+          git push origin --tags
+          git push origin develop
+          git push origin --delete "${RELEASE_BRANCH}" || true
+
+      - name: Close the release PR
+        if: steps.approvals.outputs.should_finish == 'true'
+        run: |
+          set -euo pipefail
+          pr_number="${{ github.event.pull_request.number }}"
+          gh pr close "${pr_number}" --repo "${REPO}" --comment "Release finished by automation. Merged via git flow release finish." || true
+
+      - name: Workflow summary
+        if: always()
+        run: |
+          {
+            echo "## Release Finish On Approval"
+            echo "- Repository: ${REPO}"
+            echo "- Release branch: ${RELEASE_BRANCH}"
+            echo "- Triggered by review: ${{ github.event.review.state }}"
+            echo "- Finished release: ${{ steps.approvals.outputs.should_finish || 'false' }}"
+          } >> "$GITHUB_STEP_SUMMARY"

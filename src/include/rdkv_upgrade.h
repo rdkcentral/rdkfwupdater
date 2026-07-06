@@ -139,7 +139,7 @@ int fallBack(
 );
 
 
-void dwnlError(int curl_code, int http_code, int server_type,const DeviceProperty_t *device_info,const char *lastrun, char *disableStatsUpdate);
+int dwnlError(int curl_code, int http_code, int server_type,const DeviceProperty_t *device_info,const char *lastrun, char *disableStatsUpdate);
 
 void saveHTTPCode(int http_code, const char *lastrun);
 void Upgradet2CountNotify(char *marker, int val); 

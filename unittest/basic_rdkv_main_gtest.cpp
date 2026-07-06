@@ -18,9 +18,10 @@
 
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
-#include <gtest/gtest.h> 
 #include <iostream>
 #include <unistd.h>
+#include <string>
+#include <sys/stat.h>
 
 #include "rdkv_cdl_log_wrapper.h"
 extern "C" {
@@ -87,13 +88,55 @@ extern "C" {
     int doCurlPutRequest(void *in_curl, FileDwnl_t *pfile_dwnl, char *jsonrpc_auth_token, int *out_httpCode);
     int getOPTOUTValue(const char *filename);
     void getPidStore(const char *key, const char *value);
-    void dwnlError(int curl_code, int http_code, int server_type, const DeviceProperty_t *device_info, const char *lastrun, char *disableStatsUpdate);
+    int dwnlError(int curl_code, int http_code, int server_type, const DeviceProperty_t *device_info, const char *lastrun, char *disableStatsUpdate);
     int peripheral_firmware_dndl(char *pCloudFWLocation, char *pPeripheralFirmwares);
     int fallBack(const RdkUpgradeContext_t* context, int *httpCode, void **curl);
     void saveHTTPCode(int http_code, const char *lastrun);
     int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* pHttp_code);
     size_t getContentLength(const char *file);
     int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_limit, int *httpcode);
+}
+
+static const char* kBuildTypeFile = "/tmp/device_gtest.prop";
+static const char* kRdmOverrideConfig = "/opt/rdm-versioned-packages.conf";
+static const char* kRdmBinaryPath = "/usr/bin/rdm";
+
+static bool WriteTextFile(const char* path, const std::string& content)
+{
+    FILE* fp = fopen(path, "w");
+    if (fp == NULL) {
+        return false;
+    }
+    const size_t written = fwrite(content.c_str(), 1, content.size(), fp);
+    fclose(fp);
+    return written == content.size();
+}
+
+static bool EnsureRdmBinaryForTest()
+{
+    if (access(kRdmBinaryPath, F_OK) == 0) {
+        return true;
+    }
+
+    FILE* fp = fopen(kRdmBinaryPath, "w");
+    if (fp == NULL) {
+        return false;
+    }
+    fputs("#!/bin/sh\nexit 0\n", fp);
+    fclose(fp);
+    chmod(kRdmBinaryPath, 0755);
+    return (access(kRdmBinaryPath, F_OK) == 0);
+}
+
+static void PrepareBundleResponse(XCONFRES* response)
+{
+    memset(response, 0, sizeof(*response));
+    snprintf(response->cloudFWFile, sizeof(response->cloudFWFile), "%s", "HS_bundle_test-signed.bin");
+    snprintf(response->cloudFWLocation, sizeof(response->cloudFWLocation), "%s", "https://cdlserver.tv/Images");
+    snprintf(response->cloudFWVersion, sizeof(response->cloudFWVersion), "%s", "HS_bundle_test");
+    snprintf(response->cloudProto, sizeof(response->cloudProto), "%s", "http");
+    snprintf(response->dlCertBundle, sizeof(response->dlCertBundle), "%s", "xconf-cert");
+    snprintf(response->dlAppBundle, sizeof(response->dlAppBundle), "%s", "xconf-app");
 }
 
 TEST(getContentLengthTest,TestSuccess){
@@ -447,6 +490,7 @@ TEST(DwnlErrorTest, HandlesCurlCode0) {
     int server_type = 0;
     DeviceProperty_t device_info = {0};
     strcpy(device_info.dev_type, "mediaclient");
+    g_DeviceUtilsMock = nullptr;
     MockExternal mockexternal;
     global_mockexternal_ptr = &mockexternal;
     EXPECT_CALL(mockexternal,checkAndEnterStateRed(_,_)).Times(1);
@@ -461,6 +505,7 @@ TEST(DwnlErrorTest, HandlesCurlCode22) {
     int server_type = 0;
     DeviceProperty_t device_info = {0};
     strcpy(device_info.dev_type, "mediaclient");
+    g_DeviceUtilsMock = nullptr;
     MockExternal mockexternal;
     global_mockexternal_ptr = &mockexternal;
     EXPECT_CALL(mockexternal,eventManager(_,_)).Times(1);
@@ -477,6 +522,7 @@ TEST(DwnlErrorTest, HandlesCurlCode18) {
     int server_type = 0;
     DeviceProperty_t device_info = {0};
     strcpy(device_info.dev_type, "mediaclient");
+    g_DeviceUtilsMock = nullptr;
     MockExternal mockexternal;
     global_mockexternal_ptr = &mockexternal;
     strcpy(device_info.dev_type,"mediaclient");
@@ -494,6 +540,7 @@ TEST(DwnlErrorTest, HandlesCurlCode91) {
     int server_type = 0;
     DeviceProperty_t device_info = {0};
     strcpy(device_info.dev_type, "mediaclient1");
+    g_DeviceUtilsMock = nullptr;
     MockExternal mockexternal;
     global_mockexternal_ptr = &mockexternal;
     EXPECT_CALL(mockexternal,eventManager(_,_)).Times(1);
@@ -1429,6 +1476,147 @@ TEST(MainHelperFunctionTest,ProcessResTestMaintFalse){
 }
 TEST(MainHelperFunctionTest,ProcessResTestNull){
     EXPECT_EQ(processJsonResponse(NULL, NULL,NULL, NULL), -1);
+}
+TEST(MainHelperFunctionTest,ProcessResTest_NonProdBuild_UsesOverrideBundleConfig)
+{
+    if (!EnsureRdmBinaryForTest()) {
+        GTEST_SKIP() << "Cannot create/access /usr/bin/rdm in this environment";
+    }
+
+    ASSERT_TRUE(WriteTextFile(kBuildTypeFile, "BUILD_TYPE=vbn\n"));
+
+    /* Make sure the override directory/path is usable in CI */
+    FILE* verifyDir = fopen(kRdmOverrideConfig, "w");
+    if (verifyDir == NULL) {
+        unlink(kBuildTypeFile);
+        GTEST_SKIP() << "Cannot create /opt/rdm-versioned-packages.conf in this environment";
+    }
+    fclose(verifyDir);
+
+    ASSERT_TRUE(WriteTextFile(kRdmOverrideConfig, "dlCertBundle=cfg-cert|dlAppBundle=cfg-app\n"));
+
+    FILE* fp = fopen(kRdmOverrideConfig, "r");
+    if (fp == NULL) {
+        unlink(kBuildTypeFile);
+        unlink(kRdmOverrideConfig);
+        GTEST_SKIP() << "Cannot read /opt/rdm-versioned-packages.conf in this environment";
+    }
+    fclose(fp);
+
+    XCONFRES response;
+    PrepareBundleResponse(&response);
+
+    DeviceUtilsMock DeviceMock;
+    g_DeviceUtilsMock = &DeviceMock;
+    std::string capturedCmd;
+    EXPECT_CALL(DeviceMock, v_secure_system(_, _, _))
+        .WillOnce(testing::Invoke([&capturedCmd](const char* mode, const char* cmd, const char* opt) -> FILE* {
+            (void)mode;
+            (void)opt;
+            capturedCmd = (cmd != NULL) ? cmd : "";
+            return (FILE*)1;
+        }));
+
+    processJsonResponse(&response, "old_fw.bin", "HS", "false");
+
+    EXPECT_EQ(capturedCmd.find("dlCertBundle=cfg-cert|dlAppBundle=cfg-app"), std::string::npos);
+
+    g_DeviceUtilsMock = nullptr;
+    unlink(kBuildTypeFile);
+    unlink(kRdmOverrideConfig);
+}
+TEST(MainHelperFunctionTest,ProcessResTest_NonProdBuild_ConfigOnlyOverrideTriggersRdm)
+{
+    MockExternal mockexternal;
+    global_mockexternal_ptr = &mockexternal;
+    EXPECT_CALL(mockexternal, GetBuildType(_, _))
+	    .WillRepeatedly(testing::Invoke([](char* buf, size_t size) -> int {
+             snprintf(buf, size, "dev");
+	     return 3;
+    }));
+ 
+    if (!EnsureRdmBinaryForTest()) {
+        GTEST_SKIP() << "Cannot create/access /usr/bin/rdm in this environment";
+    }
+
+    ASSERT_TRUE(WriteTextFile(kBuildTypeFile, "BUILD_TYPE=dev\n"));
+
+    FILE* verifyDir = fopen(kRdmOverrideConfig, "w");
+    if (verifyDir == NULL) {
+        unlink(kBuildTypeFile);
+        GTEST_SKIP() << "Cannot create /opt/rdm-versioned-packages.conf in this environment";
+    }
+    fclose(verifyDir);
+
+    const std::string configBundle = "dlCertBundle=cfg-only-cert|dlAppBundle=cfg-only-app";
+    ASSERT_TRUE(WriteTextFile(kRdmOverrideConfig, configBundle + "\n"));
+
+    XCONFRES response;
+    PrepareBundleResponse(&response);
+    response.dlCertBundle[0] = '\0';
+    response.dlAppBundle[0] = '\0';
+
+    DeviceUtilsMock DeviceMock;
+    g_DeviceUtilsMock = &DeviceMock;
+
+    std::string capturedCmd;
+    EXPECT_CALL(DeviceMock, v_secure_system(_, _, _))
+        .Times(1)
+        .WillOnce(testing::Invoke([&capturedCmd](const char* mode, const char* cmd, const char* opt) -> FILE* {
+            (void)mode;
+            (void)opt;
+            capturedCmd = (cmd != NULL) ? cmd : "";
+            return (FILE*)1;
+        }));
+
+    processJsonResponse(&response, "old_fw.bin", "HS", "false");
+
+    EXPECT_NE(capturedCmd.find("rdm -v \""), std::string::npos);
+    EXPECT_NE(capturedCmd.find(configBundle), std::string::npos);
+
+    global_mockexternal_ptr = nullptr;
+    g_DeviceUtilsMock = nullptr;
+    unlink(kBuildTypeFile);
+    unlink(kRdmOverrideConfig);
+}
+TEST(MainHelperFunctionTest,ProcessResTest_ProdBuild_DoesNotUseOverrideBundleConfig)
+{
+    if (!EnsureRdmBinaryForTest()) {
+        GTEST_SKIP() << "Cannot create/access /usr/bin/rdm in this environment";
+    }
+
+    FILE* verifyDir = fopen(kRdmOverrideConfig, "w");
+    if (verifyDir == NULL) {
+         GTEST_SKIP() << "Cannot create /opt/rdm-versioned-packages.conf in this environment";
+    }
+    fclose(verifyDir);
+
+    ASSERT_TRUE(WriteTextFile(kRdmOverrideConfig, "dlCertBundle=cfg-cert|dlAppBundle=cfg-app\n"));
+
+    ASSERT_TRUE(WriteTextFile(kBuildTypeFile, "BUILD_TYPE=prod\n"));
+
+    XCONFRES response;
+    PrepareBundleResponse(&response);
+
+    DeviceUtilsMock DeviceMock;
+    g_DeviceUtilsMock = &DeviceMock;
+    std::string capturedCmd;
+    EXPECT_CALL(DeviceMock, v_secure_system(_, _, _))
+        .WillOnce(testing::Invoke([&capturedCmd](const char* mode, const char* cmd, const char* opt) -> FILE* {
+            (void)mode;
+            (void)opt;
+            capturedCmd = (cmd != NULL) ? cmd : "";
+            return (FILE*)1;
+        }));
+
+    processJsonResponse(&response, "old_fw.bin", "HS", "false");
+
+    EXPECT_NE(capturedCmd.find("dlCertBundle=xconf-cert|dlAppBundle=xconf-app"), std::string::npos);
+    EXPECT_EQ(capturedCmd.find("dlCertBundle=cfg-cert|dlAppBundle=cfg-app"), std::string::npos);
+    g_DeviceUtilsMock = nullptr;
+
+    unlink(kBuildTypeFile);
+    unlink(kRdmOverrideConfig);
 }
 TEST(MainHelperFunctionTest,initialValidationTestSuccess){
     MockExternal mockexternal;
@@ -2910,7 +3098,7 @@ TEST(DirectCDN403EarlyOutTest, FirstAttempt403_LegacyMode_RetriesNormally) {
 /**
  * @brief When downloadFile returns RDKV_UPGRADE_ERROR_STATE_RED, rdkv_upgrade_request
  * must short-circuit immediately without calling retryDownload or codebig fallback.
- * This verifies the state-red guard prevents retry loops after uninitialize() was called.
+ * This verifies the state-red guard prevents retry loops after state-red entry.
  */
 TEST(StateRedShortCircuitTest, DirectPath_SkipsRetryWhenStateRedReturned) {
     MockDownloadFileOps mockfileops;
