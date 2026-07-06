@@ -520,7 +520,8 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
             /* Direct CDN: HTTP 403 means token expired — return immediately
              * so outer DirectCDNDownload() loop can re-query XConf for fresh URL.
              * Matches RDKV-reference rdkv_main.c lines 1114-1119. */
-            if (ret_curl_code == CURL_SUCCESS && *pHttp_code == 403 && context->direct_cdn) {
+            if (ret_curl_code == CURL_SUCCESS && *pHttp_code == 403 && context->direct_cdn &&
+                server_type == HTTP_SSR_DIRECT) {
                 SWLOG_INFO("%s: Direct CDN HTTP 403 (token expired) - returning to refresh URL\n", __FUNCTION__);
                 return ret_curl_code;
             }
@@ -948,7 +949,7 @@ int downloadFile(
     state_red = isInStateRed();
 #ifdef LIBRDKCERTSELECTOR
     static rdkcertselector_h thisCertSel = NULL;
-    if (context->direct_cdn && state_red != 1) {
+    if (context->direct_cdn && server_type == HTTP_SSR_DIRECT && state_red != 1) {
         SWLOG_INFO("%s: Direct CDN mode (non-state-red) - skipping cert selector init\n", __FUNCTION__);
         mtls_enable = -1;
     } else {
@@ -1048,7 +1049,7 @@ int downloadFile(
         chunk_dwnl = isIncremetalCDLEnable(file_dwnl.pathname);
     }
 #ifndef LIBRDKCERTSELECTOR
-    if (context->direct_cdn && state_red != 1) {
+    if (context->direct_cdn && server_type == HTTP_SSR_DIRECT && state_red != 1) {
         SWLOG_INFO("%s: Direct CDN mode (non-state-red) - skipping mTLS cert fetch\n", __FUNCTION__);
         mtls_enable = -1;
     } else {
@@ -1066,7 +1067,7 @@ int downloadFile(
     (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_INIT) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_INIT);
 #ifdef LIBRDKCERTSELECTOR
     do {
-        if (!(context->direct_cdn && state_red != 1)) {
+        if (!(context->direct_cdn && server_type == HTTP_SSR_DIRECT && state_red != 1)) {
             SWLOG_INFO("Fetching MTLS credential for SSR/XCONF\n");
             ret = getMtlscert(&sec, &thisCertSel);
             SWLOG_INFO("%s, getMtlscert function ret value = %d\n", __FUNCTION__, ret);
@@ -1178,7 +1179,7 @@ int downloadFile(
             // Sleep for 10 seconds in case of curl 56 (CURL_RECV_ERROR) for network to stabilize if this is due to network issue. 
         } while(chunk_dwnl && (CURL_LOW_BANDWIDTH == curl_ret_code || CURLTIMEOUT == curl_ret_code || ((CURL_RECV_ERROR == curl_ret_code) && !sleep(10)) ));
 #ifdef LIBRDKCERTSELECTOR
-    } while (!(context->direct_cdn && state_red != 1) &&
+    } while (!(context->direct_cdn && server_type == HTTP_SSR_DIRECT && state_red != 1) &&
              rdkcertselector_setCurlStatus(thisCertSel, curl_ret_code, file_dwnl.url) == TRY_ANOTHER);
 #endif
     if((filePresentCheck(CURL_PROGRESS_FILE)) == 0) {
@@ -1277,7 +1278,8 @@ int retryDownload(
                 break;
             } else if(curl_ret_code == DWNL_BLOCK) {
                 break;
-            } else if (curl_ret_code == CURL_SUCCESS && *httpCode == 403 && context->direct_cdn) {
+            } else if (curl_ret_code == CURL_SUCCESS && *httpCode == 403 && context->direct_cdn &&
+                       server_type == HTTP_SSR_DIRECT) {
                 SWLOG_INFO("%s: HTTP 403 with Direct CDN - token expired, breaking retry loop\n", __FUNCTION__);
                 break;
             } else {
