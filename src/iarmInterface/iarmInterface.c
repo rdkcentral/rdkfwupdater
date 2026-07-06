@@ -381,6 +381,12 @@ size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
         len = 0;
     }
 
+    /* Strip trailing newline/carriage-return if present (MFR may include them) */
+    len = strnlen(pPDRIFilename, szBufSize);
+    while (len > 0 && (pPDRIFilename[len - 1] == '\n' || pPDRIFilename[len - 1] == '\r')) {
+        pPDRIFilename[--len] = '\0';
+    }
+
     return len;
 }
 #else
@@ -404,8 +410,15 @@ size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize) {
         return 0;
     }
 
-    /* Safe copy */
-    strcpy(pPDRIFilename, pdriFileName);
+    /* Bounded copy with explicit null termination */
+    strncpy(pPDRIFilename, pdriFileName, szBufSize - 1);
+    pPDRIFilename[szBufSize - 1] = '\0';
+
+    /* Strip trailing newline/carriage-return if present */
+    len = strnlen(pPDRIFilename, szBufSize);
+    while (len > 0 && (pPDRIFilename[len - 1] == '\n' || pPDRIFilename[len - 1] == '\r')) {
+        pPDRIFilename[--len] = '\0';
+    }
 
     return len;  /* length excluding '\0' */
 }

@@ -18,6 +18,7 @@
 
 #include "deviceutils_mock.h"
 #include <iostream>
+#include <cstdarg>
 
 using namespace std;
 
@@ -31,8 +32,13 @@ extern "C" int v_secure_system(const char *mode, ...)
         cout << "v_secure_system g_DeviceUtilsMock object is NULL" << endl;
         return NULL;  // Return error code instead of NULL
     }
+    char formattedCmd[2048] = {0};
+    va_list args;
+    va_start(args, mode);
+    vsnprintf(formattedCmd, sizeof(formattedCmd), mode, args);
+    va_end(args);
     printf("Inside Mock Function v_secure_system\n");
-    return g_DeviceUtilsMock->v_secure_system(mode, NULL, NULL);
+    return (int)g_DeviceUtilsMock->v_secure_system(mode, formattedCmd, NULL);
 }
 //extern "C" FILE* v_secure_popen(const char *mode, const char *cmd, const char *opt )
 extern "C" FILE* v_secure_popen(const char *mode, ...)
