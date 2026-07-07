@@ -39,6 +39,7 @@ typedef enum {
     RDKV_UPGRADE_SUCCESS = 0,
     RDKV_UPGRADE_ERROR_THROTTLE_ZERO = -100,  // Throttle speed = 0
     RDKV_UPGRADE_ERROR_FORCE_EXIT = -101,      // Force exit (curl 23)
+    RDKV_UPGRADE_ERROR_STATE_RED = -102,       // State red recovery (TLS/SSL fatal)
 } rdkv_upgrade_error_t;
 
 /**
@@ -137,7 +138,7 @@ int fallBack(
 );
 
 
-void dwnlError(int curl_code, int http_code, int server_type,const DeviceProperty_t *device_info,const char *lastrun, char *disableStatsUpdate);
+int dwnlError(int curl_code, int http_code, int server_type,const DeviceProperty_t *device_info,const char *lastrun, char *disableStatsUpdate);
 
 void saveHTTPCode(int http_code, const char *lastrun);
 void Upgradet2CountNotify(char *marker, int val); 
