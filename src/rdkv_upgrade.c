@@ -1058,10 +1058,11 @@ int downloadFile(
         if (ret == MTLS_CERT_FETCH_FAILURE) {
             SWLOG_ERROR("%s : ret=%d\n", __FUNCTION__, ret);
             SWLOG_ERROR("%s : All MTLS certs are failed. Falling back to state red.\n", __FUNCTION__);
-            if (checkAndEnterStateRed(CURL_MTLS_LOCAL_CERTPROBLEM, disableStatsUpdate) != 0) {
+            int mtls_state_red = checkAndEnterStateRed(CURL_MTLS_LOCAL_CERTPROBLEM, disableStatsUpdate);
+            if (mtls_state_red != 0) {
                 SWLOG_ERROR("%s : State red entered due to MTLS cert problem\n", __FUNCTION__);
             }
-            return curl_ret_code;
+            return (mtls_state_red == RDKV_UPGRADE_ERROR_STATE_RED) ? RDKV_UPGRADE_ERROR_STATE_RED : curl_ret_code;
         } else if (ret == STATE_RED_CERT_FETCH_FAILURE) {
             SWLOG_ERROR("%s : State red cert failed.\n", __FUNCTION__);
             return curl_ret_code;
