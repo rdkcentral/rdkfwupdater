@@ -86,7 +86,7 @@ extern "C" {
     int doCurlPutRequest(void *in_curl, FileDwnl_t *pfile_dwnl, char *jsonrpc_auth_token, int *out_httpCode);
     int getOPTOUTValue(const char *filename);
     void getPidStore(const char *key, const char *value);
-    void dwnlError(int curl_code, int http_code, int server_type, const DeviceProperty_t *device_info, const char *lastrun, char *disableStatsUpdate);
+    int dwnlError(int curl_code, int http_code, int server_type, const DeviceProperty_t *device_info, const char *lastrun, char *disableStatsUpdate);
     int peripheral_firmware_dndl(char *pCloudFWLocation, char *pPeripheralFirmwares);
     int fallBack(const RdkUpgradeContext_t* context, int *httpCode, void **curl);
     void saveHTTPCode(int http_code, const char *lastrun);
@@ -441,6 +441,7 @@ TEST(MainHelperFunctionTest, retryDownloadtest8){
 }
 
 TEST(DwnlErrorTest, HandlesCurlCode0) {
+    g_DeviceUtilsMock = nullptr;
     int curl_code = 0;
     int http_code = 200;
     int server_type = 0;
@@ -455,6 +456,7 @@ TEST(DwnlErrorTest, HandlesCurlCode0) {
 }
 
 TEST(DwnlErrorTest, HandlesCurlCode22) {
+    g_DeviceUtilsMock = nullptr;
     int curl_code = 22;
     int http_code = 200;
     int server_type = 0;
@@ -471,6 +473,7 @@ TEST(DwnlErrorTest, HandlesCurlCode22) {
 }
 
 TEST(DwnlErrorTest, HandlesCurlCode18) {
+    g_DeviceUtilsMock = nullptr;
     int curl_code = 18;
     int http_code = 0;
     int server_type = 0;
@@ -488,6 +491,7 @@ TEST(DwnlErrorTest, HandlesCurlCode18) {
 }
 
 TEST(DwnlErrorTest, HandlesCurlCode91) {
+    g_DeviceUtilsMock = nullptr;
     int curl_code = 91;
     int http_code = 200;
     int server_type = 0;

@@ -28,6 +28,7 @@
 #include "download_status_helper.h"
 #include "json_process.h"
 #include "device_api.h"
+#include "rdkv_upgrade.h"
 #ifndef GTEST_ENABLE
 #include "common_device_api.h"
 #endif
@@ -355,14 +356,18 @@ void unsetStateRed(void)
 }
 
 
-/* Description: If state red support is present eneter to state red
- * @param curlret: Receving curl status from Caller
+/* Description: If state red support is present enter state red detection.
+ *              This function detects TLS/SSL fatal errors, emits telemetry,
+ *              removes block files, and reports download status.
+ *              It does NOT call uninitialize() or create STATEREDFLAG — the
+ *              caller is responsible for propagating the error code to main()
+ *              which handles process cleanup.
+ * @param curlret: Receiving curl status from Caller
  * @return: 0 on success (no state red entry needed or flag already set)
- *         -1 on TLS/SSL error (state red entered, process should terminate in CLI mode)
+ *         RDKV_UPGRADE_ERROR_STATE_RED (-102) on TLS/SSL fatal error detected
  * */
 int checkAndEnterStateRed(int curlret, const char *disableStatsUpdate) {
     int ret = -1;
-    FILE *fp = NULL;
     struct FWDownloadStatus fwdls;
     ret = isStateRedSupported();
     if(ret == 0) {
@@ -407,13 +412,8 @@ int checkAndEnterStateRed(int curlret, const char *disableStatsUpdate) {
         //TODO sprintf(fwdls.DelayDownload, "DelayDownload|%s\n", delaydnld); // This data should come from script as a argument
         updateFWDownloadStatus(&fwdls, disableStatsUpdate);
 
-        uninitialize(INITIAL_VALIDATION_SUCCESS);
-        fp = fopen(STATEREDFLAG, "w");
-        if(fp != NULL) {
-            fclose(fp);
-        }
         SWLOG_ERROR("RED checkAndEnterStateRed: State red entered due to TLS/SSL error %d. Returning error to caller.\n", curlret);
-        return -1;
+        return RDKV_UPGRADE_ERROR_STATE_RED;
     } else {
         //Recovery completed event send for the failure case but not due to fatal error
         if( (filePresentCheck( RED_STATE_REBOOT ) == RDK_API_SUCCESS) ) {
