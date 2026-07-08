@@ -184,6 +184,9 @@ int DirectCDNDownload( XCONFRES *response, char *cur_img_name, DeviceProperty_t 
 		    else
 		    {
                             SWLOG_ERROR( "DirectCDNDownload: XCONF fail ret=%d http=%d\n", ret, *pHttp_code );
+                            if (ret == RDKV_UPGRADE_ERROR_STATE_RED) {
+                                curl_ret_code = ret;
+                            }
 			    break;
 		    }
 		    cnt++;
@@ -215,6 +218,8 @@ int DirectCDNDownload( XCONFRES *response, char *cur_img_name, DeviceProperty_t 
     }
     if ((pci_upgrade_status == 0) && (pdri_upgrade_status == 0)) {
 	curl_ret_code = 0;
+    } else if (pci_upgrade_status == RDKV_UPGRADE_ERROR_STATE_RED || pdri_upgrade_status == RDKV_UPGRADE_ERROR_STATE_RED) {
+	curl_ret_code = RDKV_UPGRADE_ERROR_STATE_RED;
     }
     SWLOG_INFO("DirectCDNDownload: Function return %d\n", curl_ret_code);
     return curl_ret_code;
