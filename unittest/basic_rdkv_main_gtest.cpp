@@ -2908,7 +2908,7 @@ TEST(DirectCDNRetryDownloadTest, Http404_DirectCDN_NotFoundBreakUnchanged) {
     /* downloadFile called exactly ONCE — 404 break fires */
     EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _))
         .Times(1)
-        .WillOnce(testing::DoAll(testing::SetArgPointee<4>(HTTP_PAGE_NOT_FOUND), testing::Return(!CURL_SUCCESS)));
+        .WillOnce(testing::DoAll(testing::SetArgPointee<4>(HTTP_PAGE_NOT_FOUND), testing::Return(CURL_SUCCESS)));
 
     int code = 0;
     int force_exit = 0;
@@ -2924,7 +2924,7 @@ TEST(DirectCDNRetryDownloadTest, Http404_DirectCDN_NotFoundBreakUnchanged) {
     context.direct_cdn = true;
 
     int result = retryDownload(&context, 2, 0, &code, &curl);
-    EXPECT_NE(result, CURL_SUCCESS);
+    EXPECT_EQ(result, CURL_SUCCESS);
     EXPECT_EQ(code, HTTP_PAGE_NOT_FOUND);
 
     global_mockdownloadfileops_ptr = NULL;
@@ -3225,23 +3225,24 @@ TEST(StateRedShortCircuitTest, CodebigPath_SkipsRetryWhenStateRedReturned) {
 }
 
 /* ===========================================================================
- * Subtask 5 – Direct CDN mTLS Bypass Tests
+ * Subtask 5 – Direct CDN Download Path Routing Tests
  *
- * These tests verify the mTLS bypass contract at the retryDownload()/
- * rdkv_upgrade_request() level. The actual mTLS bypass logic lives inside
- * downloadFile() (guarded by #ifndef GTEST_BASIC), so the real cert-skip
- * path is verified via integration tests. These unit tests verify:
- *   5.1: direct_cdn=true, state_red=0 → downloadFile called successfully
- *         (proves the NULL-cert path doesn't crash/block)
- *   5.2: direct_cdn=true, state_red=1 → downloadFile called with state_red
- *         recovery semantics (proves cert path still active)
- *   5.3: direct_cdn=false → existing mTLS behavior unchanged
+ * These tests verify control-flow routing at the retryDownload()/
+ * rdkv_upgrade_request() level under mocked downloadFile(). The actual
+ * mTLS bypass logic (cert-selector skip, getMtlscert skip) lives inside
+ * downloadFile() (guarded by #ifndef GTEST_BASIC) and is verified via
+ * integration tests. These unit tests verify:
+ *   5.1: direct_cdn=true, state_red=0 → download path is reachable
+ *         (validates routing when bypass conditions are met)
+ *   5.2: direct_cdn=true, state_red=1 → state-red error propagated
+ *         correctly (Codebig not called, error returned to caller)
+ *   5.3: direct_cdn=false → existing download routing unchanged
  * =========================================================================== */
 
 /**
  * @brief Subtask 5.1: When direct_cdn=true and device is NOT in state_red,
- * downloadFile() should succeed without mTLS certs (NULL cert path).
- * Verifies the bypass doesn't block the download flow.
+ * the download path is reachable and completes successfully.
+ * Validates routing when direct_cdn bypass conditions are met.
  */
 TEST(DirectCDNMtlsBypassTest, DirectCDN_NonStateRed_DownloadSucceeds) {
     MockDownloadFileOps mockfileops;
@@ -3332,8 +3333,8 @@ TEST(DirectCDNMtlsBypassTest, DirectCDN_StateRed_StillUsesRecoveryCert) {
     EXPECT_CALL(mockexternal, CheckIProuteConnectivity(_)).WillRepeatedly(Return(false));
 
     int result = rdkv_upgrade_request(&context, &test_curl, &http_code);
-    /* STATE_RED returned proves the cert-fetch path was active
-     * (if bypass were incorrectly active, download would proceed differently) */
+    /* STATE_RED returned validates state-red error propagation
+     * (cert-fetch internals verified via integration tests) */
     EXPECT_EQ(result, RDKV_UPGRADE_ERROR_STATE_RED);
 
     global_mockdownloadfileops_ptr = NULL;
