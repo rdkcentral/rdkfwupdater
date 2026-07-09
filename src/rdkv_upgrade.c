@@ -1066,7 +1066,8 @@ int downloadFile(
         SWLOG_INFO("Fetching MTLS credential for SSR/XCONF\n");
         ret = getMtlscert(&sec);
         if (-1 == ret) {
-            SWLOG_ERROR("%s : getMtlscert() Fetching MTLS fail. Going For NON MTLS:%d\n", __FUNCTION__, ret);
+            SWLOG_ERROR("%s: getMtlscert() failed to fetch mTLS credentials. Falling back to non-mTLS (ret=%d)\n", __FUNCTION__, ret);
+            mtls_enable = -1; // If certificate or key fetching fails, try with non-mTLS
             mtls_enable = -1;//If certificate or key featching fail try with non mtls
         }else {
             SWLOG_INFO("MTLS is enable\nMTLS creds for SSR fetched ret=%d\n", ret);
