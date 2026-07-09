@@ -1066,7 +1066,7 @@ int downloadFile(
         SWLOG_INFO("Fetching MTLS credential for SSR/XCONF\n");
         ret = getMtlscert(&sec);
         if (-1 == ret) {
-            SWLOG_ERROR("%s : getMtlscert() Featching MTLS fail. Going For NON MTLS:%d\n", __FUNCTION__, ret);
+            SWLOG_ERROR("%s : getMtlscert() Fetching MTLS fail. Going For NON MTLS:%d\n", __FUNCTION__, ret);
             mtls_enable = -1;//If certificate or key featching fail try with non mtls
         }else {
             SWLOG_INFO("MTLS is enable\nMTLS creds for SSR fetched ret=%d\n", ret);
@@ -1212,7 +1212,8 @@ int downloadFile(
         SWLOG_ERROR("%s : Direct Image upgrade Fail: curl ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *httpCode);
         (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_FAILED) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_FAILED);
         int state_red_ret = dwnlError(curl_ret_code, *httpCode, server_type,device_info,lastrun,disableStatsUpdate);
-        if (state_red_ret == RDKV_UPGRADE_ERROR_STATE_RED || isInStateRed() == 1) {
+        if (state_red_ret == RDKV_UPGRADE_ERROR_STATE_RED || isInStateRed() == 1) {
+
             SWLOG_INFO("%s : State red entered during download, skipping retry\n", __FUNCTION__);
             return RDKV_UPGRADE_ERROR_STATE_RED;
         }
