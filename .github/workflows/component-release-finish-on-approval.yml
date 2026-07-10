@@ -23,7 +23,7 @@ jobs:
     env:
       REPO: ${{ github.repository }}
       ACTOR: ${{ github.event.review.user.login }}
-      GH_TOKEN: ${{ secrets.RDKCM_RDKE }}
+      GH_TOKEN: ${{ github.token }}
       RELEASE_BRANCH: ${{ github.event.pull_request.head.ref }}
 
     steps:
