@@ -44,7 +44,7 @@ jobs:
       SOURCE_BRANCH: ${{ github.event.inputs.source_branch }}
       REPO: ${{ github.repository }}
       ACTOR: ${{ github.actor }}
-      GH_TOKEN: ${{ secrets.RDKCM_RDKE }}
+      GH_TOKEN: ${{ github.token }}
 
     steps:
       - name: Validate version format
