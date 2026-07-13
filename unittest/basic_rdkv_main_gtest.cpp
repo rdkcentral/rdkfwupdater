@@ -364,7 +364,7 @@ TEST(MainHelperFunctionTest, retryDownloadtest2){
 TEST(MainHelperFunctionTest, retryDownloadtest3){
     MockDownloadFileOps mockfileops;
     global_mockdownloadfileops_ptr = &mockfileops;
-    EXPECT_CALL(mockfileops, downloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(!CURL_SUCCESS));
+    EXPECT_CALL(mockfileops, downloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(CURL_CONNECTIVITY_ISSUE));
     int code = HTTP_PAGE_NOT_FOUND;
     int force_exit = 0;
     int dummy_curl = 0;
@@ -377,14 +377,14 @@ TEST(MainHelperFunctionTest, retryDownloadtest3){
     context.pPostFields = (char*)"test2";
     context.force_exit = &force_exit;
     
-    EXPECT_EQ(retryDownload(&context, 1, 0, &code, &curl), !CURL_SUCCESS);
+    EXPECT_EQ(retryDownload(&context, 1, 0, &code, &curl), CURL_CONNECTIVITY_ISSUE);
     global_mockdownloadfileops_ptr = NULL;
 }
 
 TEST(MainHelperFunctionTest, retryDownloadtest4){
     MockDownloadFileOps mockfileops;
     global_mockdownloadfileops_ptr = &mockfileops;
-    EXPECT_CALL(mockfileops, downloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(!CURL_SUCCESS));
+    EXPECT_CALL(mockfileops, downloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(CURL_CONNECTIVITY_ISSUE));
     int code = DWNL_BLOCK;
     int force_exit = 0;
     int dummy_curl = 0;
@@ -397,14 +397,14 @@ TEST(MainHelperFunctionTest, retryDownloadtest4){
     context.pPostFields = (char*)"test2";
     context.force_exit = &force_exit;
     
-    EXPECT_EQ(retryDownload(&context, 1, 0, &code, &curl), !CURL_SUCCESS);
+    EXPECT_EQ(retryDownload(&context, 1, 0, &code, &curl), CURL_CONNECTIVITY_ISSUE);
     global_mockdownloadfileops_ptr = NULL;
 }
 
 TEST(MainHelperFunctionTest, retryDownloadtest5){
     MockDownloadFileOps mockfileops;
     global_mockdownloadfileops_ptr = &mockfileops;
-    EXPECT_CALL(mockfileops, downloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(!CURL_SUCCESS));
+    EXPECT_CALL(mockfileops, downloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(CURL_CONNECTIVITY_ISSUE));
     int code = HTTP_SUCCESS;
     int force_exit = 0;
     int dummy_curl = 0;
@@ -417,7 +417,7 @@ TEST(MainHelperFunctionTest, retryDownloadtest5){
     context.pPostFields = (char*)"test2";
     context.force_exit = &force_exit;
     
-    EXPECT_EQ(retryDownload(&context, 1, 0, &code, &curl), !CURL_SUCCESS);
+    EXPECT_EQ(retryDownload(&context, 1, 0, &code, &curl), CURL_CONNECTIVITY_ISSUE);
     global_mockdownloadfileops_ptr = NULL;
 
 }
@@ -446,7 +446,7 @@ TEST(MainHelperFunctionTest, retryDownloadtest6){
 TEST(MainHelperFunctionTest, retryDownloadtest7){
     MockDownloadFileOps mockfileops;
     global_mockdownloadfileops_ptr = &mockfileops;
-    EXPECT_CALL(mockfileops, codebigdownloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(!CURL_SUCCESS));
+    EXPECT_CALL(mockfileops, codebigdownloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(CURL_CONNECTIVITY_ISSUE));
     int code = HTTP_PAGE_NOT_FOUND;
     int force_exit = 0;
     int dummy_curl = 0;
@@ -459,7 +459,7 @@ TEST(MainHelperFunctionTest, retryDownloadtest7){
     context.pPostFields = (char*)"test2";
     context.force_exit = &force_exit;
     
-    EXPECT_EQ(retryDownload(&context, 1, 0, &code, &curl), !CURL_SUCCESS);
+    EXPECT_EQ(retryDownload(&context, 1, 0, &code, &curl), CURL_CONNECTIVITY_ISSUE);
     global_mockdownloadfileops_ptr = NULL;
 
 }
@@ -467,7 +467,7 @@ TEST(MainHelperFunctionTest, retryDownloadtest7){
 TEST(MainHelperFunctionTest, retryDownloadtest8){
     MockDownloadFileOps mockfileops;
     global_mockdownloadfileops_ptr = &mockfileops;
-    EXPECT_CALL(mockfileops, codebigdownloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(!CURL_SUCCESS));
+    EXPECT_CALL(mockfileops, codebigdownloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(CURL_CONNECTIVITY_ISSUE));
     int code = HTTP_SUCCESS;
     int force_exit = 0;
     int dummy_curl = 0;
@@ -480,7 +480,7 @@ TEST(MainHelperFunctionTest, retryDownloadtest8){
     context.pPostFields = (char*)"test2";
     context.force_exit = &force_exit;
     
-    EXPECT_EQ(retryDownload(&context, 1, 1, &code, &curl), !CURL_SUCCESS);
+    EXPECT_EQ(retryDownload(&context, 1, 1, &code, &curl), CURL_CONNECTIVITY_ISSUE);
     global_mockdownloadfileops_ptr = NULL;
 }
 
@@ -1079,8 +1079,8 @@ TEST(MainHelperFunctionTest, fallBackTestFailure){
     context.artifactLocationUrl = "test";
     context.dwlloc = "test1";
     
-    EXPECT_CALL(mockfileops, downloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(!CURL_SUCCESS));
-    EXPECT_EQ(fallBack(&context, &http_code, &curl), !CURL_SUCCESS);
+    EXPECT_CALL(mockfileops, downloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(CURL_CONNECTIVITY_ISSUE));
+    EXPECT_EQ(fallBack(&context, &http_code, &curl), CURL_CONNECTIVITY_ISSUE);
     global_mockdownloadfileops_ptr = NULL;
 }
 
@@ -1121,8 +1121,8 @@ TEST(MainHelperFunctionTest, fallBackTestFailureCodebig){
     context.artifactLocationUrl = "test";
     context.dwlloc = "test1";
     
-    EXPECT_CALL(mockfileops, codebigdownloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(!CURL_SUCCESS));
-    EXPECT_EQ(fallBack(&context, &http_code, &curl), !CURL_SUCCESS);
+    EXPECT_CALL(mockfileops, codebigdownloadFile(_,_,_,_,_)).Times(1).WillOnce(testing::Return(CURL_CONNECTIVITY_ISSUE));
+    EXPECT_EQ(fallBack(&context, &http_code, &curl), CURL_CONNECTIVITY_ISSUE);
     global_mockdownloadfileops_ptr = NULL;
 }
 
