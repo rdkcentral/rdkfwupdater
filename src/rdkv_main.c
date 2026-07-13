@@ -657,6 +657,9 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
             SWLOG_ERROR("%s: PCI upgrade failed with library error: %s (code: %d)\n",
                        __FUNCTION__, rdkv_upgrade_strerror(pci_curl_code), pci_curl_code);
             
+            if (pci_curl_code == RDKV_UPGRADE_ERROR_STATE_RED) {
+                return RDKV_UPGRADE_ERROR_STATE_RED;
+            }
             // CLI binary can exit on fatal library errors
             if (pci_curl_code == RDKV_UPGRADE_ERROR_THROTTLE_ZERO || 
                 pci_curl_code == RDKV_UPGRADE_ERROR_FORCE_EXIT) {
@@ -713,6 +716,9 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
                 SWLOG_ERROR("%s: PDRI upgrade failed with library error: %s (code: %d)\n",
                            __FUNCTION__, rdkv_upgrade_strerror(pdri_curl_code), pdri_curl_code);
                 
+                if (pdri_curl_code == RDKV_UPGRADE_ERROR_STATE_RED) {
+                    return RDKV_UPGRADE_ERROR_STATE_RED;
+                }
                 // CLI binary can exit on fatal library errors
                 if (pdri_curl_code == RDKV_UPGRADE_ERROR_THROTTLE_ZERO || 
                     pdri_curl_code == RDKV_UPGRADE_ERROR_FORCE_EXIT) {
@@ -1200,6 +1206,14 @@ int main(int argc, char *argv[]) {
     }else {
         if (!(strncmp(device_info.maint_status, "true", 4))) {
             eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_COMPLETE); //Sending status to maintenance manager
+        }
+    }
+
+    /* State-red: create flag for recovery script before process cleanup */
+    if (ret_curl_code == RDKV_UPGRADE_ERROR_STATE_RED) {
+        FILE *fp_sr = fopen(STATEREDFLAG, "w");
+        if (fp_sr != NULL) {
+            fclose(fp_sr);
         }
     }
 
