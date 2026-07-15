@@ -17,7 +17,7 @@ jobs:
     name: Finish release when PR is approved
     if: >
       github.event.review.state == 'approved' &&
-      github.event.pull_request.base.ref == 'develop' &&
+      github.event.pull_request.base.ref == 'main' &&
       startsWith(github.event.pull_request.head.ref, 'release/')
     runs-on: ubuntu-latest
     env:
