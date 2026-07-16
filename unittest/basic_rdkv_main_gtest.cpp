@@ -3248,8 +3248,8 @@ TEST(DirectCDNMtlsBypassTest, DirectCDN_NonStateRed_DownloadSucceeds) {
     MockDownloadFileOps mockfileops;
     global_mockdownloadfileops_ptr = &mockfileops;
 
-    /* downloadFile is called once and succeeds — proves the mTLS bypass
-     * (mtls_enable=-1 → NULL cert) doesn't prevent download */
+    /* downloadFile is called once and succeeds — confirms the download
+     * path is reachable when direct_cdn bypass conditions are met */
     EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _))
         .Times(1)
         .WillOnce(testing::DoAll(testing::SetArgPointee<4>(200), testing::Return(CURL_SUCCESS)));
@@ -3276,9 +3276,9 @@ TEST(DirectCDNMtlsBypassTest, DirectCDN_NonStateRed_DownloadSucceeds) {
 
 /**
  * @brief Subtask 5.2: When direct_cdn=true BUT device IS in state_red,
- * downloadFile() still executes (state_red recovery cert path must remain).
- * The mTLS bypass guard (direct_cdn && state_red != 1) is FALSE here,
- * so normal cert fetching should still occur.
+ * downloadFile() still executes and STATE_RED error propagates correctly.
+ * Codebig fallback is NOT invoked in direct_cdn mode.
+ * (cert-fetch internals are verified via integration tests, not here.)
  */
 TEST(DirectCDNMtlsBypassTest, DirectCDN_StateRed_StillUsesRecoveryCert) {
     MockDownloadFileOps mockfileops;
@@ -3310,7 +3310,7 @@ TEST(DirectCDNMtlsBypassTest, DirectCDN_StateRed_StillUsesRecoveryCert) {
     context.rfc_list = &local_rfc;
     context.direct_cdn = true;  /* Direct CDN mode */
 
-    /* downloadFile returns STATE_RED — simulates state_red cert path active */
+    /* downloadFile returns STATE_RED — verifies error propagation to caller */
     EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _))
         .Times(1)
         .WillOnce(testing::DoAll(testing::SetArgPointee<4>(0), testing::Return(RDKV_UPGRADE_ERROR_STATE_RED)));
@@ -3344,8 +3344,8 @@ TEST(DirectCDNMtlsBypassTest, DirectCDN_StateRed_StillUsesRecoveryCert) {
 
 /**
  * @brief Subtask 5.3: When direct_cdn=false (legacy mode), downloadFile()
- * proceeds with normal mTLS cert fetching — bypass NOT active.
- * Verifies existing behavior is preserved.
+ * is called normally and succeeds — verifies the legacy download path
+ * remains functional. (mTLS internals not observable with mocked downloadFile.)
  */
 TEST(DirectCDNMtlsBypassTest, LegacyMode_NormalMtlsPath) {
     MockDownloadFileOps mockfileops;
