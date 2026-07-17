@@ -1099,6 +1099,22 @@ int downloadFile(
             }
         }
 #endif
+        /* Test hook: simulate HTTP 403 for Direct CDN firmware downloads.
+         * Only fires for actual artifact downloads (direct_cdn=true, SSR_DIRECT),
+         * not XConf queries. Create /tmp/.force_403_direct_cdn to trigger. */
+        if (context->direct_cdn && server_type == HTTP_SSR_DIRECT) {
+            if ((filePresentCheck("/tmp/.force_403_direct_cdn")) == 0) {
+                SWLOG_WARN("%s: [TEST_HOOK] /tmp/.force_403_direct_cdn present - simulating HTTP 403\n", __FUNCTION__);
+                *httpCode = 403;
+                curl_ret_code = CURL_SUCCESS;
+#ifdef LIBRDKCERTSELECTOR
+                if (thisCertSel != NULL) {
+                    rdkcertselector_free(&thisCertSel);
+                }
+#endif
+                return curl_ret_code;
+            }
+        }
         do {
             if ((1 == state_red)) {
                 SWLOG_INFO("RED:state red recovery attempting MTLS connection to XCONF server\n");
