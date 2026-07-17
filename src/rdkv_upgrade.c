@@ -538,7 +538,7 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
 
             if (ret_curl_code != CURL_SUCCESS ||
                 (*pHttp_code != HTTP_SUCCESS && *pHttp_code != HTTP_CHUNK_SUCCESS && *pHttp_code != HTTP_PAGE_NOT_FOUND)) {
-                ret_curl_code = retryDownload(context, RETRY_COUNT, 60, pHttp_code, curl);
+                ret_curl_code = retryDownload(context, RETRY_COUNT, 7800, pHttp_code, curl);
                 if (ret_curl_code == CURL_CONNECTIVITY_ISSUE || *pHttp_code == 0) {
                     /* Direct CDN mode: skip Codebig fallback */
                     if (context->direct_cdn) {
@@ -1099,6 +1099,7 @@ int downloadFile(
             }
         }
 #endif
+#if 0 /* Approach A - file-based 403 simulation (Build A in Jenkins) */
         /* Test hook: simulate HTTP 403 for Direct CDN firmware downloads.
          * Only fires for actual artifact downloads (direct_cdn=true, SSR_DIRECT),
          * not XConf queries. Create /tmp/.force_403_direct_cdn to trigger. */
@@ -1115,6 +1116,7 @@ int downloadFile(
                 return curl_ret_code;
             }
         }
+#endif
         do {
             if ((1 == state_red)) {
                 SWLOG_INFO("RED:state red recovery attempting MTLS connection to XCONF server\n");
