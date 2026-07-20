@@ -1286,11 +1286,19 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
         
         SWLOG_INFO("[rdkFwupdateMgr] XConf returned firmware version: '%s'\n", response.cloudFWVersion);
         
+        // Determine effective location for signal: prefer Direct CDN URL over legacy
+        const char *effective_location = "N/A";
+        if (response.firmwareUrl[0]) {
+            effective_location = response.firmwareUrl;
+        } else if (response.cloudFWLocation[0]) {
+            effective_location = response.cloudFWLocation;
+        }
+        
         // Serialize XConf metadata into pipe-delimited string for D-Bus transport
         gchar *update_details = g_strdup_printf(
                 "File:%s|Location:%s|IPv6Location:%s|Version:%s|Protocol:%s|Reboot:%s|Delay:%s|PDRI:%s|Peripherals:%s|CertBundle:%s", 
                 response.cloudFWFile[0] ? response.cloudFWFile : "N/A",
-                response.cloudFWLocation[0] ? response.cloudFWLocation : "N/A", 
+                effective_location, 
                 response.ipv6cloudFWLocation[0] ? response.ipv6cloudFWLocation : "N/A",
                 response.cloudFWVersion[0] ? response.cloudFWVersion : "N/A",
                 response.cloudProto[0] ? response.cloudProto : "HTTP",
@@ -2081,6 +2089,25 @@ static gboolean save_cached_xconf_data(const XCONFRES *pResponse, int http_code)
         g_cached_xconf_data.dlCertBundle[sizeof(g_cached_xconf_data.dlCertBundle) - 1] = '\0';
     }
     
+    // Direct CDN per-artifact URLs
+    if (pResponse->firmwareUrl[0]) {
+        strncpy(g_cached_xconf_data.firmwareUrl, pResponse->firmwareUrl, 
+                sizeof(g_cached_xconf_data.firmwareUrl) - 1);
+        g_cached_xconf_data.firmwareUrl[sizeof(g_cached_xconf_data.firmwareUrl) - 1] = '\0';
+    }
+    
+    if (pResponse->pdriUrl[0]) {
+        strncpy(g_cached_xconf_data.pdriUrl, pResponse->pdriUrl, 
+                sizeof(g_cached_xconf_data.pdriUrl) - 1);
+        g_cached_xconf_data.pdriUrl[sizeof(g_cached_xconf_data.pdriUrl) - 1] = '\0';
+    }
+    
+    if (pResponse->remCtrlUrl[0]) {
+        strncpy(g_cached_xconf_data.remCtrlUrl, pResponse->remCtrlUrl, 
+                sizeof(g_cached_xconf_data.remCtrlUrl) - 1);
+        g_cached_xconf_data.remCtrlUrl[sizeof(g_cached_xconf_data.remCtrlUrl) - 1] = '\0';
+    }
+    
     // Save HTTP code
     g_cached_http_code = http_code;
     
@@ -2095,6 +2122,15 @@ static gboolean save_cached_xconf_data(const XCONFRES *pResponse, int http_code)
     SWLOG_INFO("[CACHE_MEM]   - File: '%s'\n", g_cached_xconf_data.cloudFWFile);
     SWLOG_INFO("[CACHE_MEM]   - Location: '%s'\n", g_cached_xconf_data.cloudFWLocation);
     SWLOG_INFO("[CACHE_MEM]   - HTTP Code: %d\n", g_cached_http_code);
+    if (g_cached_xconf_data.firmwareUrl[0]) {
+        SWLOG_INFO("[CACHE_MEM]   - DirectCDN firmwareUrl: '%s'\n", g_cached_xconf_data.firmwareUrl);
+    }
+    if (g_cached_xconf_data.pdriUrl[0]) {
+        SWLOG_INFO("[CACHE_MEM]   - DirectCDN pdriUrl: '%s'\n", g_cached_xconf_data.pdriUrl);
+    }
+    if (g_cached_xconf_data.remCtrlUrl[0]) {
+        SWLOG_INFO("[CACHE_MEM]   - DirectCDN remCtrlUrl: '%s'\n", g_cached_xconf_data.remCtrlUrl);
+    }
     
     return TRUE;
 }
