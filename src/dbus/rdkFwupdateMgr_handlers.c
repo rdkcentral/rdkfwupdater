@@ -1286,10 +1286,11 @@ CheckUpdateResponse rdkFwupdateMgr_checkForUpdate(const gchar *handler_id) {
         
         SWLOG_INFO("[rdkFwupdateMgr] XConf returned firmware version: '%s'\n", response.cloudFWVersion);
         
-        // Determine effective location for signal: prefer Direct CDN URL over legacy
+        // Determine effective location for signal: show "DirectCDN" indicator
+        // instead of full signed URL (avoids leaking token params over D-Bus)
         const char *effective_location = "N/A";
         if (response.firmwareUrl[0]) {
-            effective_location = response.firmwareUrl;
+            effective_location = "DirectCDN";
         } else if (response.cloudFWLocation[0]) {
             effective_location = response.cloudFWLocation;
         }
