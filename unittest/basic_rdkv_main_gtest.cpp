@@ -2795,7 +2795,7 @@ TEST(DirectCDNRetryTest, PerArtifact_WhenHttp403Received_ReturnsRetryErr) {
 }
 
 /**
- * @brief Subtask 4.1: When direct_cdn=true and downloadFile returns HTTP 403,
+ * @brief : When direct_cdn=true and downloadFile returns HTTP 403,
  * retryDownload() must break immediately (token expired — no point retrying stale URL).
  * Uses retry_cnt=2 with Times(1) to prove the break fires after first iteration.
  */
@@ -2829,7 +2829,7 @@ TEST(DirectCDNRetryDownloadTest, Http403_DirectCDN_BreaksRetryImmediately) {
 }
 
 /**
- * @brief Subtask 4.2: When direct_cdn=false and downloadFile returns HTTP 403,
+ * @brief : When direct_cdn=false and downloadFile returns HTTP 403,
  * retryDownload() must NOT break — it retries normally (legacy behavior preserved).
  * Uses retry_cnt=2 with Times(2) to prove both iterations execute.
  */
@@ -2863,7 +2863,7 @@ TEST(DirectCDNRetryDownloadTest, Http403_LegacyMode_RetriesNormally) {
 }
 
 /**
- * @brief Subtask 4.3: When direct_cdn=true and downloadFile returns HTTP 200,
+ * @brief : When direct_cdn=true and downloadFile returns HTTP 200,
  * the existing success break still fires (no regression from 403 change).
  * Uses retry_cnt=2 with Times(1) to prove success break fires first.
  */
@@ -2897,7 +2897,7 @@ TEST(DirectCDNRetryDownloadTest, Http200_DirectCDN_SuccessBreakUnchanged) {
 }
 
 /**
- * @brief Subtask 4.4: When direct_cdn=true and downloadFile returns HTTP 404,
+ * @brief : When direct_cdn=true and downloadFile returns HTTP 404,
  * the existing 404 break still fires (no regression from 403 change).
  * Uses retry_cnt=2 with Times(1) to prove 404 break fires first.
  */
@@ -3225,7 +3225,7 @@ TEST(StateRedShortCircuitTest, CodebigPath_SkipsRetryWhenStateRedReturned) {
 }
 
 /* ===========================================================================
- * Subtask 5 – Direct CDN Download Path Routing Tests
+ * Direct CDN Download Path Routing Tests
  *
  * These tests verify control-flow routing at the retryDownload()/
  * rdkv_upgrade_request() level under mocked downloadFile(). The actual
@@ -3240,7 +3240,7 @@ TEST(StateRedShortCircuitTest, CodebigPath_SkipsRetryWhenStateRedReturned) {
  * =========================================================================== */
 
 /**
- * @brief Subtask 5.1: When direct_cdn=true and device is NOT in state_red,
+ * @brief : When direct_cdn=true and device is NOT in state_red,
  * the download path is reachable and completes successfully.
  * Validates routing when direct_cdn bypass conditions are met.
  */
@@ -3275,7 +3275,7 @@ TEST(DirectCDNMtlsBypassTest, DirectCDN_NonStateRed_DownloadSucceeds) {
 }
 
 /**
- * @brief Subtask 5.2: When direct_cdn=true BUT device IS in state_red,
+ * @brief : When direct_cdn=true BUT device IS in state_red,
  * downloadFile() still executes and STATE_RED error propagates correctly.
  * Codebig fallback is NOT invoked in direct_cdn mode.
  * (cert-fetch internals are verified via integration tests, not here.)
@@ -3343,7 +3343,7 @@ TEST(DirectCDNMtlsBypassTest, DirectCDN_StateRed_StillUsesRecoveryCert) {
 }
 
 /**
- * @brief Subtask 5.3: When direct_cdn=false (legacy mode), downloadFile()
+ * @brief :When direct_cdn=false (legacy mode), downloadFile()
  * is called normally and succeeds — verifies the legacy download path
  * remains functional. (mTLS internals not observable with mocked downloadFile.)
  */
