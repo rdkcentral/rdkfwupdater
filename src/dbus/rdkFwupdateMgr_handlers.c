@@ -2124,7 +2124,7 @@ static gboolean save_cached_xconf_data(const XCONFRES *pResponse, int http_code)
     SWLOG_INFO("[CACHE_MEM]   - Location: '%s'\n", g_cached_xconf_data.cloudFWLocation);
     SWLOG_INFO("[CACHE_MEM]   - HTTP Code: %d\n", g_cached_http_code);
     if (g_cached_xconf_data.firmwareUrl[0]) {
-        SWLOG_INFO("[CACHE_MEM]   - DirectCDN firmwareUrl: '%s'\n", g_cached_xconf_data.firmwareUrl);
+        SWLOG_INFO("[CACHE_MEM]   - DirectCDN firmwareUrl: (redacted)\n");
     }
     if (g_cached_xconf_data.pdriUrl[0]) {
         SWLOG_INFO("[CACHE_MEM]   - DirectCDN pdriUrl: '%s'\n", g_cached_xconf_data.pdriUrl);

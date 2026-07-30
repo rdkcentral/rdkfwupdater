@@ -3071,6 +3071,10 @@ TEST(DirectCDN403EarlyOutTest, FirstAttempt403_LegacyMode_RetriesNormally) {
         .Times(3)
         .WillRepeatedly(testing::DoAll(testing::SetArgPointee<4>(403), testing::Return(CURL_SUCCESS)));
 
+    /* HTTP 403 should not trigger Codebig fallback (fallback only on connectivity issues / http_code==0) */
+
+    EXPECT_CALL(mockfileops, codebigdownloadFile(_, _, _, _, _)).Times(0);
+
     /* Mock supporting calls */
     EXPECT_CALL(mockexternal, isDwnlBlock(_)).WillRepeatedly(Return(0));
     EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
@@ -3085,7 +3089,7 @@ TEST(DirectCDN403EarlyOutTest, FirstAttempt403_LegacyMode_RetriesNormally) {
     EXPECT_CALL(DeviceMock, getDevicePropertyData(_, _, _)).WillRepeatedly(Return(-1));
     EXPECT_CALL(mockexternal, CheckIProuteConnectivity(_)).WillRepeatedly(Return(false));
     EXPECT_CALL(mockexternal, checkCodebigAccess()).WillRepeatedly(Return(false));
-
+    /* With legacy mode, retries exhaust; HTTP 403 does not trigger Codebig fallback */
     int result = rdkv_upgrade_request(&context, &test_curl, &http_code);
     /* With legacy mode, retries exhaust and codebig fallback may be attempted */
     EXPECT_EQ(http_code, 403);
