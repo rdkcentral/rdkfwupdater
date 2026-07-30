@@ -3071,6 +3071,8 @@ TEST(DirectCDN403EarlyOutTest, FirstAttempt403_LegacyMode_RetriesNormally) {
         .Times(3)
         .WillRepeatedly(testing::DoAll(testing::SetArgPointee<4>(403), testing::Return(CURL_SUCCESS)));
 
+    /* HTTP 403 should not trigger Codebig fallback (fallback only on connectivity issues / http_code==0) */
+    EXPECT_CALL(mockfileops, codebigdownloadFile(_, _, _, _, _)).Times(0);
     /* Mock supporting calls */
     EXPECT_CALL(mockexternal, isDwnlBlock(_)).WillRepeatedly(Return(0));
     EXPECT_CALL(DeviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
