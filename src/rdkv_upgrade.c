@@ -1308,8 +1308,7 @@ int retryDownload(
                 break;
             } else if(curl_ret_code == DWNL_BLOCK) {
                 break;
-            } else if (curl_ret_code == CURL_SUCCESS && *httpCode == 403 && context->direct_cdn &&
-                       server_type == HTTP_SSR_DIRECT) {
+            } else if (context->direct_cdn && server_type == HTTP_SSR_DIRECT && *httpCode == 403) {
                 SWLOG_INFO("%s: HTTP 403 with Direct CDN - token expired, breaking retry loop\n", __FUNCTION__);
                 break;
             } else {
