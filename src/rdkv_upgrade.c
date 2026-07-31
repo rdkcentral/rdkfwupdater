@@ -1099,7 +1099,7 @@ int downloadFile(
             }
         }
 #endif
-#if 0 /* Approach A - file-based 403 simulation (Build A in Jenkins) */
+//#if 0 /* Approach A - file-based 403 simulation (Build A in Jenkins) */
         /* Test hook: simulate HTTP 403 for Direct CDN firmware downloads.
          * Only fires for actual artifact downloads (direct_cdn=true, SSR_DIRECT),
          * not XConf queries. Create /tmp/.force_403_direct_cdn to trigger. */
@@ -1116,7 +1116,7 @@ int downloadFile(
                 return curl_ret_code;
             }
         }
-#endif
+//#endif
         do {
             if ((1 == state_red)) {
                 SWLOG_INFO("RED:state red recovery attempting MTLS connection to XCONF server\n");
