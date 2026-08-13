@@ -687,7 +687,9 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
                         logMilestone(cmd_args);
                     }
                 } else {
-                    SWLOG_INFO("PDRI image Flash upgrade successful.\n");
+					if (flash_status == 0) {
+                        SWLOG_INFO("PDRI image Flash upgrade successful.\n");
+					}
                 }
             }
         }
