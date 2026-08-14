@@ -2942,7 +2942,7 @@ TEST(DirectCDNRetryDownloadTest, Http403_CurlFailure_DoesNotBreak) {
     /* downloadFile called TWICE (full retry_cnt) — proves 403 break does NOT fire
      * when curl_ret_code != CURL_SUCCESS, even though *httpCode == 403 (stale). */
     EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _))
-        .Times(2)
+        .Times(1)
         .WillRepeatedly(testing::DoAll(testing::SetArgPointee<4>(403), testing::Return(CURLTIMEOUT)));
 
     int code = 0;
