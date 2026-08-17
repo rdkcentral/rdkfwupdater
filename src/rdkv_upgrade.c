@@ -678,7 +678,9 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
                         logMilestone(cmd_args);
                     }
                 } else {
-                    SWLOG_INFO("PDRI image Flash upgrade successful.\n");
+					if (flash_status == 0) {
+                        SWLOG_INFO("PDRI image Flash upgrade successful.\n");
+					}
                 }
             }
         }
@@ -1190,7 +1192,8 @@ int downloadFile(
         SWLOG_ERROR("%s : Direct Image upgrade Fail: curl ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *httpCode);
         (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_FAILED) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_FAILED);
         int state_red_ret = dwnlError(curl_ret_code, *httpCode, server_type,device_info,lastrun,disableStatsUpdate);
-        if (state_red_ret == RDKV_UPGRADE_ERROR_STATE_RED || isInStateRed() == 1) {
+        if (state_red_ret == RDKV_UPGRADE_ERROR_STATE_RED || isInStateRed() == 1) {
+
             SWLOG_INFO("%s : State red entered during download, skipping retry\n", __FUNCTION__);
             return RDKV_UPGRADE_ERROR_STATE_RED;
         }
