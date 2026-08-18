@@ -286,8 +286,8 @@ int getXconfRespData( XCONFRES *pResponse, char *pJsonStr )
                 GetJsonVal( pJson, "additionalFwVerInfo_URL", pResponse->pdriUrl, sizeof(pResponse->pdriUrl) );
 
                 /* Dynamic peripheral key */
-                char peripheral_product[64] = {0};
-                char peripheral_product_url[100] = {0};
+                char peripheral_product[128] = {0};
+                char peripheral_product_url[134] = {0};
                 int peri_ret = getPeripheralProduct(peripheral_product, sizeof(peripheral_product));
                 if (peri_ret != -1 && peripheral_product[0] != '\0') {
                     snprintf(peripheral_product_url, sizeof(peripheral_product_url), "%s_URL", peripheral_product);
