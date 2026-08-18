@@ -49,6 +49,20 @@ marp: true
 
 ---
 
+2a. Execute one coverage area at a time.
+    - Select ONE highest-priority uncovered function/branch cluster from the latest lcov results.
+    - Add or update only the tests needed for that selected area.
+    - Do not implement all candidate areas in a single iteration.
+    - Build and run the affected test binary first.
+    - Run the full TEST_COMMAND when appropriate to validate the combined test suite.
+    - Run COVERAGE_COMMAND and evaluate the coverage change.
+    - Only after reviewing the updated coverage should the next area be selected.
+    - If the selected area provides little or no meaningful coverage improvement,
+      do not continue adding speculative tests to that area. Re-evaluate the
+      latest coverage data and select the next highest-value area.
+
+---
+
 ## 3) Proposed Test Plan
 
 The areas below are **candidate gaps only**. They are not a fixed or mandatory implementation list. During execution, each iteration must use the latest `lcov` results to select the highest-value uncovered production functions/branches next, prioritizing failure/recovery paths, state transitions, cleanup/resource handling, safety guards, and high-impact orchestration logic.
