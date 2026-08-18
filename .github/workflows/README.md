@@ -36,7 +36,7 @@ Main release - auto-complete
 Main release - approvable
 1. Validates version format.
 2. Runs git flow release start -> changelog -> release publish.
-3. Creates a PR: release/<version> -> develop.
+3. Creates a PR: release/<version> -> main.
 4. Stops and waits for PR approval.
 5. On approval, the second workflow finishes the release.
 
@@ -49,7 +49,7 @@ Hotfix (always auto-complete)
 
 ### 2. Component Release Finish On Approval (component-release-finish-on-approval.yml)
 
-Triggered on approved review for release/* PRs targeting develop.
+Triggered on approved review for release/* PRs targeting main.
 
 #### What it does
 1. Verifies PR review decision is APPROVED.
@@ -64,7 +64,13 @@ Triggered on approved review for release/* PRs targeting develop.
 Both workflows use:
 
 - RDKCM_DEPLOY_KEY: SSH private key used by checkout and git push operations.
-- RDKCM_RDKE: token used by gh API/CLI calls.
+- github.token: built-in ephemeral GitHub Actions token used by gh API/CLI calls.
+
+Why github.token:
+
+- It is automatically provided for each workflow run.
+- It avoids introducing a custom repository secret for API access.
+- It works with the workflow permissions already declared in the job.
 
 ## Failure Cleanup Safety
 
@@ -84,7 +90,7 @@ On failure, cleanup only removes refs created by the current run:
 
 ### Branch Protection
 
-- For approvable flow: enforce PR review rules on develop.
+- For approvable flow: enforce PR review rules on main.
 - For auto-complete flow pushes to develop: ensure the automation actor has appropriate bypass rights in repository rules.
 
 ## Version Format

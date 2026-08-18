@@ -44,7 +44,7 @@ jobs:
       SOURCE_BRANCH: ${{ github.event.inputs.source_branch }}
       REPO: ${{ github.repository }}
       ACTOR: ${{ github.actor }}
-      GH_TOKEN: ${{ secrets.RDKCM_RDKE }}
+      GH_TOKEN: ${{ github.token }}
 
     steps:
       - name: Validate version format
@@ -142,16 +142,16 @@ jobs:
             git flow release publish "${RELEASE_VERSION}"
           fi
 
-          existing_pr=$(gh pr list --head "${release_branch}" --base develop --state open --json number -q '.[0].number')
+          existing_pr=$(gh pr list --head "${release_branch}" --base main --state open --json number -q '.[0].number')
           if [ -z "${existing_pr}" ]; then
             gh pr create \
-              --base develop \
+              --base main \
               --head "${release_branch}" \
               --title "Release ${RELEASE_VERSION}" \
               --body "Automated release PR for ${RELEASE_VERSION}. Approve this PR to trigger release finish."
             echo "PR created. Waiting for approval to finish release."
           else
-            echo "PR from ${release_branch} to develop already exists (#${existing_pr})."
+            echo "PR from ${release_branch} to main already exists (#${existing_pr})."
           fi
 
       - name: "Hotfix: validate source branch"

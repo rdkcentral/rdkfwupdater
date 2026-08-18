@@ -119,6 +119,9 @@ int DirectCDNDownload( XCONFRES *response, char *cur_img_name, DeviceProperty_t 
                                cnt + 1, total_retry_cnt, pci_upgrade_status, pdri_upgrade_status);
 
                     // Build context struct for XConf query (refactored API)
+                    // direct_cdn = false for XConf: the query itself needs mTLS and
+                    // Codebig fallback, matching RDKV-reference behaviour where
+                    // upgradeRequest(XCONF_UPGRADE, server_type, false, ...) is used.
                     RdkUpgradeContext_t xconf_ctx = {0};
                     xconf_ctx.upgrade_type = XCONF_UPGRADE;
                     xconf_ctx.server_type = server_type;
@@ -133,7 +136,7 @@ int DirectCDNDownload( XCONFRES *response, char *cur_img_name, DeviceProperty_t 
                     xconf_ctx.force_exit = &force_exit;
                     xconf_ctx.trigger_type = getTriggerType();
                     xconf_ctx.rfc_list = &rfc_list;
-                    xconf_ctx.direct_cdn = true;
+                    xconf_ctx.direct_cdn = false;
 
                     void *xconf_curl = NULL;
                     ret = rdkv_upgrade_request(&xconf_ctx, &xconf_curl, pHttp_code);

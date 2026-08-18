@@ -17,13 +17,13 @@ jobs:
     name: Finish release when PR is approved
     if: >
       github.event.review.state == 'approved' &&
-      github.event.pull_request.base.ref == 'develop' &&
+      github.event.pull_request.base.ref == 'main' &&
       startsWith(github.event.pull_request.head.ref, 'release/')
     runs-on: ubuntu-latest
     env:
       REPO: ${{ github.repository }}
       ACTOR: ${{ github.event.review.user.login }}
-      GH_TOKEN: ${{ secrets.RDKCM_RDKE }}
+      GH_TOKEN: ${{ github.token }}
       RELEASE_BRANCH: ${{ github.event.pull_request.head.ref }}
 
     steps:
