@@ -9,7 +9,7 @@ git checkout develop
 autoreconf -i
 ./configure  --enable-rdkcertselector --prefix=${INSTALL_DIR} CFLAGS=" -DRDK_LOGGER "
 make && make install
-
+cd ../
 # Below dependencies are available in native build containers 
 # 1] utilities
 # 2] libsyswrapper
@@ -17,5 +17,5 @@ make && make install
 
 #Build rdkfwupdater
 autoreconf -i
-./configure --prefix=${INSTALL_DIR} CFLAGS="-DRDK_LOGGER" --enable-extended-logger
+./configure --prefix=${INSTALL_DIR} CFLAGS="-DRDK_LOGGER"
 make && make install

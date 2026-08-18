@@ -383,12 +383,21 @@ TEST(TestupdateOPTOUTFile, TestName_Fail)
 }
 TEST_F(CreateJsonTestFixture, TestName_checkCodebigAccess_Success)
 {
+    EXPECT_CALL(*g_DeviceStatusMock, isDirectCDNEnabled()).Times(1).WillOnce(Return(false));
     EXPECT_CALL(*g_DeviceStatusMock, v_secure_system(_)).Times(1).WillOnce(Return(0));
     EXPECT_EQ(checkCodebigAccess(), true);
 }
 TEST_F(CreateJsonTestFixture, TestName_checkCodebigAccess_Fail)
 {
+    EXPECT_CALL(*g_DeviceStatusMock, isDirectCDNEnabled()).Times(1).WillOnce(Return(false));
     EXPECT_CALL(*g_DeviceStatusMock, v_secure_system(_)).Times(1).WillOnce(Return(1));
+    EXPECT_EQ(checkCodebigAccess(), false);
+}
+TEST_F(CreateJsonTestFixture, TestName_checkCodebigAccess_DirectCDN_Bypass)
+{
+    EXPECT_CALL(*g_DeviceStatusMock, isDirectCDNEnabled()).Times(1).WillOnce(Return(true));
+    /* v_secure_system must NOT be called when Direct CDN is enabled */
+    EXPECT_CALL(*g_DeviceStatusMock, v_secure_system(_)).Times(0);
     EXPECT_EQ(checkCodebigAccess(), false);
 }
 TEST_F(CreateJsonTestFixture, TestName_isStateRedSupported_Success)

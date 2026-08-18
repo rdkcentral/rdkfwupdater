@@ -33,6 +33,27 @@
 #endif
 #include "flash.h"
 
+/**
+ * @brief Convert upgrade error code to human-readable string
+ * @param error Error code (negative = library error, positive = CURL error, 0 = success)
+ * @return Human-readable error message string
+ */
+const char* rdkv_upgrade_strerror(int error) {
+    switch(error) {
+        case RDKV_UPGRADE_SUCCESS:
+            return "Success";
+        case RDKV_UPGRADE_ERROR_THROTTLE_ZERO:
+            return "Throttle speed set to 0 - download blocked";
+        case RDKV_UPGRADE_ERROR_FORCE_EXIT:
+            return "Force exit requested (curl error 23)";
+        default:
+            if (error > 0) {
+                return "CURL error"; // Existing CURL error codes
+            }
+            return "Unknown library error";
+    }
+}
+
 /* Description: Use for save process id and store inside file.
  * @param: file: file name to save pid
  * @param: data: data to save inside file.
@@ -97,19 +118,20 @@ bool checkForTlsErrors(int curl_code, const char *type)
 /* Description:Use for store download error and send telemetry
  * @param: curl_code : curl return status
  * @param: http_code : http return status
- * @return void:
+ * @return int: RDKV_UPGRADE_ERROR_STATE_RED if state red entered, 0 otherwise
  * */
-void dwnlError(int curl_code, int http_code, int server_type,const DeviceProperty_t *device_info,const char *lastrun,char *disableStatsUpdate)
+int dwnlError(int curl_code, int http_code, int server_type,const DeviceProperty_t *device_info,const char *lastrun,char *disableStatsUpdate)
 {
     char telemetry_data[32];
     char device_type[32];
     struct FWDownloadStatus fwdls;
     char failureReason[128];
     char *type = "Direct"; //TODO: Need to pass this type as a function parameter
+    int state_red_ret = 0;
 
     if (device_info == NULL) {
         SWLOG_ERROR("%s: device_info parameter is NULL\n", __FUNCTION__);
-        return;
+        return 0;
     }
 
     *failureReason = 0;
@@ -167,7 +189,7 @@ void dwnlError(int curl_code, int http_code, int server_type,const DevicePropert
         snprintf(fwdls.dnldVersn, sizeof(fwdls.dnldVersn), "DnldVersn|\n");
         snprintf(fwdls.dnldfile, sizeof(fwdls.dnldfile), "DnldFile|\n");
         snprintf(fwdls.dnldurl, sizeof(fwdls.dnldurl), "DnldURL|\n");
-        snprintf(fwdls.lastrun, sizeof(fwdls.lastrun), "LastRun|%s\n", lastrun); // lastrun his data should come from script as a argument
+        snprintf(fwdls.lastrun, sizeof(fwdls.lastrun), "LastRun|%s\n", lastrun ? lastrun : "");
         snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Failed\n");
         snprintf(fwdls.DelayDownload, sizeof(fwdls.DelayDownload), "DelayDownload|\n"); // This data should come from script as a argument
         updateFWDownloadStatus(&fwdls, disableStatsUpdate);
@@ -175,11 +197,24 @@ void dwnlError(int curl_code, int http_code, int server_type,const DevicePropert
     // HTTP CODE 495 - Expired client certificate not in servers allow list
     if( http_code == 495 ) {
         SWLOG_INFO("%s : Calling checkAndEnterStateRed() with code:%d\n", __FUNCTION__, http_code);
-        checkAndEnterStateRed(http_code, disableStatsUpdate);
+        state_red_ret = checkAndEnterStateRed(http_code, disableStatsUpdate);
+        if (state_red_ret != 0) {
+            SWLOG_ERROR("%s : State red entered due to HTTP error %d\n", __FUNCTION__, http_code);
+        }
     }else {
         SWLOG_INFO("%s : Calling checkAndEnterStateRed() with code:%d\n", __FUNCTION__, curl_code);
-        checkAndEnterStateRed(curl_code, disableStatsUpdate);
+        state_red_ret = checkAndEnterStateRed(curl_code, disableStatsUpdate);
+        if (state_red_ret != 0) {
+            SWLOG_ERROR("%s : State red entered due to curl error %d\n", __FUNCTION__, curl_code);
+        }
     }
+    /* If device is already in state red (Instance B recovery), checkAndEnterStateRed
+     * returns 0 early. Still signal callers to skip retries — retrying with the same
+     * broken cert/TLS config is pointless. */
+    if (state_red_ret == 0 && isInStateRed() == 1) {
+        state_red_ret = RDKV_UPGRADE_ERROR_STATE_RED;
+    }
+    return state_red_ret;
 }
 
 /* Description: Save http value inside file
@@ -482,10 +517,33 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
                 }
                 unsetStateRed();
             }
+	    if (ret_curl_code == RDKV_UPGRADE_ERROR_THROTTLE_ZERO ){
+		    return RDKV_UPGRADE_ERROR_THROTTLE_ZERO;	
+	    }
+	    else if (ret_curl_code == RDKV_UPGRADE_ERROR_FORCE_EXIT) {
+		    return RDKV_UPGRADE_ERROR_FORCE_EXIT;
+	    }
+	    else if (ret_curl_code == RDKV_UPGRADE_ERROR_STATE_RED) {
+		    return RDKV_UPGRADE_ERROR_STATE_RED;
+	    }
+
+            /* Direct CDN: HTTP 403 means token expired — return immediately
+             * so outer DirectCDNDownload() loop can re-query XConf for fresh URL.
+             * Matches RDKV-reference rdkv_main.c lines 1114-1119. */
+            if (ret_curl_code == CURL_SUCCESS && *pHttp_code == 403 && context->direct_cdn &&
+                server_type == HTTP_SSR_DIRECT) {
+                SWLOG_INFO("%s: Direct CDN HTTP 403 (token expired) - returning to refresh URL\n", __FUNCTION__);
+                return ret_curl_code;
+            }
+
             if (ret_curl_code != CURL_SUCCESS ||
                 (*pHttp_code != HTTP_SUCCESS && *pHttp_code != HTTP_CHUNK_SUCCESS && *pHttp_code != HTTP_PAGE_NOT_FOUND)) {
                 ret_curl_code = retryDownload(context, RETRY_COUNT, 60, pHttp_code, curl);
                 if (ret_curl_code == CURL_CONNECTIVITY_ISSUE || *pHttp_code == 0) {
+                    /* Direct CDN mode: skip Codebig fallback */
+                    if (context->direct_cdn) {
+                        SWLOG_INFO("%s : Direct CDN mode - skipping Codebig fallback\n", __FUNCTION__);
+                    } else {
                     if (server_type == HTTP_SSR_DIRECT) {
                         SWLOG_ERROR("%s : Direct Image upgrade Failed: http_code:%d, attempting codebig\n", __FUNCTION__, *pHttp_code);
                     }else {
@@ -501,11 +559,21 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
                         fallback_context.server_type = HTTP_XCONF_CODEBIG;
                     }
                     ret_curl_code = fallBack(&fallback_context, pHttp_code, curl);
+                    }
                 }
             }
         }
         else if (server_type == HTTP_SSR_CODEBIG || server_type == HTTP_XCONF_CODEBIG) {
             ret_curl_code = codebigdownloadFile(context, pHttp_code, curl);
+	    if (ret_curl_code == RDKV_UPGRADE_ERROR_THROTTLE_ZERO ){
+                    return RDKV_UPGRADE_ERROR_THROTTLE_ZERO;
+            }
+            else if (ret_curl_code == RDKV_UPGRADE_ERROR_FORCE_EXIT) {
+                    return RDKV_UPGRADE_ERROR_FORCE_EXIT;
+            }
+            else if (ret_curl_code == RDKV_UPGRADE_ERROR_STATE_RED) {
+                    return RDKV_UPGRADE_ERROR_STATE_RED;
+            }
             if (ret_curl_code != CURL_SUCCESS ||
                 (*pHttp_code != HTTP_SUCCESS && *pHttp_code != HTTP_CHUNK_SUCCESS && *pHttp_code != HTTP_PAGE_NOT_FOUND)) {
                 if( ret_curl_code != CODEBIG_SIGNING_FAILED )
@@ -580,6 +648,10 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
 	    if( isInStateRed() ) {
                  SWLOG_INFO("RED recovery download complete\n");
                  eventManager(RED_STATE_EVENT, RED_RECOVERY_DOWNLOADED);
+		 int rfc_ret = write_RFCProperty("REDRECV", RFC_RED_RECV, "DOWNLOADED", RFC_STRING);
+		 if (rfc_ret == WRITE_RFC_FAILURE) {
+			 SWLOG_ERROR("write_RFCProperty() return failed Status %d\n", rfc_ret);
+		 }
             }
             SWLOG_INFO("Downloaded %s of size %d\n", dwlpath_filename, getFileSize(dwlpath_filename));
             Upgradet2CountNotify("Filesize_split", getFileSize(dwlpath_filename));
@@ -615,7 +687,9 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
                         logMilestone(cmd_args);
                     }
                 } else {
-                    SWLOG_INFO("PDRI image Flash upgrade successful.\n");
+					if (flash_status == 0) {
+                        SWLOG_INFO("PDRI image Flash upgrade successful.\n");
+					}
                 }
             }
         }
@@ -656,7 +730,12 @@ int codebigdownloadFile(
         SWLOG_ERROR("%s: curl parameter (pointer) is NULL\n", __FUNCTION__);
         return curl_ret_code;
     }
-
+     *httpCode = 0;
+    /* Direct CDN mode must never enter Codebig path */
+    if (context->direct_cdn) {
+        SWLOG_INFO("%s: Direct CDN mode - Codebig path not permitted, returning\n", __FUNCTION__);
+        return curl_ret_code;
+    }
 
     int server_type = context->server_type;
     const char* artifactLocationUrl = context->artifactLocationUrl;
@@ -674,7 +753,7 @@ int codebigdownloadFile(
         SWLOG_ERROR("%s: artifactLocationUrl or localDownloadLocation is NULL\n", __FUNCTION__);
         return curl_ret_code;
     }
-    *httpCode = 0;
+   
 
 #ifdef DEBUG_CODEBIG_CDL
     if( filePresentCheck( "/tmp/.forceCodebigFailure" ) == RDK_API_SUCCESS )
@@ -762,9 +841,9 @@ int codebigdownloadFile(
             }
             doStopDownload(*curl);
 	    *curl = NULL;
-            if (*force_exit == 1 && (curl_ret_code == 23)) {
-                uninitialize(INITIAL_VALIDATION_SUCCESS);
-                exit(1);
+            if (force_exit != NULL && *force_exit == 1 && (curl_ret_code == 23)) {
+                SWLOG_INFO("%s : Force exit after codebig download (curl error 23)\n", __FUNCTION__);
+                return RDKV_UPGRADE_ERROR_FORCE_EXIT;
             }
         }
 
@@ -882,17 +961,22 @@ int downloadFile(
     state_red = isInStateRed();
 #ifdef LIBRDKCERTSELECTOR
     static rdkcertselector_h thisCertSel = NULL;
-    if (thisCertSel == NULL) {
-        const char* certGroup = (state_red == 1) ? "RCVRY" : "MTLS";
-        thisCertSel = rdkcertselector_new(DEFAULT_CONFIG, DEFAULT_HROT, certGroup);
-        if (thisCertSel == NULL) {
-            SWLOG_ERROR("%s, %s Cert selector initialization failed\n", __FUNCTION__, (state_red == 1) ? "State red" : "normal state");
-            return curl_ret_code;
-        } else {
-            SWLOG_INFO("%s, %s Cert selector initialized successfully\n", __FUNCTION__, (state_red == 1) ? "State red" : "normal state");
-        }
+    if (context->direct_cdn && server_type == HTTP_SSR_DIRECT && state_red != 1) {
+        SWLOG_INFO("%s: Direct CDN mode (non-state-red) - skipping cert selector init\n", __FUNCTION__);
+        mtls_enable = -1;
     } else {
-        SWLOG_INFO("%s, Cert selector already initialized, reusing the existing instance\n", __FUNCTION__);
+        if (thisCertSel == NULL) {
+            const char* certGroup = (state_red == 1) ? "RCVRY" : "MTLS";
+            thisCertSel = rdkcertselector_new(DEFAULT_CONFIG, DEFAULT_HROT, certGroup);
+            if (thisCertSel == NULL) {
+                SWLOG_ERROR("%s, %s Cert selector initialization failed\n", __FUNCTION__, (state_red == 1) ? "State red" : "normal state");
+                return curl_ret_code;
+            } else {
+                SWLOG_INFO("%s, %s Cert selector initialized successfully\n", __FUNCTION__, (state_red == 1) ? "State red" : "normal state");
+            }
+        } else {
+            SWLOG_INFO("%s, Cert selector already initialized, reusing the existing instance\n", __FUNCTION__);
+        }
     }
 #endif
     
@@ -941,22 +1025,23 @@ int downloadFile(
     }
 
     if ((1 == (isThrottleEnabled(device_info->dev_name, immed_reboot_flag, app_mode)))) {
-        /* Coverity fix: NO_EFFECT - rfc_throttle is a char array, not a pointer.
-         * Removed redundant "!= NULL" check. Only check for non-empty string.
-         * Ensure rfc_list is valid before dereferencing. */
         if (rfc_list != NULL && rfc_list->rfc_throttle[0] != '\0' &&
             0 == (strncmp(rfc_list->rfc_throttle, "true", 4))) {
             max_dwnl_speed = atoi(rfc_list->rfc_topspeed);
             SWLOG_INFO("%s : Throttle feature is Enable\n", __FUNCTION__);
             Upgradet2CountNotify("SYST_INFO_Thrtl_Enable", 1);
             if (max_dwnl_speed == 0) {
-                SWLOG_INFO("%s : Throttle speed set to 0. So exiting the download process\n", __FUNCTION__);
+                SWLOG_INFO("%s : Throttle speed set to 0. Returning error to caller\n", __FUNCTION__);
                 if (!(strncmp(device_info->maint_status, "true", 4))) {
                     eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR);
                 }
                 eventManager(FW_STATE_EVENT, FW_STATE_FAILED);
-                uninitialize(INITIAL_VALIDATION_SUCCESS);
-                exit(1); //maintenance mode is background and speed set to 0. So exiting the process
+#ifdef LIBRDKCERTSELECTOR
+                if (thisCertSel != NULL) {
+                    rdkcertselector_free(&thisCertSel);
+                }
+#endif
+                return RDKV_UPGRADE_ERROR_THROTTLE_ZERO;
             }
         } else {
             SWLOG_INFO("%s : Throttle feature is Disable\n", __FUNCTION__);
@@ -975,36 +1060,64 @@ int downloadFile(
     if (disableStatsUpdate != NULL && (strcmp(disableStatsUpdate, "yes")) && (server_type == HTTP_SSR_DIRECT)) {
         chunk_dwnl = isIncremetalCDLEnable(file_dwnl.pathname);
     }
-#ifndef LIBRDKCERTSELECTOR	
-    SWLOG_INFO("1 Fetching MTLS credential for SSR/XCONF\n");
-    ret = getMtlscert(&sec);
-    if (-1 == ret) {
-        SWLOG_ERROR("%s : getMtlscert() Featching MTLS fail. Going For NON MTLS:%d\n", __FUNCTION__, ret);
-        mtls_enable = -1;//If certificate or key featching fail try with non mtls
-    }else {
-        SWLOG_INFO("MTLS is enable\nMTLS creds for SSR fetched ret=%d\n", ret);
-        Upgradet2CountNotify("SYS_INFO_MTLS_enable", 1);
+#ifndef LIBRDKCERTSELECTOR
+    if (context->direct_cdn && server_type == HTTP_SSR_DIRECT && state_red != 1) {
+        SWLOG_INFO("%s: Direct CDN mode (non-state-red) - skipping mTLS cert fetch\n", __FUNCTION__);
+        mtls_enable = -1;
+    } else {
+        SWLOG_INFO("Fetching MTLS credential for SSR/XCONF\n");
+        ret = getMtlscert(&sec);
+        if (-1 == ret) {
+            SWLOG_ERROR("%s: getMtlscert() failed to fetch mTLS credentials. Falling back to non-mTLS (ret=%d)\n", __FUNCTION__, ret);
+
+            mtls_enable = -1; // If certificate or key fetching fails, try with non-mTLS
+        } else {
+            SWLOG_INFO("MTLS is enable\nMTLS creds for SSR fetched ret=%d\n", ret);
+            Upgradet2CountNotify("SYS_INFO_MTLS_enable", 1);
+        }
     }
 #endif	
     (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_INIT) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_INIT);
 #ifdef LIBRDKCERTSELECTOR
     do {
-        SWLOG_INFO("Fetching MTLS credential for SSR/XCONF\n");
-        ret = getMtlscert(&sec, &thisCertSel);
-        SWLOG_INFO("%s, getMtlscert function ret value = %d\n", __FUNCTION__, ret);
+        if (!(context->direct_cdn && server_type == HTTP_SSR_DIRECT && state_red != 1)) {
+            SWLOG_INFO("Fetching MTLS credential for SSR/XCONF\n");
+            ret = getMtlscert(&sec, &thisCertSel);
+            SWLOG_INFO("%s, getMtlscert function ret value = %d\n", __FUNCTION__, ret);
 
-        if (ret == MTLS_CERT_FETCH_FAILURE) {
-            SWLOG_ERROR("%s : ret=%d\n", __FUNCTION__, ret);
-            SWLOG_ERROR("%s : All MTLS certs are failed. Falling back to state red.\n", __FUNCTION__);
-            checkAndEnterStateRed(CURL_MTLS_LOCAL_CERTPROBLEM, disableStatsUpdate);
-            return curl_ret_code;
-        } else if (ret == STATE_RED_CERT_FETCH_FAILURE) {
-            SWLOG_ERROR("%s : State red cert failed.\n", __FUNCTION__);
-            return curl_ret_code;
-        } else {
-            SWLOG_INFO("MTLS is enabled\nMTLS creds for SSR fetched ret=%d\n", ret);
-            Upgradet2CountNotify("SYS_INFO_MTLS_enable", 1);
-	}
+            if (ret == MTLS_CERT_FETCH_FAILURE) {
+                SWLOG_ERROR("%s : ret=%d\n", __FUNCTION__, ret);
+                SWLOG_ERROR("%s : All MTLS certs are failed. Falling back to state red.\n", __FUNCTION__);
+                if (checkAndEnterStateRed(CURL_MTLS_LOCAL_CERTPROBLEM, disableStatsUpdate) != 0) {
+                    SWLOG_ERROR("%s : State red entered due to MTLS cert problem\n", __FUNCTION__);
+                }
+                return RDKV_UPGRADE_ERROR_STATE_RED;
+            } else if (ret == STATE_RED_CERT_FETCH_FAILURE) {
+                SWLOG_ERROR("%s : State red cert failed.\n", __FUNCTION__);
+                return curl_ret_code;
+            } else {
+                SWLOG_INFO("MTLS is enabled\nMTLS creds for SSR fetched ret=%d\n", ret);
+                Upgradet2CountNotify("SYS_INFO_MTLS_enable", 1);
+            }
+        }
+#endif
+#if 0 /* Approach A - file-based 403 simulation (Build A in Jenkins) */
+        /* Test hook: simulate HTTP 403 for Direct CDN firmware downloads.
+         * Only fires for actual artifact downloads (direct_cdn=true, SSR_DIRECT),
+         * not XConf queries. Create /tmp/.force_403_direct_cdn to trigger. */
+        if (context->direct_cdn && server_type == HTTP_SSR_DIRECT) {
+            if ((filePresentCheck("/tmp/.force_403_direct_cdn")) == 0) {
+                SWLOG_WARN("%s: [TEST_HOOK] /tmp/.force_403_direct_cdn present - simulating HTTP 403\n", __FUNCTION__);
+                *httpCode = 403;
+                curl_ret_code = CURL_SUCCESS;
+#ifdef LIBRDKCERTSELECTOR
+                if (thisCertSel != NULL) {
+                    rdkcertselector_free(&thisCertSel);
+                }
+#endif
+                return curl_ret_code;
+            }
+        }
 #endif
         do {
             if ((1 == state_red)) {
@@ -1024,9 +1137,14 @@ int downloadFile(
 	                (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_EXIT) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_EXIT);
                     doStopDownload(*curl);
 	                *curl = NULL;
-	                if (*force_exit == 1 && (curl_ret_code == 23)) {
-	                    uninitialize(INITIAL_VALIDATION_SUCCESS);
-	                    exit(1);
+	                if (force_exit != NULL && *force_exit == 1 && (curl_ret_code == 23)) {
+	                    SWLOG_INFO("%s : Force exit (state_red path, curl error 23)\n", __FUNCTION__);
+#ifdef LIBRDKCERTSELECTOR
+                            if (thisCertSel != NULL) {
+                                rdkcertselector_free(&thisCertSel);
+                            }
+#endif
+	                    return RDKV_UPGRADE_ERROR_FORCE_EXIT;
 	                }
 	            }
 	        }
@@ -1046,9 +1164,14 @@ int downloadFile(
                           (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_EXIT) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_EXIT);
                           doStopDownload(*curl);
                           *curl = NULL;
-	                  if (*force_exit == 1 && (curl_ret_code == 23)) {
-	                      uninitialize(INITIAL_VALIDATION_SUCCESS);
-	                      exit(1);
+	                  if (force_exit != NULL && *force_exit == 1 && (curl_ret_code == 23)) {
+	                      SWLOG_INFO("%s : Force exit (mTLS enabled path, curl error 23)\n", __FUNCTION__);
+#ifdef LIBRDKCERTSELECTOR
+                              if (thisCertSel != NULL) {
+                                  rdkcertselector_free(&thisCertSel);
+                              }
+#endif
+	                      return RDKV_UPGRADE_ERROR_FORCE_EXIT;
                           }
                       }
                   }
@@ -1068,9 +1191,14 @@ int downloadFile(
                         (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_EXIT) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_EXIT);
                         doStopDownload(*curl);
                         *curl = NULL;
-	                if (*force_exit == 1 && (curl_ret_code == 23)) {
-	                    uninitialize(INITIAL_VALIDATION_SUCCESS);
-	                    exit(1);
+	                if (force_exit != NULL && *force_exit == 1 && (curl_ret_code == 23)) {
+	                    SWLOG_INFO("%s : Force exit (mTLS disabled path, curl error 23)\n", __FUNCTION__);
+#ifdef LIBRDKCERTSELECTOR
+                            if (thisCertSel != NULL) {
+                                rdkcertselector_free(&thisCertSel);
+                            }
+#endif
+	                    return RDKV_UPGRADE_ERROR_FORCE_EXIT;
                         }
                     }
                 }
@@ -1082,7 +1210,8 @@ int downloadFile(
             // Sleep for 10 seconds in case of curl 56 (CURL_RECV_ERROR) for network to stabilize if this is due to network issue. 
         } while(chunk_dwnl && (CURL_LOW_BANDWIDTH == curl_ret_code || CURLTIMEOUT == curl_ret_code || ((CURL_RECV_ERROR == curl_ret_code) && !sleep(10)) ));
 #ifdef LIBRDKCERTSELECTOR
-    } while (rdkcertselector_setCurlStatus(thisCertSel, curl_ret_code, file_dwnl.url) == TRY_ANOTHER);
+    } while (!(context->direct_cdn && server_type == HTTP_SSR_DIRECT && state_red != 1) &&
+             rdkcertselector_setCurlStatus(thisCertSel, curl_ret_code, file_dwnl.url) == TRY_ANOTHER);
 #endif
     if((filePresentCheck(CURL_PROGRESS_FILE)) == 0) {
         SWLOG_INFO("%s : Curl Progress data...\n", __FUNCTION__);
@@ -1103,7 +1232,12 @@ int downloadFile(
     }else {
         SWLOG_ERROR("%s : Direct Image upgrade Fail: curl ret:%d http_code:%d\n", __FUNCTION__, curl_ret_code, *httpCode);
         (server_type == HTTP_SSR_DIRECT) ? setDwnlState(RDKV_FWDNLD_DOWNLOAD_FAILED) : setDwnlState(RDKV_XCONF_FWDNLD_DOWNLOAD_FAILED);
-        dwnlError(curl_ret_code, *httpCode, server_type,device_info,lastrun,disableStatsUpdate);
+        int state_red_ret = dwnlError(curl_ret_code, *httpCode, server_type,device_info,lastrun,disableStatsUpdate);
+        if (state_red_ret == RDKV_UPGRADE_ERROR_STATE_RED || isInStateRed() == 1) {
+
+            SWLOG_INFO("%s : State red entered during download, skipping retry\n", __FUNCTION__);
+            return RDKV_UPGRADE_ERROR_STATE_RED;
+        }
         if( *(file_dwnl.pathname) != 0 )
         {
             unlink(file_dwnl.pathname);
@@ -1175,6 +1309,9 @@ int retryDownload(
                 (server_type == HTTP_SSR_DIRECT) ? SWLOG_INFO("%s : Received 404 response for Direct Image upgrade, Retry logic not needed\n", __FUNCTION__) : SWLOG_INFO("%s : Received 404 response Direct Image upgrade from xconf, Retry logic not needed\n", __FUNCTION__);
                 break;
             } else if(curl_ret_code == DWNL_BLOCK) {
+                break;
+            } else if (context->direct_cdn && server_type == HTTP_SSR_DIRECT && *httpCode == 403) {
+                SWLOG_INFO("%s: HTTP 403 with Direct CDN - token expired, breaking retry loop\n", __FUNCTION__);
                 break;
             } else {
                 (server_type == HTTP_SSR_DIRECT) ? SWLOG_INFO("%s : Direct Image upgrade return: retry=%d ret:%d http_code:%d\n", __FUNCTION__, retry_completed, curl_ret_code, *httpCode) : SWLOG_INFO("%s : Direct Image upgrade connection return: retry=%d ret:%d http_code:%d\n", __FUNCTION__, retry_completed, curl_ret_code, *httpCode);
@@ -1248,6 +1385,12 @@ int fallBack(
         //curl_ret_code = codebigdownloadFile(artifactLocationUrl, localDownloadLocation, httpCode);
         SWLOG_INFO("%s: calling retryDownload\n", __FUNCTION__ );
         curl_ret_code = retryDownload(context, CB_RETRY_COUNT, 10, httpCode, curl);
+	if (curl_ret_code == RDKV_UPGRADE_ERROR_THROTTLE_ZERO ){
+                    return RDKV_UPGRADE_ERROR_THROTTLE_ZERO;
+        }
+        else if (curl_ret_code == RDKV_UPGRADE_ERROR_FORCE_EXIT) {
+                return RDKV_UPGRADE_ERROR_FORCE_EXIT;
+         }
         if ((curl_ret_code == CURL_SUCCESS) && (*httpCode == HTTP_SUCCESS || *httpCode == HTTP_CHUNK_SUCCESS)) {
             SWLOG_INFO("%s : Codebig Image upgrade Success: ret=%d httpcode=%d\n", __FUNCTION__, curl_ret_code, *httpCode);
             if ((filePresentCheck(DIRECT_BLOCK_FILENAME)) != 0) {

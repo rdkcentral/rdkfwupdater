@@ -36,7 +36,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <signal.h>
-
+#include "deviceutils_mock_global.h"
 extern "C" {
 #include "rdkv_cdl_log_wrapper.h"
 #include "miscellaneous.h"
@@ -61,8 +61,8 @@ int getDeviceProperties(DeviceProperty_t *pDevice_info);
 int getImageDetails(ImageDetails_t *pImage_detail);
 // getRFCSettings and read_RFCProperty are declared in rfcinterface.h
 int createDir(const char *dirname);
-void init_event_handler(void);
-void term_event_handler(void);
+int init_event_handler(void);
+int term_event_handler(void);
 int filePresentCheck(const char *filename);
 void setForceStop(int value);
 void eventManager(const char *event_type, const char *event_data);
@@ -81,7 +81,7 @@ using namespace std;
 
 // Instantiate the global mock object for deviceutils_mock
 DeviceUtilsMock Deviceglobal;
-DeviceUtilsMock *g_DeviceUtilsMock = &Deviceglobal;
+//DeviceUtilsMock *g_DeviceUtilsMock = &Deviceglobal;
 
 // Test file paths
 #define TEST_CDL_FLASHED_IMAGE          "/tmp/test_cdl_flashed_file_name"

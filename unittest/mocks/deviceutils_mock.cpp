@@ -18,10 +18,12 @@
 
 #include "deviceutils_mock.h"
 #include <iostream>
+#include <cstdarg>
 
 using namespace std;
 
-extern DeviceUtilsMock *g_DeviceUtilsMock;
+// Define the global mock pointer (can be set by test suites)
+DeviceUtilsMock *g_DeviceUtilsMock = nullptr;
 
 extern "C" int v_secure_system(const char *mode, ...)
 {
@@ -30,8 +32,13 @@ extern "C" int v_secure_system(const char *mode, ...)
         cout << "v_secure_system g_DeviceUtilsMock object is NULL" << endl;
         return NULL;  // Return error code instead of NULL
     }
+    char formattedCmd[2048] = {0};
+    va_list args;
+    va_start(args, mode);
+    vsnprintf(formattedCmd, sizeof(formattedCmd), mode, args);
+    va_end(args);
     printf("Inside Mock Function v_secure_system\n");
-    return g_DeviceUtilsMock->v_secure_system(mode, NULL, NULL);
+    return (int)g_DeviceUtilsMock->v_secure_system(mode, formattedCmd, NULL);
 }
 //extern "C" FILE* v_secure_popen(const char *mode, const char *cmd, const char *opt )
 extern "C" FILE* v_secure_popen(const char *mode, ...)
@@ -54,6 +61,30 @@ extern "C" FILE* v_secure_popen(const char *mode, ...)
     printf("Inside Mock Function v_secure_popen\n");
     return g_DeviceUtilsMock->v_secure_popen(mode, cmd);
 }*/
+
+extern "C" void getDeviceTypeRFC(char *deviceType, size_t size)
+{
+    if (g_DeviceUtilsMock)
+    {
+        g_DeviceUtilsMock->getDeviceTypeRFC(deviceType, size);
+    }
+    else
+    {
+        cout << "getDeviceTypeRFC g_DeviceUtilsMock object is NULL" << endl;
+        if (deviceType != nullptr && size > 0)
+        {
+            const char *defaultType = "unknown";
+            size_t i = 0;
+            /* Copy up to size - 1 characters from defaultType, then NUL-terminate */
+            while (i + 1 < size && defaultType[i] != '\0')
+            {
+                deviceType[i] = defaultType[i];
+                ++i;
+            }
+            deviceType[i] = '\0';
+        }
+    }
+}
 
 extern "C" int v_secure_pclose(FILE *fp)
 {
@@ -143,6 +174,17 @@ extern "C" int read_RFCProperty(char* type, const char* key, char *out_value, si
     return g_DeviceUtilsMock->read_RFCProperty(type, key, out_value, datasize);
 }
 
+extern "C" int write_RFCProperty(char* type, const char* key, const char *value, RFCVALDATATYPE datatype)
+{
+    if (!g_DeviceUtilsMock)
+    {
+        cout << "write_RFCProperty g_DeviceUtilsMock object is NULL" << endl;
+        return -1;
+    }
+    printf("Inside Mock Function write_RFCProperty\n");
+    return g_DeviceUtilsMock->write_RFCProperty(type, key, value, datatype);
+}
+
 extern "C" int filePresentCheck(const char *filename)
 {
     if (!g_DeviceUtilsMock)
@@ -184,6 +226,25 @@ extern "C" bool isDebugServicesEnabled(void) {
         return g_DeviceUtilsMock->isDebugServicesEnabled();
     }
 
+#ifndef HANDLER_TEST_ONLY
+extern "C" bool isDirectCDNEnabled(void) {
+        if (!g_DeviceUtilsMock) {
+            cout << "isDirectCDNEnabled g_DeviceUtilsMock object is NULL" << endl;
+            return false;
+        }
+        return g_DeviceUtilsMock->isDirectCDNEnabled();
+    }
+#endif
+
+#ifdef HANDLER_TEST_ONLY
+/* Stub for test binaries that don't link real deviceutils.c */
+extern "C" int getPeripheralProduct(char *buf, size_t szIn) {
+        if (buf == NULL || szIn == 0) return -1;
+        snprintf(buf, szIn, "%s", "remCtrl");
+        return 0;
+    }
+#endif
+
 extern "C" size_t GetHwMacAddress( char *iface, char *pMac, size_t szBufSize )
 {
     if (!g_DeviceUtilsMock)
@@ -206,7 +267,23 @@ extern "C" size_t GetModelNum( char *pModelNum, size_t szBufSize )
     snprintf(pModelNum, szBufSize, "%s", "12345");
     return g_DeviceUtilsMock->GetModelNum(pModelNum, szBufSize);
 }
-
+extern "C" size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
+{
+    if (!g_DeviceUtilsMock) {
+        cout << "GetPDRIFileNameUsingMFR g_DeviceUtilsMock object is NULL" << endl;
+        return 0;
+    }
+    printf("Inside Mock Function GetPDRIFileNameUsingMFR\n");
+    // Give a fake file name for tests unless you want to do more in your mock object
+    const char *mockPDRI = "mock-PDRI-image.bin";
+    size_t len = strlen(mockPDRI);
+    if (pPDRIFilename && szBufSize > len) {
+        strncpy(pPDRIFilename, mockPDRI, szBufSize);
+        pPDRIFilename[szBufSize - 1] = '\0';
+        return len;
+    }
+    return g_DeviceUtilsMock->GetPDRIFileNameUsingMFR(pPDRIFilename, szBufSize);
+}
 #ifdef DEVICE_API
 extern "C" void t2CountNotify(char *marker)
 {

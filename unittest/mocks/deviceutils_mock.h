@@ -25,6 +25,19 @@
 //#include "rdk_fwdl_utils.h"  // For BUILDTYPE enum
 #define RDK_API_SUCCESS 0
 
+/* RFCVALDATATYPE is defined in rfcinterface.h. Include it here inside an
+ * extern "C" block so that the C symbols use C linkage in C++ tests and
+ * we avoid duplicating the typedef, which can cause redefinition errors
+ * when include order varies. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+#include "rfcinterface.h"
+#include "iarmInterface.h"	
+#ifdef __cplusplus
+}
+#endif
+
 class DeviceUtilsInterface
 {
     public:
@@ -37,14 +50,18 @@ class DeviceUtilsInterface
 	virtual int getJsonRpcData(void *Curl_req, FileDwnl_t *req_data, char token_header, int httpCode ) = 0;
 	virtual int getDevicePropertyData(const char *model, char *data, int size) = 0;
 	virtual int read_RFCProperty(char* type, const char* key, char *out_value, size_t datasize) = 0;
+	virtual int write_RFCProperty(char* type, const char* key, const char *value, RFCVALDATATYPE datatype) = 0;
+	virtual void getDeviceTypeRFC(char* deviceType, size_t datasize) = 0;
 	virtual int filePresentCheck(const char *filename) = 0;
 	virtual int getFileSize(const char *filename) = 0;
 	virtual bool isInStateRed() = 0;
 	virtual bool isDebugServicesEnabled() = 0;
+	virtual bool isDirectCDNEnabled() = 0;
         virtual size_t GetHwMacAddress( char *iface, char *pMac, size_t szBufSize ) = 0;
 	virtual size_t GetModelNum( char *pModelNum, size_t szBufSize ) = 0;
         virtual void t2CountNotify(char *marker) = 0;
         virtual void t2ValNotify(char *marker, char *val) = 0;
+	virtual size_t GetPDRIFileNameUsingMFR( char *pPDRIFilename, size_t szBufSize ) = 0;
 };
 
 class DeviceUtilsMock: public DeviceUtilsInterface
@@ -59,13 +76,17 @@ class DeviceUtilsMock: public DeviceUtilsInterface
 	MOCK_METHOD(int, getJsonRpcData, (void *Curl_req, FileDwnl_t *req_data, char token_header, int httpCode ), ());
 	MOCK_METHOD(int, getDevicePropertyData, (const char *model, char *data, int size), ());
 	MOCK_METHOD(int, read_RFCProperty, (char* type, const char* key, char *out_value, size_t datasize), ());
+	MOCK_METHOD(int, write_RFCProperty, (char* type, const char* key, const char *value, RFCVALDATATYPE datatype), ());
 	MOCK_METHOD(int, filePresentCheck, (const char *filename ), ());
 	MOCK_METHOD(int, getFileSize, (const char *filename ), ());
 	MOCK_METHOD(bool, isInStateRed, (), ());
 	MOCK_METHOD(bool, isDebugServicesEnabled, (), ());
+	MOCK_METHOD(bool, isDirectCDNEnabled, (), ());
+	MOCK_METHOD(void, getDeviceTypeRFC, (char*, size_t), ());
 	MOCK_METHOD(size_t, GetHwMacAddress, (char *iface, char *pMac, size_t szBufSize), ());
 	MOCK_METHOD(size_t, GetModelNum, ( char *pModelNum, size_t szBufSize ), ());
         MOCK_METHOD(void, t2CountNotify, (char *marker), ());
         MOCK_METHOD(void, t2ValNotify, (char *marker, char *val), ());
+	MOCK_METHOD(size_t, GetPDRIFileNameUsingMFR, ( char *pPDRIFilename, size_t szBufSize ), ());
 };
 #endif
