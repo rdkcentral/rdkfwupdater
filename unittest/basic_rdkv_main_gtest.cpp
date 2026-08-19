@@ -30,6 +30,12 @@ extern "C" {
 //#include "json_process.h"
 //#include "rdk_fwdl_utils.h"
 int copyFile(const char *src, const char *target);
+
+unsigned int sleep(unsigned int seconds)
+{
+    (void)seconds;
+    return 0;
+}
 }
 
 #include "./mocks/device_status_helper_mock.h"
@@ -257,6 +263,7 @@ TEST(MainHelperFunctionTest, HandlesDownloadInProgressAppMode1) {
     setDwnlState(RDKV_FWDNLD_DOWNLOAD_INPROGRESS);
     strcpy(device_info.maint_status, "true");
     EXPECT_CALL(mockexternal,doGetDwnlBytes(_)).Times(1).WillOnce(Return(10));
+    EXPECT_CALL(mockexternal,doInteruptDwnl(_,0)).Times(1).WillOnce(Return(0));
     curl = (char *) rfc_list.rfc_throttle;
     interuptDwnl(1);
     curl = NULL;
@@ -1180,6 +1187,17 @@ TEST(MainHelperFunctionTest,initializeTest1){
     global_mockexternal_ptr = NULL;
 }
 
+TEST(MainHelperFunctionTest,initializeTest2){
+    MockExternal mockexternal;
+    global_mockexternal_ptr = &mockexternal;
+    EXPECT_CALL(mockexternal,getDeviceProperties(_)).Times(1).WillOnce(Return(0));
+    EXPECT_CALL(mockexternal,getImageDetails(_)).Times(1).WillOnce(Return(0));
+    EXPECT_CALL(mockexternal,getRFCSettings(_)).Times(1);
+    EXPECT_CALL(mockexternal,createDir(_)).Times(1).WillOnce(Return(-1));
+    EXPECT_EQ(initialize(), -1);
+    global_mockexternal_ptr = NULL;
+}
+
 TEST(MainHelperFunctionTest,saveHTTPCodeTest){
     saveHTTPCode(200, NULL);
     fflush(NULL);
@@ -1393,6 +1411,43 @@ TEST(MainHelperFunctionTest,flashImageTestMaintFalse){
     global_mockexternal_ptr = NULL;
     g_DeviceUtilsMock = nullptr;
 }
+
+TEST(MainHelperFunctionTest, postFlashTestMaintenanceCriticalReboot) {
+    unlink("/tmp/xconfchecknow_val");
+    unlink("/tmp/fw_preparing_to_reboot");
+    unlink("/tmp/RED_STATE_REBOOT");
+
+    MockExternal mockexternal;
+    global_mockexternal_ptr = &mockexternal;
+    DeviceUtilsMock DeviceMock;
+    g_DeviceUtilsMock = &DeviceMock;
+
+    EXPECT_CALL(DeviceMock, getDevicePropertyData(_, _, _)).WillRepeatedly(
+        Invoke([](const char *name, char *out_value, int size) {
+            if (strcmp(name, "DEVICE_TYPE") == 0) {
+                snprintf(out_value, size, "%s", "not_broadband");
+            } else if (strcmp(name, "DEVICE_NAME") == 0) {
+                snprintf(out_value, size, "%s", "PLATCO");
+            } else if (strcmp(name, "STAGE2LOCKFILE") == 0) {
+                snprintf(out_value, size, "%s", "/tmp/test_stage2_lock");
+            } else {
+                snprintf(out_value, size, "");
+            }
+            return 0;
+        }));
+    EXPECT_CALL(DeviceMock, filePresentCheck(_)).Times(AtLeast(1)).WillRepeatedly(Return(0));
+    EXPECT_CALL(DeviceMock, write_RFCProperty(_, _, _, _)).WillRepeatedly(Return(0));
+    EXPECT_CALL(DeviceMock, v_secure_system(_, _, _)).Times(AtLeast(1)).WillRepeatedly(Return((FILE *)1));
+    EXPECT_CALL(mockexternal, isMmgbleNotifyEnabled()).WillOnce(Return(true));
+    EXPECT_CALL(DeviceMock, isInStateRed()).WillOnce(Return(true));
+    EXPECT_CALL(mockexternal, eventManager(_, _)).WillRepeatedly(Return());
+    EXPECT_CALL(mockexternal, updateOPTOUTFile(_)).Times(1).WillOnce(Return(true));
+
+    EXPECT_EQ(postFlash("true", "firmware.bin", 0, "true", 3), 0);
+    global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = nullptr;
+}
+
 TEST(MainHelperFunctionTest,getXconfResTest){
     XCONFRES response;
     char data[] = "{\"firmwareDownloadProtocol\":\"http\",\"firmwareFilename\":\"HS_VBN_24_sprint_20240725233056sdy_NG-signed.bin\",\"firmwareLocation\":\"https://cdlserver.tv/Images\",\"firmwareVersion\":\"HS_VBN_24_sprint_20240725233056sdy_NG\",\"rebootImmediately\":false}";
@@ -1529,10 +1584,13 @@ TEST(MainHelperFunctionTest,ProcessResTest_NonProdBuild_ConfigOnlyOverrideTrigge
 {
     MockExternal mockexternal;
     global_mockexternal_ptr = &mockexternal;
-    EXPECT_CALL(mockexternal, GetBuildType(_, _))
-	    .WillRepeatedly(testing::Invoke([](char* buf, size_t size) -> int {
+    EXPECT_CALL(mockexternal, GetBuildType(_, _, _))
+        .WillRepeatedly(testing::Invoke([](char* buf, size_t size, BUILDTYPE* buildType) -> int {
+             if (buildType != nullptr) {
+                 *buildType = eDEV;
+             }
              snprintf(buf, size, "dev");
-	     return 3;
+             return 3;
     }));
  
     if (!EnsureRdmBinaryForTest()) {
@@ -3089,7 +3147,8 @@ TEST(DirectCDN403EarlyOutTest, FirstAttempt403_LegacyMode_RetriesNormally) {
     EXPECT_CALL(DeviceMock, getDevicePropertyData(_, _, _)).WillRepeatedly(Return(-1));
     EXPECT_CALL(mockexternal, CheckIProuteConnectivity(_)).WillRepeatedly(Return(false));
     EXPECT_CALL(mockexternal, checkCodebigAccess()).WillRepeatedly(Return(false));
-    /* With legacy mode, retries exhaust; HTTP 403 does not trigger Codebig fallback */
+    /* With legacy mode, retries exhaust; HTTP 403 does not trigger Codebig fallback */
+
     int result = rdkv_upgrade_request(&context, &test_curl, &http_code);
     /* With legacy mode, retries exhaust and codebig fallback may be attempted */
     EXPECT_EQ(http_code, 403);

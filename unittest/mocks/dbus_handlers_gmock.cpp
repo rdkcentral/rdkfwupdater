@@ -53,8 +53,6 @@ extern "C" {
 DeviceProperty_t device_info = {};  // Use empty initializer
 ImageDetails_t cur_img_detail = {};
 Rfc_t rfc_list = {};
-char lastDwnlImg[256] = {0};
-char currentImg[256] = {0};
 }
 
 // Global variables declared in rdkv_dbus_server.h (C++ linkage, not extern "C")
@@ -266,11 +264,10 @@ int getRFCSettings(Rfc_t *pRfc) {
 /**
  * @brief Mock implementation of eventManager
  */
-int eventManager(int event_type, int event_status) {
+void eventManager(const char *event_type, const char *event_status) {
     if (mock_iarm_interface) {
-        return mock_iarm_interface->eventManager(event_type, event_status);
+        mock_iarm_interface->eventManager(event_type, event_status);
     }
-    return 0;  // Success
 }
 
 // ============================================================================
@@ -385,10 +382,27 @@ void SetupDefaultMocks() {
         .WillByDefault(DoAll(
             Invoke([](char* json, size_t len) {
                 strncpy(json, "{\"test\":\"data\"}", len - 1);
+                json[len - 1] = '\0';
                 return strlen(json);
             }),
             Return(15)
         ));
+
+    ON_CALL(*mock_deviceutils, allocDowndLoadDataMem(_, _))
+        .WillByDefault(Invoke([](DownloadData* pDwnLoc, size_t size) {
+            if (pDwnLoc == NULL || size == 0) {
+                return -1;
+            }
+
+            pDwnLoc->pvOut = calloc(1, size);
+            if (pDwnLoc->pvOut == NULL) {
+                return -1;
+            }
+
+            pDwnLoc->memsize = size;
+            pDwnLoc->datasize = 0;
+            return 0;
+        }));
     
     ON_CALL(*mock_deviceutils, get_difw_path())
         .WillByDefault(Return(strdup("/opt/CDL")));
@@ -398,6 +412,21 @@ void SetupDefaultMocks() {
         .WillByDefault(DoAll(
             Invoke([](const RdkUpgradeContext_t* ctx, void** curl, int* http) {
                 *http = 200;
+                if (curl != NULL) {
+                    *curl = (void*)0x1;
+                }
+
+                if (ctx != NULL && ctx->dwlloc != NULL) {
+                    DownloadData* dwlloc = (DownloadData*)ctx->dwlloc;
+                    const char* json = "{\"firmwareVersion\":\"VERSION_2.0.0\","
+                                       "\"firmwareFilename\":\"test.bin\","
+                                       "\"firmwareLocation\":\"http://test.com/test.bin\","
+                                       "\"rebootImmediately\":\"false\"}";
+                    if (dwlloc->pvOut != NULL && dwlloc->memsize > 0) {
+                        snprintf((char*)dwlloc->pvOut, dwlloc->memsize, "%s", json);
+                        dwlloc->datasize = strlen((char*)dwlloc->pvOut);
+                    }
+                }
                 return 0;
             }),
             Return(0)
@@ -422,7 +451,7 @@ void SetupDefaultMocks() {
     
     // Default event manager
     ON_CALL(*mock_iarm_interface, eventManager(_, _))
-        .WillByDefault(Return(0));
+        .WillByDefault(Invoke([](const char *, const char *) {}));
     
     // Default flash
     ON_CALL(*mock_flash, flashImage(_, _, _, _, _, _, _))
@@ -501,6 +530,24 @@ void ResetAllMocks() {
 
 // NOTE: lastDwnlImg and currentImg are already declared in extern "C" block above
 
+size_t lastDwnlImg(char *img_name, size_t img_name_size) {
+    if (img_name == NULL || img_name_size == 0) {
+        return 0;
+    }
+
+    snprintf(img_name, img_name_size, "%s", "VERSION_1.0.0");
+    return strlen(img_name);
+}
+
+size_t currentImg(char *img_name, size_t img_name_size) {
+    if (img_name == NULL || img_name_size == 0) {
+        return 0;
+    }
+
+    snprintf(img_name, img_name_size, "%s", "VERSION_1.0.0");
+    return strlen(img_name);
+}
+
 // SWLOG_* macros are already defined in rdkv_cdl_log_wrapper.h
 // so we don't need to provide function implementations
 
@@ -509,9 +556,27 @@ void ResetAllMocks() {
 
 // Functions that are NOT in the headers and need stubs:
 
-int getDevicePropertyData(DeviceProperty_t* device_info, const char* property) {
-    if (!device_info || !property) return -1;
-    return 0;  // Success
+int getDevicePropertyData(const char* key, char* value, unsigned int size) {
+    if (key == NULL || value == NULL || size == 0) {
+        return -1;
+    }
+
+    if (strcmp(key, "ESTB_INTERFACE") == 0) {
+        snprintf(value, size, "%s", "eth0");
+    } else if (strcmp(key, "LABSIGNED_ENABLED") == 0) {
+        const char* env_val = getenv("DBUS_MOCK_LABSIGNED");
+        snprintf(value, size, "%s", (env_val && *env_val) ? env_val : "false");
+    } else if (strcmp(key, "CPU_ARCH") == 0) {
+        snprintf(value, size, "%s", "x86");
+    } else if (strcmp(key, "DEVICE_NAME") == 0) {
+        snprintf(value, size, "%s", "XI_TEST");
+    } else if (strcmp(key, "WHOAMI_SUPPORT") == 0) {
+        snprintf(value, size, "%s", "false");
+    } else {
+        value[0] = '\0';
+    }
+
+    return 0;
 }
 
 int waitForNtp(void) {
@@ -539,58 +604,62 @@ int v_secure_system(const char* command) {
 }
 
 // Additional missing utility functions
-int GetBuildType(char* buffer, size_t len) {
+size_t GetBuildType(char* buffer, size_t len, BUILDTYPE* build_type) {
     if (buffer && len > 0) {
         strncpy(buffer, "PROD", len - 1);
         buffer[len - 1] = '\0';
-        return 0;
+        if (build_type != NULL) {
+            *build_type = ePROD;
+        }
+        return strlen(buffer);
     }
-    return -1;
+    return 0;
 }
 
-int GetModelNum(char* buffer, size_t len) {
+size_t GetModelNum(char* buffer, size_t len) {
     if (buffer && len > 0) {
         strncpy(buffer, "TEST_MODEL", len - 1);
         buffer[len - 1] = '\0';
-        return 0;
+        return strlen(buffer);
     }
-    return -1;
+    return 0;
 }
 
-int GetMFRName(char* buffer, size_t len) {
+size_t GetMFRName(char* buffer, size_t len) {
     if (buffer && len > 0) {
         strncpy(buffer, "TEST_MFR", len - 1);
         buffer[len - 1] = '\0';
-        return 0;
+        return strlen(buffer);
     }
-    return -1;
+    return 0;
 }
 
-int GetUTCTime(char* buffer, size_t len) {
+size_t GetUTCTime(char* buffer, size_t len) {
     if (buffer && len > 0) {
         strncpy(buffer, "2026-01-13T00:00:00Z", len - 1);
         buffer[len - 1] = '\0';
-        return 0;
+        return strlen(buffer);
     }
-    return -1;
+    return 0;
 }
 
-int GetTimezone(char* buffer, size_t len) {
+size_t GetTimezone(char* buffer, const char* cpu_arch, size_t len) {
+    (void)cpu_arch;
     if (buffer && len > 0) {
         strncpy(buffer, "UTC", len - 1);
         buffer[len - 1] = '\0';
-        return 0;
+        return strlen(buffer);
     }
-    return -1;
+    return 0;
 }
 
-int GetCapabilities(char* buffer, size_t len) {
+size_t GetCapabilities(char* buffer, size_t len) {
     if (buffer && len > 0) {
         strncpy(buffer, "capability1,capability2", len - 1);
         buffer[len - 1] = '\0';
-        return 0;
+        return strlen(buffer);
     }
-    return -1;
+    return 0;
 }
 
 char* stripinvalidchar(const char* input) {
@@ -604,24 +673,39 @@ int read_RFCProperty(char* type, const char* key, char *data, size_t datasize) {
     return 0;
 }
 
-int GetHwMacAddress(char* buffer, size_t len) {
+size_t GetHwMacAddress(char* iface, char* buffer, size_t len) {
+    (void)iface;
     if (buffer && len > 0) {
         strncpy(buffer, "00:11:22:33:44:55", len - 1);
         buffer[len - 1] = '\0';
-        return 0;
+        return strlen(buffer);
     }
-    return -1;
+    return 0;
+}
+
+size_t GetPDRIFileNameUsingMFR(char *buffer, size_t len) {
+    if (buffer && len > 0) {
+        strncpy(buffer, "TEST_PDRI_VBN_0.bin", len - 1);
+        buffer[len - 1] = '\0';
+        return strlen(buffer);
+    }
+    return 0;
 }
 
 bool isDebugServicesEnabled(void) {
-    return false;  // Debug services not enabled by default
+    const char* env_val = getenv("DBUS_MOCK_DEBUG_SERVICES");
+    if (env_val == NULL) {
+        return false;
+    }
+    return (strcmp(env_val, "1") == 0 || strcasecmp(env_val, "true") == 0);
 }
 
 extern "C" {
 void getDeviceTypeRFC(char *deviceType, size_t size) {
     if (deviceType && size > 0) {
-        const char defaultType[] = "unknown";
-        strncpy(deviceType, defaultType, size - 1);
+        const char* env_type = getenv("DBUS_MOCK_DEVICE_TYPE");
+        const char* selected = (env_type && *env_type) ? env_type : "unknown";
+        strncpy(deviceType, selected, size - 1);
         deviceType[size - 1] = '\0';
     }
     return;
@@ -642,12 +726,31 @@ int v_secure_pclose(FILE* fp) {
 }
 
 void* doCurlInit(void) {
-    return NULL;  // Stub
+    return (void*)0x1;  // Non-null handle to drive mocked JSON-RPC flow
 }
 
-int getJsonRpcData(void* curl, const char* url, char** output) {
-    if (output) *output = NULL;
-    return -1;  // Stub: failure
+int getJsonRpcData(void *curl_req, FileDwnl_t *req_data, char *token_header, int *http_code) {
+    (void)curl_req;
+    (void)token_header;
+
+    if (http_code != NULL) {
+        *http_code = 200;
+    }
+
+    if (req_data == NULL || req_data->pDlData == NULL || req_data->pDlData->pvOut == NULL) {
+        return -1;
+    }
+
+    const char *json_resp = "{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"experience\":\"X1\",\"success\":true}}";
+    DownloadData *dl = req_data->pDlData;
+    size_t max_len = dl->memsize;
+    if (max_len == 0) {
+        return -1;
+    }
+
+    snprintf((char *)dl->pvOut, max_len, "%s", json_resp);
+    dl->datasize = strlen((char *)dl->pvOut);
+    return 0;
 }
 
 void doStopDownload(void* curl) {
@@ -755,7 +858,7 @@ void SetupCoverageTestMocks() {
     
     // IARM interface
     ON_CALL(*mock_iarm_interface, eventManager(_, _))
-        .WillByDefault(Return(0));
+        .WillByDefault(Invoke([](const char *, const char *) {}));
     
     // Flash operations
     ON_CALL(*mock_flash, flashImage(_, _, _, _, _, _, _))
@@ -772,9 +875,113 @@ void SetupCoverageTestMocks() {
         .WillByDefault(Return(0));
 }
 
-extern "C" int rdkFwupdateMgr_downloadFirmware(...)
+extern "C" DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(
+    const gchar *handler_id,
+    const gchar *firmware_name,
+    const gchar *firmware_type,
+    const gchar *localFilePath,
+    const gchar *download_url)
 {
-    return 0;
+    DownloadFirmwareResult result;
+    result.result_code = DOWNLOAD_ERROR;
+    result.error_message = NULL;
+
+    if (localFilePath == NULL || localFilePath[0] == '\0') {
+        result.error_message = g_strdup("Invalid local file path");
+        return result;
+    }
+
+    const gchar *effective_url = firmware_name;  // In these tests, argument 2 carries URL.
+    XCONFRES cached = {0};
+    if (effective_url == NULL || effective_url[0] == '\0') {
+        if (!load_xconf_from_cache(&cached)) {
+            result.error_message = g_strdup("Failed to load URL from XConf cache");
+            return result;
+        }
+
+        if (cached.cloudFWLocation[0] != '\0') {
+            effective_url = cached.cloudFWLocation;
+        } else if (cached.cloudFWFile[0] != '\0') {
+            effective_url = cached.cloudFWFile;
+        } else {
+            result.error_message = g_strdup("URL missing in XConf cache");
+            return result;
+        }
+    }
+
+    int upgrade_type = XCONF_UPGRADE;
+    if (firmware_type != NULL) {
+        if (g_strcmp0(firmware_type, "PDRI") == 0) {
+            upgrade_type = PDRI_UPGRADE;
+        } else if (g_strcmp0(firmware_type, "PERIPHERAL") == 0) {
+            upgrade_type = PERIPHERAL_UPGRADE;
+        }
+    }
+
+    RdkUpgradeContext_t ctx = {0};
+    int http_code = 0;
+    void *curl_handle = NULL;
+    ctx.artifactLocationUrl = effective_url;
+    ctx.upgrade_type = upgrade_type;
+    ctx.dwlloc = (void *)localFilePath;
+
+    int curl_ret = -1;
+    if (mock_rdkv_upgrade != NULL) {
+        curl_ret = mock_rdkv_upgrade->rdkv_upgrade_request(&ctx, &curl_handle, &http_code);
+    }
+
+    if (curl_ret == 6) {
+        result.result_code = DOWNLOAD_NETWORK_ERROR;
+        result.error_message = g_strdup("DNS resolution failed");
+        return result;
+    }
+    if (curl_ret == 7) {
+        result.result_code = DOWNLOAD_NETWORK_ERROR;
+        result.error_message = g_strdup("Network connection failed");
+        return result;
+    }
+    if (curl_ret == 28) {
+        result.result_code = DOWNLOAD_NETWORK_ERROR;
+        result.error_message = g_strdup("Download timeout");
+        return result;
+    }
+    if (curl_ret == 18) {
+        result.result_code = DOWNLOAD_ERROR;
+        result.error_message = g_strdup("Partial file download");
+        return result;
+    }
+    if (curl_ret == 23) {
+        result.result_code = DOWNLOAD_ERROR;
+        result.error_message = g_strdup("Write error during download");
+        return result;
+    }
+    if (curl_ret != 0) {
+        result.result_code = DOWNLOAD_ERROR;
+        result.error_message = g_strdup("Download failed");
+        return result;
+    }
+
+    if (http_code == 404) {
+        result.result_code = DOWNLOAD_NOT_FOUND;
+        result.error_message = g_strdup("Firmware not found");
+        return result;
+    }
+
+    if (http_code != 200 && http_code != 206) {
+        result.result_code = DOWNLOAD_NETWORK_ERROR;
+        result.error_message = g_strdup("Unexpected HTTP status");
+        return result;
+    }
+
+    if (access(localFilePath, F_OK) != 0) {
+        result.result_code = DOWNLOAD_ERROR;
+        result.error_message = g_strdup("File not found after download");
+        return result;
+    }
+
+    result.result_code = DOWNLOAD_SUCCESS;
+    result.error_message = g_strdup("Download successful");
+    return result;
 }
 
 extern "C" const char* rdkv_upgrade_strerror(int err)
@@ -782,9 +989,14 @@ extern "C" const char* rdkv_upgrade_strerror(int err)
     return "mock_error";
 }
 
-extern "C" int getOPTOUTValue()
+extern "C" int getOPTOUTValue(const char *file_name)
 {
-    return 0;
+    (void)file_name;
+    const char* env_val = getenv("DBUS_MOCK_OPTOUT");
+    if (env_val == NULL || *env_val == '\0') {
+        return -1;
+    }
+    return atoi(env_val);
 }
 // ============================================================================
 // NOTE: SWLOG_* macros are already defined in rdkv_cdl_log_wrapper.h

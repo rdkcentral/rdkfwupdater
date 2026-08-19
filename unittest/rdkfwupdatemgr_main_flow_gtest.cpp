@@ -34,27 +34,43 @@
 #include <cstring>
 #include <fstream>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <signal.h>
 #include "deviceutils_mock_global.h"
 extern "C" {
+#include "rdkv_cdl.h"
 #include "rdkv_cdl_log_wrapper.h"
 #include "miscellaneous.h"
 #include "device_status_helper.h"
 #include "rfcinterface.h"
+#include "dbus/xconf_comm_status.h"
 
 // External declarations for functions under test
 int getTriggerType(void);
+int getAppMode(void);
+void setAppMode(int mode);
+void setDwnlState(int state);
+int getDwnlState(void);
+void t2CountNotify(char *marker, int val);
+void t2ValNotify(char *marker, char *val);
+void interuptDwnl(int app_mode);
 void handle_signal(int no, siginfo_t* info, void* uc);
 int prevCurUpdateInfo(void);
 int initialValidation(void);
+int initialize(void);
+void uninitialize(int fwDwnlStatus);
 int copyFile(const char *src, const char *target);
 void updateUpgradeFlag(int action);
+int getOPTOUTValue(const char *file_name);
+int peripheral_firmware_dndl(char *pCloudFWLocation, char *pPeripheralFirmwares);
 
 // External variables from rdkFwupdateMgr.c
 extern DeviceProperty_t device_info;
 extern ImageDetails_t cur_img_detail;
 extern int force_exit;
+extern Rfc_t rfc_list;
+extern void *curl;
 
 // Mock functions (will be linked with mocks)
 int getDeviceProperties(DeviceProperty_t *pDevice_info);
@@ -75,6 +91,8 @@ size_t GetBuildType(char *buf, size_t szBufSize, BUILDTYPE *peBuildType);
 }
 
 #include "./mocks/deviceutils_mock.h"
+#include "deviceutils_mock_global.h"
+#include "miscellaneous_mock.h"
 
 using namespace testing;
 using namespace std;
@@ -90,6 +108,7 @@ DeviceUtilsMock Deviceglobal;
 #define TEST_DIFD_PID                   "/tmp/test_DIFD.pid"
 #define TEST_FW_PREPARING_REBOOT        "/tmp/test_fw_preparing_to_reboot"
 #define TEST_VERSION_FILE               "/tmp/test_version.txt"
+#define TEST_DOWNLOADED_PERIPHERAL_VERS "/tmp/downloaded_peripheral_versions.txt"
 
 // =============================================================================
 // TEST FIXTURE
@@ -113,11 +132,15 @@ protected:
         // Initialize global variables
         memset(&device_info, 0, sizeof(device_info));
         memset(&cur_img_detail, 0, sizeof(cur_img_detail));
+        memset(&rfc_list, 0, sizeof(rfc_list));
         force_exit = 0;
+        curl = NULL;
         
         // Set default values
         strncpy(device_info.dev_type, "hybrid", sizeof(device_info.dev_type) - 1);
         strncpy(device_info.maint_status, "false", sizeof(device_info.maint_status) - 1);
+        setAppMode(1);
+        setDwnlState(0);
     }
 
     virtual void TearDown() override {
@@ -142,6 +165,12 @@ protected:
         unlink(TEST_DIFD_PID);
         unlink(TEST_FW_PREPARING_REBOOT);
         unlink(TEST_VERSION_FILE);
+        unlink(TEST_DOWNLOADED_PERIPHERAL_VERS);
+        unlink(CDL_FLASHED_IMAGE);
+        unlink(PREVIOUS_FLASHED_IMAGE);
+        unlink(CURRENTLY_RUNNING_IMAGE);
+        unlink(DIFDPID);
+        unlink("/tmp/fw_preparing_to_reboot");
     }
 
     // Helper: Create test file with content
@@ -172,6 +201,98 @@ protected:
 // TEST SUITE 1: getTriggerType()
 // =============================================================================
 
+TEST_F(RdkFwupdateMgrMainFlowTest, XConfCommStatus_InitAndStateTransitions) {
+    EXPECT_TRUE(initXConfCommStatus());
+    EXPECT_FALSE(getXConfCommStatus());
+    EXPECT_STREQ(getXConfCommStatusString(), "IDLE");
+
+    setXConfCommStatus(TRUE);
+    EXPECT_TRUE(getXConfCommStatus());
+    EXPECT_STREQ(getXConfCommStatusString(), "IN_PROGRESS");
+
+    setXConfCommStatus(FALSE);
+    EXPECT_FALSE(getXConfCommStatus());
+    EXPECT_STREQ(getXConfCommStatusString(), "IDLE");
+
+    cleanupXConfCommStatus();
+}
+
+TEST_F(RdkFwupdateMgrMainFlowTest, XConfCommStatus_TrySetGuardAndDuplicateInit) {
+    EXPECT_TRUE(initXConfCommStatus());
+    EXPECT_FALSE(initXConfCommStatus());
+    EXPECT_TRUE(trySetXConfCommStatus());
+    EXPECT_FALSE(trySetXConfCommStatus());
+    EXPECT_TRUE(getXConfCommStatus());
+
+    setXConfCommStatus(FALSE);
+    EXPECT_FALSE(getXConfCommStatus());
+
+    cleanupXConfCommStatus();
+}
+
+TEST_F(RdkFwupdateMgrMainFlowTest, XConfCommStatus_GetAndSetBeforeInitAreSafe) {
+    EXPECT_FALSE(getXConfCommStatus());
+    setXConfCommStatus(TRUE);
+    EXPECT_FALSE(getXConfCommStatus());
+    EXPECT_STREQ(getXConfCommStatusString(), "UNINITIALIZED");
+
+    EXPECT_FALSE(trySetXConfCommStatus());
+    cleanupXConfCommStatus();
+}
+
+TEST_F(RdkFwupdateMgrMainFlowTest, XConfCommStatus_DumpAndCleanupCoverDebugAndSafetyPaths) {
+    EXPECT_STREQ(getXConfCommStatusString(), "UNINITIALIZED");
+    EXPECT_NO_FATAL_FAILURE(dumpXConfCommStatus());
+
+    EXPECT_TRUE(initXConfCommStatus());
+    EXPECT_FALSE(getXConfCommStatus());
+    EXPECT_STREQ(getXConfCommStatusString(), "IDLE");
+    EXPECT_NO_FATAL_FAILURE(dumpXConfCommStatus());
+
+    setXConfCommStatus(TRUE);
+    EXPECT_TRUE(getXConfCommStatus());
+    EXPECT_STREQ(getXConfCommStatusString(), "IN_PROGRESS");
+    EXPECT_NO_FATAL_FAILURE(dumpXConfCommStatus());
+
+    cleanupXConfCommStatus();
+    EXPECT_STREQ(getXConfCommStatusString(), "UNINITIALIZED");
+    EXPECT_NO_FATAL_FAILURE(dumpXConfCommStatus());
+
+    cleanupXConfCommStatus();
+    EXPECT_STREQ(getXConfCommStatusString(), "UNINITIALIZED");
+}
+
+TEST_F(RdkFwupdateMgrMainFlowTest, StartFactoryProtectService_UsesCurlAndStopsOnSuccess) {
+    MockExternal mock;
+    DeviceUtilsMock DeviceMock;
+    g_DeviceUtilsMock = &DeviceMock;
+    global_mockexternal_ptr = &mock;
+
+    void* temp = reinterpret_cast<void*>(0x1);
+    EXPECT_CALL(*g_DeviceUtilsMock, doCurlInit()).WillOnce(Return(temp));
+    EXPECT_CALL(mock, doCurlPutRequest(_, _, _, _)).WillOnce(DoAll(SetArgPointee<3>(200), Return(0)));
+    EXPECT_CALL(*g_DeviceUtilsMock, doStopDownload(_)).Times(1);
+
+    EXPECT_EQ(startFactoryProtectService(), 0);
+
+    global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = &Deviceglobal;
+}
+
+TEST_F(RdkFwupdateMgrMainFlowTest, StartFactoryProtectService_ReturnsNegativeWhenCurlInitFails) {
+    MockExternal mock;
+    DeviceUtilsMock DeviceMock;
+    g_DeviceUtilsMock = &DeviceMock;
+    global_mockexternal_ptr = &mock;
+
+    EXPECT_CALL(*g_DeviceUtilsMock, doCurlInit()).WillOnce(Return(nullptr));
+
+    EXPECT_EQ(startFactoryProtectService(), -1);
+
+    global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = &Deviceglobal;
+}
+
 TEST_F(RdkFwupdateMgrMainFlowTest, GetTriggerType_ReturnsDefault) {
     // getTriggerType() returns the global trigger_type variable
     // In test environment, it should return default value
@@ -187,6 +308,84 @@ TEST_F(RdkFwupdateMgrMainFlowTest, GetTriggerType_Consistency) {
     int trigger2 = getTriggerType();
     
     EXPECT_EQ(trigger1, trigger2);
+}
+
+TEST_F(RdkFwupdateMgrMainFlowTest, SetAppMode_ForegroundAndBackground_RoundTrips) {
+    setAppMode(0);
+    EXPECT_EQ(getAppMode(), 0);
+
+    setAppMode(1);
+    EXPECT_EQ(getAppMode(), 1);
+}
+
+TEST_F(RdkFwupdateMgrMainFlowTest, SetDwnlState_RoundTripsThroughGetter) {
+    setDwnlState(0);
+    EXPECT_EQ(getDwnlState(), 0);
+
+    setDwnlState(1);
+    EXPECT_EQ(getDwnlState(), 1);
+}
+
+TEST_F(RdkFwupdateMgrMainFlowTest, T2CountNotify_And_T2ValNotify_DoNotCrash) {
+    char marker[] = "marker";
+    char value[] = "value";
+
+    EXPECT_NO_FATAL_FAILURE({
+        t2CountNotify(marker, 7);
+        t2ValNotify(marker, value);
+    });
+}
+
+TEST_F(RdkFwupdateMgrMainFlowTest, InteruptDwnl_ThrottleDisabled_LogsAndReturns) {
+    strncpy(rfc_list.rfc_throttle, "false", sizeof(rfc_list.rfc_throttle) - 1);
+    strncpy(rfc_list.rfc_topspeed, "0", sizeof(rfc_list.rfc_topspeed) - 1);
+    setDwnlState(0);
+    curl = nullptr;
+
+    EXPECT_NO_FATAL_FAILURE({
+        interuptDwnl(0);
+    });
+}
+
+TEST_F(RdkFwupdateMgrMainFlowTest, InteruptDwnl_ThrottleEnabled_StopPathSetsForceExit) {
+    strncpy(rfc_list.rfc_throttle, "true", sizeof(rfc_list.rfc_throttle) - 1);
+    strncpy(rfc_list.rfc_topspeed, "0", sizeof(rfc_list.rfc_topspeed) - 1);
+    strncpy(device_info.maint_status, "true", sizeof(device_info.maint_status) - 1);
+    setDwnlState(2);
+    curl = nullptr;
+    force_exit = 0;
+
+    EXPECT_NO_FATAL_FAILURE({
+        interuptDwnl(0);
+    });
+
+    EXPECT_EQ(force_exit, 1);
+}
+
+TEST_F(RdkFwupdateMgrMainFlowTest, InteruptDwnl_ThrottleEnabled_PauseRetryFailureStopsDownload) {
+    DeviceUtilsMock localMock;
+    g_DeviceUtilsMock = &localMock;
+    MockExternal mockexternal;
+    global_mockexternal_ptr = &mockexternal;
+
+    strncpy(rfc_list.rfc_throttle, "true", sizeof(rfc_list.rfc_throttle) - 1);
+    strncpy(rfc_list.rfc_topspeed, "1000", sizeof(rfc_list.rfc_topspeed) - 1);
+    strncpy(device_info.maint_status, "false", sizeof(device_info.maint_status) - 1);
+    setDwnlState(RDKV_FWDNLD_DOWNLOAD_INPROGRESS);
+    force_exit = 0;
+    curl = reinterpret_cast<void*>(0x1234);
+
+    EXPECT_CALL(mockexternal, doGetDwnlBytes(_)).WillOnce(Return(512u));
+    EXPECT_CALL(mockexternal, doInteruptDwnl(_, 1000u)).WillOnce(Return(DWNL_UNPAUSE_FAIL));
+    EXPECT_CALL(localMock, doStopDownload(_)).Times(1);
+
+    interuptDwnl(0);
+
+    EXPECT_EQ(force_exit, 0);
+    EXPECT_EQ(curl, nullptr);
+
+    g_DeviceUtilsMock = nullptr;
+    global_mockexternal_ptr = nullptr;
 }
 
 // =============================================================================
@@ -247,6 +446,82 @@ TEST_F(RdkFwupdateMgrMainFlowTest, HandleSignal_SIGUSR1_WithoutMaintenanceMode) 
     EXPECT_EQ(force_exit, 1);
 }
 
+TEST_F(RdkFwupdateMgrMainFlowTest, HandleSignal_ExplicitlyTriggersFailureEvents) {
+    MockExternal mock;
+    global_mockexternal_ptr = &mock;
+    strncpy(device_info.maint_status, "true", sizeof(device_info.maint_status) - 1);
+    force_exit = 0;
+
+    EXPECT_CALL(mock, eventManager(_, _)).Times(AtLeast(1));
+    EXPECT_CALL(mock, setForceStop(1)).Times(1);
+
+    siginfo_t info;
+    memset(&info, 0, sizeof(info));
+    handle_signal(SIGUSR1, &info, NULL);
+
+    EXPECT_EQ(force_exit, 1);
+    global_mockexternal_ptr = nullptr;
+}
+
+TEST_F(RdkFwupdateMgrMainFlowTest, CheckTriggerUpgrade_ValidNoPDRI_ReturnsZero) {
+    MockExternal mock;
+    global_mockexternal_ptr = &mock;
+    DeviceUtilsMock deviceMock;
+    g_DeviceUtilsMock = &deviceMock;
+
+    strncpy(device_info.maint_status, "false", sizeof(device_info.maint_status) - 1);
+    strncpy(device_info.difw_path, "/tmp", sizeof(device_info.difw_path) - 1);
+    strncpy(cur_img_detail.cur_img_name, "testModel.bin", sizeof(cur_img_detail.cur_img_name) - 1);
+
+    XCONFRES response = {};
+    snprintf(response.cloudFWVersion, sizeof(response.cloudFWVersion), "%s", "testModel.bin");
+    snprintf(response.cloudFWFile, sizeof(response.cloudFWFile), "%s", "testModel.bin");
+    snprintf(response.cloudFWLocation, sizeof(response.cloudFWLocation), "%s", "/tmp");
+    snprintf(response.cloudImmediateRebootFlag, sizeof(response.cloudImmediateRebootFlag), "%s", "false");
+    snprintf(response.cloudDelayDownload, sizeof(response.cloudDelayDownload), "%s", "0");
+    snprintf(response.cloudPDRIVersion, sizeof(response.cloudPDRIVersion), "%s", "");
+    snprintf(response.peripheralFirmwares, sizeof(response.peripheralFirmwares), "%s", "");
+
+    EXPECT_CALL(mock, isUpgradeInProgress()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mock, checkForValidPCIUpgrade(_, _, _, _)).WillRepeatedly(Return(false));
+    EXPECT_CALL(deviceMock, filePresentCheck(_)).WillRepeatedly(Return(1));
+
+    EXPECT_EQ(checkTriggerUpgrade(&response, "testModel", 1), 0);
+
+    g_DeviceUtilsMock = &Deviceglobal;
+    global_mockexternal_ptr = nullptr;
+}
+
+TEST_F(RdkFwupdateMgrMainFlowTest, CheckTriggerUpgrade_PDRIPathUsesUpgradeRequest) {
+    MockExternal mock;
+    global_mockexternal_ptr = &mock;
+    DeviceUtilsMock deviceMock;
+    g_DeviceUtilsMock = &deviceMock;
+
+    strncpy(device_info.maint_status, "false", sizeof(device_info.maint_status) - 1);
+    strncpy(device_info.difw_path, "/tmp", sizeof(device_info.difw_path) - 1);
+    strncpy(cur_img_detail.cur_img_name, "testModel.bin", sizeof(cur_img_detail.cur_img_name) - 1);
+
+    XCONFRES response = {};
+    snprintf(response.cloudFWVersion, sizeof(response.cloudFWVersion), "%s", "testModel.bin");
+    snprintf(response.cloudFWFile, sizeof(response.cloudFWFile), "%s", "testModel.bin");
+    snprintf(response.cloudFWLocation, sizeof(response.cloudFWLocation), "%s", "/tmp");
+    snprintf(response.cloudImmediateRebootFlag, sizeof(response.cloudImmediateRebootFlag), "%s", "false");
+    snprintf(response.cloudDelayDownload, sizeof(response.cloudDelayDownload), "%s", "0");
+    snprintf(response.cloudPDRIVersion, sizeof(response.cloudPDRIVersion), "%s", "testModel_PDRI.bin");
+    snprintf(response.peripheralFirmwares, sizeof(response.peripheralFirmwares), "%s", "");
+
+    EXPECT_CALL(mock, isUpgradeInProgress()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mock, checkForValidPCIUpgrade(_, _, _, _)).WillRepeatedly(Return(true));
+    EXPECT_CALL(mock, isPDRIEnable()).WillRepeatedly(Return(true));
+    EXPECT_CALL(deviceMock, filePresentCheck(_)).WillRepeatedly(Return(1));
+
+    EXPECT_EQ(checkTriggerUpgrade(&response, "testModel", 1), 0);
+
+    g_DeviceUtilsMock = &Deviceglobal;
+    global_mockexternal_ptr = nullptr;
+}
+
 // =============================================================================
 // TEST SUITE 3: copyFile() (helper for prevCurUpdateInfo)
 // =============================================================================
@@ -305,76 +580,90 @@ TEST_F(RdkFwupdateMgrMainFlowTest, CopyFile_NullParameters) {
 // TEST SUITE 4: prevCurUpdateInfo()
 // =============================================================================
 
-TEST_F(RdkFwupdateMgrMainFlowTest, PrevCurUpdateInfo_CDLFlashedExists_VersionMatches) {
-    // Setup: CDL flashed file exists with matching version
-    const char *version = "TEST_v1.0.0";
-    TestFileCreate(TEST_CDL_FLASHED_IMAGE, "TEST_v1.0.0-signed.bin\n");
-    
-    // Mock GetFirmwareVersion to return matching version
-    // In real test, mock would return "TEST_v1.0.0"
-    
-    // Test
-    int result = prevCurUpdateInfo();
-    
-    // Verify: Should copy to PREVIOUS and CURRENTLY_RUNNING
-    EXPECT_EQ(result, 0);
-    
-    // Note: Full verification would require mocking GetFirmwareVersion
+TEST_F(RdkFwupdateMgrMainFlowTest, PrevCurUpdateInfo_MismatchWithPreviousCopiesPreviousImage) {
+    pid_t child = fork();
+    ASSERT_GE(child, 0);
+
+    if (child == 0) {
+        MockExternal mockexternal;
+        global_mockexternal_ptr = &mockexternal;
+        DeviceUtilsMock localMock;
+        g_DeviceUtilsMock = &localMock;
+
+        EXPECT_CALL(mockexternal, GetFirmwareVersion(_, _))
+            .WillRepeatedly(Invoke([](char *buf, size_t size) {
+                snprintf(buf, size, "%s", "1.0.0.0");
+                return 0;
+            }));
+        EXPECT_CALL(localMock, filePresentCheck(_)).WillRepeatedly(Return(1));
+        EXPECT_CALL(mockexternal, GetBuildType(_, _, _)).WillRepeatedly(Return(0));
+        EXPECT_CALL(mockexternal, CurrentRunningInst(_)).WillRepeatedly(Return(false));
+
+        TestFileCreate(CDL_FLASHED_IMAGE, "2.0.0.0-signed.bin\n");
+        TestFileCreate(PREVIOUS_FLASHED_IMAGE, "1.0.0.0-signed.bin\n");
+        TestFileCreate(CURRENTLY_RUNNING_IMAGE, "");
+
+        EXPECT_EQ(prevCurUpdateInfo(), 0);
+        EXPECT_TRUE(FileExists(CURRENTLY_RUNNING_IMAGE));
+        EXPECT_EQ(ReadFileContent(CURRENTLY_RUNNING_IMAGE), "1.0.0.0-signed.bin\n");
+
+        _exit(0);
+    }
+
+    int status = 0;
+    EXPECT_EQ(waitpid(child, &status, 0), child);
+    EXPECT_TRUE(WIFEXITED(status));
+    EXPECT_EQ(WEXITSTATUS(status), 0);
 }
 
-TEST_F(RdkFwupdateMgrMainFlowTest, PrevCurUpdateInfo_CDLFlashedExists_VersionMismatch_WithPrevious) {
-    // Setup: CDL flashed has wrong version, but previous has correct version
-    TestFileCreate(TEST_CDL_FLASHED_IMAGE, "WRONG_v1.0.0-signed.bin\n");
-    TestFileCreate(TEST_PREVIOUS_FLASHED_IMAGE, "CORRECT_v2.0.0-signed.bin\n");
-    
-    // Test
-    int result = prevCurUpdateInfo();
-    
-    // Verify
-    EXPECT_EQ(result, 0);
-    
-    // Should update CURRENTLY_RUNNING_IMAGE from PREVIOUS
-    // (Detailed verification requires file system operations)
+TEST_F(RdkFwupdateMgrMainFlowTest, PrevCurUpdateInfo_NoCdlFileCreatesCurrentAndPreviousImages) {
+    pid_t child = fork();
+    ASSERT_GE(child, 0);
+
+    if (child == 0) {
+        MockExternal mockexternal;
+        global_mockexternal_ptr = &mockexternal;
+        DeviceUtilsMock localMock;
+        g_DeviceUtilsMock = &localMock;
+
+        EXPECT_CALL(mockexternal, GetFirmwareVersion(_, _))
+            .WillRepeatedly(Invoke([](char *buf, size_t size) {
+                snprintf(buf, size, "%s", "1.0.0.0");
+                return 0;
+            }));
+        EXPECT_CALL(localMock, filePresentCheck(_)).WillRepeatedly(Return(1));
+        EXPECT_CALL(mockexternal, GetBuildType(_, _, _)).WillRepeatedly(Return(0));
+
+        EXPECT_EQ(prevCurUpdateInfo(), 0);
+        EXPECT_TRUE(FileExists(PREVIOUS_FLASHED_IMAGE));
+        EXPECT_TRUE(FileExists(CURRENTLY_RUNNING_IMAGE));
+        EXPECT_EQ(ReadFileContent(PREVIOUS_FLASHED_IMAGE), "1.0.0.0-signed.bin\n");
+        EXPECT_EQ(ReadFileContent(CURRENTLY_RUNNING_IMAGE), "1.0.0.0-signed.bin\n");
+
+        _exit(0);
+    }
+
+    int status = 0;
+    EXPECT_EQ(waitpid(child, &status, 0), child);
+    EXPECT_TRUE(WIFEXITED(status));
+    EXPECT_EQ(WEXITSTATUS(status), 0);
 }
 
-TEST_F(RdkFwupdateMgrMainFlowTest, PrevCurUpdateInfo_CDLFlashedExists_VersionMismatch_NoPrevious) {
-    // Setup: CDL flashed has wrong version, no previous file
-    TestFileCreate(TEST_CDL_FLASHED_IMAGE, "WRONG_v1.0.0-signed.bin\n");
-    
-    // Test
-    int result = prevCurUpdateInfo();
-    
-    // Verify: Should still succeed
-    EXPECT_EQ(result, 0);
-}
+TEST_F(RdkFwupdateMgrMainFlowTest, InitialValidation_AlreadyRunning_ReturnsDownloadInProgress) {
+    MockExternal mockexternal;
+    global_mockexternal_ptr = &mockexternal;
+    DeviceUtilsMock localMock;
+    g_DeviceUtilsMock = &localMock;
 
-TEST_F(RdkFwupdateMgrMainFlowTest, PrevCurUpdateInfo_CDLFlashedNotExist_CreatesFromVersion) {
-    // Setup: No CDL flashed file exists
-    // Should create files from version.txt
-    
-    // Test
-    int result = prevCurUpdateInfo();
-    
-    // Verify
-    EXPECT_EQ(result, 0);
-    
-    // Should create PREVIOUS_FLASHED_IMAGE and CURRENTLY_RUNNING_IMAGE
-    // (Detailed verification requires mocking GetFirmwareVersion)
-}
+    EXPECT_CALL(localMock, read_RFCProperty(_, _, _, _)).WillRepeatedly(Return(-1));
+    EXPECT_CALL(localMock, filePresentCheck(_)).WillRepeatedly(Return(1));
+    EXPECT_CALL(mockexternal, CurrentRunningInst(_)).WillOnce(Return(true));
+    EXPECT_CALL(mockexternal, GetBuildType(_, _, _)).WillRepeatedly(Return(0));
 
-TEST_F(RdkFwupdateMgrMainFlowTest, PrevCurUpdateInfo_MultipleScenarios) {
-    // Test various combinations
-    
-    // Scenario 1: Fresh system, no files
-    int result1 = prevCurUpdateInfo();
-    EXPECT_EQ(result1, 0);
-    
-    CleanupTestFiles();
-    
-    // Scenario 2: CDL flashed exists
-    TestFileCreate(TEST_CDL_FLASHED_IMAGE, "TEST-signed.bin\n");
-    int result2 = prevCurUpdateInfo();
-    EXPECT_EQ(result2, 0);
+    EXPECT_EQ(initialValidation(), INITIAL_VALIDATION_DWNL_INPROGRESS);
+
+    g_DeviceUtilsMock = nullptr;
+    global_mockexternal_ptr = nullptr;
 }
 
 
@@ -477,10 +766,10 @@ TEST_F(RdkFwupdateMgrMainFlowTest, Main_StateTransitions_InitValidationToIdle) {
     FwUpgraderState currentState = STATE_INIT_VALIDATION;
     
     // Simulate successful initialValidation()
-    int INITIAL_VALIDATION_SUCCESS = 0;
-    int init_validate_status = INITIAL_VALIDATION_SUCCESS;
+    int validation_ok = 0;
+    int init_validate_status = validation_ok;
     
-    if (init_validate_status == INITIAL_VALIDATION_SUCCESS) {
+    if (init_validate_status == validation_ok) {
         currentState = STATE_IDLE;
     }
     
@@ -502,11 +791,11 @@ TEST_F(RdkFwupdateMgrMainFlowTest, Main_StateTransitions_ValidationFail_NoTransi
     FwUpgraderState currentState = STATE_INIT_VALIDATION;
     
     // Simulate failed initialValidation()
-    int INITIAL_VALIDATION_SUCCESS = 0;
-    int INITIAL_VALIDATION_FAIL = -1;
-    int init_validate_status = INITIAL_VALIDATION_FAIL;
+    int validation_ok = 0;
+    int validation_fail = -1;
+    int init_validate_status = validation_fail;
     
-    if (init_validate_status == INITIAL_VALIDATION_SUCCESS) {
+    if (init_validate_status == validation_ok) {
         currentState = STATE_IDLE;
     }
     // else: state remains in INIT_VALIDATION, should goto cleanup
@@ -659,6 +948,145 @@ TEST_F(RdkFwupdateMgrMainFlowTest, UpdateUpgradeFlag_InvalidAction) {
         updateUpgradeFlag(3);
         updateUpgradeFlag(99);
     });
+}
+
+// =============================================================================
+// TEST SUITE 7: initialize(), getOPTOUTValue(), uninitialize()
+// =============================================================================
+
+TEST_F(RdkFwupdateMgrMainFlowTest, Initialize_DefaultEnvironment_Succeeds) {
+    EXPECT_EQ(getAppMode(), 1);
+    EXPECT_EQ(initialize(), 1);
+    EXPECT_EQ(getAppMode(), 1);
+}
+
+TEST_F(RdkFwupdateMgrMainFlowTest, Initialize_MaintenanceMode_BackgroundJsonSetsAppModeZero) {
+    DeviceUtilsMock localMock;
+    g_DeviceUtilsMock = &localMock;
+
+    strncpy(device_info.maint_status, "true", sizeof(device_info.maint_status) - 1);
+
+    EXPECT_CALL(localMock, doCurlInit())
+        .WillOnce(Return(reinterpret_cast<void*>(0x1)));
+    EXPECT_CALL(localMock, getJsonRpcData(_, _, _, _))
+        .WillOnce(Invoke([](void *, FileDwnl_t *req_data, char, int) {
+            const char *payload = "{\"mode\":\"BACKGROUND\"}";
+            strcpy(static_cast<char*>(req_data->pDlData->pvOut), payload);
+            req_data->pDlData->datasize = strlen(payload);
+            return 0;
+        }));
+    EXPECT_CALL(localMock, doStopDownload(_)).WillOnce(Return());
+
+    EXPECT_EQ(initialize(), 1);
+    EXPECT_EQ(getAppMode(), 0);
+
+    g_DeviceUtilsMock = nullptr;
+}
+
+TEST_F(RdkFwupdateMgrMainFlowTest, PeripheralFirmwareDownload_Success_WritesDownloadList) {
+    const char *cloudBaseUrl = "https://cloud.example.com/firmwares";
+    char peripheralList[] = "XR11-20_firmware_1.1.4.1";
+
+    unlink(TEST_DOWNLOADED_PERIPHERAL_VERS);
+
+    int result = peripheral_firmware_dndl(const_cast<char*>(cloudBaseUrl), peripheralList);
+
+    EXPECT_EQ(result, 0);
+    EXPECT_TRUE(FileExists(TEST_DOWNLOADED_PERIPHERAL_VERS));
+    EXPECT_EQ(ReadFileContent(TEST_DOWNLOADED_PERIPHERAL_VERS), "XR11-20_firmware_1.1.4.1.tgz");
+}
+
+TEST_F(RdkFwupdateMgrMainFlowTest, GetOPTOUTValue_NullFile_ReturnsError) {
+    EXPECT_EQ(getOPTOUTValue(NULL), -1);
+}
+
+TEST_F(RdkFwupdateMgrMainFlowTest, GetOPTOUTValue_MissingFile_ReturnsError) {
+    EXPECT_EQ(getOPTOUTValue("/tmp/nonexistent_optout.conf"), -1);
+}
+
+TEST_F(RdkFwupdateMgrMainFlowTest, GetOPTOUTValue_IgnoreUpdate_ReturnsOne) {
+    const char *optoutFile = "/tmp/test_optout_ignore.conf";
+    TestFileCreate(optoutFile, "softwareoptout=IGNORE_UPDATE\n");
+
+    EXPECT_EQ(getOPTOUTValue(optoutFile), 1);
+
+    unlink(optoutFile);
+}
+
+TEST_F(RdkFwupdateMgrMainFlowTest, GetOPTOUTValue_EnforceOptout_ReturnsZero) {
+    const char *optoutFile = "/tmp/test_optout_enforce.conf";
+    TestFileCreate(optoutFile, "softwareoptout=ENFORCE_OPTOUT\n");
+
+    EXPECT_EQ(getOPTOUTValue(optoutFile), 0);
+
+    unlink(optoutFile);
+}
+
+TEST_F(RdkFwupdateMgrMainFlowTest, GetOPTOUTValue_UnknownValue_ReturnsError) {
+    const char *optoutFile = "/tmp/test_optout_unknown.conf";
+    TestFileCreate(optoutFile, "softwareoptout=BYPASS_OPTOUT\n");
+
+    EXPECT_EQ(getOPTOUTValue(optoutFile), -1);
+
+    unlink(optoutFile);
+}
+
+TEST_F(RdkFwupdateMgrMainFlowTest, InitialValidation_RfcReadFailure_CreatesPidAndSucceeds) {
+    DeviceUtilsMock localMock;
+    g_DeviceUtilsMock = &localMock;
+
+    EXPECT_CALL(localMock, read_RFCProperty(_, _, _, _)).WillOnce(Return(-1));
+    EXPECT_CALL(localMock, filePresentCheck(_)).WillRepeatedly(Return(1));
+
+    const int result = initialValidation();
+
+    EXPECT_EQ(result, 0);
+    EXPECT_TRUE(FileExists("/tmp/DIFD.pid"));
+
+    unlink("/tmp/DIFD.pid");
+    g_DeviceUtilsMock = nullptr;
+}
+
+TEST_F(RdkFwupdateMgrMainFlowTest, InitialValidation_RebootPreparation_CompletesAndRemovesFlag) {
+    DeviceUtilsMock localMock;
+    g_DeviceUtilsMock = &localMock;
+    strncpy(device_info.maint_status, "true", sizeof(device_info.maint_status) - 1);
+    TestFileCreate("/tmp/fw_preparing_to_reboot", "1\n");
+
+    EXPECT_CALL(localMock, read_RFCProperty(_, _, _, _)).WillOnce(Return(-1));
+    EXPECT_CALL(localMock, filePresentCheck(_))
+        .WillRepeatedly(Invoke([](const char *path) {
+            return (path != NULL && strcmp(path, "/tmp/fw_preparing_to_reboot") == 0) ? 0 : 1;
+        }));
+
+    const int result = initialValidation();
+
+    EXPECT_EQ(result, 3);
+    EXPECT_FALSE(FileExists("/tmp/fw_preparing_to_reboot"));
+    EXPECT_FALSE(FileExists("/tmp/DIFD.pid"));
+
+    g_DeviceUtilsMock = nullptr;
+}
+
+TEST_F(RdkFwupdateMgrMainFlowTest, Uninitialize_RemovesPidFile_WhenNotInProgress) {
+    const char *pidFile = "/tmp/DIFD.pid";
+    TestFileCreate(pidFile, "1234\n");
+    ASSERT_TRUE(FileExists(pidFile));
+
+    uninitialize(0);
+
+    EXPECT_FALSE(FileExists(pidFile));
+}
+
+TEST_F(RdkFwupdateMgrMainFlowTest, Uninitialize_PreservesPidFile_WhenDownloadInProgress) {
+    const char *pidFile = "/tmp/DIFD.pid";
+    TestFileCreate(pidFile, "1234\n");
+    ASSERT_TRUE(FileExists(pidFile));
+
+    uninitialize(2);
+
+    EXPECT_TRUE(FileExists(pidFile));
+    unlink(pidFile);
 }
 
 // =============================================================================

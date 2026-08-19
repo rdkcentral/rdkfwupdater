@@ -28,8 +28,14 @@ marp: true
 
 | Item | Value |
 |---|---|
-| **Current line coverage** | 62.6% |
-| **Current function coverage** | 81.8% |
+| **Reference line coverage**: 62.6%
+| **Reference function coverage**: 81.8%
+
+Baseline note:
+62.6% line / 81.8% function is the reference baseline obtained during
+the repository dry run. It must not be assumed to be the execution-time
+baseline. The execution agent must establish a fresh baseline from the
+current repository state before generating or modifying tests.
 | **Existing test infrastructure** | GoogleTest / GoogleMock; multiple fixtures, mock classes (`DeviceStatusMock`, `DeviceUtilsMock`, `FwDlInterfaceMock`, `RdkFwupdateMgrMock`), a miscellaneous stub file (`miscellaneous_mock.cpp`), and per-module mock `.cpp` files under `unittest/mocks/` |
 | **Build system** | Autotools (`unittest/configure.ac` + `unittest/Makefile.am`); already bootstrapped and configured (generated `Makefile`, `.deps/`, `.libs/`, binaries present) |
 | **Coverage tooling** | `gcov` / `lcov`; `.gcda`/`.gcno` files present in `src/` and `unittest/` from a prior build/test run |
@@ -170,32 +176,75 @@ Before implementing any candidate area, the agent must verify its actual coverag
 
 After approval, the execution phase would proceed as follows:
 
-1. **Scan source and existing tests** — inspect `src/` for functions, branches, and error paths not yet exercised; cross-reference against `unittest/*.cpp` test functions to build a gap list.
+1. Inspect repository state
+   - Inspect SOURCE_FOLDER and UNIT_TEST_FOLDER.
+   - Determine whether the unit-test build has already been bootstrapped.
+   - Do not assume generated Makefiles, test binaries, .gcda, .gcno, or
+     coverage .info files exist.
 
-2. **Identify actual coverage gaps** — use the latest `lcov` results to identify uncovered or materially under-covered production functions and branches. The candidate areas in Section 3 are starting points only. Before implementing any candidate area, verify that it represents an actual coverage gap and that testing it can provide meaningful coverage improvement.
+2. Establish a fresh execution baseline
+   - Build the existing unit-test suite using BUILD_COMMAND.
+   - Run the existing TEST_COMMAND without adding or modifying tests.
+   - Run COVERAGE_COMMAND to generate fresh coverage data.
+   - Record the resulting line and function coverage as the execution-time
+     baseline.
+   - Do not use the historical 62.6% / 81.8% values as the execution baseline.
 
-3. **Generate/update tests only under `UNIT_TEST_FOLDER` (`unittest/`)**
+3. Baseline failure gate
+   - If the existing test suite cannot be built or run from the current
+     repository state, stop and report BASELINE_BUILD_FAILURE or
+     BASELINE_TEST_FAILURE.
+   - Do not generate or modify tests to hide or repair an existing baseline
+     failure unless explicitly authorized.
+
+4. Check quality gates
+   - If fresh line coverage >= 90% AND fresh function coverage >= 95%,
+     return SUCCESS_NO_ACTION.
+   - Otherwise, continue with the approved test-generation workflow.
+
+5. Scan source and existing tests
+   - Inspect SOURCE_FOLDER for uncovered functions, branches, error paths,
+     and state transitions.
+   - Cross-reference the existing tests and latest lcov results.
+
+### Incremental execution rule
+
+The candidate areas listed in this plan are not to be implemented as one batch.
+
+For each iteration, the agent must:
+
+1. Select ONE highest-value uncovered area based on the latest lcov data.
+2. Add or update only the tests required for that area.
+3. Build.
+4. Run the relevant test(s).
+5. Run coverage.
+6. Compare coverage against the previous iteration.
+7. Only then select the next highest-value uncovered area.
+
+The agent must not implement all candidate areas upfront.
+
+6. **Generate/update tests only under `UNIT_TEST_FOLDER` (`unittest/`)**
    - Add or update tests only after confirming the selected coverage gap from the latest lcov results.
    - Reuse existing fixtures, mocks, helpers, and test binaries wherever possible.
    - Modify `unittest/Makefile.am` only when required to compile or link the selected tests.
    - If a production source file is not currently part of the relevant test binary, first verify that adding it is necessary and compatible with the existing test architecture.
    - Do not modify production source files or production headers under `SOURCE_FOLDER` (`src/`).
 
-4. **Build using BUILD_COMMAND** — `cd unittest && automake --add-missing && autoreconf --install && ./configure && make -j8`
+7. **Build using BUILD_COMMAND** — `cd unittest && automake --add-missing && autoreconf --install && ./configure && make -j8`
 
-5. **Fix test compilation/link issues** — if new source files introduce undefined symbol errors (e.g., GLib types in `xconf_comm_status.c`), add the required CFLAGS (`GLIB_CFLAGS`) to the relevant target in `Makefile.am` only.
+8. **Fix test compilation/link issues** — if new source files introduce undefined symbol errors (e.g., GLib types in `xconf_comm_status.c`), add the required CFLAGS (`GLIB_CFLAGS`) to the relevant target in `Makefile.am` only.
 
-6. **Run TEST_COMMAND** — execute all 6 binaries; collect pass/fail per test case.
+9. **Run TEST_COMMAND** — execute all 6 binaries; collect pass/fail per test case.
 
-7. **Fix test defects if required** — if a new test fails due to incorrect expectations or fixture setup (not a production defect), correct the test only; do not alter production code.
+10. **Fix test defects if required** — if a new test fails due to incorrect expectations or fixture setup (not a production defect), correct the test only; do not alter production code.
 
-8. **Run COVERAGE_COMMAND** — `cd src && lcov --capture --directory . --output-file coverage.info && lcov --remove coverage.info '/usr/*' --output-file coverage.filtered.info && lcov --summary coverage.filtered.info`
+11. **Run COVERAGE_COMMAND** — `cd src && lcov --capture --directory . --output-file coverage.info && lcov --remove coverage.info '/usr/*' --output-file coverage.filtered.info && lcov --summary coverage.filtered.info`
 
-9. **Identify remaining high-value coverage gaps** — if line coverage < 90% or function coverage < 95%, analyse the lcov summary to find the next highest-ROI uncovered function clusters.
+12. **Identify remaining high-value coverage gaps** — if line coverage < 90% or function coverage < 95%, analyse the lcov summary to find the next highest-ROI uncovered function clusters.
 
-10. **Iterate up to the configured repair limit (maximum 4 repair iterations)** — repeat steps 3–9 targeting new gaps each iteration; stop adding tests that are redundant or that test only already-covered paths.
+13. **Iterate up to the configured repair limit (maximum 4 repair iterations)** — repeat steps 3–9 targeting new gaps each iteration; stop adding tests that are redundant or that test only already-covered paths.
 
-11. **Stop when quality gates are met or iteration limit is reached** — report final coverage numbers and any outstanding gaps. Never claim success without command evidence from build/test/coverage outputs.
+14. **Stop when quality gates are met or iteration limit is reached** — report final coverage numbers and any outstanding gaps. Never claim success without command evidence from build/test/coverage outputs.
 
 ---
 
@@ -211,7 +260,7 @@ After approval, the execution phase would proceed as follows:
 | **GTEST_ENABLE macro** | Several production source files use `#ifndef GTEST_ENABLE` guards to exclude system headers not available in the test environment. This is already handled by `COMMON_CPPFLAGS = -DGTEST_ENABLE`. No production-code changes are needed. |
 | **`STATUS_FILE` write path in `updateFWDownloadStatus`** | The fopen-failure test requires pointing STATUS_FILE at an unwritable path. Since STATUS_FILE is a compile-time constant in `download_status_helper.c`, the test will need to use a non-existent directory path (e.g., `/tmp/nonexistent_dir/fwdl_status.txt`) to force the fopen failure, without changing the production constant. |
 | **`/tmp/cmdline.txt` for `CurrentRunningInst`** | Under `GTEST_ENABLE`, the production code uses `/tmp/cmdline.txt` instead of `/proc/<pid>/cmdline`. The cmdline content must use null-byte delimiters (as `getdelim` reads with `\0` as delimiter). The test fixture must write a binary-format file. |
-| **Coverage threshold feasibility** | Starting coverage is 62.6% line / 81.8% function. The actual achievable improvement must be determined from the latest lcov results during execution. Candidate areas must be validated against coverage data before tests are added; no fixed coverage gain or assumption about reaching the final thresholds is made in advance. |
+| **Coverage threshold feasibility** The 90% line / 95% function thresholds are the final quality gates.The 62.6% / 81.8% values are reference measurements from the dry run only. Actual execution-time coverage must be established from the current repository state. Coverage improvement estimates must therefore |be based on the fresh baseline rather than the historical reference values.|
 | **Coverage threshold interpretation** | Final success requires both `line_coverage >= 90%` and `function_coverage >= 95%`. The 85% line value is a minimum progress/reporting floor only and must never be treated as a success criterion. |
 | **Generated gcda/gcno artifacts** | Existing `.gcda`/`.gcno` files in `src/` and `unittest/` are build artifacts from a prior run. They will be overwritten or extended by the new test run. They must not be treated as source changes. |
 | **No production-code modification** | If any production defect is discovered during testing (e.g., a crash triggered by a new test), the test will be suspended and the defect reported separately. Production code under `src/` will not be modified. |
@@ -221,13 +270,16 @@ After approval, the execution phase would proceed as follows:
 ## 6) Expected Stop Conditions
 
 The execution phase will stop when **any** of the following conditions is true:
-
-1. **Quality gates satisfied:** `line_coverage >= 90%` AND `function_coverage >= 95%` — report `SUCCESS`.
-2. **Iteration limit reached:** The configured maximum of 4 improve-build-test-coverage cycles is exhausted; report the final coverage and the remaining gap.
-3. **Minimum progress floor:** If the final line coverage remains below 85% after the allowed iterations, report the result as significantly incomplete and identify the remaining coverage gaps. The 85% value is a progress/reporting indicator only and is not a success or alternate quality gate.
-4. **Unresolvable build failure:** A compilation or link error in the test binary that cannot be fixed by modifying test or mock files alone (would require production-code changes); report `BLOCKED_BUILD_FAILURE` with the exact error.
-5. **Unresolvable test failure caused by suspected production defect:** A test failure that reveals an apparent defect in production logic; stop modifying that code path, report evidence, and flag for separate review.
-6. **Coverage stagnates:** Two consecutive iterations produce less than +0.5 pp line coverage gain despite adding new tests; report diminishing-returns stall and stop.
+1. **Baseline build/test failure:**
+   If the existing unit-test suite cannot be built or executed from the
+   current repository state without modifying production code, stop and
+   report BASELINE_BUILD_FAILURE or BASELINE_TEST_FAILURE.
+2. **Quality gates satisfied:** `line_coverage >= 90%` AND `function_coverage >= 95%` — report `SUCCESS`.
+3. **Iteration limit reached:** The configured maximum of 4 improve-build-test-coverage cycles is exhausted; report the final coverage and the remaining gap.
+4. **Minimum progress floor:** If the final line coverage remains below 85% after the allowed iterations, report the result as significantly incomplete and identify the remaining coverage gaps. The 85% value is a progress/reporting indicator only and is not a success or alternate quality gate.
+5. **Unresolvable build failure:** A compilation or link error in the test binary that cannot be fixed by modifying test or mock files alone (would require production-code changes); report `BLOCKED_BUILD_FAILURE` with the exact error.
+6. **Unresolvable test failure caused by suspected production defect:** A test failure that reveals an apparent defect in production logic; stop modifying that code path, report evidence, and flag for separate review.
+7. **Coverage stagnates:** Two consecutive iterations produce less than +0.5 pp line coverage gain despite adding new tests; report diminishing-returns stall and stop.
 
 ---
 

@@ -33,6 +33,10 @@
 #include <glib.h>
 #include "json_process.h"  // For XCONFRES structure
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  * CheckForUpdate API Call Result
  * 
@@ -365,4 +369,9 @@ CheckUpdateResponse create_optout_response(CheckForUpdateStatus status_code,
                                            const gchar *update_details,
                                            const gchar *status_message);
 #endif
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif // RDKFWUPDATEMGR_HANDLERS_H

@@ -25,6 +25,12 @@ extern "C" {
 #include "device_status_helper.h"
 #include "download_status_helper.h"
 #include "rfcinterface.h"
+
+unsigned int sleep(unsigned int seconds)
+{
+    (void)seconds;
+    return 0;
+}
 }
 #include "./mocks/device_status_helper_mock.h"
 
@@ -308,7 +314,10 @@ TEST(TestlastDwnlImg, TestName_Success)
 TEST(TestlastDwnlImg, TestName_Success1) 
 {
     char buf[16] = {0};
+    int ret = 0;
+    ret = system("echo \"TestLastImage.bin\" > /opt/cdl_flashed_file_name");
     EXPECT_EQ(lastDwnlImg(buf, sizeof(buf)), true);
+    ret = system("rm -f /opt/cdl_flashed_file_name");
 }
 TEST(TestcurrentImg, TestName_BigBuffer) 
 {
@@ -325,7 +334,10 @@ TEST(TestcurrentImg, TestName_Success)
 TEST(TestcurrentImg, TestName_Success1) 
 {
     char buf[16] = {0};
+    int ret = 0;
+    ret = system("echo \"TestImage.bin\" > /tmp/currently_running_image_name");
     EXPECT_EQ(currentImg(buf, sizeof(buf)), true);
+    ret = system("rm -f /tmp/currently_running_image_name");
 }
 TEST(TestprevFlashedFile, TestName_BigBuffer) 
 {
@@ -342,7 +354,10 @@ TEST(TestprevFlashedFile, TestName_Success)
 TEST(TestprevFlashedFile, TestName_Success1)
 {
     char buf[16] = {0};
+    int ret = 0;
+    ret = system("echo \"TestPrevImage.bin\" > /opt/previous_flashed_file_name");
     EXPECT_EQ(prevFlashedFile(buf, sizeof(buf)), true);
+    ret = system("rm -f /opt/previous_flashed_file_name");
 }
 TEST(TestcheckForValidPCIUpgrade, TestName_checkForValidPCIUpgrade_NullCheck)
 {
@@ -355,8 +370,12 @@ TEST(TestcheckForValidPCIUpgrade, TestName_checkForValidPCIUpgrade_failpdri)
 }
 TEST(TestcheckForValidPCIUpgrade, TestName_checkForValidPCIUpgrade_Success)
 {
-    //EXPECT_CALL(*g_DeviceStatusMock, eventManager(_, _)).Times(1).WillOnce(Return());
+    int ret = 0;
+    ret = system("echo \"TestLastImage.bin\" > /opt/cdl_flashed_file_name");
+    ret = system("echo \"TestImage.bin\" > /tmp/currently_running_image_name");
     EXPECT_EQ(checkForValidPCIUpgrade(1, "pciimage.bin", "pciimage.bin", "pciimage.bin"), true);
+    ret = system("rm -f /opt/cdl_flashed_file_name");
+    ret = system("rm -f /tmp/currently_running_image_name");
 }
 TEST(TestcheckForValidPCIUpgrade, TestName_checkForValidPCIUpgrade_Success1)
 {
