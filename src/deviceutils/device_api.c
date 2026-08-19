@@ -40,64 +40,6 @@
 
 #define MAC_ADDRESS_LEN 17
 
-/* function isSecureDbgSrvUnlocked - determines whether secure debug services may be enabled for the given build type.
- *       Usage: bool isSecureDbgSrvUnlocked(BUILDTYPE eBuildType)
- *
- *       For non-prod builds, debug services are always unlocked.
- *
- *       For ePROD builds, debug services are unlocked only when all of the following are true:
- *           - debug services are enabled via isDebugServicesEnabled() (RFC-controlled),
- *           - the LABSIGNED_ENABLED device property indicates a labsigned image, and
- *           - the deviceType value from RFC allows test devices (for example "test").
- *
- *       RETURN - true if secure debug services are allowed to run for the given build type; false otherwise.
- */
-bool isSecureDbgSrvUnlocked(BUILDTYPE eBuildType)
-{ 
-	char deviceType[16] = {0};
-    bool isDebugServicesUnlocked = false;
-	char labsigned[8] = {0};
-	int ret = -1;
-
-    if ((eBuildType != ePROD) && (eBuildType != eUNKNOWN)) {
-        isDebugServicesUnlocked = true;
-    }
-
-    else if (eBuildType == ePROD) 
-	{
-		bool dbgServices = isDebugServicesEnabled();
-		getDeviceTypeRFC(deviceType, sizeof(deviceType));
-        ret = getDevicePropertyData("LABSIGNED_ENABLED", labsigned, sizeof(labsigned));
-        if (ret == UTILS_SUCCESS)
-	    {
-            if (0 == strncmp(labsigned, "true", 4))
-		    {
-		        if ((strcmp(deviceType, "test") == 0) && dbgServices)
-		        {
-                     isDebugServicesUnlocked = true;
-                }   
-		        else
-		        {
-		             SWLOG_INFO("isSecureDbgSrvUnlocked: unable to enable debug services...\n");
-                }
-            }
-            else
-            {
-                SWLOG_INFO("LABSIGNED_ENABLED not enabled (value: %s); debug services remain locked\n", labsigned);
-            }
-        } 
-	    else 
-	    {
-            SWLOG_ERROR("%s: getDevicePropertyData() for LABSIGNED_ENABLED failed\n", __FUNCTION__);
-        }
-		SWLOG_INFO("isSecureDbgSrvUnlocked: dbgServices=%s, deviceType=%s, LABSIGNED_ENABLED=%s\n", dbgServices ? "true" : "false", deviceType, labsigned);	
-	}
-	if(isDebugServicesUnlocked){
-		SWLOG_INFO("isSecureDbgSrvUnlocked: Enabling debug services...\n");
-		t2ValNotify("SYST_INFO_FW_DbgSrv", "true");
-	}
-    return isDebugServicesUnlocked;
-}
 
 /* function GetServerUrlFile - scans a file for a URL. 
         Usage: size_t GetServerUrlFile <char *pServUrl> <size_t szBufSize> <char *pFileName>
@@ -946,6 +888,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
     BUILDTYPE eBuildType;
     char buf[URL_MAX_LEN];
     bool skip = false;
+    bool dbgServices = isDebugServicesEnabled(); //check debug services enabled
 
     if( pServURL != NULL )
     {
@@ -953,7 +896,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
         GetBuildType( buf, sizeof(buf), &eBuildType );
         if( isInStateRed() )
         {
-            if(isSecureDbgSrvUnlocked(eBuildType))
+            if(( eBuildType != ePROD )  || ( dbgServices == true ))
             {
                 len = GetServerUrlFile( pServURL, szBufSize, STATE_RED_CONF );
             }
@@ -976,7 +919,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
         }
         else
         {
-            if(isSecureDbgSrvUnlocked(eBuildType))
+            if(( eBuildType != ePROD )  || ( dbgServices == true ))
             {
                 if( (filePresentCheck( SWUPDATE_CONF ) == RDK_API_SUCCESS) )    // if the file exists
                 {
