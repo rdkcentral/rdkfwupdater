@@ -2942,8 +2942,17 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     upgrade_ctx.server_type = HTTP_SSR_DIRECT;
     SWLOG_INFO("[DOWNLOAD_WORKER]   server_type = HTTP_SSR_DIRECT\n");
     
-    int url_len = snprintf(imageHTTPURL, sizeof(imageHTTPURL), "%s/%s", effective_download_url, ctx->firmware_name);
-    if (url_len < 0 || url_len >= sizeof(imageHTTPURL)) {
+    int url_len;
+    if (strchr(effective_download_url, '?') != NULL) {
+        /* Direct CDN: URL already contains full path + signed query-string tokens — use as-is */
+        url_len = snprintf(imageHTTPURL, sizeof(imageHTTPURL), "%s", effective_download_url);
+        SWLOG_INFO("[DOWNLOAD_WORKER] Direct CDN: using full signed URL as-is\n");
+    } else {
+        /* Legacy: cloudFWLocation is a directory — append firmware filename */
+        url_len = snprintf(imageHTTPURL, sizeof(imageHTTPURL), "%s/%s", effective_download_url, ctx->firmware_name);
+        SWLOG_INFO("[DOWNLOAD_WORKER] Legacy: appending firmware name to location URL\n");
+    }
+    if (url_len < 0 || url_len >= (int)sizeof(imageHTTPURL)) {
 	    SWLOG_ERROR("[DOWNLOAD_WORKER] ERROR: URL too long or snprintf failed (len=%d, max=%zu)\n",
 			    url_len, sizeof(imageHTTPURL));
 	    SWLOG_ERROR("[DOWNLOAD_WORKER] URL would be: %s/%s\n", effective_download_url, ctx->firmware_name);
