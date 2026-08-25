@@ -494,6 +494,34 @@ TEST_F(CreateJsonTestFixture, TestName_checkAndEnterStateRed_notinstatered)
     ret = system("rm /opt/red_state_reboot");
     EXPECT_EQ(0, 0);
 }
+
+TEST_F(CreateJsonTestFixture, TestName_checkAndEnterStateRed_TlsError_CoversFailureStatusBlock)
+{
+    EXPECT_CALL(*g_DeviceStatusMock, filePresentCheck(_))
+        .Times(3)
+        .WillOnce(Return(0))
+        .WillOnce(Return(0))
+        .WillOnce(Return(1));
+    EXPECT_CALL(*g_DeviceStatusMock, t2CountNotify(_)).Times(AtLeast(2));
+
+    int ret = checkAndEnterStateRed(35, "true");
+    EXPECT_NE(ret, 0);
+}
+
+TEST_F(CreateJsonTestFixture, TestName_checkAndEnterStateRed_RecoveryCompletedEvent)
+{
+    EXPECT_CALL(*g_DeviceStatusMock, filePresentCheck(_))
+        .Times(4)
+        .WillOnce(Return(0))
+        .WillOnce(Return(0))
+        .WillOnce(Return(1))
+        .WillOnce(Return(0));
+    EXPECT_CALL(*g_DeviceStatusMock, eventManager(_, _)).Times(1);
+
+    int ret = checkAndEnterStateRed(50, "true");
+    EXPECT_EQ(ret, 0);
+}
+
 TEST(TestcheckVideoStatus, TestName_NullCheck) 
 {
     EXPECT_EQ(checkVideoStatus(NULL), -1);

@@ -915,6 +915,101 @@ TEST_F(DbusHandlersTest, CheckForUpdate_OptOutEnforce_ReturnsBypassOptout) {
     unlink("/tmp/swupdate.conf");
 }
 
+TEST_F(DbusHandlersTest, CheckForUpdate_MaintEnabledButSwOptoutDisabled_NormalFlow) {
+    unlink("/tmp/xconf_response_thunder.txt");
+    unlink("/tmp/xconf_httpcode_thunder.txt");
+
+    FILE* conf = fopen("/tmp/swupdate.conf", "w");
+    ASSERT_NE(conf, nullptr);
+    fprintf(conf, "https://xconf.example.com/path\n");
+    fclose(conf);
+
+    setenv("DBUS_MOCK_DEBUG_SERVICES", "true", 1);
+    setenv("DBUS_MOCK_DEVICE_TYPE", "test", 1);
+    setenv("DBUS_MOCK_LABSIGNED", "true", 1);
+
+    strncpy(device_info.model, "TEST_MODEL", sizeof(device_info.model) - 1);
+    strncpy(device_info.maint_status, "true", sizeof(device_info.maint_status) - 1);
+    strncpy(device_info.sw_optout, "false", sizeof(device_info.sw_optout) - 1);
+
+    EXPECT_CALL(*mock_rdkv_upgrade, rdkv_upgrade_request(_, _, _))
+        .WillOnce(Invoke([](const RdkUpgradeContext_t* ctx, void**, int* http) {
+            *http = 200;
+            DownloadData* dwlloc = (DownloadData*)ctx->dwlloc;
+            const char* response_json =
+                "{"
+                "\"firmwareVersion\":\"VERSION_2.0.0\","
+                "\"firmwareFilename\":\"TEST_MODEL_v2.bin\","
+                "\"firmwareLocation\":\"http://test.com/TEST_MODEL_v2.bin\","
+                "\"rebootImmediately\":\"false\""
+                "}";
+            if (dwlloc && dwlloc->pvOut && dwlloc->memsize > 0) {
+                snprintf((char*)dwlloc->pvOut, dwlloc->memsize, "%s", response_json);
+                dwlloc->datasize = strlen((char*)dwlloc->pvOut);
+            }
+            return 0;
+        }));
+
+    CheckUpdateResponse response = rdkFwupdateMgr_checkForUpdate("test_handler");
+
+    EXPECT_EQ(response.result, CHECK_FOR_UPDATE_SUCCESS);
+    EXPECT_EQ(response.status_code, FIRMWARE_AVAILABLE);
+
+    checkupdate_response_free(&response);
+    unsetenv("DBUS_MOCK_DEBUG_SERVICES");
+    unsetenv("DBUS_MOCK_DEVICE_TYPE");
+    unsetenv("DBUS_MOCK_LABSIGNED");
+    unlink("/tmp/swupdate.conf");
+}
+
+TEST_F(DbusHandlersTest, CheckForUpdate_OptoutUnsetValue_NormalFlow) {
+    unlink("/tmp/xconf_response_thunder.txt");
+    unlink("/tmp/xconf_httpcode_thunder.txt");
+
+    FILE* conf = fopen("/tmp/swupdate.conf", "w");
+    ASSERT_NE(conf, nullptr);
+    fprintf(conf, "https://xconf.example.com/path\n");
+    fclose(conf);
+
+    setenv("DBUS_MOCK_DEBUG_SERVICES", "true", 1);
+    setenv("DBUS_MOCK_DEVICE_TYPE", "test", 1);
+    setenv("DBUS_MOCK_LABSIGNED", "true", 1);
+    unsetenv("DBUS_MOCK_OPTOUT");
+
+    strncpy(device_info.model, "TEST_MODEL", sizeof(device_info.model) - 1);
+    strncpy(device_info.maint_status, "true", sizeof(device_info.maint_status) - 1);
+    strncpy(device_info.sw_optout, "true", sizeof(device_info.sw_optout) - 1);
+
+    EXPECT_CALL(*mock_rdkv_upgrade, rdkv_upgrade_request(_, _, _))
+        .WillOnce(Invoke([](const RdkUpgradeContext_t* ctx, void**, int* http) {
+            *http = 200;
+            DownloadData* dwlloc = (DownloadData*)ctx->dwlloc;
+            const char* response_json =
+                "{"
+                "\"firmwareVersion\":\"VERSION_2.0.0\","
+                "\"firmwareFilename\":\"TEST_MODEL_v2.bin\","
+                "\"firmwareLocation\":\"http://test.com/TEST_MODEL_v2.bin\","
+                "\"rebootImmediately\":\"false\""
+                "}";
+            if (dwlloc && dwlloc->pvOut && dwlloc->memsize > 0) {
+                snprintf((char*)dwlloc->pvOut, dwlloc->memsize, "%s", response_json);
+                dwlloc->datasize = strlen((char*)dwlloc->pvOut);
+            }
+            return 0;
+        }));
+
+    CheckUpdateResponse response = rdkFwupdateMgr_checkForUpdate("test_handler");
+
+    EXPECT_EQ(response.result, CHECK_FOR_UPDATE_SUCCESS);
+    EXPECT_EQ(response.status_code, FIRMWARE_AVAILABLE);
+
+    checkupdate_response_free(&response);
+    unsetenv("DBUS_MOCK_DEBUG_SERVICES");
+    unsetenv("DBUS_MOCK_DEVICE_TYPE");
+    unsetenv("DBUS_MOCK_LABSIGNED");
+    unlink("/tmp/swupdate.conf");
+}
+
 TEST_F(DbusHandlersTest, CheckForUpdate_NoVersion_ReturnsNotAvailable) {
     unlink("/tmp/xconf_response_thunder.txt");
     unlink("/tmp/xconf_httpcode_thunder.txt");
@@ -2503,6 +2598,81 @@ TEST_F(DbusHandlersTest, FlashWorkerThread_MissingFirmwarePath_HandlesErrorFlow)
     EXPECT_EQ(ret, nullptr);
 }
 
+TEST_F(DbusHandlersTest, FlashWorkerThread_SuccessPath_PdriType) {
+    const char* fw_path = "/tmp/flash_worker_pdri.bin";
+    FILE* fw = fopen(fw_path, "w");
+    ASSERT_NE(fw, nullptr);
+    fputs("ok", fw);
+    fclose(fw);
+
+    AsyncFlashContext* ctx = g_new0(AsyncFlashContext, 1);
+    ASSERT_NE(ctx, nullptr);
+
+    ctx->connection = (GDBusConnection*)0xCAFEBABE;
+    ctx->handler_id = g_strdup("555");
+    ctx->firmware_name = g_strdup("pdri_fw.bin");
+    ctx->firmware_type = g_strdup("PDRI");
+    ctx->firmware_fullpath = g_strdup(fw_path);
+    ctx->server_url = g_strdup("http://xconf.example.com/firmware");
+    ctx->immediate_reboot = TRUE;
+    ctx->trigger_type = 4;
+
+    gpointer ret = rdkfw_flash_worker_thread(ctx);
+    EXPECT_EQ(ret, nullptr);
+
+    unlink(fw_path);
+}
+
+TEST_F(DbusHandlersTest, FlashWorkerThread_SuccessPath_PeripheralType) {
+    const char* fw_path = "/tmp/flash_worker_peripheral.bin";
+    FILE* fw = fopen(fw_path, "w");
+    ASSERT_NE(fw, nullptr);
+    fputs("ok", fw);
+    fclose(fw);
+
+    AsyncFlashContext* ctx = g_new0(AsyncFlashContext, 1);
+    ASSERT_NE(ctx, nullptr);
+
+    ctx->connection = (GDBusConnection*)0xCAFEBABE;
+    ctx->handler_id = g_strdup("556");
+    ctx->firmware_name = g_strdup("peripheral_fw.bin");
+    ctx->firmware_type = g_strdup("PERIPHERAL");
+    ctx->firmware_fullpath = g_strdup(fw_path);
+    ctx->server_url = g_strdup("http://xconf.example.com/firmware");
+    ctx->immediate_reboot = TRUE;
+    ctx->trigger_type = 4;
+
+    gpointer ret = rdkfw_flash_worker_thread(ctx);
+    EXPECT_EQ(ret, nullptr);
+
+    unlink(fw_path);
+}
+
+TEST_F(DbusHandlersTest, FlashWorkerThread_SuccessPath_DeferredReboot) {
+    const char* fw_path = "/tmp/flash_worker_deferred.bin";
+    FILE* fw = fopen(fw_path, "w");
+    ASSERT_NE(fw, nullptr);
+    fputs("ok", fw);
+    fclose(fw);
+
+    AsyncFlashContext* ctx = g_new0(AsyncFlashContext, 1);
+    ASSERT_NE(ctx, nullptr);
+
+    ctx->connection = (GDBusConnection*)0xCAFEBABE;
+    ctx->handler_id = g_strdup("557");
+    ctx->firmware_name = g_strdup("pci_fw.bin");
+    ctx->firmware_type = g_strdup("PCI");
+    ctx->firmware_fullpath = g_strdup(fw_path);
+    ctx->server_url = g_strdup("http://xconf.example.com/firmware");
+    ctx->immediate_reboot = FALSE;
+    ctx->trigger_type = 4;
+
+    gpointer ret = rdkfw_flash_worker_thread(ctx);
+    EXPECT_EQ(ret, nullptr);
+
+    unlink(fw_path);
+}
+
 // ============================================================================
 // PHASE 4: THREAD WORKER TESTS (Progress Monitor Thread)
 // ============================================================================
@@ -2686,6 +2856,320 @@ TEST_F(DbusHandlersTest, ProgressMonitorThread_MalformedData_HandlesGracefully) 
 
     // Primary expectation: malformed input does not crash the worker.
     EXPECT_GE(fake_fileio_get_fopen_count(), 0);
+}
+
+TEST_F(DbusHandlersTest, ProgressMonitorThread_EmptyFile_FgetsNullBranch) {
+    fake_dbus_reset();
+    fake_fileio_reset();
+    fake_fileio_set_progress_file("");
+
+    gint stop_flag = 0;
+    GMutex* mutex = g_new0(GMutex, 1);
+    g_mutex_init(mutex);
+
+    ProgressMonitorContext* ctx = g_new0(ProgressMonitorContext, 1);
+    ctx->connection = (GDBusConnection*)0xDEADBEEF;
+    ctx->handler_id = g_strdup("empty_file_test");
+    ctx->firmware_name = g_strdup("empty.bin");
+    ctx->stop_flag = &stop_flag;
+    ctx->mutex = mutex;
+    ctx->last_dlnow = 0;
+    ctx->last_activity_time = time(NULL);
+
+    GThread* thread = g_thread_new("monitor_empty", rdkfw_progress_monitor_thread, ctx);
+    ASSERT_NE(thread, nullptr);
+
+    for (int i = 0; i < 200000; ++i) {
+        if (fake_fileio_get_fopen_count() > 2) {
+            break;
+        }
+    }
+    g_atomic_int_set(&stop_flag, 1);
+    g_thread_join(thread);
+
+    EXPECT_GT(fake_fileio_get_fopen_count(), 0);
+}
+
+TEST_F(DbusHandlersTest, ProgressMonitorThread_ParseFailure_BranchCovered) {
+    fake_dbus_reset();
+    fake_fileio_reset();
+    fake_fileio_set_progress_file("INVALID FORMAT LINE\n");
+
+    gint stop_flag = 0;
+    GMutex* mutex = g_new0(GMutex, 1);
+    g_mutex_init(mutex);
+
+    ProgressMonitorContext* ctx = g_new0(ProgressMonitorContext, 1);
+    ctx->connection = (GDBusConnection*)0xDEADBEEF;
+    ctx->handler_id = g_strdup("parse_fail_test");
+    ctx->firmware_name = g_strdup("parse_fail.bin");
+    ctx->stop_flag = &stop_flag;
+    ctx->mutex = mutex;
+    ctx->last_dlnow = 0;
+    ctx->last_activity_time = time(NULL);
+
+    GThread* thread = g_thread_new("monitor_parse_fail", rdkfw_progress_monitor_thread, ctx);
+    ASSERT_NE(thread, nullptr);
+
+    for (int i = 0; i < 200000; ++i) {
+        if (fake_fileio_get_fopen_count() > 2) {
+            break;
+        }
+    }
+    g_atomic_int_set(&stop_flag, 1);
+    g_thread_join(thread);
+
+    EXPECT_FALSE(fake_dbus_was_signal_emitted());
+}
+
+TEST_F(DbusHandlersTest, ProgressMonitorThread_ResetFromNonZeroToZero_EmitsSignal) {
+    fake_dbus_reset();
+    fake_fileio_reset();
+    fake_fileio_set_progress_file("UP: 0 of 0  DOWN: 0 of 0\n");
+
+    gint stop_flag = 0;
+    GMutex* mutex = g_new0(GMutex, 1);
+    g_mutex_init(mutex);
+
+    ProgressMonitorContext* ctx = g_new0(ProgressMonitorContext, 1);
+    ctx->connection = (GDBusConnection*)0xDEADBEEF;
+    ctx->handler_id = g_strdup("reset_zero_test");
+    ctx->firmware_name = g_strdup("reset.bin");
+    ctx->stop_flag = &stop_flag;
+    ctx->mutex = mutex;
+    ctx->last_dlnow = 100;
+    ctx->last_activity_time = time(NULL);
+
+    GThread* thread = g_thread_new("monitor_reset", rdkfw_progress_monitor_thread, ctx);
+    ASSERT_NE(thread, nullptr);
+
+    for (int i = 0; i < 200000; ++i) {
+        if (fake_dbus_get_signal_count() > 0) {
+            break;
+        }
+    }
+    g_atomic_int_set(&stop_flag, 1);
+    g_thread_join(thread);
+
+    EXPECT_TRUE(fake_dbus_was_signal_emitted());
+    EXPECT_EQ(fake_dbus_get_last_progress(), 0);
+}
+
+TEST_F(DbusHandlersTest, ProgressMonitorThread_PercentBelowThrottle_NoEmit) {
+    fake_dbus_reset();
+    fake_fileio_reset();
+    fake_fileio_set_progress_file("UP: 0 of 0  DOWN: 50500 of 100000\n");
+
+    gint stop_flag = 0;
+    GMutex* mutex = g_new0(GMutex, 1);
+    g_mutex_init(mutex);
+
+    ProgressMonitorContext* ctx = g_new0(ProgressMonitorContext, 1);
+    ctx->connection = (GDBusConnection*)0xDEADBEEF;
+    ctx->handler_id = g_strdup("below_throttle_test");
+    ctx->firmware_name = g_strdup("throttle.bin");
+    ctx->stop_flag = &stop_flag;
+    ctx->mutex = mutex;
+    ctx->last_dlnow = 50000;
+    ctx->last_activity_time = time(NULL);
+
+    GThread* thread = g_thread_new("monitor_below", rdkfw_progress_monitor_thread, ctx);
+    ASSERT_NE(thread, nullptr);
+
+    for (int i = 0; i < 200000; ++i) {
+        if (fake_fileio_get_fopen_count() > 3) {
+            break;
+        }
+    }
+    g_atomic_int_set(&stop_flag, 1);
+    g_thread_join(thread);
+
+    EXPECT_FALSE(fake_dbus_was_signal_emitted());
+}
+
+TEST_F(DbusHandlersTest, ProgressMonitorThread_PercentAboveThrottle_EmitsSignal) {
+    fake_dbus_reset();
+    fake_fileio_reset();
+    fake_fileio_set_progress_file("UP: 0 of 0  DOWN: 70000 of 100000\n");
+
+    gint stop_flag = 0;
+    GMutex* mutex = g_new0(GMutex, 1);
+    g_mutex_init(mutex);
+
+    ProgressMonitorContext* ctx = g_new0(ProgressMonitorContext, 1);
+    ctx->connection = (GDBusConnection*)0xDEADBEEF;
+    ctx->handler_id = g_strdup("above_throttle_test");
+    ctx->firmware_name = g_strdup("throttle.bin");
+    ctx->stop_flag = &stop_flag;
+    ctx->mutex = mutex;
+    ctx->last_dlnow = 50000;
+    ctx->last_activity_time = time(NULL);
+
+    GThread* thread = g_thread_new("monitor_above", rdkfw_progress_monitor_thread, ctx);
+    ASSERT_NE(thread, nullptr);
+
+    for (int i = 0; i < 200000; ++i) {
+        if (fake_dbus_get_signal_count() > 0) {
+            break;
+        }
+    }
+    g_atomic_int_set(&stop_flag, 1);
+    g_thread_join(thread);
+
+    EXPECT_TRUE(fake_dbus_was_signal_emitted());
+    EXPECT_EQ(fake_dbus_get_last_progress(), 70);
+}
+
+TEST_F(DbusHandlersTest, ProgressMonitorThread_FileMissingWaitPath_CoversFailureCounter) {
+    fake_dbus_reset();
+    fake_fileio_reset();
+    fake_fileio_set_progress_file(nullptr);
+
+    gint stop_flag = 0;
+    GMutex* mutex = g_new0(GMutex, 1);
+    g_mutex_init(mutex);
+
+    ProgressMonitorContext* ctx = g_new0(ProgressMonitorContext, 1);
+    ctx->connection = (GDBusConnection*)0xDEADBEEF;
+    ctx->handler_id = g_strdup("wait_path_test");
+    ctx->firmware_name = g_strdup("wait.bin");
+    ctx->stop_flag = &stop_flag;
+    ctx->mutex = mutex;
+    ctx->last_dlnow = 0;
+    ctx->last_activity_time = time(NULL);
+
+    GThread* thread = g_thread_new("monitor_wait_path", rdkfw_progress_monitor_thread, ctx);
+    ASSERT_NE(thread, nullptr);
+
+    for (int i = 0; i < 500000; ++i) {
+        if (fake_fileio_get_fopen_count() >= 60) {
+            break;
+        }
+    }
+
+    g_atomic_int_set(&stop_flag, 1);
+    g_thread_join(thread);
+
+    EXPECT_GE(fake_fileio_get_fopen_count(), 50);
+    EXPECT_FALSE(fake_dbus_was_signal_emitted());
+}
+
+TEST_F(DbusHandlersTest, ProgressMonitorThread_TimeoutAfterStart_CoversTimeoutPath) {
+    fake_dbus_reset();
+    fake_fileio_reset();
+    fake_fileio_set_progress_file("UP: 0 of 0  DOWN: 100 of 1000\n");
+
+    gint stop_flag = 0;
+    GMutex* mutex = g_new0(GMutex, 1);
+    g_mutex_init(mutex);
+
+    ProgressMonitorContext* ctx = g_new0(ProgressMonitorContext, 1);
+    ctx->connection = (GDBusConnection*)0xDEADBEEF;
+    ctx->handler_id = g_strdup("timeout_path_test");
+    ctx->firmware_name = g_strdup("timeout.bin");
+    ctx->stop_flag = &stop_flag;
+    ctx->mutex = mutex;
+    ctx->last_dlnow = 0;
+    ctx->last_activity_time = time(NULL);
+
+    GThread* thread = g_thread_new("monitor_timeout", rdkfw_progress_monitor_thread, ctx);
+    ASSERT_NE(thread, nullptr);
+
+    for (int i = 0; i < 500000; ++i) {
+        if (fake_fileio_get_fopen_count() >= 2) {
+            break;
+        }
+    }
+
+    ctx->last_activity_time = time(NULL) - 3600;
+    fake_fileio_set_progress_file(nullptr);
+
+    for (int i = 0; i < 500000; ++i) {
+        if (fake_fileio_get_fopen_count() >= 3) {
+            break;
+        }
+    }
+
+    g_atomic_int_set(&stop_flag, 1);
+    g_thread_join(thread);
+
+    EXPECT_GE(fake_fileio_get_fopen_count(), 2);
+}
+
+TEST_F(DbusHandlersTest, ProgressMonitorThread_RuntimeConnectionNull_SkipEmissionPath) {
+    fake_dbus_reset();
+    fake_fileio_reset();
+    fake_fileio_set_progress_file("UP: 0 of 0  DOWN: 50500 of 100000\n");
+
+    gint stop_flag = 0;
+    GMutex* mutex = g_new0(GMutex, 1);
+    g_mutex_init(mutex);
+
+    ProgressMonitorContext* ctx = g_new0(ProgressMonitorContext, 1);
+    ctx->connection = (GDBusConnection*)0xDEADBEEF;
+    ctx->handler_id = g_strdup("conn_null_test");
+    ctx->firmware_name = g_strdup("conn_null.bin");
+    ctx->stop_flag = &stop_flag;
+    ctx->mutex = mutex;
+    ctx->last_dlnow = 50000;
+    ctx->last_activity_time = time(NULL);
+
+    GThread* thread = g_thread_new("monitor_conn_null", rdkfw_progress_monitor_thread, ctx);
+    ASSERT_NE(thread, nullptr);
+
+    for (int i = 0; i < 500000; ++i) {
+        if (fake_fileio_get_fopen_count() >= 2) {
+            break;
+        }
+    }
+
+    ctx->connection = NULL;
+    fake_fileio_set_progress_file("UP: 0 of 0  DOWN: 70000 of 100000\n");
+
+    for (int i = 0; i < 500000; ++i) {
+        if (fake_fileio_get_fopen_count() >= 4) {
+            break;
+        }
+    }
+
+    g_atomic_int_set(&stop_flag, 1);
+    g_thread_join(thread);
+
+    EXPECT_FALSE(fake_dbus_was_signal_emitted());
+}
+
+TEST_F(DbusHandlersTest, ProgressMonitorThread_ProgressClampedTo100_WhenOverTotal) {
+    fake_dbus_reset();
+    fake_fileio_reset();
+    fake_fileio_set_progress_file("UP: 0 of 0  DOWN: 150 of 100\n");
+
+    gint stop_flag = 0;
+    GMutex* mutex = g_new0(GMutex, 1);
+    g_mutex_init(mutex);
+
+    ProgressMonitorContext* ctx = g_new0(ProgressMonitorContext, 1);
+    ctx->connection = (GDBusConnection*)0xDEADBEEF;
+    ctx->handler_id = g_strdup("clamp_test");
+    ctx->firmware_name = g_strdup("clamp.bin");
+    ctx->stop_flag = &stop_flag;
+    ctx->mutex = mutex;
+    ctx->last_dlnow = 0;
+    ctx->last_activity_time = time(NULL);
+
+    GThread* thread = g_thread_new("monitor_clamp", rdkfw_progress_monitor_thread, ctx);
+    ASSERT_NE(thread, nullptr);
+
+    for (int i = 0; i < 500000; ++i) {
+        if (fake_dbus_get_signal_count() > 0) {
+            break;
+        }
+    }
+
+    g_atomic_int_set(&stop_flag, 1);
+    g_thread_join(thread);
+
+    EXPECT_TRUE(fake_dbus_was_signal_emitted());
+    EXPECT_EQ(fake_dbus_get_last_progress(), 100);
 }
 
 /**
