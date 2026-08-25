@@ -894,7 +894,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
         GetBuildType( buf, sizeof(buf), &eBuildType );
         if( isInStateRed() )
         {
-            if(isSecureDbgSrvUnlocked())
+            if(isRuntimeFeatureEnabled())
             {
                 len = GetServerUrlFile( pServURL, szBufSize, STATE_RED_CONF );
             }
@@ -917,7 +917,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
         }
         else
         {
-            if(isSecureDbgSrvUnlocked())
+            if(isRuntimeFeatureEnabled())
             {
                 if( (filePresentCheck( SWUPDATE_CONF ) == RDK_API_SUCCESS) )    // if the file exists
                 {
