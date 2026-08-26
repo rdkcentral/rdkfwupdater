@@ -109,6 +109,8 @@ DeviceUtilsMock Deviceglobal;
 #define TEST_FW_PREPARING_REBOOT        "/tmp/test_fw_preparing_to_reboot"
 #define TEST_VERSION_FILE               "/tmp/test_version.txt"
 #define TEST_DOWNLOADED_PERIPHERAL_VERS "/tmp/downloaded_peripheral_versions.txt"
+#define OPT_OUT_CFG_FILE               "/opt/maintenance_mgr_record.conf"
+#define TEST_OPT_OUT_BACKUP            "/tmp/test_optout_backup.conf"
 
 // =============================================================================
 // TEST FIXTURE
@@ -128,6 +130,7 @@ protected:
         printf("%s\n", __func__);
         // Clean up test files before each test
         CleanupTestFiles();
+        BackupOptoutFileIfPresent();
         
         // Initialize global variables
         memset(&device_info, 0, sizeof(device_info));
@@ -145,6 +148,7 @@ protected:
 
     virtual void TearDown() override {
         printf("%s\n", __func__);
+        RestoreOptoutFile();
         // Clean up test files after each test
         CleanupTestFiles();
     }
@@ -195,6 +199,33 @@ protected:
         string content((istreambuf_iterator<char>(file)), istreambuf_iterator<char>());
         return content;
     }
+
+    void BackupOptoutFileIfPresent() {
+        optoutFileExisted = (access(OPT_OUT_CFG_FILE, F_OK) == 0);
+        unlink(TEST_OPT_OUT_BACKUP);
+        if (optoutFileExisted) {
+            copyFile(OPT_OUT_CFG_FILE, TEST_OPT_OUT_BACKUP);
+        }
+    }
+
+    void RestoreOptoutFile() {
+        if (optoutFileExisted && access(TEST_OPT_OUT_BACKUP, F_OK) == 0) {
+            copyFile(TEST_OPT_OUT_BACKUP, OPT_OUT_CFG_FILE);
+        } else {
+            unlink(OPT_OUT_CFG_FILE);
+        }
+        unlink(TEST_OPT_OUT_BACKUP);
+    }
+
+    void WriteOptoutFile(const char *content) {
+        FILE *fp = fopen(OPT_OUT_CFG_FILE, "w");
+        if (fp) {
+            fputs(content, fp);
+            fclose(fp);
+        }
+    }
+
+    bool optoutFileExisted = false;
 };
 
 // =============================================================================
@@ -522,6 +553,72 @@ TEST_F(RdkFwupdateMgrMainFlowTest, CheckTriggerUpgrade_PDRIPathUsesUpgradeReques
     global_mockexternal_ptr = nullptr;
 }
 
+TEST_F(RdkFwupdateMgrMainFlowTest, CheckTriggerUpgrade_OptoutIgnoreUpdate_Exits) {
+    WriteOptoutFile("softwareoptout=IGNORE_UPDATE\n");
+
+    EXPECT_EXIT(
+        {
+            MockExternal mock;
+            global_mockexternal_ptr = &mock;
+            DeviceUtilsMock deviceMock;
+            g_DeviceUtilsMock = &deviceMock;
+
+            strncpy(device_info.maint_status, "true", sizeof(device_info.maint_status) - 1);
+            strncpy(device_info.sw_optout, "true", sizeof(device_info.sw_optout) - 1);
+            strncpy(device_info.difw_path, "/tmp", sizeof(device_info.difw_path) - 1);
+            strncpy(cur_img_detail.cur_img_name, "testModel.bin", sizeof(cur_img_detail.cur_img_name) - 1);
+
+            XCONFRES response = {};
+            snprintf(response.cloudFWVersion, sizeof(response.cloudFWVersion), "%s", "testModel.bin");
+            snprintf(response.cloudFWFile, sizeof(response.cloudFWFile), "%s", "testModel.bin");
+            snprintf(response.cloudFWLocation, sizeof(response.cloudFWLocation), "%s", "/tmp");
+            snprintf(response.cloudImmediateRebootFlag, sizeof(response.cloudImmediateRebootFlag), "%s", "false");
+            snprintf(response.cloudDelayDownload, sizeof(response.cloudDelayDownload), "%s", "0");
+
+            EXPECT_CALL(mock, isUpgradeInProgress()).WillRepeatedly(Return(false));
+            EXPECT_CALL(mock, checkForValidPCIUpgrade(_, _, _, _)).WillRepeatedly(Return(true));
+            EXPECT_CALL(mock, eventManager(_, _)).Times(AtLeast(1));
+
+            (void)checkTriggerUpgrade(&response, "testModel", 1);
+            _exit(0);
+        },
+        ::testing::ExitedWithCode(1),
+        ".*");
+}
+
+TEST_F(RdkFwupdateMgrMainFlowTest, CheckTriggerUpgrade_OptoutConsentRequired_Exits) {
+    WriteOptoutFile("softwareoptout=ENFORCE_OPTOUT\n");
+
+    EXPECT_EXIT(
+        {
+            MockExternal mock;
+            global_mockexternal_ptr = &mock;
+            DeviceUtilsMock deviceMock;
+            g_DeviceUtilsMock = &deviceMock;
+
+            strncpy(device_info.maint_status, "true", sizeof(device_info.maint_status) - 1);
+            strncpy(device_info.sw_optout, "true", sizeof(device_info.sw_optout) - 1);
+            strncpy(device_info.difw_path, "/tmp", sizeof(device_info.difw_path) - 1);
+            strncpy(cur_img_detail.cur_img_name, "testModel.bin", sizeof(cur_img_detail.cur_img_name) - 1);
+
+            XCONFRES response = {};
+            snprintf(response.cloudFWVersion, sizeof(response.cloudFWVersion), "%s", "testModel.bin");
+            snprintf(response.cloudFWFile, sizeof(response.cloudFWFile), "%s", "testModel.bin");
+            snprintf(response.cloudFWLocation, sizeof(response.cloudFWLocation), "%s", "/tmp");
+            snprintf(response.cloudImmediateRebootFlag, sizeof(response.cloudImmediateRebootFlag), "%s", "false");
+            snprintf(response.cloudDelayDownload, sizeof(response.cloudDelayDownload), "%s", "0");
+
+            EXPECT_CALL(mock, isUpgradeInProgress()).WillRepeatedly(Return(false));
+            EXPECT_CALL(mock, checkForValidPCIUpgrade(_, _, _, _)).WillRepeatedly(Return(true));
+            EXPECT_CALL(mock, eventManager(_, _)).Times(AtLeast(2));
+
+            (void)checkTriggerUpgrade(&response, "testModel", 1);
+            _exit(0);
+        },
+        ::testing::ExitedWithCode(1),
+        ".*");
+}
+
 // =============================================================================
 // TEST SUITE 3: copyFile() (helper for prevCurUpdateInfo)
 // =============================================================================
@@ -647,6 +744,46 @@ TEST_F(RdkFwupdateMgrMainFlowTest, PrevCurUpdateInfo_NoCdlFileCreatesCurrentAndP
     EXPECT_EQ(waitpid(child, &status, 0), child);
     EXPECT_TRUE(WIFEXITED(status));
     EXPECT_EQ(WEXITSTATUS(status), 0);
+}
+
+TEST_F(RdkFwupdateMgrMainFlowTest, PrevCurUpdateInfo_CdlMismatchWithPreviousMatch_CopiesPreviousToCurrent) {
+    MockExternal mockexternal;
+    global_mockexternal_ptr = &mockexternal;
+    DeviceUtilsMock localMock;
+    g_DeviceUtilsMock = &localMock;
+
+    EXPECT_CALL(mockexternal, GetFirmwareVersion(_, _))
+        .WillOnce(Invoke([](char *buf, size_t size) {
+            snprintf(buf, size, "%s", "1.0.0.0");
+            return 0;
+        }));
+
+    EXPECT_CALL(localMock, filePresentCheck(_))
+        .Times(2)
+        .WillOnce(Return(0))
+        .WillOnce(Return(0));
+
+    EXPECT_CALL(mockexternal, lastDwnlImg(_, _))
+        .WillOnce(Invoke([](char *img_name, size_t img_name_size) {
+            snprintf(img_name, img_name_size, "%s", "2.0.0.0-signed.bin");
+            return true;
+        }));
+
+    EXPECT_CALL(mockexternal, prevFlashedFile(_, _))
+        .WillOnce(Invoke([](char *img_name, size_t img_name_size) {
+            snprintf(img_name, img_name_size, "%s", "1.0.0.0-signed.bin");
+            return true;
+        }));
+
+    TestFileCreate(PREVIOUS_FLASHED_IMAGE, "1.0.0.0-signed.bin\n");
+    TestFileCreate(CURRENTLY_RUNNING_IMAGE, "old-value\n");
+
+    EXPECT_EQ(prevCurUpdateInfo(), 0);
+    EXPECT_TRUE(FileExists(CURRENTLY_RUNNING_IMAGE));
+    EXPECT_EQ(ReadFileContent(CURRENTLY_RUNNING_IMAGE), "1.0.0.0-signed.bin\n");
+
+    g_DeviceUtilsMock = nullptr;
+    global_mockexternal_ptr = nullptr;
 }
 
 TEST_F(RdkFwupdateMgrMainFlowTest, InitialValidation_AlreadyRunning_ReturnsDownloadInProgress) {
