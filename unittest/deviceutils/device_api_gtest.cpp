@@ -870,3 +870,143 @@ TEST_F(DeviceApiTestFixture, TestName_GetServURL_DirectCDN_StateRed_Recovery)
     ret = system("rm -f /tmp/device_gtest.prop");
     printf("DirectCDN StateRed Recovery URL = %s\n", output);
 }
+
+
+/* RDKEMW-21926: runtime feature gating for firmware server URL override */
+
+TEST_F(DeviceApiTestFixture, GetServURL_RuntimeFeatureEnabled_UsesOverride)
+{
+    char url[512] = {0};
+    const char overrideUrl[] = "https://override.test/xconf/swu/stb";
+
+    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed())
+        .WillRepeatedly(testing::Return(false));
+
+    EXPECT_CALL(*g_DeviceUtilsMock, isRuntimeFeatureEnabled())
+        .WillRepeatedly(testing::Return(true));
+
+    EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(testing::_))
+        .WillOnce(testing::Return(RDK_API_SUCCESS));
+
+    EXPECT_CALL(*g_DeviceUtilsMock,
+                GetServerUrlFile(testing::_, testing::_, testing::_))
+        .WillOnce(testing::DoAll(
+            testing::SetArrayArgument<0>(
+                overrideUrl,
+                overrideUrl + sizeof(overrideUrl)),
+            testing::Return(sizeof(overrideUrl) - 1)));
+
+    EXPECT_GT(GetServURL(url, sizeof(url)), 0u);
+    EXPECT_STREQ(overrideUrl, url);
+}
+
+
+TEST_F(DeviceApiTestFixture, GetServURL_RuntimeFeatureDisabled_IgnoresOverride)
+{
+    char url[512] = {0};
+    const char fallbackUrl[] = "https://fallback.test/xconf";
+
+    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed())
+        .WillRepeatedly(testing::Return(false));
+
+    EXPECT_CALL(*g_DeviceUtilsMock, isRuntimeFeatureEnabled())
+        .WillRepeatedly(testing::Return(false));
+
+    EXPECT_CALL(*g_DeviceUtilsMock,
+                GetServerUrlFile(testing::_, testing::_, testing::_))
+        .Times(0);
+
+    EXPECT_CALL(*g_DeviceUtilsMock,
+                GetTR181Url(testing::_, testing::_, testing::_))
+        .WillRepeatedly(testing::DoAll(
+            testing::SetArrayArgument<1>(
+                fallbackUrl,
+                fallbackUrl + sizeof(fallbackUrl)),
+            testing::Return(sizeof(fallbackUrl) - 1)));
+
+    GetServURL(url, sizeof(url));
+
+    EXPECT_STRNE("https://override.test/xconf/swu/stb", url);
+}
+
+
+TEST_F(DeviceApiTestFixture, GetServURL_RuntimeFeatureEnabled_InvalidOverride)
+{
+    char url[512] = {0};
+
+    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed())
+        .WillRepeatedly(testing::Return(false));
+
+    EXPECT_CALL(*g_DeviceUtilsMock, isRuntimeFeatureEnabled())
+        .WillRepeatedly(testing::Return(true));
+
+    EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(testing::_))
+        .WillOnce(testing::Return(RDK_API_SUCCESS));
+
+    EXPECT_CALL(*g_DeviceUtilsMock,
+                GetServerUrlFile(testing::_, testing::_, testing::_))
+        .WillOnce(testing::Return(0));
+
+    EXPECT_EQ(GetServURL(url, sizeof(url)), 0u);
+}
+
+
+TEST_F(DeviceApiTestFixture, GetServURL_StateRed_RuntimeFeatureEnabled_UsesOverride)
+{
+    char url[512] = {0};
+    const char stateRedUrl[] = "https://statered.test/xconf/swu/stb";
+
+    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed())
+        .WillRepeatedly(testing::Return(true));
+
+    EXPECT_CALL(*g_DeviceUtilsMock, isRuntimeFeatureEnabled())
+        .WillRepeatedly(testing::Return(true));
+
+    EXPECT_CALL(*g_DeviceUtilsMock,
+                GetServerUrlFile(
+                    testing::_,
+                    testing::_,
+                    testing::StrEq(STATE_RED_CONF)))
+        .WillOnce(testing::DoAll(
+            testing::SetArrayArgument<0>(
+                stateRedUrl,
+                stateRedUrl + sizeof(stateRedUrl)),
+            testing::Return(sizeof(stateRedUrl) - 1)));
+
+    EXPECT_GT(GetServURL(url, sizeof(url)), 0u);
+    EXPECT_STREQ(stateRedUrl, url);
+}
+
+
+TEST_F(DeviceApiTestFixture, GetServURL_StateRed_RuntimeFeatureDisabled_IgnoresOverride)
+{
+    char url[512] = {0};
+    const char recoveryUrl[] = "https://recovery.test";
+
+    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed())
+        .WillRepeatedly(testing::Return(true));
+
+    EXPECT_CALL(*g_DeviceUtilsMock, isRuntimeFeatureEnabled())
+        .WillRepeatedly(testing::Return(false));
+
+    EXPECT_CALL(*g_DeviceUtilsMock,
+                GetServerUrlFile(
+                    testing::_,
+                    testing::_,
+                    testing::StrEq(STATE_RED_CONF)))
+        .Times(0);
+
+    EXPECT_CALL(*g_DeviceUtilsMock,
+                GetTR181Url(testing::_, testing::_, testing::_))
+        .WillRepeatedly(testing::DoAll(
+            testing::SetArrayArgument<1>(
+                recoveryUrl,
+                recoveryUrl + sizeof(recoveryUrl)),
+            testing::Return(sizeof(recoveryUrl) - 1)));
+
+    GetServURL(url, sizeof(url));
+
+    EXPECT_STRNE(
+        "https://statered.test/xconf/swu/stb",
+        url);
+}

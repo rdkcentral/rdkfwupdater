@@ -210,6 +210,14 @@ extern "C" bool isDirectCDNEnabled(void) {
         }
         return g_DeviceUtilsMock->isDirectCDNEnabled();
     }
+
+extern "C" bool isRuntimeFeatureEnabled(void) {
+        if (!g_DeviceUtilsMock) {
+            cout << "isRuntimeFeatureEnabled g_DeviceUtilsMock object is NULL" << endl;
+            return false;
+        }
+        return g_DeviceUtilsMock->isRuntimeFeatureEnabled();
+    }
 #endif
 
 #ifdef HANDLER_TEST_ONLY
