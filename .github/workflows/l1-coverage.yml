@@ -1,6 +1,9 @@
 name: L1 Unit Coverage
 
 on:
+ push:
+    branches:
+      - 'topic/L1-Agent-workflow'
   workflow_dispatch:
 
 jobs:
