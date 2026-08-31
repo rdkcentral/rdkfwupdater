@@ -1,0 +1,25 @@
+name: L1 Unit Coverage
+
+on:
+  workflow_dispatch:
+
+jobs:
+  l1-coverage:
+    name: Run L1 Coverage Agent
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Show repository
+        run: |
+          echo "Repository: ${{ github.repository }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+
+      - name: L1 Agent
+        run: |
+          echo "L1 coverage agent workflow triggered."
+          echo "Repository checkout completed."
+          echo "The L1 agent workflow is ready to execute."
