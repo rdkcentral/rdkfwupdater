@@ -211,12 +211,12 @@ extern "C" bool isDirectCDNEnabled(void) {
         return g_DeviceUtilsMock->isDirectCDNEnabled();
     }
 
-extern "C" bool isRuntimeFeatureEnabled(void) {
+extern "C" bool RDK_isDbgSrvUnlocked(void) {
         if (!g_DeviceUtilsMock) {
-            cout << "isRuntimeFeatureEnabled g_DeviceUtilsMock object is NULL" << endl;
+            cout << "RDK_isDbgSrvUnlocked g_DeviceUtilsMock object is NULL" << endl;
             return false;
         }
-        return g_DeviceUtilsMock->isRuntimeFeatureEnabled();
+        return g_DeviceUtilsMock->RDK_isDbgSrvUnlocked();
     }
 #endif
 

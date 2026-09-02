@@ -872,9 +872,9 @@ TEST_F(DeviceApiTestFixture, TestName_GetServURL_DirectCDN_StateRed_Recovery)
 }
 
 
-/* RDKEMW-21926: runtime feature gating for firmware server URL override */
+/* RDKEMW-21926: secure debug gating for firmware server URL override */
 
-TEST_F(DeviceApiTestFixture, GetServURL_RuntimeFeatureEnabled_UsesOverride)
+TEST_F(DeviceApiTestFixture, GetServURL_DbgSrvUnlocked_UsesOverride)
 {
     char url[512] = {0};
     const char overrideUrl[] = "https://override.test/xconf/swu/stb";
@@ -882,7 +882,7 @@ TEST_F(DeviceApiTestFixture, GetServURL_RuntimeFeatureEnabled_UsesOverride)
     EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed())
         .WillRepeatedly(testing::Return(false));
 
-    EXPECT_CALL(*g_DeviceUtilsMock, isRuntimeFeatureEnabled())
+    EXPECT_CALL(*g_DeviceUtilsMock, RDK_isDbgSrvUnlocked())
         .WillRepeatedly(testing::Return(true));
 
     EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(testing::_))
@@ -901,7 +901,7 @@ TEST_F(DeviceApiTestFixture, GetServURL_RuntimeFeatureEnabled_UsesOverride)
 }
 
 
-TEST_F(DeviceApiTestFixture, GetServURL_RuntimeFeatureDisabled_IgnoresOverride)
+TEST_F(DeviceApiTestFixture, GetServURL_DbgSrvLocked_IgnoresOverride)
 {
     char url[512] = {0};
     const char fallbackUrl[] = "https://fallback.test/xconf";
@@ -909,7 +909,7 @@ TEST_F(DeviceApiTestFixture, GetServURL_RuntimeFeatureDisabled_IgnoresOverride)
     EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed())
         .WillRepeatedly(testing::Return(false));
 
-    EXPECT_CALL(*g_DeviceUtilsMock, isRuntimeFeatureEnabled())
+    EXPECT_CALL(*g_DeviceUtilsMock, RDK_isDbgSrvUnlocked())
         .WillRepeatedly(testing::Return(false));
 
     EXPECT_CALL(*g_DeviceUtilsMock,
@@ -930,14 +930,14 @@ TEST_F(DeviceApiTestFixture, GetServURL_RuntimeFeatureDisabled_IgnoresOverride)
 }
 
 
-TEST_F(DeviceApiTestFixture, GetServURL_RuntimeFeatureEnabled_InvalidOverride)
+TEST_F(DeviceApiTestFixture, GetServURL_DbgSrvUnlocked_InvalidOverride)
 {
     char url[512] = {0};
 
     EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed())
         .WillRepeatedly(testing::Return(false));
 
-    EXPECT_CALL(*g_DeviceUtilsMock, isRuntimeFeatureEnabled())
+    EXPECT_CALL(*g_DeviceUtilsMock, RDK_isDbgSrvUnlocked())
         .WillRepeatedly(testing::Return(true));
 
     EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(testing::_))
@@ -951,7 +951,7 @@ TEST_F(DeviceApiTestFixture, GetServURL_RuntimeFeatureEnabled_InvalidOverride)
 }
 
 
-TEST_F(DeviceApiTestFixture, GetServURL_StateRed_RuntimeFeatureEnabled_UsesOverride)
+TEST_F(DeviceApiTestFixture, GetServURL_StateRed_DbgSrvUnlocked_UsesOverride)
 {
     char url[512] = {0};
     const char stateRedUrl[] = "https://statered.test/xconf/swu/stb";
@@ -959,7 +959,7 @@ TEST_F(DeviceApiTestFixture, GetServURL_StateRed_RuntimeFeatureEnabled_UsesOverr
     EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed())
         .WillRepeatedly(testing::Return(true));
 
-    EXPECT_CALL(*g_DeviceUtilsMock, isRuntimeFeatureEnabled())
+    EXPECT_CALL(*g_DeviceUtilsMock, RDK_isDbgSrvUnlocked())
         .WillRepeatedly(testing::Return(true));
 
     EXPECT_CALL(*g_DeviceUtilsMock,
@@ -978,7 +978,7 @@ TEST_F(DeviceApiTestFixture, GetServURL_StateRed_RuntimeFeatureEnabled_UsesOverr
 }
 
 
-TEST_F(DeviceApiTestFixture, GetServURL_StateRed_RuntimeFeatureDisabled_IgnoresOverride)
+TEST_F(DeviceApiTestFixture, GetServURL_StateRed_DbgSrvLocked_IgnoresOverride)
 {
     char url[512] = {0};
     const char recoveryUrl[] = "https://recovery.test";
@@ -986,7 +986,7 @@ TEST_F(DeviceApiTestFixture, GetServURL_StateRed_RuntimeFeatureDisabled_IgnoresO
     EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed())
         .WillRepeatedly(testing::Return(true));
 
-    EXPECT_CALL(*g_DeviceUtilsMock, isRuntimeFeatureEnabled())
+    EXPECT_CALL(*g_DeviceUtilsMock, RDK_isDbgSrvUnlocked())
         .WillRepeatedly(testing::Return(false));
 
     EXPECT_CALL(*g_DeviceUtilsMock,

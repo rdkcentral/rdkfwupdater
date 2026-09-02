@@ -81,7 +81,7 @@ class DeviceUtilsMock: public DeviceUtilsInterface
 	MOCK_METHOD(bool, isInStateRed, (), ());
 	MOCK_METHOD(bool, isDebugServicesEnabled, (), ());
 	MOCK_METHOD(bool, isDirectCDNEnabled, (), ());
-	MOCK_METHOD(bool, isRuntimeFeatureEnabled, (), ());
+	MOCK_METHOD(bool, RDK_isDbgSrvUnlocked, (), ());
 	MOCK_METHOD(size_t, GetHwMacAddress, (char *iface, char *pMac, size_t szBufSize), ());
 	MOCK_METHOD(size_t, GetModelNum, ( char *pModelNum, size_t szBufSize ), ());
         MOCK_METHOD(void, t2CountNotify, (char *marker), ());
