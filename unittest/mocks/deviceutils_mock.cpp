@@ -194,14 +194,6 @@ extern "C" bool isInStateRed()
     return g_DeviceUtilsMock->isInStateRed();
 }
 
-extern "C" bool isDebugServicesEnabled(void) {
-        if (!g_DeviceUtilsMock) {
-            cout << "isDebugServicesEnabled g_DeviceUtilsMock object is NULL" << endl;
-	    return false; 
-        }
-        return g_DeviceUtilsMock->isDebugServicesEnabled();
-    }
-
 #ifndef HANDLER_TEST_ONLY
 extern "C" bool isDirectCDNEnabled(void) {
         if (!g_DeviceUtilsMock) {

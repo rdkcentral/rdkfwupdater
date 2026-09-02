@@ -613,9 +613,6 @@ int GetHwMacAddress(char* buffer, size_t len) {
     return -1;
 }
 
-bool isDebugServicesEnabled(void) {
-    return false;  // Debug services not enabled by default
-}
 
 int isInStateRed(void) {
     return 0;  // Not in RED state by default

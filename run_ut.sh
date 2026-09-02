@@ -19,7 +19,8 @@ git clone https://github.com/rdkcentral/common_utilities.git
 cd common_utilities
 git checkout topic/RDKEMW-21926-tr
 autoreconf -i
-./configure  --enable-rdkcertselector --prefix=${INSTALL_DIR} CFLAGS=" -DRDK_LOGGER "
+INSTALL_DIR=/usr
+./configure  --enable-rdkcertselector --prefix="${INSTALL_DIR}" CFLAGS="-DGTEST_ENABLE"
 make && make install
 cd ../
 
