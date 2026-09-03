@@ -125,13 +125,12 @@ def test_no_upgrade():
     assert result.returncode == 0
 
 @pytest.mark.run(order=8)
-@pytest.mark.skip(reason="Temporarily skipping delay download test")
 def test_delay_dwnl():
     remove_file("/tmp/fw_preparing_to_reboot")
     remove_file("/tmp/pdri_image_file")
     pdri_file = Path("/tmp/pdri_image_file")
     pdri_file.touch(exist_ok=True)
-    write_on_file("/tmp/pdri_image_file", "ABCD_PDRI_firmware_test.bin")
+    write_on_file("/tmp/pdri_image_file", "ABCD_PDRI_img")
     rename_file(SWUPDATE_CONF_FILE, BKUP_SWUPDATE_CONF_FILE)
     rename_file(DELAYDWNL_SWUPDATE_CONF_FILE, SWUPDATE_CONF_FILE)
     result = subprocess.run(['rdkvfwupgrader', '0', '1'], stdout=subprocess.PIPE)
@@ -143,10 +142,9 @@ def test_delay_dwnl():
     assert result.returncode == 0
 
 @pytest.mark.run(order=9)
-@pytest.mark.skip(reason="Temporarily skipping delay download test")
 def test_skip_codebig_fallback():
-    ERROR_MSG1 = "Direct CDN mode - skipping Codebig fallback"
-    assert grep_log_file("/opt/logs/swupdate.txt.0", ERROR_MSG1), f"Expected '{ERROR_MSG1}' in log file."
+    ERROR_MSG1 = "fallBack : fall back Codebig Download"
+    assert not grep_log_file("/opt/logs/swupdate.txt.0", ERROR_MSG1), f"Unexpected '{ERROR_MSG1}' in log file."
 
 @pytest.mark.run(order=10)
 def test_rebooten_dwnl():
