@@ -134,6 +134,56 @@ Focused validation also confirmed the corrected delay path:
 The source build completed with `-Wall -Werror`, and `git diff --check` reported
 no whitespace errors.
 
+## Full L2 Follow-up: Optional DownloadFirmware URL
+
+The restored full L2 runner exposed two D-Bus tests that expected
+`DownloadFirmware` to reject an empty URL. This was a test expectation defect,
+not a DirectCDN or production defect: the D-Bus worker explicitly supports an
+empty URL by resolving it from XConf cache.
+
+- With no cache, the D-Bus request is accepted asynchronously and the worker
+  reports that no XConf cache is available.
+- With a valid cache, the D-Bus request is accepted asynchronously and the
+  worker uses the cached firmware URL.
+
+The tests now verify those two supported behaviors. Focused validation passed:
+
+```text
+2 passed, 13 deselected in 8.58s
+```
+
+## Full L2 Follow-up: Standard XConf Fixture Isolation
+
+Running the restored full suite exposed stale DirectCDN URLs at the start of the
+standard XConf fixture files. `initial_rdkfw_setup()` previously appended normal
+URLs to those files, allowing an earlier DCDN run to leave a port 50065 endpoint
+as the first value. The standard flow consequently used the stale DirectCDN URL.
+
+The standard setup now overwrites each XConf fixture file with exactly one normal
+endpoint. This is test setup isolation only; it does not modify endpoint choice
+or any production behavior. The complete standard image suite passed after this
+correction:
+
+```text
+21 passed in 322.99s
+```
+
+## Full L2 Follow-up: UnregisterProcess Ownership
+
+The full L2 runner also exposed that a D-Bus client could unregister a handler
+created by another client. Registration stores the D-Bus sender ID, but the
+UnregisterProcess path removed entries by handler ID without checking ownership.
+
+The D-Bus handler now compares the caller sender ID to the tracked owner before
+removal. A different sender receives `G_DBUS_ERROR_ACCESS_DENIED`; an unknown
+handler ID continues to return `false`. This preserves existing unregister
+behavior for the owning client while enforcing the ownership contract exercised
+by the subprocess tests. Focused validation passed:
+
+```text
+2 passed, 5 deselected in 8.47s
+```
+
 ## Scope and Risk
 
 The two source changes are constrained to DirectCDN data handling:
