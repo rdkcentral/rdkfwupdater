@@ -18,6 +18,7 @@
 
 #include "rfcinterface.h"
 
+#include <stdlib.h>
 #include <unistd.h>
 #include "rdkv_cdl_log_wrapper.h"
 #include "rdkv_upgrade.h"
@@ -320,6 +321,15 @@ bool isDebugServicesEnabled(void)
 
 bool isDirectCDNEnabled(void)
 {
+#ifdef RDKFW_L2_TEST_BUILD
+    const char *force_directcdn = getenv("RDKFW_FORCE_DIRECTCDN");
+
+    if (force_directcdn != NULL && strcmp(force_directcdn, "true") == 0) {
+        SWLOG_INFO("%s: DirectCDN forced for L2 test build\n", __FUNCTION__);
+        return true;
+    }
+#endif
+
     bool status = false;
     int ret = -1;
     char rfc_data[RFC_VALUE_BUF_SIZE];
