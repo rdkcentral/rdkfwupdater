@@ -32,6 +32,10 @@
 #include "rdkv_cdl.h"
 #include "json_parse.h"
 #include "device_api.h"
+
+#ifdef GTEST_ENABLE
+extern bool RDK_isDbgSrvUnlocked(void);
+#endif
 #include "deviceutils.h"
 #include "device_status_helper.h"
 #include "rfcinterface.h"
