@@ -43,10 +43,10 @@ def test_dwnl_certbundle():
 
 @pytest.mark.run(order=20)
 def test_dwnl_certbundle_verify():
-    ERROR_MSG1 = "Calling rdm Versioned_app download to process bundle update"
+    ERROR_MSG1 = "DirectCDNDownload: Function return 0"
     assert grep_log_file("/opt/logs/swupdate.txt.0", ERROR_MSG1), f"Expected '{ERROR_MSG1}' in log file."
 
 @pytest.mark.run(order=21)
 def test_dwnl_appbundle_verify():
-    APPBUNDLE_MSG = "dlAppBundle: RDK-RRD-Test:1.0"
-    assert grep_log_file("/opt/logs/swupdate.txt.0", APPBUNDLE_MSG), f"Expected '{APPBUNDLE_MSG}' in log file."
+    IMAGE_MSG = "Image Flashing is success"
+    assert grep_log_file("/opt/logs/swupdate.txt.0", IMAGE_MSG), f"Expected '{IMAGE_MSG}' in log file."

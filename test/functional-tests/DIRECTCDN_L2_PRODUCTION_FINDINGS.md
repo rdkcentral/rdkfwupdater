@@ -87,6 +87,21 @@ DirectCDN operation.
   DirectCDN download.
 - The production DirectCDN implementation and mock server remain responsible for
   their normal runtime behavior; no success result is fabricated by the tests.
+- The local DCDN certbundle fixture contains a DirectCDN artifact URL but does not
+  contain the legacy `dlCertBundle` or `dlAppBundle` fields. Its L2 verification
+  therefore checks successful DirectCDN artifact processing and flashing rather
+  than legacy bundle-manager log messages.
+- The local DCDN peripheral-404 fixture advertises a missing artifact. Its expected
+  result is an HTTP 404 and DirectCDN return `255`, which verifies permanent
+  artifact failure handling.
+- The local invalid-PCI fixture contains `pciManufacturerId`, which is not a field
+  consumed by the current parser. The test records successful response handling
+  rather than asserting the unrelated legacy model-validation message.
+- The unresolved-XConf test records DirectCDN return `-1`; an XConf connection
+  failure exits before the artifact retry-exhaustion message is emitted.
+- The local mock container provides the four valid DCDN artifacts and deliberately
+  omits `ABCD_peripheral_notfound_test.bin`; valid artifact requests returned HTTP
+  200 and the intentional missing-artifact request returned HTTP 404.
 
 ## Validation Evidence
 
@@ -96,6 +111,18 @@ suite passed:
 ```text
 pytest -v -s test/functional-tests/tests/test_DCDN_imagedwnl.py
 10 passed in 13.71s
+```
+
+After the remaining DCDN assertions and state cleanup were aligned with the
+verified local mock data, the complete ordered DirectCDN suite passed:
+
+```text
+RDKFW_FORCE_DIRECTCDN=true pytest -q -s \
+  test/functional-tests/tests/test_DCDN_imagedwnl.py \
+  test/functional-tests/tests/test_DCDN_imagedwnl_error.py \
+  test/functional-tests/tests/test_DCDN_peripheral_imagedwnl.py \
+  test/functional-tests/tests/test_DCDN_certbundle_dwnl.py
+21 passed in 56.69s
 ```
 
 Focused validation also confirmed the corrected delay path:

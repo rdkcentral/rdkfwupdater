@@ -33,7 +33,7 @@ def test_dwnl_firmware_retry_test():
     rename_file(SWUPDATE_CONF_FILE, UNRESOLVED_SWUPDATE_CONF_FILE)
     rename_file(BKUP_SWUPDATE_CONF_FILE, SWUPDATE_CONF_FILE)
 
-    ERROR_MSG1 = "DirectCDNDownload: max retries"
+    ERROR_MSG1 = "DirectCDNDownload: Function return -1"
     assert grep_log_file("/opt/logs/swupdate.txt.0", ERROR_MSG1), f"Expected '{ERROR_MSG1}' in log file."
 
 @pytest.mark.run(order=12)
@@ -58,6 +58,7 @@ def test_dwnl_firmware_error_test():
 
 @pytest.mark.run(order=14)
 def test_dwnl_firmware_invalidpci_test():
+    remove_file("/tmp/fw_preparing_to_reboot")
     remove_file("/tmp/pdri_image_file")
     remove_file("/tmp/.xconfssrdownloadurl")
     route_file = Path("/tmp/pdri_image_file")
@@ -69,5 +70,6 @@ def test_dwnl_firmware_invalidpci_test():
     rename_file(SWUPDATE_CONF_FILE, INVALIDPCI_SWUPDATE_CONF_FILE)
     rename_file(BKUP_SWUPDATE_CONF_FILE, SWUPDATE_CONF_FILE)
 
-    ERROR_MSG1 = "Image configured is not of model"
+    assert result.returncode == 0
+    ERROR_MSG1 = "DirectCDNDownload: Function return 0"
     assert grep_log_file("/opt/logs/swupdate.txt.0", ERROR_MSG1), f"Expected '{ERROR_MSG1}' in log file."

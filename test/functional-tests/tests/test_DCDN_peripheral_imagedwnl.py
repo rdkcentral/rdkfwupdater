@@ -62,7 +62,9 @@ def test_dwnl_peripheral_firmware404_test():
     remove_file("/tmp/currently_running_image_name")
     remove_file("/opt/cdl_flashed_file_name")
     rename_file("/bk_version.txt", "/version.txt")
-    assert result.returncode == 0
+    assert result.returncode == 255
+    ERROR_MSG1 = "checkTriggerUpgrade: upgrade_type 0 permanent failure curl=0 http=404"
+    assert grep_log_file("/opt/logs/swupdate.txt.0", ERROR_MSG1), f"Expected '{ERROR_MSG1}' in log file."
 
 @pytest.mark.run(order=17)
 def test_dwnl_all_firmware_test():
