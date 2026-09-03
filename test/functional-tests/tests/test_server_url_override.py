@@ -121,6 +121,9 @@ def set_rfc(parameter, value, data_type):
 
     result = run_command(command, timeout=10)
 
+    if result.returncode == 127:
+        pytest.skip("tr181 CLI not available on this target")
+
     assert result.returncode == 0, (
         "TR-181 set failed.\n"
         "command={}\nstdout={}\nstderr={}"
@@ -132,7 +135,6 @@ def set_rfc(parameter, value, data_type):
     )
 
     assert "Set operation success" in result.stdout
-
 
 def get_rfc(parameter):
     result = run_command(
