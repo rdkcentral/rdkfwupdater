@@ -655,6 +655,12 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type
 
         int curl_ret = rdkv_upgrade_request(&artifact_ctx, &curl, &http_code);
 
+        /* Return 100 means the installed PDRI already matches; it is a completed
+         * no-op for per-artifact orchestration, not a download failure. */
+        if (upgrade_type == PDRI_UPGRADE && curl_ret == 100) {
+            SWLOG_INFO("%s: PDRI upgrade not required, skipping\n", __FUNCTION__);
+            return 0;
+        }
         if (curl_ret == 0 && (http_code == HTTP_SUCCESS || http_code == HTTP_CHUNK_SUCCESS)) {
             SWLOG_INFO("%s: upgrade_type %d succeeded (http %d)\n", __FUNCTION__, upgrade_type, http_code);
             return 0;

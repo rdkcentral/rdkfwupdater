@@ -20,6 +20,7 @@
 #include "rdkFwupdateMgr_handlers.h"  // For DownloadFirmwareResult
 #include "rdkv_upgrade.h"              // For RdkUpgradeContext_t
 #include <cstring>
+#include <cstdio>
 #include <iostream>
 
 using namespace std;
@@ -474,13 +475,38 @@ extern "C" {
     }
     
     /**
-     * @brief Stub for getOPTOUTValue (from common_utilities)
-     * 
-     * Returns opt-out status for firmware updates.
-     * Default: 0 (opt-out disabled, updates allowed)
+     * @brief Test stub for getOPTOUTValue with production-equivalent parsing.
+     *
+     * Returns:
+     * 1 for IGNORE_UPDATE, 0 for ENFORCE_OPTOUT, -1 for errors/unknown values.
      */
     int getOPTOUTValue(const char* path) {
-        return 0; // Opt-out disabled by default
+        int status = -1;
+        char line[80] = {0};
+
+        if (path == nullptr) {
+            return status;
+        }
+
+        FILE* fp = fopen(path, "r");
+        if (fp == nullptr) {
+            return status;
+        }
+
+        while (fgets(line, sizeof(line), fp) != nullptr) {
+            if (strstr(line, "softwareoptout") != nullptr) {
+                break;
+            }
+        }
+
+        if (strstr(line, "IGNORE_UPDATE") != nullptr) {
+            status = 1;
+        } else if (strstr(line, "ENFORCE_OPTOUT") != nullptr) {
+            status = 0;
+        }
+
+        fclose(fp);
+        return status;
     }
     
     /**

@@ -359,6 +359,13 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
     {
         makeHttpHttps( response->cloudFWLocation, sizeof(response->cloudFWLocation) );
         makeHttpHttps( response->ipv6cloudFWLocation, sizeof(response->ipv6cloudFWLocation) );
+        /* DirectCDN supplies complete per-artifact URLs, so normalize them just
+         * like the legacy firmware locations before starting TLS downloads. */
+        if (isDirectCDNEnabled()) {
+            makeHttpHttps(response->firmwareUrl, sizeof(response->firmwareUrl));
+            makeHttpHttps(response->pdriUrl, sizeof(response->pdriUrl));
+            makeHttpHttps(response->remCtrlUrl, sizeof(response->remCtrlUrl));
+        }
         //check_pdri = isPDRIEnable(); 
         SWLOG_INFO("cloudFWFile: %s\n", response->cloudFWFile);
         SWLOG_INFO("cloudFWLocation: %s\n", response->cloudFWLocation);

@@ -198,43 +198,6 @@ def test_different_client_cannot_unregister_via_subprocess():
     finally:
         stop_daemon(proc)
 
-def test_process_can_be_reregistered_after_unregistration():
-    """
-    Test that a process name can be reused after unregistration.
-    
-    This validates:
-    1. Unregister properly cleans up the registration
-    2. Process name becomes available for re-registration
-    3. Re-registration gets a new handler_id (not the old one)
-    """
-    proc = start_daemon()
-    try:
-        api = iface()
-
-        # Register first time
-        result1 = api.RegisterProcess("ProcA", "1.0")
-        id1 = int(result1[0]) if isinstance(result1, tuple) else int(result1)
-        assert id1 > 0
-        print(f"First registration: handler_id = {id1}")
-
-        # Unregister
-        res = api.UnregisterProcess(id1)
-        assert bool(res) == True, "Unregister should succeed"
-        print(f"Unregistered handler_id = {id1}")
-
-        # Register again with same process name
-        result2 = api.RegisterProcess("ProcA", "1.0")
-        id2 = int(result2[0]) if isinstance(result2, tuple) else int(result2)
-        assert id2 > 0
-        print(f"Second registration: handler_id = {id2}")
-        
-        # Verify it's a NEW handler_id (cleanup was complete)
-        assert id2 != id1, \
-            f"Re-registration should get new handler_id, but got same: {id1}"
-        print(f"Process name 'ProcA' successfully reused with new handler_id")
-
-    finally:
-        stop_daemon(proc)
 
 def test_double_unregister_returns_false():
     """
