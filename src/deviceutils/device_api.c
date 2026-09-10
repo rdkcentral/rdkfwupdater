@@ -32,7 +32,6 @@
 #include "rdkv_cdl.h"
 #include "json_parse.h"
 #include "device_api.h"
-
 #include "deviceutils.h"
 #include "device_status_helper.h"
 #include "rfcinterface.h"
