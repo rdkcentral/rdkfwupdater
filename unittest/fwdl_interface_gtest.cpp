@@ -116,14 +116,14 @@ TEST_F(InterfaceTestFixture, TestName_getRFCSettingsSuccess)
 {
     Rfc_t rfcvalue;
     memset(&rfcvalue, '\0', sizeof(rfcvalue));
-    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(3).WillRepeatedly(Return(1));
+    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(4).WillRepeatedly(Return(1));
     EXPECT_EQ(getRFCSettings(&rfcvalue), 0);
 }
 TEST_F(InterfaceTestFixture, TestName_getRFCSettingsFail)
 {
     Rfc_t rfcvalue;
     memset(&rfcvalue, '\0', sizeof(rfcvalue));
-    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(3).WillRepeatedly(Return(-1));
+    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(4).WillRepeatedly(Return(-1));
     EXPECT_EQ(getRFCSettings(&rfcvalue), 0);
 }
 TEST_F(InterfaceTestFixture, TestName_write_RFCPropertySuccess2)
@@ -161,21 +161,13 @@ TEST_F(InterfaceTestFixture, TestName_isMmgbleNotifyEnabledSuccess)
     EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(1).WillOnce(Return(1));
     EXPECT_EQ(isMmgbleNotifyEnabled(), true);
 }
-TEST_F(InterfaceTestFixture, TestName_isDebugServicesEnabledFail)        
-{
-    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(1).WillOnce(Return(-1));
-    EXPECT_EQ(isDebugServicesEnabled(), false);
-}
-TEST_F(InterfaceTestFixture, TestName_isDebugServicesEnableSuccess)
-{
-    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(1).WillOnce(Return(1));
-    EXPECT_EQ(isDebugServicesEnabled(), true);
-}
 TEST_F(InterfaceTestFixture, TestName_isIncremetalCDLEnableSuccess)
 {
     EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(1).WillOnce(Return(1));
     //EXPECT_CALL(*g_InterfaceMock, getDevicePropertyData(_, _, _)).Times(1).WillOnce(Return(0));
-    EXPECT_CALL(*g_InterfaceMock, filePresentCheck(_)).WillOnce(Return(0));
+    EXPECT_CALL(*g_InterfaceMock, filePresentCheck(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(*g_InterfaceMock, getFileSize(_)).WillOnce(Return(100));
+    EXPECT_CALL(*g_InterfaceMock, getContentLength(_)).WillOnce(Return(1234));
     EXPECT_EQ(isIncremetalCDLEnable("/tmp/123.bin"), 1);
 }
 TEST_F(InterfaceTestFixture, TestName_isIncremetalCDLEnableFailrfc)
@@ -266,6 +258,31 @@ TEST_F(InterfaceTestFixture, TestName_invokeRbusDCMReport)
 {
     rbusError_t status = invokeRbusDCMReport();
     EXPECT_EQ(status, RBUS_ERROR_SUCCESS);
+}
+TEST_F(InterfaceTestFixture, TestName_isDirectCDNEnabledTrue)
+{
+    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _))
+        .Times(1)
+        .WillOnce(Invoke([](char* /*type*/, const char* /*key*/, RFC_ParamData_t *param) {
+            snprintf(param->value, sizeof(param->value), "%s", "true");
+            return WDMP_SUCCESS;
+        }));
+    EXPECT_EQ(isDirectCDNEnabled(), true);
+}
+TEST_F(InterfaceTestFixture, TestName_isDirectCDNEnabledFalse)
+{
+    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _))
+        .Times(1)
+        .WillOnce(Invoke([](char* /*type*/, const char* /*key*/, RFC_ParamData_t *param) {
+            snprintf(param->value, sizeof(param->value), "%s", "false");
+            return WDMP_SUCCESS;
+        }));
+    EXPECT_EQ(isDirectCDNEnabled(), false);
+}
+TEST_F(InterfaceTestFixture, TestName_isDirectCDNEnabledAbsent)
+{
+    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(1).WillOnce(Return(0));
+    EXPECT_EQ(isDirectCDNEnabled(), false);
 }
 
 GTEST_API_ int main(int argc, char *argv[]){

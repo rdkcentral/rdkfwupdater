@@ -79,6 +79,8 @@ typedef struct metaDataFileList
 */
 size_t RunCommand(SYSCMD eSysCmd, const char *pArgs, char *pResult, size_t szResultSize);
 
+int getPeripheralProduct(char *buf, size_t szIn);
+
 /* function BuildRemoteInfo - Formats the "periperalFirmwares" string for remote info part of xconf communication
  
         Usage: size_t BuildRemoteInfo <JSON *pItem> <char *pRemoteInfo> <size_t szMaxBuf> <bool bAddremCtrl>

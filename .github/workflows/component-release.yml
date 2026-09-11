@@ -1,0 +1,247 @@
+name: Component Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: "Release version (example: 1.0.0)"
+        required: true
+        type: string
+      release_type:
+        description: "Release type"
+        required: true
+        type: choice
+        options:
+          - main
+          - hotfix
+      release_mode:
+        description: "Release mode (ignored for hotfix)"
+        required: true
+        type: choice
+        options:
+          - approvable
+          - auto-complete
+      source_branch:
+        description: "Support branch for hotfix (e.g. support/1.0). Required for hotfix, ignored for main release."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: component-release-${{ github.event.inputs.release_type }}-${{ github.event.inputs.release_version }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_VERSION: ${{ github.event.inputs.release_version }}
+      RELEASE_TYPE: ${{ github.event.inputs.release_type }}
+      RELEASE_MODE: ${{ github.event.inputs.release_mode }}
+      SOURCE_BRANCH: ${{ github.event.inputs.source_branch }}
+      REPO: ${{ github.repository }}
+      ACTOR: ${{ github.actor }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Validate version format
+        run: |
+          set -euo pipefail
+          if ! [[ "${RELEASE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+[A-Za-z0-9._-]*$ ]]; then
+            echo "Invalid version format: ${RELEASE_VERSION}"
+            echo "Expected format: major.minor.patch with optional suffix (e.g. 1.0.0, 1.0.0-rc1)"
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ssh-key: ${{ secrets.RDKCM_DEPLOY_KEY }}
+
+      - name: Initialize cleanup flags
+        run: |
+          {
+            echo "CREATED_RELEASE_BRANCH=false"
+            echo "CREATED_HOTFIX_BRANCH=false"
+            echo "CREATED_TAG=false"
+          } >> "$GITHUB_ENV"
+
+      - name: Install release tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y git-flow
+          npm install -g auto-changelog
+
+      - name: Configure git identity
+        run: |
+          set -euo pipefail
+          git config user.name "${ACTOR}"
+          git config user.email "${ACTOR}@users.noreply.github.com"
+
+      - name: Initialize git-flow
+        if: ${{ github.event.inputs.release_type == 'main' }}
+        run: |
+          set -euo pipefail
+          git fetch --prune origin
+          git checkout develop
+          git reset --hard origin/develop
+          git fetch origin main:main
+          git flow init -d
+
+      - name: "Auto-complete: full release"
+        if: ${{ github.event.inputs.release_type == 'main' && github.event.inputs.release_mode == 'auto-complete' }}
+        run: |
+          set -euo pipefail
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_VERSION}" >/dev/null 2>&1; then
+            echo "Tag ${RELEASE_VERSION} already exists. Skipping."
+            exit 0
+          fi
+
+          git flow release start "${RELEASE_VERSION}"
+          echo "CREATED_RELEASE_BRANCH=true" >> "$GITHUB_ENV"
+          auto-changelog -v "${RELEASE_VERSION}"
+          git add CHANGELOG.md
+          if ! git diff --cached --quiet; then
+            git commit -m "${RELEASE_VERSION} release changelog updates"
+          fi
+          git flow release publish "${RELEASE_VERSION}"
+          git flow release finish -m "${RELEASE_VERSION} release" "${RELEASE_VERSION}"
+          echo "CREATED_TAG=true" >> "$GITHUB_ENV"
+          git push origin main
+          git push origin --tags
+          git push origin develop
+          git push origin --delete "release/${RELEASE_VERSION}" || true
+
+      - name: "Approvable: start release and create PR"
+        if: ${{ github.event.inputs.release_type == 'main' && github.event.inputs.release_mode == 'approvable' }}
+        run: |
+          set -euo pipefail
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_VERSION}" >/dev/null 2>&1; then
+            echo "Tag ${RELEASE_VERSION} already exists. Skipping."
+            exit 0
+          fi
+
+          release_branch="release/${RELEASE_VERSION}"
+          if git ls-remote --exit-code --heads origin "${release_branch}" >/dev/null 2>&1; then
+            echo "${release_branch} already exists on remote. Skipping release start."
+          else
+            git flow release start "${RELEASE_VERSION}"
+            echo "CREATED_RELEASE_BRANCH=true" >> "$GITHUB_ENV"
+            auto-changelog -v "${RELEASE_VERSION}"
+            git add CHANGELOG.md
+            if ! git diff --cached --quiet; then
+              git commit -m "${RELEASE_VERSION} release changelog updates"
+            fi
+            git flow release publish "${RELEASE_VERSION}"
+          fi
+
+          existing_pr=$(gh pr list --head "${release_branch}" --base main --state open --json number -q '.[0].number')
+          if [ -z "${existing_pr}" ]; then
+            gh pr create \
+              --base main \
+              --head "${release_branch}" \
+              --title "Release ${RELEASE_VERSION}" \
+              --body "Automated release PR for ${RELEASE_VERSION}. Approve this PR to trigger release finish."
+            echo "PR created. Waiting for approval to finish release."
+          else
+            echo "PR from ${release_branch} to main already exists (#${existing_pr})."
+          fi
+
+      - name: "Hotfix: validate source branch"
+        if: ${{ github.event.inputs.release_type == 'hotfix' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SOURCE_BRANCH}" ]; then
+            echo "ERROR: source_branch is required for hotfix release."
+            exit 1
+          fi
+          if ! [[ "${SOURCE_BRANCH}" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+            echo "ERROR: source_branch contains invalid characters."
+            echo "Only alphanumeric characters, dots, underscores, hyphens, and slashes are allowed."
+            exit 1
+          fi
+
+      - name: "Hotfix: update support branch and push tag"
+        if: ${{ github.event.inputs.release_type == 'hotfix' }}
+        run: |
+          set -euo pipefail
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_VERSION}" >/dev/null 2>&1; then
+            echo "Tag ${RELEASE_VERSION} already exists. Skipping."
+            exit 0
+          fi
+
+          git fetch --prune origin
+          if ! git ls-remote --exit-code --heads origin "${SOURCE_BRANCH}" >/dev/null 2>&1; then
+            echo "ERROR: source branch '${SOURCE_BRANCH}' does not exist on origin."
+            exit 1
+          fi
+
+          git checkout -B "${SOURCE_BRANCH}" "origin/${SOURCE_BRANCH}"
+
+          hotfix_branch="hotfix/${RELEASE_VERSION}"
+          if git show-ref --verify --quiet "refs/heads/${hotfix_branch}"; then
+            git checkout "${hotfix_branch}"
+          else
+            git checkout -b "${hotfix_branch}" "${SOURCE_BRANCH}"
+            echo "CREATED_HOTFIX_BRANCH=true" >> "$GITHUB_ENV"
+          fi
+
+          auto-changelog -v "${RELEASE_VERSION}"
+          git add CHANGELOG.md
+          if ! git diff --cached --quiet; then
+            git commit -m "${RELEASE_VERSION} hotfix release"
+          else
+            echo "No CHANGELOG.md changes to commit."
+          fi
+
+          git checkout "${SOURCE_BRANCH}"
+          git merge --no-ff "${hotfix_branch}" -m "Merge hotfix ${RELEASE_VERSION} into ${SOURCE_BRANCH}"
+
+          git tag -a "${RELEASE_VERSION}" -m "Hotfix ${RELEASE_VERSION}"
+          echo "CREATED_TAG=true" >> "$GITHUB_ENV"
+          git push origin "${SOURCE_BRANCH}"
+          git push origin "${RELEASE_VERSION}"
+          echo "Hotfix complete: pushed ${SOURCE_BRANCH} and tag ${RELEASE_VERSION}."
+
+      - name: Cleanup on failure
+        if: failure()
+        run: |
+          if [ ! -d .git ]; then
+            echo "No repository checkout available. Skipping cleanup."
+            exit 0
+          fi
+
+          if [[ "${CREATED_TAG:-false}" == "true" ]] && git rev-parse -q --verify "refs/tags/${RELEASE_VERSION}" >/dev/null 2>&1; then
+            git tag -d "${RELEASE_VERSION}" 2>/dev/null || true
+            git push origin ":refs/tags/${RELEASE_VERSION}" 2>/dev/null || true
+          fi
+
+          if [[ "${RELEASE_TYPE}" == "main" ]]; then
+            if [[ "${CREATED_RELEASE_BRANCH:-false}" == "true" ]] && git show-ref --verify --quiet "refs/heads/release/${RELEASE_VERSION}"; then
+              git push origin --delete "release/${RELEASE_VERSION}" 2>/dev/null || true
+            fi
+          else
+            if [[ "${CREATED_HOTFIX_BRANCH:-false}" == "true" ]] && git show-ref --verify --quiet "refs/heads/hotfix/${RELEASE_VERSION}"; then
+              git push origin --delete "hotfix/${RELEASE_VERSION}" 2>/dev/null || true
+            fi
+          fi
+
+      - name: Workflow summary
+        if: always()
+        run: |
+          {
+            echo "## Component Release Summary"
+            echo "- Repository: ${REPO}"
+            echo "- Actor: ${ACTOR}"
+            echo "- Version: ${RELEASE_VERSION}"
+            echo "- Type: ${RELEASE_TYPE}"
+            echo "- Mode: ${RELEASE_MODE}"
+          } >> "$GITHUB_STEP_SUMMARY"

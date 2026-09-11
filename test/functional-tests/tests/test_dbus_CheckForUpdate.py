@@ -22,9 +22,8 @@ import subprocess
 import time
 import os
 import json
-from pathlib import Path
 
-from rdkfw_test_helper import *
+import rdkfw_test_helper
 
 # D-Bus Configuration
 DBUS_SERVICE_NAME = "org.rdkfwupdater.Service"
@@ -511,7 +510,7 @@ def test_checkupdate_malformed_cache():
         
         # Call CheckForUpdate with timeout (daemon might hang on malformed JSON)
         try:
-            response = api.CheckForUpdate(handler_id)
+            api.CheckForUpdate(handler_id)
         except dbus.exceptions.DBusException:
             pass  # ignore timeout for this test
         assert wait_for_log_line(
