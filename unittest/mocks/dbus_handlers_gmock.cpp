@@ -613,20 +613,7 @@ int GetHwMacAddress(char* buffer, size_t len) {
     return -1;
 }
 
-bool isDebugServicesEnabled(void) {
-    return false;  // Debug services not enabled by default
-}
 
-extern "C" {
-void getDeviceTypeRFC(char *deviceType, size_t size) {
-    if (deviceType && size > 0) {
-        const char defaultType[] = "unknown";
-        strncpy(deviceType, defaultType, size - 1);
-        deviceType[size - 1] = '\0';
-    }
-    return;
-}
-}
 int isInStateRed(void) {
     return 0;  // Not in RED state by default
 }
@@ -792,3 +779,9 @@ extern "C" int getOPTOUTValue()
 
 // ============================================================================
 
+
+/* Mock for common_utilities secure-debug gating API. */
+extern "C" bool RDK_isDbgSrvUnlocked(void)
+{
+    return false;
+}
