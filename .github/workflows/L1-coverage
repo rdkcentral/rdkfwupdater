@@ -1,0 +1,28 @@
+name: L1 Unit Coverage
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  copilot-requests: write
+
+jobs:
+  l1-coverage:
+    name: Run L1 Coverage Agent
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run L1 Coverage Agent
+        run: |
+          npx @github/copilot@latest \
+            --agent l1-agent \
+            --prompt "Execute the L1 unit-test coverage workflow defined by .github/agents/l1-agent.agent.md autonomously. Start with environment discovery and baseline establishment, then execute the defined four-iteration L1 workflow."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
