@@ -24,7 +24,7 @@ import json
 import pytest
 from pathlib import Path
 
-from rdkfw_test_helper import *
+import rdkfw_test_helper
 
 # D-Bus Configuration
 DBUS_SERVICE_NAME = "org.rdkfwupdater.Service"
@@ -519,12 +519,13 @@ def test_download_delay():
         start_time = time.time()
 
         # Provide URL explicitly (daemon reads delay from cache, but URL still required)
-        result = api.DownloadFirmware(
+        download_result = api.DownloadFirmware(
             str(handler_id),
             "ABCD_PDRI_firmware_test.bin",
             download_url,  # URL must be provided (not empty)
             "PCI"
         )
+        print(f"DownloadFirmware returned: {download_result}")
 
         # Wait for delay + download
         time.sleep(75)
@@ -656,7 +657,7 @@ def test_connection_timeout_with_retry():
         # Unresolvable hostname - will timeout
         unresolvable_url = "https://unmockxconf:50052/featureControl/firmware.bin"
         
-        result = api.DownloadFirmware(
+        api.DownloadFirmware(
             handler_id,
             "ABCD_PDRI_img.bin",
             unresolvable_url,
@@ -807,11 +808,9 @@ def test_pdri_firmware_type():
         # The key validation is D-Bus API acceptance above
         if wait_for_file("/opt/CDL/ABCD_PDRI_test.bin", timeout=15):
             print("[PASS] PDRI firmware file created: /opt/CDL/ABCD_PDRI_test.bin")
-            file_created = True
         else:
             print("[INFO] File not created within timeout (may be expected with cert selector)")
             print("[INFO] D-Bus API correctly accepted PDRI type - primary test objective met")
-            file_created = False
 
         # Verify status file updated (if not skipped by disableStatsUpdate)
         if os.path.exists(STATUS_FILE):
@@ -862,8 +861,8 @@ def test_pdri_firmware_type():
                         with open(flash_file, 'r') as f:
                             content = f.read()
                             print(f"[DEBUG] Content of {flash_file}: {content[:200]}")
-                    except:
-                        print(f"[DEBUG] {flash_file} exists but cannot read (may be empty)")
+                    except Exception as exc:
+                        print(f"[DEBUG] {flash_file} exists but cannot read (may be empty). Error: {exc}")
         
         assert not found_flash_files, \
             f"Flash should NOT occur for D-Bus DownloadFirmware (download_only=1). Found: {found_flash_files}"
@@ -911,13 +910,10 @@ def test_peripheral_firmware_type():
 
         # Check if file was created (may or may not succeed depending on cert selector)
         # This is informational - the key validation is API acceptance above
-        peripheral_found = False
         if os.path.exists("/opt/CDL/peripheral_fw.bin"):
             print("[PASS] PERIPHERAL firmware downloaded to /opt/CDL")
-            peripheral_found = True
         elif os.path.exists("/tmp/peripheral_fw.bin"):
             print("[PASS] PERIPHERAL firmware downloaded to /tmp")
-            peripheral_found = True
         else:
             print("[INFO] File not created (expected with cert selector in test environment)")
             print("[INFO] D-Bus API correctly accepted PERIPHERAL type - test objective met")
@@ -961,7 +957,7 @@ def test_progress_file_creation():
         handler_id = str(result[0] if isinstance(result, tuple) else result)
         assert int(handler_id) > 0, "Registration failed"
 
-        result = api.DownloadFirmware(
+        api.DownloadFirmware(
             handler_id,
             "test_progress.bin",
             "https://mockxconf:50052/firmwareupdate/getfirmwaredata/test_progress.bin",
@@ -984,7 +980,7 @@ def test_progress_file_creation():
                     progress_content = f.read()
                     if progress_content.strip():
                         print(f"[INFO] Progress content: {progress_content[:100]}")
-            except:
+            except Exception:
                 pass
         else:
             # Progress file might be created briefly and removed after completion

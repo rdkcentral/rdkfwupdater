@@ -149,33 +149,29 @@ size_t GetAdditionalFwVerInfo( char *pAdditionalFwVerInfo, size_t szBufSize )
 
             RETURN - number of characters copied to the output buffer.
 */
+
 size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
 {
-    char *pTmp;
     size_t len = 0;
-
-    if( pPDRIFilename != NULL )
+#if defined(IARM_ENABLED)
+    len = GetPDRIFileNameUsingMFR(pPDRIFilename, szBufSize);
+    if(len)
     {
-        len = RunCommand( eMfrUtil, "--PDRIVersion", pPDRIFilename, szBufSize );
-        if( len && ((pTmp = strcasestr( pPDRIFilename, "failed" )) == NULL) )   // if "failed" is not found
-        {
-            SWLOG_INFO( "GetPDRIFileName: PDRI Version = %s\n", pPDRIFilename );
-            t2ValNotify("PDRI_Version_split", pPDRIFilename);
-        }
-        else
-        {
-            *pPDRIFilename = 0;
-            len = 0;
-            SWLOG_ERROR( "GetPDRIFileName: PDRI filename retrieving Failed ...\n" );
-        }
+	    SWLOG_INFO( "GetPDRIFileName: PDRI Version = %s\n", pPDRIFilename );    
+        t2ValNotify("PDRI_Version_split", pPDRIFilename);	    
     }
     else
     {
-        SWLOG_ERROR( "GetPDRIFileName: Error, input argument NULL\n" );
+	    if (pPDRIFilename && szBufSize > 0) 
+	    {
+            *pPDRIFilename = '\0';
+        }    
+         len = 0;
+         SWLOG_ERROR( "GetPDRIFileName: PDRI filename retrieving Failed ...\n" );
     }
+#endif
     return len;
 }
-
 
 /* function GetInstalledBundles - gets the bundles installed on a device. 
         Usage: size_t GetInstalledBundles <char *pBundles> <size_t szBufSize>
@@ -891,7 +887,6 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
     BUILDTYPE eBuildType;
     char buf[URL_MAX_LEN];
     bool skip = false;
-    bool dbgServices = isDebugServicesEnabled(); //check debug services enabled
 
     if( pServURL != NULL )
     {
@@ -899,18 +894,30 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
         GetBuildType( buf, sizeof(buf), &eBuildType );
         if( isInStateRed() )
         {
-            if(( eBuildType != ePROD )  || ( dbgServices == true ))
+            if(RDK_isDbgSrvUnlocked())
             {
                 len = GetServerUrlFile( pServURL, szBufSize, STATE_RED_CONF );
             }
             if( len == 0 || *pServURL == 0 )
             {
-                len = GetTR181Url( eRecovery, pServURL, szBufSize );
+                *buf = 0;
+                GetTR181Url( eRecovery, buf, sizeof(buf) );
+                if( *buf != 0 )
+                {
+                    if( isDirectCDNEnabled() )
+                    {
+                        len = snprintf( pServURL, szBufSize, "%s/xconf/firmware/stb/", buf );
+                    }
+                    else
+                    {
+                        len = snprintf( pServURL, szBufSize, "%s/xconf/swu/stb", buf );
+                    }
+                }
             }
         }
         else
         {
-            if(( eBuildType != ePROD )  || ( dbgServices == true ))
+            if(RDK_isDbgSrvUnlocked())
             {
                 if( (filePresentCheck( SWUPDATE_CONF ) == RDK_API_SUCCESS) )    // if the file exists
                 {
@@ -935,7 +942,14 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
                     GetTR181Url( eBootstrap, buf, sizeof(buf) );
                     if( *buf != 0 )
                     {
-                        len = snprintf( pServURL, szBufSize, "%s/xconf/swu/stb", buf );    // default value
+                        if( isDirectCDNEnabled() )
+                        {
+                            len = snprintf( pServURL, szBufSize, "%s/xconf/firmware/stb/", buf );
+                        }
+                        else
+                        {
+                            len = snprintf( pServURL, szBufSize, "%s/xconf/swu/stb", buf );    // default value
+                        }
                     }
                     else
                     {
@@ -946,7 +960,14 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
                         else
                         {
                             GetTR181Url( eXconf, buf, sizeof(buf) );
-                            len = snprintf( pServURL, szBufSize, "https://%s/xconf/swu/stb/", buf );
+                            if( isDirectCDNEnabled() )
+                            {
+                                len = snprintf( pServURL, szBufSize, "https://%s/xconf/firmware/stb/", buf );
+                            }
+                            else
+                            {
+                                len = snprintf( pServURL, szBufSize, "https://%s/xconf/swu/stb/", buf );
+                            }
                         }
                     }
                 }

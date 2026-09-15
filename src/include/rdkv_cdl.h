@@ -27,6 +27,7 @@
 /* Forward declarations for types that may not be available in all contexts */
 typedef struct filedwnl FileDwnl_t;
 typedef struct credential MtlsAuth_t;
+typedef struct deviceproperty DeviceProperty_t;
 #include <inttypes.h>
 #include <ctype.h>
 
@@ -77,6 +78,8 @@ typedef struct credential MtlsAuth_t;
 #define PDRI_UPGRADE 1
 #define XCONF_UPGRADE 2
 #define PERIPHERAL_UPGRADE  3
+#define DIRECT_CDN_RETRY_ERR -2
+#define LEGACY_ALL_UPGRADE -1  /* Legacy mode: all artifacts in sequence */
 
 #define INITIAL_VALIDATION_SUCCESS 0
 #define INITIAL_VALIDATION_FAIL 1
@@ -146,7 +149,9 @@ int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_li
 void uninitialize(int);
 int initialize(void);
 int logFileData(const char *file_path);
-int checkTriggerUpgrade(XCONFRES *pResponse, const char *model);
+int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type);
+int DirectCDNDownload(XCONFRES *response, char *cur_img_name,
+                      DeviceProperty_t *device_info, int server_type, int *pHttp_code);
 int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint,int trigger_type);
 int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, const char *reboot_flag,int trigger_type);
 void updateUpgradeFlag(int action);

@@ -21,6 +21,7 @@
 
 #if defined(IARM_ENABLED)
 #ifndef GTEST_ENABLE
+#include "mfrMgr.h"
 #include "sysMgr.h"
 #include "libIARMCore.h"
 #include "libIBus.h"
@@ -73,6 +74,22 @@ typedef struct _IARM_BUS_SYSMgr_EventData_t{
 #define IARM_BUS_SYSMGR_SYSSTATE_RED_RECOV_UPDATE_STATE 3
 
 typedef char gchar;
+
+#ifndef IARM_BUS_MFRLIB_NAME
+#define IARM_BUS_MFRLIB_NAME "IARM_BUS_MFRLIB_NAME_teststub"
+#endif
+
+#ifndef IARM_BUS_MFRLIB_API_GetSerializedData
+#define IARM_BUS_MFRLIB_API_GetSerializedData 111
+#endif
+
+typedef struct {
+    int type;
+    size_t bufLen;
+    char buffer[256];
+} IARM_Bus_MFRLib_GetSerializedData_Param_t;
+
+#define mfrSERIALIZED_TYPE_PDRIVERSION 0
 
 #endif
 #endif
@@ -130,5 +147,5 @@ int term_event_handler(void);
 int init_event_handler(void);
 void interuptDwnl(int app_mode);
 bool isConnectedToInternet (void);
-
+size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize);
 #endif /* VIDEO_IARMINTERFACE_IARMINTERFACE_H_ */

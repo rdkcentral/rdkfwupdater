@@ -18,7 +18,9 @@
 
 #include "rfcinterface.h"
 
+#include <unistd.h>
 #include "rdkv_cdl_log_wrapper.h"
+#include "rdkv_upgrade.h"
 #ifndef GTEST_ENABLE
 #include "rdk_fwdl_utils.h"
 #include "system_utils.h"
@@ -75,6 +77,14 @@ int getRFCSettings(Rfc_t *rfc_list) {
     strncpy(rfc_list->rfc_mtls, "true", RFC_VALUE_BUF_SIZE - 1);
     rfc_list->rfc_mtls[RFC_VALUE_BUF_SIZE - 1] = '\0';
 #endif
+    ret = read_RFCProperty("DIRECTCDN", RFC_DIRECTCDN, data, sizeof(data));
+    if(ret == -1) {
+        SWLOG_ERROR("getRFCSettings() rfc= %s failed Status %d\n", RFC_DIRECTCDN, ret);
+    }else {
+        strncpy(rfc_list->rfc_directcdn, data, RFC_VALUE_BUF_SIZE - 1);
+        rfc_list->rfc_directcdn[RFC_VALUE_BUF_SIZE - 1] = '\0';
+        SWLOG_INFO("getRFCSettings() rfc DirectCDN= %s\n", rfc_list->rfc_directcdn);
+    }
     return 0;
 }
 
@@ -215,6 +225,8 @@ int isIncremetalCDLEnable(const char *file_name)
     int chunk_dwld = 0;
     int ret = -1;
     char rfc_data[RFC_VALUE_BUF_SIZE];
+    char headerfile[136];
+    size_t content_len = 0;
 
     if (file_name == NULL) {
         SWLOG_ERROR("%s : Parameter is NULL\n", __FUNCTION__);
@@ -222,6 +234,7 @@ int isIncremetalCDLEnable(const char *file_name)
     }
     SWLOG_INFO("%s: Checking IncremetalCDLEnable... Download image name=%s\n", __FUNCTION__, file_name);
 
+    snprintf(headerfile, sizeof(headerfile), "%s.header", file_name);
     *rfc_data = 0;
     ret = read_RFCProperty("IncrementalCDL", RFC_INCR_CDL, rfc_data, sizeof(rfc_data));
     if(ret == -1) {
@@ -234,8 +247,24 @@ int isIncremetalCDLEnable(const char *file_name)
     if((strncmp(rfc_data, "true", 4)) == 0) {
         SWLOG_INFO("%s :  incremental cdl is TRUE\n", __FUNCTION__);
         if((filePresentCheck(file_name)) == 0) {
-            chunk_dwld = 1;
-            SWLOG_INFO("%s: File=%s is present. IncrementalCDL enable=%d\n",__FUNCTION__, file_name, chunk_dwld);
+            if (0 < (getFileSize(file_name)) && (filePresentCheck(headerfile)) == 0 ) {
+                content_len = getContentLength(headerfile);
+                if(content_len > 0) {
+                    chunk_dwld = 1;
+                    SWLOG_INFO("%s: File=%s is present. IncrementalCDL enable=%d\n",__FUNCTION__, file_name, chunk_dwld);
+                } else {
+                    /* Invalid or missing Content-Length: remove partial download */
+                    SWLOG_INFO("Invalid or missing Content-Length: remove partial download\n");
+                    unlink(file_name);
+                    unlink(headerfile);
+                }
+            } else {
+                SWLOG_INFO("Invalid or missing header: remove partial download\n");
+                unlink(file_name);
+                if ((filePresentCheck(headerfile)) == 0) {
+                    unlink(headerfile);
+                }
+            }
         }
     }
     return chunk_dwld;
@@ -265,22 +294,19 @@ bool isMmgbleNotifyEnabled(void)
     return status;
 }
 
-/* Description: Cheacking notify rfc status
- * @param type : void
- * @return bool true : enable and false: disable
- * */
-bool isDebugServicesEnabled(void)
+
+bool isDirectCDNEnabled(void)
 {
-    bool status =false;
+    bool status = false;
     int ret = -1;
     char rfc_data[RFC_VALUE_BUF_SIZE];
 
     *rfc_data = 0;
-    ret = read_RFCProperty("DEBUGSRV", RFC_DEBUGSRV, rfc_data, sizeof(rfc_data));
+    ret = read_RFCProperty("DIRECTCDN", RFC_DIRECTCDN, rfc_data, sizeof(rfc_data));
     if (ret == -1) {
-        SWLOG_ERROR("%s: rfc Debug services =%s failed Status %d\n", __FUNCTION__, RFC_DEBUGSRV, ret);	
+        SWLOG_ERROR("%s: rfc DirectCDN =%s failed Status %d\n", __FUNCTION__, RFC_DIRECTCDN, ret);
     } else {
-        SWLOG_INFO("%s: rfc Debug services = %s\n", __FUNCTION__, rfc_data);
+        SWLOG_INFO("%s: rfc DirectCDN= %s\n", __FUNCTION__, rfc_data);
         if ((strncmp(rfc_data, "true", 4)) == 0) {
             status = true;
         }

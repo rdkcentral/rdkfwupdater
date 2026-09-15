@@ -98,6 +98,7 @@ public:
     virtual ~MockRfcInterface() {}
     
     MOCK_METHOD(int, getRFCSettings, (Rfc_t *pRfc));
+    MOCK_METHOD(bool, isDirectCDNEnabled, ());
 };
 
 /**

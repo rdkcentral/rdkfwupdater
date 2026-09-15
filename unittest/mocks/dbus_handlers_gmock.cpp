@@ -235,6 +235,16 @@ int filePresentCheck(const char *filepath) {
 // ============================================================================
 
 /**
+ * @brief Mock implementation of isDirectCDNEnabled
+ */
+bool isDirectCDNEnabled(void) {
+    if (mock_rfc_interface) {
+        return mock_rfc_interface->isDirectCDNEnabled();
+    }
+    return false;
+}
+
+/**
  * @brief Mock implementation of getRFCSettings
  */
 int getRFCSettings(Rfc_t *pRfc) {
@@ -603,9 +613,6 @@ int GetHwMacAddress(char* buffer, size_t len) {
     return -1;
 }
 
-bool isDebugServicesEnabled(void) {
-    return false;  // Debug services not enabled by default
-}
 
 int isInStateRed(void) {
     return 0;  // Not in RED state by default
@@ -752,9 +759,29 @@ void SetupCoverageTestMocks() {
         .WillByDefault(Return(0));
 }
 
+extern "C" int rdkFwupdateMgr_downloadFirmware(...)
+{
+    return 0;
+}
 
+extern "C" const char* rdkv_upgrade_strerror(int err)
+{
+    return "mock_error";
+}
+
+extern "C" int getOPTOUTValue()
+{
+    return 0;
+}
 // ============================================================================
 // NOTE: SWLOG_* macros are already defined in rdkv_cdl_log_wrapper.h
 // We don't provide function implementations to avoid conflicts with printf()
 
 // ============================================================================
+
+
+/* Mock for common_utilities secure-debug gating API. */
+extern "C" bool RDK_isDbgSrvUnlocked(void)
+{
+    return false;
+}

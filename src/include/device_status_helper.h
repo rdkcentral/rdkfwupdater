@@ -44,7 +44,7 @@
 bool isDeviceReadyForDownload();
 int isStateRedSupported(void);
 int isInStateRed(void);
-void checkAndEnterStateRed(int curlret, const char *);
+int checkAndEnterStateRed(int curlret, const char *);
 int checkVideoStatus(const char *device_name);
 int isThrottleEnabled(const char *device_name, const char *reboot_immediate_flag, int app_mode);
 int isOCSPEnable(void);
