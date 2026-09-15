@@ -360,7 +360,7 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
         }
 	if ((0 == strcasecmp("CANARY", pXconfCheckNow)) && (trigger_type == 3)) {
 
-            char post_data[] = "{\"jsonrpc\":\"2.0\",\"id\":\"42\",\"method\": \"org.rdk.System.getPowerState\"}";
+            char post_data[] = "{\"jsonrpc\":\"2.0\",\"id\":\"42\",\"method\": \"org.rdk.PowerManager.getPowerState\"}";
             DownloadData DwnLoc = {NULL, 0, 0};
             JSON *pJson = NULL;
             JSON *pItem = NULL;
@@ -378,7 +378,7 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
               pJson = ParseJsonStr( (char *)DwnLoc.pvOut );
               if( pJson != NULL ) {
                   pItem = GetJsonItem( pJson, "result" );
-                  res_val = GetJsonItem( pItem, "powerState" );
+                  res_val = GetJsonItem( pItem, "currentState" );
               }
               else {
                   SWLOG_INFO("%s :: isconnected JsonRpc response is empty\n",__FUNCTION__);

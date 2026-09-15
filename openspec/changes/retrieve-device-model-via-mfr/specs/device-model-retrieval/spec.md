@@ -20,7 +20,15 @@ The MFR model operation SHALL reject invalid response lengths, SHALL never write
 
 #### Scenario: Destination buffer is smaller than model
 - **WHEN** MFR returns a valid model that does not fit in the destination buffer
-- **THEN** the operation copies at most the destination size minus one, null-terminates the result, reports truncation, and returns the copied length
+- **THEN** the operation reports truncation, returns zero, and leaves the destination as an empty null-terminated string without exposing a partial model
+
+#### Scenario: XConf fallback after truncation
+- **WHEN** MFR model retrieval fails because the complete model does not fit in the buffer provided by `createJsonString()`
+- **THEN** `createJsonString()` calls `GetModelNum()` and uses its nonempty result as the model request field
+
+#### Scenario: Runtime fallback after truncation
+- **WHEN** MFR model retrieval fails because the complete model does not fit in the temporary startup buffer
+- **THEN** `rdkv_main.c` and `rdkFwupdateMgr.c` preserve the model previously populated by `getDeviceProperties()`
 
 #### Scenario: Invalid MFR response length
 - **WHEN** MFR reports zero bytes or a length greater than its serialized-data response buffer

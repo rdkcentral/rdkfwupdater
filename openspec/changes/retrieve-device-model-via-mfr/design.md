@@ -20,6 +20,13 @@ XConf request construction
     -> GetModelNum(tmpbuf, sizeof(tmpbuf))
        -> external common_device_api implementation
     -> append model=<value>
+
+Canary firmware reboot decision
+    -> flashImage() [src/flash.c]
+    -> getJsonRpc("org.rdk.System.getPowerState", &DwnLoc)
+    -> ParseJsonStr() / GetJsonItem(result, "powerState")
+    -> state ON: defer reboot and emit SYS_INFO_DEFER_CANARY_REBOOT
+    -> other valid state: retain existing telemetry/report/reboot path
 ```
 
 `DeviceProperty_t` is supplied by external `rdk_fwdl_utils.h`; the in-repository test mirror names its fixed-size field `model`, not `model_name`. `GetModelNum()` is supplied by external `common_device_api.h`. The repository does not own either legacy implementation, so it cannot remove their internal `/etc/device.properties` reads without changing an external component.
@@ -30,6 +37,8 @@ The historical `origin/topic/RDKEMW-2824` implementation comprised commits `f64f
 
 Current architecture has evolved to build both `rdkvfwupgrader` (`src/rdkv_main.c`) and `rdkFwupdateMgr` (`src/rdkFwupdateMgr.c`) against the shared JSON and IARM libraries. Both long-lived initialization paths populate a global `device_info` and establish IARM. The newer D-Bus download worker creates a local `DeviceProperty_t`, but that local model is not used to build XConf device identity and therefore does not require modification for this story.
 
+The power-state path is localized in `src/flash.c::flashImage()`. For canary firmware triggered through the existing TR-69 path, it sends a JSON-RPC request through `getJsonRpc()`, parses the response with `ParseJsonStr()` and `GetJsonItem()`, and uses the returned state to decide whether to defer reboot. No `PowerManager.getPowerState` usage currently exists elsewhere in the repository.
+
 ### Relevant files
 
 | File | Relevant symbols | Role |
@@ -39,6 +48,7 @@ Current architecture has evolved to build both `rdkvfwupgrader` (`src/rdkv_main.
 | `src/json_process.c` | `createJsonString()` | Selects the model placed in XConf request data. |
 | `src/rdkv_main.c` | `initialize()`, global `device_info` | Initializes the legacy updater runtime model. |
 | `src/rdkFwupdateMgr.c` | `initialize()`, global `device_info` | Initializes the current D-Bus daemon runtime model. |
+| `src/flash.c` | `flashImage()` | Retrieves power state for the existing canary reboot decision. |
 | `unittest/fwdl_interface_gtest.cpp` | IARM interface tests | Exercises serialized-data success/failure and buffer behavior. |
 | `unittest/device_status_helper_gtest.cpp` and mocks | `createJsonString()` test | Exercises MFR-first selection and legacy fallback. |
 | `unittest/basic_rdkv_main_gtest.cpp`, `unittest/rdkfwupdatemgr_main_flow_gtest.cpp` and mocks | `initialize()` tests | Exercises runtime `device_info.model` replacement/retention. |
@@ -52,6 +62,7 @@ Current architecture has evolved to build both `rdkvfwupgrader` (`src/rdkv_main.
 - Preserve `GetModelNum()` and the model loaded by `getDeviceProperties()` as failure fallbacks.
 - Preserve existing IARM lifecycle ownership and fixed-buffer ownership.
 - Keep RDK-E behavior MFR-first without introducing a repository-specific RDK-E macro that does not exist today.
+- Replace the deprecated SystemServices power-state API with PowerManager and consume `currentState` without changing firmware-update decisions.
 - Add focused L1 unit coverage; use existing L2 execution to detect integration regressions without changing the external L2 interface.
 
 **Non-Goals:**
@@ -61,7 +72,7 @@ Current architecture has evolved to build both `rdkvfwupgrader` (`src/rdkv_main.
 - Adding a separate IARM initialization/connection per model query.
 - Changing the D-Bus download worker's local `device_info`, which does not control XConf model identity.
 - Refactoring the existing PDRI helper or unrelated IARM code.
-- Changing power-state behavior. `src/flash.c` already queries `org.rdk.System.getPowerState` for reboot deferral, and no new power-state contract is specified by this story.
+- Redesigning canary reboot policy, telemetry, report upload, reboot execution, or JSON-RPC infrastructure.
 
 ## Decisions
 
@@ -77,7 +88,7 @@ IARM_Bus_Call(
     sizeof(param))
 ```
 
-The serialized-data contract uses the fixed `param.buffer` and `param.bufLen`; no heap allocation is required or owned by the caller. On success, the helper validates `0 < bufLen <= sizeof(param.buffer)`, copies at most `szBufSize - 1`, explicitly null-terminates, strips trailing CR/LF consistently with the current PDRI helper, and returns the final length. On invalid input, IARM failure, or invalid returned length, it returns zero and clears a valid destination buffer. Truncation is bounded and reported.
+The serialized-data contract uses the fixed `param.buffer` and `param.bufLen`; no heap allocation is required or owned by the caller. On success, the helper validates `0 < bufLen <= sizeof(param.buffer)` and requires enough caller capacity for the complete model plus its null terminator before copying. It then copies the complete value, explicitly null-terminates it, strips trailing CR/LF consistently with the current PDRI helper, and returns the final length. On invalid input, IARM failure, invalid returned length, or insufficient destination capacity, it returns zero and leaves a valid destination as an empty string. Insufficient capacity is logged as truncation but no partial model is exposed as a successful result; `createJsonString()` consequently calls `GetModelNum()`, while startup callers retain the model populated by `getDeviceProperties()`.
 
 Alternative rejected: shelling out to `mfr_util --Modelname`. The user story requests MFR/IARM serialized data, and a process invocation would add quoting, availability, and output-parsing failure modes.
 
@@ -103,9 +114,17 @@ This keeps non-IARM builds source-compatible and behaviorally unchanged. For RDK
 
 ### 5. Do not add L1/L2 production interfaces
 
-The new helper is an internal L1 IARM interface declaration in `src/include/iarmInterface.h`; unit-test mocks must expose the same symbol where linked callers require it. No L2 production API consumes or returns model identity, so no D-Bus XML, client SDK, service, or functional-test interface change is justified. Existing `run_l2.sh` coverage may be executed as regression validation if its environment is available.
+The new helper is an internal L1 IARM interface declaration in `src/include/iarmInterface.h`; unit-test mocks must expose the same symbol where linked callers require it. Neither feature changes a public L2 contract, so no D-Bus XML, client SDK, or service interface change is justified. Existing L2 flows should verify behavior without introducing a new public interface.
 
-### 6. Minimum file-level change plan
+### 6. Migrate the power-state API in place
+
+`src/flash.c::flashImage()` SHALL retain its current canary/TR-69 gate and existing JSON-RPC mechanism. The request method changes only from `org.rdk.System.getPowerState` to `org.rdk.PowerManager.getPowerState`; response extraction changes only from `result.powerState` to `result.currentState`.
+
+The comparison remains case-insensitive. `ON` continues to defer reboot and emit `SYS_INFO_DEFER_CANARY_REBOOT`. Other valid states continue through the existing telemetry report and conditional reboot path. Existing allocation, RPC-failure, parse-failure, missing-field, return, and cleanup behavior remains unchanged.
+
+Alternative rejected: introduce a new PowerManager abstraction or redesign the decision branch. The existing `getJsonRpc()`, `ParseJsonStr()`, and `GetJsonItem()` path already supports the required request and response shape; changing more would increase regression risk without satisfying an additional requirement.
+
+### 7. Minimum file-level change plan
 
 | File/symbol | Current behavior | Required change | Dependencies and error handling |
 | --- | --- | --- | --- |
@@ -114,25 +133,28 @@ The new helper is an internal L1 IARM interface declaration in `src/include/iarm
 | `src/json_process.c::createJsonString()` | Always calls `GetModelNum()`. | MFR-first under `IARM_ENABLED`, then existing fallback. | Preserve omission of `model=` if both sources fail. |
 | `src/rdkv_main.c::initialize()` | Leaves `device_info.model` from `getDeviceProperties()`. | After IARM init, replace with temporary MFR value on success. | Keep startup successful and legacy model unchanged on query failure. |
 | `src/rdkFwupdateMgr.c::initialize()` | Same long-lived model behavior in newer daemon. | Apply the same post-IARM success-only replacement. | Prevent runtime divergence between shipped binaries. |
+| `src/flash.c::flashImage()` | Calls `org.rdk.System.getPowerState` and reads `result.powerState`. | Call `org.rdk.PowerManager.getPowerState` and read `result.currentState`. | Reuse existing JSON-RPC/parser helpers and preserve every surrounding decision and cleanup path. |
 | Focused unit tests/mocks | No model MFR coverage. | Add only symbols and cases required by helper, JSON selection, and startup propagation. | Mock IARM response buffers and retrieval return lengths; no production API changes. |
 
 ## Risks / Trade-offs
 
 - [MFR manager unavailable when startup or XConf data is built] -> Preserve the already-loaded `device_info.model` and call `GetModelNum()` for XConf construction.
-- [Serialized data is empty, oversized, or not null-terminated] -> Validate `bufLen`, bound every copy, and explicitly terminate the destination.
+- [Serialized data is empty, oversized, or does not fit the caller buffer] -> Validate `bufLen` and destination capacity before copying; report truncation, clear the destination, and return zero so callers use their existing fallback.
 - [MFR includes trailing CR/LF like command output] -> Strip only trailing CR/LF and return the normalized length.
 - [IARM lifecycle ordering differs at a call site] -> Place startup retrieval after `init_event_handler()` and do not create a second lifecycle owner.
 - [Current binaries diverge] -> Apply the same long-lived model override in both current `initialize()` implementations; exclude only the local D-Bus worker structure that does not control model identity.
 - [Optional IARM build breaks] -> Compile MFR calls only under `IARM_ENABLED`; preserve direct `GetModelNum()` behavior otherwise.
 - [Historical code defects are copied] -> Use the historical branch only as behavioral evidence; correct variable checks and model-specific logs in the new implementation.
 - [External common utilities change fallback semantics] -> Treat any nonzero length as existing success and avoid changing those external contracts.
+- [PowerManager response shape differs from SystemServices] -> Consume only the authoritative `result.currentState` field and cover ON, non-ON, and invalid responses.
+- [API migration changes reboot policy accidentally] -> Limit production changes to the JSON-RPC method and response-field names; retain all surrounding branches, telemetry, report upload, reboot commands, and cleanup.
 
 ## Migration Plan
 
 No data or API migration is required. Deploy through the normal package build with IARM/MFR headers already used by PDRI retrieval. Rollback consists of reverting the focused source and test changes; the legacy model sources remain intact throughout.
 
-Validation SHALL run the focused IARM interface and JSON/startup unit tests first, then the smallest available build target. Existing L2 tests may run as regression coverage where their platform services are available; no new L2 protocol fixture is required.
+Validation SHALL run the focused IARM interface, JSON/startup, and flash power-state unit tests first, then the smallest available build target. Existing L2 tests should cover MFR success/fallback and canary ON/non-ON behavior where their platform services are available; no new L2 protocol is required.
 
 ## Open Questions
 
-- The story title mentions retrieving device power state, but the detailed requirements specify only model retrieval. The repository already has unrelated power-state logic in `src/flash.c`. Confirmation is required before adding any power-state scope.
+None.

@@ -557,6 +557,13 @@ int GetModelNum(char* buffer, size_t len) {
     return -1;
 }
 
+size_t GetModelNameUsingMFR(char* buffer, size_t len) {
+    if (buffer && len > 0) {
+        buffer[0] = '\0';
+    }
+    return 0;
+}
+
 int GetMFRName(char* buffer, size_t len) {
     if (buffer && len > 0) {
         strncpy(buffer, "TEST_MFR", len - 1);

@@ -267,6 +267,16 @@ extern "C" size_t GetModelNum( char *pModelNum, size_t szBufSize )
     snprintf(pModelNum, szBufSize, "%s", "12345");
     return g_DeviceUtilsMock->GetModelNum(pModelNum, szBufSize);
 }
+extern "C" size_t GetModelNameUsingMFR(char *pModelName, size_t szBufSize)
+{
+    if (!g_DeviceUtilsMock)
+    {
+	cout << "GetModelNameUsingMFR g_DeviceUtilsMock object is NULL" << endl;
+        return 0;
+    }
+    printf("Inside Mock Function GetModelNameUsingMFR\n");
+    return g_DeviceUtilsMock->GetModelNameUsingMFR(pModelName, szBufSize);
+}
 extern "C" size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
 {
     if (!g_DeviceUtilsMock) {
