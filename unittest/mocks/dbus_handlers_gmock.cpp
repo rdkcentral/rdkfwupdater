@@ -1004,3 +1004,9 @@ extern "C" int getOPTOUTValue(const char *file_name)
 
 // ============================================================================
 
+
+/* Mock for common_utilities secure-debug gating API. */
+extern "C" bool RDK_isDbgSrvUnlocked(void)
+{
+    return false;
+}
