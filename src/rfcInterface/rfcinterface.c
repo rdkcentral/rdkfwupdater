@@ -33,8 +33,8 @@
  * */
 int getRFCSettings(Rfc_t *rfc_list) {
     int ret = -1;
-    char data[RFC_VALUE_BUF_SIZE];
-
+    char data[RFC_VALUE_BUF_SIZE] = {0};
+    
     if (rfc_list == NULL) {
 	SWLOG_ERROR("getRFCSettings(): Parameter is NULL ret= %d\n", ret);
 	return ret;
