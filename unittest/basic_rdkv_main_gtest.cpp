@@ -1368,7 +1368,7 @@ static void RunCanaryPowerStateTest(const char *responseJson, int rpcResult, boo
     EXPECT_CALL(deviceMock, v_secure_popen(_, _, _)).WillOnce(Return(nullptr));
     EXPECT_CALL(deviceMock, doCurlInit()).WillOnce(Return(reinterpret_cast<void *>(1)));
     EXPECT_CALL(deviceMock, getJsonRpcData(_, _, _, _))
-        .WillOnce(Invoke([responseJson, rpcResult](void*, FileDwnl_t *request, char*, int) {
+        .WillOnce(Invoke([responseJson, rpcResult](void*, FileDwnl_t *request, char, int) {
             EXPECT_NE(strstr(request->pPostFields, "org.rdk.PowerManager.getPowerState"), nullptr);
             EXPECT_EQ(strstr(request->pPostFields, "org.rdk.System.getPowerState"), nullptr);
             if (rpcResult == 0 && responseJson != nullptr) {
