@@ -190,7 +190,7 @@ int getAppMode(void)
     pthread_mutex_lock(&app_mode_status);
     mode = app_mode;
     pthread_mutex_unlock(&app_mode_status);
-    SWLOG_INFO("%s: app mode = %d\n", __FUNCTION__, mode);
+    SWLOG_INFO("%s:   app mode = %d\n", __FUNCTION__, mode);
     return mode;
 }
 /* Description: Set Download state.
