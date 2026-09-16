@@ -2,7 +2,7 @@ name: Build Component in Native Environment
 
 on:
   pull_request:
-    branches: [ develop ]
+    branches: [ develop, main ]
     paths: ['**/*.c', '**/*.cpp', '**/*.cc', '**/*.cxx', '**/*.h', '**/*.hpp', '**/*.sh']
 
 jobs:
