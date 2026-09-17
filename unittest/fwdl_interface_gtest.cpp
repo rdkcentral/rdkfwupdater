@@ -217,6 +217,127 @@ TEST_F(InterfaceTestFixture, TestName_term_event_handlerSuccess)
     EXPECT_CALL(*g_InterfaceMock, IARM_Bus_UnRegisterEventHandler(_,_)).WillOnce(Return(0));
     EXPECT_EQ(term_event_handler(), 0);
 }
+TEST_F(InterfaceTestFixture, GetModelNameUsingMFRSuccess)
+{
+    char model[32] = {0};
+    EXPECT_CALL(*g_InterfaceMock, IARM_Bus_Init(_)).Times(0);
+    EXPECT_CALL(*g_InterfaceMock, IARM_Bus_Connect()).Times(0);
+    EXPECT_CALL(*g_InterfaceMock, IARM_Bus_Disconnect()).Times(0);
+    EXPECT_CALL(*g_InterfaceMock, IARM_Bus_Term()).Times(0);
+    EXPECT_CALL(*g_InterfaceMock, allocDowndLoadDataMem(_, _)).Times(0);
+    EXPECT_CALL(*g_InterfaceMock, IARM_Bus_Call(StrEq(IARM_BUS_MFRLIB_NAME),
+                                                IARM_BUS_MFRLIB_API_GetSerializedData,
+                                                _, sizeof(IARM_Bus_MFRLib_GetSerializedData_Param_t)))
+        .WillOnce(Invoke([](const char*, int, void *data, unsigned int) {
+            IARM_Bus_MFRLib_GetSerializedData_Param_t *param =
+                static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t *>(data);
+            EXPECT_EQ(param->type, mfrSERIALIZED_TYPE_MODELNAME);
+            EXPECT_EQ(param->bufLen, 0u);
+            for (size_t index = 0; index < sizeof(param->buffer); ++index) {
+                EXPECT_EQ(param->buffer[index], '\0');
+            }
+            const char value[] = "XUSPTC11MWR";
+            memcpy(param->buffer, value, sizeof(value) - 1);
+            param->bufLen = sizeof(value) - 1;
+            return IARM_RESULT_SUCCESS;
+        }));
+
+    EXPECT_EQ(GetModelNameUsingMFR(model, sizeof(model)), 11u);
+    EXPECT_STREQ(model, "XUSPTC11MWR");
+}
+TEST_F(InterfaceTestFixture, GetModelNameUsingMFRNormalizesLineEndings)
+{
+    char model[32] = {0};
+    EXPECT_CALL(*g_InterfaceMock, IARM_Bus_Call(_, _, _, _))
+        .WillOnce(Invoke([](const char*, int, void *data, unsigned int) {
+            IARM_Bus_MFRLib_GetSerializedData_Param_t *param =
+                static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t *>(data);
+            const char value[] = "XUSHTC11MWR\r\n";
+            memcpy(param->buffer, value, sizeof(value) - 1);
+            param->bufLen = sizeof(value) - 1;
+            return IARM_RESULT_SUCCESS;
+        }));
+
+    EXPECT_EQ(GetModelNameUsingMFR(model, sizeof(model)), 11u);
+    EXPECT_STREQ(model, "XUSHTC11MWR");
+}
+TEST_F(InterfaceTestFixture, GetModelNameUsingMFRAllowsNormalizedValueThatFits)
+{
+    char model[6] = {0};
+    EXPECT_CALL(*g_InterfaceMock, IARM_Bus_Call(_, _, _, _))
+        .WillOnce(Invoke([](const char*, int, void *data, unsigned int) {
+            IARM_Bus_MFRLib_GetSerializedData_Param_t *param =
+                static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t *>(data);
+            const char value[] = "MODEL\r\n";
+            memcpy(param->buffer, value, sizeof(value) - 1);
+            param->bufLen = sizeof(value) - 1;
+            return IARM_RESULT_SUCCESS;
+        }));
+
+    EXPECT_EQ(GetModelNameUsingMFR(model, sizeof(model)), 5u);
+    EXPECT_STREQ(model, "MODEL");
+}
+TEST_F(InterfaceTestFixture, GetModelNameUsingMFRRejectsTruncation)
+{
+    char model[5] = "old";
+    EXPECT_CALL(*g_InterfaceMock, IARM_Bus_Call(_, _, _, _))
+        .WillOnce(Invoke([](const char*, int, void *data, unsigned int) {
+            IARM_Bus_MFRLib_GetSerializedData_Param_t *param =
+                static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t *>(data);
+            const char value[] = "MODEL";
+            memcpy(param->buffer, value, sizeof(value) - 1);
+            param->bufLen = sizeof(value) - 1;
+            return IARM_RESULT_SUCCESS;
+        }));
+
+    EXPECT_EQ(GetModelNameUsingMFR(model, sizeof(model)), 0u);
+    EXPECT_STREQ(model, "");
+}
+TEST_F(InterfaceTestFixture, GetModelNameUsingMFRRejectsInvalidLengths)
+{
+    char model[16] = "old";
+    EXPECT_CALL(*g_InterfaceMock, IARM_Bus_Call(_, _, _, _))
+        .WillOnce(Invoke([](const char*, int, void *data, unsigned int) {
+            IARM_Bus_MFRLib_GetSerializedData_Param_t *param =
+                static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t *>(data);
+            param->bufLen = sizeof(param->buffer) + 1;
+            return IARM_RESULT_SUCCESS;
+        }));
+
+    EXPECT_EQ(GetModelNameUsingMFR(model, sizeof(model)), 0u);
+    EXPECT_STREQ(model, "");
+}
+TEST_F(InterfaceTestFixture, GetModelNameUsingMFRRejectsEmptyResponse)
+{
+    char model[16] = "old";
+    EXPECT_CALL(*g_InterfaceMock, IARM_Bus_Call(_, _, _, _))
+        .WillOnce(Invoke([](const char*, int, void *data, unsigned int) {
+            IARM_Bus_MFRLib_GetSerializedData_Param_t *param =
+                static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t *>(data);
+            param->bufLen = 0;
+            return IARM_RESULT_SUCCESS;
+        }));
+
+    EXPECT_EQ(GetModelNameUsingMFR(model, sizeof(model)), 0u);
+    EXPECT_STREQ(model, "");
+}
+TEST_F(InterfaceTestFixture, GetModelNameUsingMFRHandlesIARMFailure)
+{
+    char model[16] = "old";
+    EXPECT_CALL(*g_InterfaceMock, IARM_Bus_Call(_, _, _, _))
+        .WillOnce(Return(IARM_RESULT_INVALID_STATE));
+
+    EXPECT_EQ(GetModelNameUsingMFR(model, sizeof(model)), 0u);
+    EXPECT_STREQ(model, "");
+}
+TEST_F(InterfaceTestFixture, GetModelNameUsingMFRRejectsInvalidArguments)
+{
+    char model[1] = {'X'};
+    EXPECT_CALL(*g_InterfaceMock, IARM_Bus_Call(_, _, _, _)).Times(0);
+
+    EXPECT_EQ(GetModelNameUsingMFR(NULL, sizeof(model)), 0u);
+    EXPECT_EQ(GetModelNameUsingMFR(model, 0), 0u);
+}
 TEST_F(InterfaceTestFixture, TestName_DwnlStopEventHandlerSuccess)
 {
     int data = 1;

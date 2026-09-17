@@ -75,6 +75,7 @@ extern "C" {
     void t2_init(char *component);
     int getDeviceProperties(DeviceProperty_t *pDevice_info);
     int getImageDetails(ImageDetails_t *);
+    size_t createJsonString(char *pPostFieldOut, size_t szPostFieldOut);
     int createDir(const char *dirname);
     //void createFile(const char *file_name);
     void t2_uninit(void);
@@ -1180,6 +1181,107 @@ TEST(MainHelperFunctionTest,initializeTest1){
     global_mockexternal_ptr = NULL;
 }
 
+TEST(MainHelperFunctionTest, initializeUsesCompleteMFRModel){
+    MockExternal mockexternal;
+    DeviceUtilsMock deviceMock;
+    global_mockexternal_ptr = &mockexternal;
+    g_DeviceUtilsMock = &deviceMock;
+    EXPECT_CALL(mockexternal, getDeviceProperties(_))
+        .WillOnce(Invoke([](DeviceProperty_t *info) {
+            snprintf(info->model, sizeof(info->model), "%s", "LEGACY_MODEL");
+            snprintf(info->maint_status, sizeof(info->maint_status), "%s", "false");
+            return 0;
+        }));
+    EXPECT_CALL(mockexternal, getImageDetails(_)).WillOnce(Return(0));
+    EXPECT_CALL(mockexternal, getRFCSettings(_)).Times(1);
+    EXPECT_CALL(mockexternal, init_event_handler()).Times(1);
+    EXPECT_CALL(deviceMock, GetModelNameUsingMFR(_, _))
+        .WillOnce(Invoke([](char *model, size_t size) {
+            snprintf(model, size, "%s", "XUSPTC11MWR");
+            return strlen(model);
+        }));
+
+    EXPECT_EQ(initialize(), 1);
+    EXPECT_STREQ(device_info.model, "XUSPTC11MWR");
+
+    g_DeviceUtilsMock = &Deviceglobal;
+    global_mockexternal_ptr = NULL;
+}
+
+TEST(MainHelperFunctionTest, initializePreservesLegacyModelWhenMFRFails){
+    MockExternal mockexternal;
+    DeviceUtilsMock deviceMock;
+    global_mockexternal_ptr = &mockexternal;
+    g_DeviceUtilsMock = &deviceMock;
+    EXPECT_CALL(mockexternal, getDeviceProperties(_))
+        .WillOnce(Invoke([](DeviceProperty_t *info) {
+            snprintf(info->model, sizeof(info->model), "%s", "LEGACY_MODEL");
+            snprintf(info->maint_status, sizeof(info->maint_status), "%s", "false");
+            return 0;
+        }));
+    EXPECT_CALL(mockexternal, getImageDetails(_)).WillOnce(Return(0));
+    EXPECT_CALL(mockexternal, getRFCSettings(_)).Times(1);
+    EXPECT_CALL(mockexternal, init_event_handler()).Times(1);
+    EXPECT_CALL(deviceMock, GetModelNameUsingMFR(_, _))
+        .WillOnce(Invoke([](char *model, size_t) {
+            model[0] = '\0';
+            return 0;
+        }));
+
+    EXPECT_EQ(initialize(), 1);
+    EXPECT_STREQ(device_info.model, "LEGACY_MODEL");
+
+    g_DeviceUtilsMock = &Deviceglobal;
+    global_mockexternal_ptr = NULL;
+}
+
+TEST(MainHelperFunctionTest, createJsonStringPrefersMFRModel){
+    DeviceUtilsMock deviceMock;
+    g_DeviceUtilsMock = &deviceMock;
+    EXPECT_CALL(deviceMock, GetModelNameUsingMFR(_, _))
+        .WillOnce(Invoke([](char *model, size_t size) {
+            snprintf(model, size, "%s", "XUSPTC11MWR");
+            return strlen(model);
+        }));
+    EXPECT_CALL(deviceMock, GetModelNum(_, _)).Times(0);
+    char json[JSON_STR_LEN] = {0};
+
+    createJsonString(json, sizeof(json));
+
+    EXPECT_NE(strstr(json, "model=XUSPTC11MWR"), nullptr);
+    g_DeviceUtilsMock = &Deviceglobal;
+}
+
+TEST(MainHelperFunctionTest, createJsonStringFallsBackAfterMFRFailure){
+    DeviceUtilsMock deviceMock;
+    g_DeviceUtilsMock = &deviceMock;
+    EXPECT_CALL(deviceMock, GetModelNameUsingMFR(_, _))
+        .WillOnce(Invoke([](char *model, size_t) {
+            model[0] = '\0';
+            return 0;
+        }));
+    EXPECT_CALL(deviceMock, GetModelNum(_, _)).WillOnce(Return(5));
+    char json[JSON_STR_LEN] = {0};
+
+    createJsonString(json, sizeof(json));
+
+    EXPECT_NE(strstr(json, "model=12345"), nullptr);
+    g_DeviceUtilsMock = &Deviceglobal;
+}
+
+TEST(MainHelperFunctionTest, createJsonStringOmitsModelWhenBothSourcesFail){
+    DeviceUtilsMock deviceMock;
+    g_DeviceUtilsMock = &deviceMock;
+    EXPECT_CALL(deviceMock, GetModelNameUsingMFR(_, _)).WillOnce(Return(0));
+    EXPECT_CALL(deviceMock, GetModelNum(_, _)).WillOnce(Return(0));
+    char json[JSON_STR_LEN] = {0};
+
+    createJsonString(json, sizeof(json));
+
+    EXPECT_EQ(strstr(json, "model="), nullptr);
+    g_DeviceUtilsMock = &Deviceglobal;
+}
+
 TEST(MainHelperFunctionTest,saveHTTPCodeTest){
     saveHTTPCode(200, NULL);
     fflush(NULL);
@@ -1243,6 +1345,82 @@ TEST(MainHelperFunctionTest, HandlesNullFilename) {
 
 TEST(MainHelperFunctionTest,flashImageTestNull){
     EXPECT_EQ(flashImage(NULL, NULL, "false", "2", 0, "false",1), -1);
+}
+
+static void RunCanaryPowerStateTest(const char *responseJson, int rpcResult, bool expectDeferred)
+{
+    MockExternal mockexternal;
+    DeviceUtilsMock deviceMock;
+    global_mockexternal_ptr = &mockexternal;
+    g_DeviceUtilsMock = &deviceMock;
+
+    FILE *xconfFile = fopen("/tmp/xconfchecknow_val", "w");
+    ASSERT_NE(xconfFile, nullptr);
+    fputs("CANARY\n", xconfFile);
+    fclose(xconfFile);
+
+    EXPECT_CALL(mockexternal, isMediaClientDevice()).WillOnce(Return(true));
+    EXPECT_CALL(deviceMock, filePresentCheck(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mockexternal, eventManager(_, _)).WillRepeatedly(Return());
+    EXPECT_CALL(mockexternal, updateFWDownloadStatus(_, _)).Times(1);
+    EXPECT_CALL(deviceMock, getDevicePropertyData(_, _, _)).WillRepeatedly(Return(0));
+    EXPECT_CALL(deviceMock, v_secure_system(_, _, _)).WillRepeatedly(Return(0));
+    EXPECT_CALL(deviceMock, v_secure_popen(_, _, _)).WillOnce(Return(nullptr));
+    EXPECT_CALL(deviceMock, doCurlInit()).WillOnce(Return(reinterpret_cast<void *>(1)));
+    EXPECT_CALL(deviceMock, getJsonRpcData(_, _, _, _))
+        .WillOnce(Invoke([responseJson, rpcResult](void*, FileDwnl_t *request, char, int) {
+            EXPECT_NE(strstr(request->pPostFields, "org.rdk.PowerManager.getPowerState"), nullptr);
+            EXPECT_EQ(strstr(request->pPostFields, "org.rdk.System.getPowerState"), nullptr);
+            if (rpcResult == 0 && responseJson != nullptr) {
+                DownloadData *response = static_cast<DownloadData *>(request->pDlData);
+                snprintf(static_cast<char *>(response->pvOut), response->memsize, "%s", responseJson);
+                response->datasize = strlen(responseJson);
+            }
+            return rpcResult;
+        }));
+    EXPECT_CALL(deviceMock, doStopDownload(_)).Times(1);
+    EXPECT_CALL(mockexternal, t2_event_d(StrEq("SYS_INFO_DEFER_CANARY_REBOOT"), 1))
+        .Times(expectDeferred ? 1 : 0);
+
+    EXPECT_EQ(flashImage("fwdl.com", "/tmp/firmware.bin", "false", "2", 0, "false", 3), 0);
+
+    remove("/tmp/xconfchecknow_val");
+    global_mockexternal_ptr = NULL;
+    g_DeviceUtilsMock = nullptr;
+}
+
+TEST(MainHelperFunctionTest, flashImageDefersCanaryForPowerManagerOnState)
+{
+    RunCanaryPowerStateTest(
+        "{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"currentState\":\"ON\",\"previousState\":\"STANDBY\"}}",
+        0,
+        true);
+}
+
+TEST(MainHelperFunctionTest, flashImageDoesNotDeferCanaryForPowerManagerNonOnState)
+{
+    RunCanaryPowerStateTest(
+        "{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"currentState\":\"STANDBY\",\"previousState\":\"ON\"}}",
+        0,
+        false);
+}
+
+TEST(MainHelperFunctionTest, flashImageHandlesPowerManagerRpcFailure)
+{
+    RunCanaryPowerStateTest(nullptr, -1, false);
+}
+
+TEST(MainHelperFunctionTest, flashImageHandlesInvalidPowerManagerResponse)
+{
+    RunCanaryPowerStateTest("not-json", 0, false);
+}
+
+TEST(MainHelperFunctionTest, flashImageHandlesMissingCurrentState)
+{
+    RunCanaryPowerStateTest(
+        "{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"previousState\":\"STANDBY\"}}",
+        0,
+        false);
 }
 TEST(MainHelperFunctionTest,flashImageTest){
     MockExternal mockexternal;
