@@ -15,22 +15,72 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v2
+      - name: Checkout docker test container definitions
+        uses: actions/checkout@v4
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          repository: rdkcentral/docker-device-mgt-service-test
+          ref: topic/RDKEMW-14784
+          path: docker-device-mgt-service-test
+
+      - name: Checkout rdk_logger dependency
+        uses: actions/checkout@v4
+        with:
+          repository: rdkcentral/rdk_logger
+          ref: v3.1.0
+          path: docker-device-mgt-service-test/native-platform/rdk_logger
+
+      - name: Checkout WebconfigFramework dependency
+        uses: actions/checkout@v4
+        with:
+          repository: rdkcentral/WebconfigFramework
+          ref: IMPORT_INITIAL_develop
+          path: docker-device-mgt-service-test/native-platform/WebconfigFramework
+
+      - name: Checkout libSyscallWrapper dependency
+        uses: actions/checkout@v4
+        with:
+          repository: rdkcentral/libSyscallWrapper
+          ref: IMPORT_INITIAL_develop
+          path: docker-device-mgt-service-test/native-platform/libSyscallWrapper
+
+      - name: Checkout common_utilities dependency
+        uses: actions/checkout@v4
+        with:
+          repository: rdkcentral/common_utilities
+          ref: 1.5.7
+          path: docker-device-mgt-service-test/native-platform/common_utilities
+
+      - name: Checkout tr69hostif dependency
+        uses: actions/checkout@v4
+        with:
+          repository: rdkcentral/tr69hostif
+          ref: 1.4.4
+          path: docker-device-mgt-service-test/native-platform/tr69hostif
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
+        uses: docker/setup-buildx-action@v3
 
-      - name: Pull docker images
-        run: |
-          docker pull ghcr.io/rdkcentral/docker-device-mgt-service-test/mockxconf:latest
-          docker pull ghcr.io/rdkcentral/docker-device-mgt-service-test/native-platform:latest
+      - name: Build mock-xconf image locally
+        uses: docker/build-push-action@v6
+        with:
+          context: docker-device-mgt-service-test/mock-xconf
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: ghcr.io/rdkcentral/docker-device-mgt-service-test/mockxconf:latest
+
+      - name: Build native-platform image locally
+        uses: docker/build-push-action@v6
+        with:
+          context: docker-device-mgt-service-test/native-platform
+          platforms: linux/amd64
+          build-args: |
+            REVISION=topic/RDKEMW-14784
+          push: false
+          load: true
+          tags: ghcr.io/rdkcentral/docker-device-mgt-service-test/native-platform:latest
 
       - name: Start mock-xconf service with mTLS enabled
         run: |
@@ -42,31 +92,44 @@ jobs:
 
       - name: Enter Inside Platform native container and run L2 Test
         run: |
-          docker exec -i native-platform /bin/bash -c "cd /mnt/L2_CONTAINER_SHARED_VOLUME/ && export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/lib/aarch64-linux-gnu:/usr/local/lib: && sh run_l2.sh" 
+          docker exec -i native-platform /bin/bash -c "cd /mnt/L2_CONTAINER_SHARED_VOLUME/ && export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:/lib/aarch64-linux-gnu:/usr/local/lib: && sh run_l2.sh"
 
-      - name: Copy l2 test results to runner 
+      - name: Copy l2 test results to runner
         run: |
           docker cp native-platform:/tmp/l2_test_report /tmp/L2_TEST_RESULTS
-          ls -l
           ls -l /tmp/L2_TEST_RESULTS
+
+      - name: Upload L2 test results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: L2_TEST_RESULTS
+          path: /tmp/L2_TEST_RESULTS
+          if-no-files-found: error
+
   upload-test-results:
     name: Upload L2 test results to automatic test result management system
     needs: execute-L2-tests-on-pr
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/rdkcentral/docker-rdk-ci:latest
-      volumes: 
+      volumes:
         - /tmp/L2_TEST_RESULTS:/tmp/L2_TEST_RESULTS
     steps:
+      - name: Download L2 test results artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: L2_TEST_RESULTS
+          path: /tmp/L2_TEST_RESULTS
+
       - name: Upload results
         if: github.repository_owner == 'rdkcentral'
         run: |
-            echo "Contents in workspace directory"
-            ls -l
-            echo "==============================="
-            echo "Contents in /tmp/L2_TEST_RESULTS"
-            ls -l /tmp/L2_TEST_RESULTS
-            echo "==============================="
-            git config --global --add safe.directory `pwd`
-            gtest-json-result-push.py /tmp/L2_TEST_RESULTS https://rdkeorchestrationservice.apps.cloud.comcast.net/rdke_orchestration_api/push_unit_test_results `pwd`
-            
+          echo "Contents in workspace directory"
+          ls -l
+          echo "==============================="
+          echo "Contents in /tmp/L2_TEST_RESULTS"
+          ls -l /tmp/L2_TEST_RESULTS
+          echo "==============================="
+          git config --global --add safe.directory `pwd`
+          gtest-json-result-push.py /tmp/L2_TEST_RESULTS https://rdkeorchestrationservice.apps.cloud.comcast.net/rdke_orchestration_api/push_unit_test_results `pwd`
