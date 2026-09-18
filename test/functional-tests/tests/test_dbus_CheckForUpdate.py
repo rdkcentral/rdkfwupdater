@@ -23,8 +23,13 @@ import time
 import os
 import json
 
-import rdkfw_test_helper
-
+from rdkfw_test_helper import (
+        remove_file,
+        rename_file,
+        write_on_file,
+        grep_log_file,
+        initial_rdkfw_setup,
+        )
 # D-Bus Configuration
 DBUS_SERVICE_NAME = "org.rdkfwupdater.Service"
 DBUS_OBJECT_PATH = "/org/rdkfwupdater/Service"
@@ -361,168 +366,6 @@ def test_checkupdate_after_unregistration():
         cleanup_daemon_files()
         stop_daemon(proc)
 
-
-
-def test_checkupdate_cache_miss():
-    """
-    CheckForUpdate with cache miss (first boot)
-    
-    SCENARIO: No XConf cache exists
-    SETUP: Delete cache files
-    EXECUTE: CheckForUpdate
-    VERIFY:
-        - Returns status_code = 3 (checking in progress)
-        - Eventually creates cache files
-        - Logs show "Cache miss"
-
-    """
-    proc = start_daemon()
-    initial_rdkfw_setup()
-    write_device_prop()
-    cleanup_daemon_files()
-    
-    # Ensure no cache exists
-    remove_file(XCONF_CACHE_FILE)
-    remove_file(XCONF_HTTP_CODE_FILE)
-    assert not cache_exists(), "Cache should not exist"
-    
-    try:
-        api = iface()
-        
-        # Register process
-        result = api.RegisterProcess("TestApp", "1.0")
-        handler_id = str(result[0] if isinstance(result, tuple) else result)
-        print(f"[PASS] Registered with handler_id: {handler_id}")
-        
-        # Call CheckForUpdate (cache miss)
-        response = api.CheckForUpdate(handler_id)
-        parsed = parse_checkupdate_response(response)
-        
-        assert parsed['result'] == CHECK_FOR_UPDATE_SUCCESS, \
-            f"API call should succeed, got {parsed['result']}"
-        print("[PASS] CheckForUpdate called (cache miss)")
-        
-        # Status code 3 means checking in progress
-        print(f"[INFO] Status code: {parsed['status_code']}")
-        print(f"[INFO] Message: {parsed['status_message']}")
-        
-        # Wait for cache to be created (daemon has 120s sleep + XConf call time)
-        print("[INFO] Waiting for XConf query and cache creation...")
-        
-        # Verify cache exists
-        if cache_exists():
-            print("[PASS] XConf cache files created")
-        else:
-            print(f"[WARN] Cache not created")
-        
-        # Check logs for cache miss message
-        if grep_log_file(SWUPDATE_LOG_FILE_0, "Cache miss"):
-            print("[PASS] Log shows cache miss")
-        
-    finally:
-        cleanup_daemon_files()
-        stop_daemon(proc)
-
-
-def test_checkupdate_cache_hit():
-    """
-    CheckForUpdate with cache hit
-    
-    SCENARIO: XConf cache already exists
-    SETUP: Create XConf cache
-    EXECUTE: CheckForUpdate
-    VERIFY:
-        - Returns immediately (no XConf call)
-        - Uses cached data
-        - status_code = 0 or 1 (firmware available/not available)
-    """
-    proc = start_daemon()
-    initial_rdkfw_setup()
-    write_device_prop()
-    cleanup_daemon_files()
-    
-    # Create cache before CheckForUpdate
-    create_xconf_cache(firmware_available=True, version="ABCD_2.0.0")
-    assert cache_exists(), "Cache should exist"
-    print("[SETUP] XConf cache created")
-    
-    try:
-        api = iface()
-        
-        # Register process
-        result = api.RegisterProcess("TestApp", "1.0")
-        handler_id = str(result[0] if isinstance(result, tuple) else result)
-        print(f"[PASS] Registered with handler_id: {handler_id}")
-        
-        # Call CheckForUpdate (cache hit)
-        response = api.CheckForUpdate(handler_id)
-        parsed = parse_checkupdate_response(response)
-        
-        assert parsed['result'] == CHECK_FOR_UPDATE_SUCCESS, \
-            f"API call should succeed, got {parsed['result']}"
-        print("[PASS] CheckForUpdate succeeded (cache hit)")
-        
-        # Should return quickly with cached data
-        # Status code should be 0 (available) or 1 (not available)
-        assert parsed['status_code'] in [FIRMWARE_AVAILABLE, FIRMWARE_NOT_AVAILABLE], \
-            f"Expected status 0 or 1, got {parsed['status_code']}"
-        print(f"[PASS] Status code: {parsed['status_code']} (using cache)")
-        print(f"[INFO] Available version: {parsed['available_version']}")
-        
-    finally:
-        cleanup_daemon_files()
-        stop_daemon(proc)
-
-
-
-def test_checkupdate_malformed_cache():
-    """
-    CheckForUpdate with malformed cache JSON
-    
-    SCENARIO: Cache file has invalid JSON (malformed syntax)
-    SETUP: Create cache with "{ invalid json ]"
-    EXECUTE: CheckForUpdate
-    VERIFY: Daemon handles error gracefully (doesn't crash or hang)
-    
-    """
-    proc = start_daemon()
-    initial_rdkfw_setup()
-    write_device_prop()
-    cleanup_daemon_files()
-    
-    # Create malformed cache
-    os.makedirs(os.path.dirname(XCONF_CACHE_FILE), exist_ok=True)
-    with open(XCONF_CACHE_FILE, 'w') as f:
-        f.write("{ invalid json ]")
-    
-    with open(XCONF_HTTP_CODE_FILE, 'w') as f:
-        f.write("200")
-    
-    print("Created malformed XConf cache")
-    
-    try:
-        api = iface()
-        
-        # Register process
-        result = api.RegisterProcess("TestApp", "1.0")
-        handler_id = str(result[0] if isinstance(result, tuple) else result)
-        print(f"[PASS] Registered with handler_id: {handler_id}")
-        
-        # Call CheckForUpdate with timeout (daemon might hang on malformed JSON)
-        try:
-            api.CheckForUpdate(handler_id)
-        except dbus.exceptions.DBusException:
-            pass  # ignore timeout for this test
-        assert wait_for_log_line(
-                "/opt/logs/swupdate.txt.0",
-                "Cache read failed, falling back to live XConf call",
-                timeout=10 )     
-    finally:
-        cleanup_daemon_files()
-        stop_daemon(proc)
-
-
-
 def test_checkupdate_multi_client_access():
     """
     Multiple clients can query same handler
@@ -839,191 +682,6 @@ def test_xconf_model_validation():
         cleanup_daemon_files()
         stop_daemon(proc)
 
-def test_xconf_successful_query_creates_cache():
-    """
-    Successful XConf query creates cache files
-    
-    SCENARIO: XConf query succeeds, cache is created
-    SETUP: Normal XConf URL, no existing cache
-    EXECUTE: CheckForUpdate triggers XConf call
-    VERIFY:
-        - Both cache files created
-        - Cache contains valid JSON
-        - HTTP code file shows 200
-        - Logs show cache creation
-    """
-    proc = start_daemon()
-    initial_rdkfw_setup()
-    write_device_prop()
-    cleanup_daemon_files()
-    
-    # Ensure no cache exists
-    assert not cache_exists(), "Cache should not exist initially"
-    
-    # Set normal XConf URL
-    set_xconf_url(XCONF_NORMAL_URL)
-    
-    try:
-        api = iface()
-        
-        # Register process
-        result = api.RegisterProcess("TestApp", "1.0")
-        handler_id = str(result[0] if isinstance(result, tuple) else result)
-        print(f"[PASS] Registered with handler_id: {handler_id}")
-        
-        # Call CheckForUpdate (will trigger XConf call)
-        response = api.CheckForUpdate(handler_id)
-        parsed = parse_checkupdate_response(response)
-        
-        assert parsed['result'] == CHECK_FOR_UPDATE_SUCCESS, \
-            "API call should succeed"
-        print("[PASS] CheckForUpdate called")
-        
-        
-        # Verify cache file contains valid JSON
-        if os.path.exists(XCONF_CACHE_FILE):
-            with open(XCONF_CACHE_FILE, 'r') as f:
-                cache_content = f.read()
-                try:
-                    cache_json = json.loads(cache_content)
-                    print("[PASS] Cache contains valid JSON")
-                    print(f"[INFO] Firmware version: {cache_json.get('firmwareVersion', 'N/A')}")
-                except json.JSONDecodeError:
-                    print("[WARN] Cache contains non-JSON data")
-        
-        # Verify HTTP code file shows success
-        if os.path.exists(XCONF_HTTP_CODE_FILE):
-            with open(XCONF_HTTP_CODE_FILE, 'r') as f:
-                http_code = f.read().strip()
-                assert http_code == "200", f"Expected HTTP 200, got {http_code}"
-                print(f"[PASS] HTTP code: {http_code}")
-        
-        # Check logs for cache creation
-        if grep_log_file(SWUPDATE_LOG_FILE_0, "cached") or \
-           grep_log_file(SWUPDATE_LOG_FILE_0, "XConf data cached successfully"):
-            print("[PASS] Log shows cache creation")
-        
-    finally:
-        restore_xconf_url()
-        cleanup_daemon_files()
-        stop_daemon(proc)
-
-
-def test_xconf_cache_miss_triggers_query():
-    """
-    Cache miss triggers XConf query
-    
-    SCENARIO: No cache exists, CheckForUpdate triggers query
-    SETUP: Delete cache, normal XConf URL
-    EXECUTE: CheckForUpdate
-    VERIFY:
-        - Logs show "Cache miss"
-        - XConf query is triggered
-        - Eventually creates cache
-    """
-    proc = start_daemon()
-    initial_rdkfw_setup()
-    write_device_prop()
-    cleanup_daemon_files()
-    
-    # Ensure no cache
-    remove_file(XCONF_CACHE_FILE)
-    remove_file(XCONF_HTTP_CODE_FILE)
-    assert not cache_exists(), "Cache should not exist"
-    
-    set_xconf_url(XCONF_NORMAL_URL)
-    
-    try:
-        api = iface()
-        
-        # Register process
-        result = api.RegisterProcess("TestApp", "1.0")
-        handler_id = str(result[0] if isinstance(result, tuple) else result)
-        print(f"[PASS] Registered with handler_id: {handler_id}")
-        
-        # Call CheckForUpdate (cache miss)
-        response = api.CheckForUpdate(handler_id)
-        parsed = parse_checkupdate_response(response)
-        
-        assert parsed['result'] == CHECK_FOR_UPDATE_SUCCESS, \
-            "API call should succeed"
-        print("[PASS] CheckForUpdate called (cache miss)")
-        
-        # Give it a moment for logs to be written
-        time.sleep(3)
-        
-        # Check logs for cache miss
-        if grep_log_file(SWUPDATE_LOG_FILE_0, "Cache miss") or \
-           grep_log_file(SWUPDATE_LOG_FILE_0, "cache miss"):
-            print("[PASS] Log shows cache miss")
-        
-        
-    finally:
-        restore_xconf_url()
-        cleanup_daemon_files()
-        stop_daemon(proc)
-
-
-def test_xconf_subsequent_call_uses_cache():
-    """
-    Second CheckForUpdate uses cache
-    
-    SCENARIO: First call creates cache, second uses it
-    SETUP: Two CheckForUpdate calls
-    EXECUTE: Call CheckForUpdate twice
-    VERIFY:
-        - First call creates cache
-        - Second call uses cache (no XConf call)
-        - Response is immediate on second call
-    """
-    proc = start_daemon()
-    initial_rdkfw_setup()
-    write_device_prop()
-    cleanup_daemon_files()
-    
-    set_xconf_url(XCONF_NORMAL_URL)
-    
-    try:
-        api = iface()
-        
-        # Register process
-        result = api.RegisterProcess("TestApp", "1.0")
-        handler_id = str(result[0] if isinstance(result, tuple) else result)
-        print(f"[PASS] Registered with handler_id: {handler_id}")
-        
-        # First call - cache miss
-        print("\n[TEST] First CheckForUpdate call (cache miss)...")
-        response1 = api.CheckForUpdate(handler_id)
-        parsed1 = parse_checkupdate_response(response1)
-        
-        assert parsed1['result'] == CHECK_FOR_UPDATE_SUCCESS, \
-            "First call should succeed"
-        print("[PASS] First call completed")
-        
-        
-        # Second call - cache hit
-        print("\n[TEST] Second CheckForUpdate call (cache hit)...")
-        start_time = time.time()
-        response2 = api.CheckForUpdate(handler_id)
-        elapsed = time.time() - start_time
-        
-        parsed2 = parse_checkupdate_response(response2)
-        
-        assert parsed2['result'] == CHECK_FOR_UPDATE_SUCCESS, \
-            "Second call should succeed"
-        print(f"[PASS] Second call completed in {elapsed:.2f}s (using cache)")
-        
-        # Second call should be much faster (< 5 seconds if using cache)
-        if elapsed < 5:
-            print(f"[PASS] Second call was fast ({elapsed:.2f}s) - used cache")
-        else:
-            print(f"[WARN] Second call took {elapsed:.2f}s - may not have used cache")
-        
-    finally:
-        restore_xconf_url()
-        cleanup_daemon_files()
-        stop_daemon(proc)
-
 
 def test_xconf_response_firmware_available():
     """
@@ -1082,6 +740,172 @@ def test_xconf_response_firmware_available():
             print(f"[INFO] Message: {parsed2['status_message']}")
         
     finally:
+        restore_xconf_url()
+        cleanup_daemon_files()
+        stop_daemon(proc)
+
+
+def test_checkupdate_second_call_triggers_fresh_xconf_request():
+    """
+    Verify that every CheckForUpdate request triggers a fresh XConf request.
+
+    SCENARIO:
+        Call CheckForUpdate twice for the same registered process.
+
+    SETUP:
+        Register a process with the firmware updater.
+
+    EXECUTE:
+        Call CheckForUpdate twice.
+
+    VERIFY:
+        - First CheckForUpdate succeeds.
+        - First call triggers an XConf request.
+        - Second CheckForUpdate succeeds.
+        - Second call triggers another XConf request.
+        - XConf request count increases after the second call.
+
+    NOTE:
+        CheckForUpdate returns immediately while XConf processing happens
+        asynchronously. Therefore status_code=3 is valid while the request
+        is in progress.
+    """
+
+    proc = start_daemon()
+    initial_rdkfw_setup()
+    write_device_prop()
+    cleanup_daemon_files()
+
+    try:
+        api = iface()
+
+        # ---------------------------------------------------------
+        # Register process
+        # ---------------------------------------------------------
+        result = api.RegisterProcess("TestApp", "1.0")
+        handler_id = str(result[0] if isinstance(result, tuple) else result)
+
+        print(f"[PASS] Registered with handler_id: {handler_id}")
+
+        # ---------------------------------------------------------
+        # FIRST CheckForUpdate
+        # ---------------------------------------------------------
+        print("[INFO] Calling CheckForUpdate - first request")
+
+        response1 = api.CheckForUpdate(handler_id)
+        parsed1 = parse_checkupdate_response(response1)
+
+        assert parsed1['result'] == CHECK_FOR_UPDATE_SUCCESS, \
+            f"First CheckForUpdate failed: {parsed1}"
+
+        print("[PASS] First CheckForUpdate succeeded")
+        print(f"[INFO] First status code: {parsed1['status_code']}")
+        print(f"[INFO] First status message: {parsed1['status_message']}")
+
+        # ---------------------------------------------------------
+        # Wait for FIRST XConf request
+        # ---------------------------------------------------------
+        assert wait_for_log_line(
+            SWUPDATE_LOG_FILE_0,
+            "Calling rdkv_upgrade_request",
+            timeout=10
+        ), "First XConf request was not observed"
+
+        print("[PASS] First XConf request observed")
+
+        # ---------------------------------------------------------
+        # Count XConf requests after FIRST CheckForUpdate
+        #
+        # Use errors="replace" because the daemon log can contain
+        # non-UTF8 bytes.
+        # ---------------------------------------------------------
+        with open(
+            SWUPDATE_LOG_FILE_0,
+            "r",
+            encoding="utf-8",
+            errors="replace"
+        ) as f:
+            log_after_first = f.read()
+
+        first_request_count = log_after_first.count(
+            "Calling rdkv_upgrade_request"
+        )
+
+        assert first_request_count >= 1, \
+            "Expected at least one XConf request after first CheckForUpdate"
+
+        print(
+            f"[INFO] XConf request count after first CheckForUpdate: "
+            f"{first_request_count}"
+        )
+
+        # ---------------------------------------------------------
+        # SECOND CheckForUpdate
+        # ---------------------------------------------------------
+        print("[INFO] Calling CheckForUpdate - second request")
+
+        response2 = api.CheckForUpdate(handler_id)
+        parsed2 = parse_checkupdate_response(response2)
+
+        assert parsed2['result'] == CHECK_FOR_UPDATE_SUCCESS, \
+            f"Second CheckForUpdate failed: {parsed2}"
+
+        print("[PASS] Second CheckForUpdate succeeded")
+        print(f"[INFO] Second status code: {parsed2['status_code']}")
+        print(f"[INFO] Second status message: {parsed2['status_message']}")
+
+        # ---------------------------------------------------------
+        # Wait for SECOND XConf request
+        #
+        # The first request's log entry already exists, so we need
+        # to wait until the total count becomes greater.
+        # ---------------------------------------------------------
+        timeout = 10
+        start_time = time.time()
+
+        second_request_count = first_request_count
+
+        while time.time() - start_time < timeout:
+
+            try:
+                with open(
+                    SWUPDATE_LOG_FILE_0,
+                    "r",
+                    encoding="utf-8",
+                    errors="replace"
+                ) as f:
+                    log_after_second = f.read()
+
+                second_request_count = log_after_second.count(
+                    "Calling rdkv_upgrade_request"
+                )
+
+                if second_request_count > first_request_count:
+                    break
+
+            except FileNotFoundError:
+                pass
+
+            time.sleep(0.2)
+
+        # ---------------------------------------------------------
+        # VERIFY
+        # ---------------------------------------------------------
+        assert second_request_count > first_request_count, \
+            (
+                "Second CheckForUpdate did not trigger a fresh XConf request. "
+                f"XConf request count remained at {first_request_count}"
+            )
+
+        print(
+            f"[PASS] Second CheckForUpdate triggered a fresh XConf request "
+            f"(count: {first_request_count} -> {second_request_count})"
+        )
+
+    finally:
+        # ---------------------------------------------------------
+        # Cleanup
+        # ---------------------------------------------------------
         restore_xconf_url()
         cleanup_daemon_files()
         stop_daemon(proc)

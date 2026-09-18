@@ -35,7 +35,7 @@ cd ../
 
 #Build rdkfwupdater
 autoreconf -i
-./configure --prefix=${INSTALL_DIR} --enable-rdkcertselector=yes --enable-mountutils=yes --enable-rfcapi=yes CFLAGS="-DRDK_LOGGER"
+./configure --prefix=${INSTALL_DIR} --enable-rdkcertselector=yes --enable-mountutils=yes --enable-rfcapi=yes CFLAGS="-DRDK_LOGGER -DRDKFW_L2_TEST_BUILD"
 make clean
 make && make install
 
@@ -59,6 +59,8 @@ cc -o /usr/bin/mfr_util test/functional-tests/tests/mfrutils.c
 rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLSpLimit.Enable boolean true
 rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLSpLimit.TopSpeed int 1280000
 rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Identity.DbgServices.Enable boolean true
+rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLDirect.Enable boolean false
+unset RDKFW_FORCE_DIRECTCDN
 cp test/functional-tests/tests/rc-proxy-params.json /tmp/rc-proxy-params.json
 
 # ========================================
@@ -73,18 +75,11 @@ sleep 1
 echo ""
 echo "Starting D-Bus system daemon..."
 
-# Check if D-Bus is already running
 if ! pgrep -x "dbus-daemon" > /dev/null; then
-    # Ensure D-Bus runtime directory exists
     mkdir -p /run/dbus
-    
-    # Start D-Bus system daemon
     dbus-daemon --system --fork
-    
-    # Wait for D-Bus to be ready
     sleep 2
-    
-    # Verify D-Bus started successfully
+
     if pgrep -x "dbus-daemon" > /dev/null; then
         echo " D-Bus daemon started successfully"
     else
@@ -95,38 +90,54 @@ else
     echo "D-Bus daemon already running"
 fi
 
+
 echo ""
 echo "=========================================="
 echo "Running L2 Integration Tests"
 echo "=========================================="
 echo ""
 
+
+rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLDirect.Enable boolean false
+unset RDKFW_FORCE_DIRECTCDN
+
 # ========================================
 # PHASE 1: Standard Certificate Tests (client.p12)
 # ========================================
 
 echo "[Phase 1/3] Running standard tests with normal certificates..."
-# Run all existing tests
 echo "Running existing image download tests..."
 pytest --json-report --json-report-file $RESULT_DIR/rdkfwupdater_image_tests.json \
-       test/functional-tests/tests/test_imagedwnl.py \
-       test/functional-tests/tests/test_imagedwnl_error.py \
-       test/functional-tests/tests/test_certbundle_dwnl.py \
-       test/functional-tests/tests/test_peripheral_imagedwnl.py
+    test/functional-tests/tests/test_imagedwnl.py \
+    test/functional-tests/tests/test_imagedwnl_error.py \
+    test/functional-tests/tests/test_certbundle_dwnl.py \
+    test/functional-tests/tests/test_peripheral_imagedwnl.py
+
+rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLDirect.Enable boolean true
+export RDKFW_FORCE_DIRECTCDN=true
+
+echo "Running DirectCDN image download tests..."
+pytest --json-report --json-report-file $RESULT_DIR/rdkfwupdater_dcdn_image_tests.json \
+    test/functional-tests/tests/test_DCDN_imagedwnl.py \
+    test/functional-tests/tests/test_DCDN_imagedwnl_error.py \
+    test/functional-tests/tests/test_DCDN_certbundle_dwnl.py \
+    test/functional-tests/tests/test_DCDN_peripheral_imagedwnl.py
+
+rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLDirect.Enable boolean false
+unset RDKFW_FORCE_DIRECTCDN
 
 # ========================================
 # PHASE 2: D-Bus Handler and Cache Tests
 # ========================================
 
-# Run new D-Bus handler and cache tests
 echo ""
 echo "[Phase 2/3] Running D-Bus handler and cache tests..."
 pytest -v -s --json-report --json-report-file $RESULT_DIR/rdkfwupdater_dbus_tests.json \
-	test/functional-tests/tests/test_dbus_DownloadFirmware.py \
-	test/functional-tests/tests/test_dbus_UnregisterProcess.py  \
-	test/functional-tests/tests/test_dbus_CheckForUpdate.py \
-	test/functional-tests/tests/test_dbus_RegisterProcess.py \
-	test/functional-tests/tests/test_dbus_UpdateFirmware.py
+        test/functional-tests/tests/test_dbus_DownloadFirmware.py \
+        test/functional-tests/tests/test_dbus_UnregisterProcess.py \
+        test/functional-tests/tests/test_dbus_CheckForUpdate.py \
+        test/functional-tests/tests/test_dbus_RegisterProcess.py \
+        test/functional-tests/tests/test_dbus_UpdateFirmware.py
 
 # ========================================
 # PHASE 3: PKCS#11 Certificate Fallback Test (if enabled)
@@ -138,18 +149,9 @@ if [ "$ENABLE_PKCS11" = "true" ]; then
     echo "[Phase 3/3] PKCS#11 Certificate Fallback Test"
     echo "=========================================="
     echo ""
-    echo "Note: This phase tests PKCS#11 behavior when reference.p12 is not available."
-    echo "      It validates certselector fallback to client.p12/client.pem"
-    echo "      when reference.p12 is missing or unavailable."
-    echo ""
-    
-    # Run PKCS#11 fallback test (removes reference.p12, verifies fallback to client.p12/client.pem)
     echo "Running certificate fallback test..."
     pytest -v -s --json-report --json-report-file $RESULT_DIR/rdkfwupdater_pkcs11_fallback_tests.json \
            test/functional-tests/tests/test_pkcs11_fallback.py
-    
-    echo ""
-    echo "PKCS#11 fallback test report: $RESULT_DIR/rdkfwupdater_pkcs11_fallback_tests.json"
 else
     echo ""
     echo "=========================================="
@@ -158,10 +160,12 @@ else
     echo "=========================================="
 fi
 
+
+
 echo ""
 echo "=========================================="
 echo "L2 Test Results"
 echo "=========================================="
-echo "Image tests report: $RESULT_DIR/rdkfwupdater_image_tests.json"
+echo "Image tests report: $RESULT_DIR/rdkfwupdater_dcdn_image_tests.json"
 echo "D-Bus tests report: $RESULT_DIR/rdkfwupdater_dbus_tests.json"
 echo "=========================================="
