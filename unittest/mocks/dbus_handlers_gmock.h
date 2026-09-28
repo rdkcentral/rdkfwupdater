@@ -171,6 +171,7 @@ char* makeHttpHttps(const char* url);
 int v_secure_system(const char* command);
 int GetBuildType(char* buffer, size_t len);
 int GetModelNum(char* buffer, size_t len);
+size_t GetModelNameUsingMFR(char* buffer, size_t len);
 int GetMFRName(char* buffer, size_t len);
 int GetUTCTime(char* buffer, size_t len);
 int GetTimezone(char* buffer, size_t len);
