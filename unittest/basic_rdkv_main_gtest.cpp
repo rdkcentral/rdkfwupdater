@@ -1422,6 +1422,13 @@ TEST(MainHelperFunctionTest, flashImageHandlesMissingCurrentState)
         0,
         false);
 }
+TEST(MainHelperFunctionTest, flashImageHandlesNullCurrentState)
+{
+    RunCanaryPowerStateTest(
+        "{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"currentState\":null}}",
+        0,
+        false);
+}
 TEST(MainHelperFunctionTest,flashImageTest){
     MockExternal mockexternal;
     global_mockexternal_ptr = &mockexternal;

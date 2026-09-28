@@ -454,9 +454,20 @@ extern "C" void swLog(const char *file, const char *func, int line, int level, c
 
 extern "C" int allocDowndLoadDataMem(void *ptr, int size)
 {
-    // Mock for external function from common_utilities (libdwnutils)
-    // This function allocates memory for download data
-    // For testing purposes, just return success
+    DownloadData *downloadData = static_cast<DownloadData *>(ptr);
+
+    if (downloadData == NULL || size <= 0) {
+        return -1;
+    }
+
+    downloadData->pvOut = malloc(size);
+    if (downloadData->pvOut == NULL) {
+        return -1;
+    }
+
+    downloadData->memsize = size;
+    downloadData->datasize = 0;
+    memset(downloadData->pvOut, 0, size);
     return 0;
 }
 
