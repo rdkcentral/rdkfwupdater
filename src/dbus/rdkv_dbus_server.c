@@ -1810,8 +1810,8 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		g_free(rebootImmediately);
 		g_free(loc_of_firmware);
 		
-		/* coverity[leaked_storage] - flash_ctx ownership transferred to worker thread
-		 * rdkfw_flash_worker_thread(); the thread frees flash_ctx when it completes. */
+		/* coverity[leaked_storage] - flash_ctx ownership transferred to worker thread via g_thread_try_new;
+		 * the thread will free flash_ctx when it completes. */
 		 // flash_ctx is now owned by the worker thread and will be freed there
 		}
 
@@ -3151,23 +3151,17 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
         // Signal thread to stop atomically
         g_atomic_int_set(&stop_monitor, TRUE);
         
-        /* Coverity fix: RESOURCE_LEAK - g_thread_join() frees the thread handle.
-         * Do NOT set monitor_thread = NULL afterward as Coverity flags it as a leak.
-         * The thread handle is properly freed by g_thread_join() and should not be
-         * used again after this point. */
+        /* Coverity fix: RESOURCE_LEAK - g_thread_join() frees the thread handle. */
         SWLOG_DEBUG("[DOWNLOAD_WORKER] Waiting for monitor thread to exit...\n");
-        /* coverity[leaked_storage] - False positive: g_thread_join() already freed the GThread.
-        * Setting to NULL is defensive programming to prevent double-join. GLib documentation
-         * confirms the thread handle is consumed by g_thread_join(). */
-         g_thread_join(monitor_thread);
-        monitor_thread = NULL;
+        /* coverity[leaked_storage] - False positive: g_thread_join() frees the GThread handle. */
+        g_thread_join(monitor_thread);
+         monitor_thread = NULL;
             
         SWLOG_INFO("[DOWNLOAD_WORKER]  Progress monitor thread stopped cleanly\n");
             
         // CRITICAL FIX: monitor_ctx is cleaned up by the thread itself in its cleanup section
         // We MUST set it to NULL here to prevent double-free in error paths below
-        /* coverity[leaked_storage] - monitor_ctx ownership transferred to monitor thread;
-        * the thread frees handler_id, firmware_name, mutex, and context in its cleanup. */
+        /* coverity[leaked_storage] - monitor_ctx ownership transferred to monitor thread; thread frees it on exit. */
         monitor_ctx = NULL;
         
         // Note: monitor_mutex is also freed by the thread, no action needed here
