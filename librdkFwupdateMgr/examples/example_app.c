@@ -404,12 +404,23 @@ int main(void)
     pthread_mutex_unlock(&g_check_mutex);
 
     /* Check result */
-    if (g_check_status != FIRMWARE_AVAILABLE) {
+        int local_check_status;
+        char local_fw_current_version[64];
+        char local_fw_available_version[64];
+        pthread_mutex_lock(&g_check_mutex);
+        local_check_status = g_check_status;
+        strncpy(local_fw_current_version, g_fw_current_version, sizeof(local_fw_current_version) - 1);
+        local_fw_current_version[sizeof(local_fw_current_version) - 1] = '\0';
+        strncpy(local_fw_available_version, g_fw_available_version, sizeof(local_fw_available_version) - 1);
+        local_fw_available_version[sizeof(local_fw_available_version) - 1] = '\0';
+        pthread_mutex_unlock(&g_check_mutex);
+
+        if (local_check_status != FIRMWARE_AVAILABLE) {
         EXAMPLE_WARN("No firmware update available\n");
-        EXAMPLE_INFO("  Status: %d\n", g_check_status);
-        EXAMPLE_INFO("  Current Version: %s\n", g_fw_current_version);
+            EXAMPLE_INFO("  Status: %d\n", local_check_status);
+            EXAMPLE_INFO("  Current Version: %s\n", local_fw_current_version);
         
-        if (g_check_status == FIRMWARE_NOT_AVAILABLE) {
+            if (local_check_status == FIRMWARE_NOT_AVAILABLE) {
             EXAMPLE_INFO("  Already on latest version. No action needed.\n");
             g_exit_code = EXIT_SUCCESS;
         } else {
@@ -420,8 +431,8 @@ int main(void)
     }
 
     EXAMPLE_INFO("Firmware update available!\n");
-    EXAMPLE_INFO("  Current Version  : %s\n", g_fw_current_version);
-    EXAMPLE_INFO("  Available Version: %s\n", g_fw_available_version);
+        EXAMPLE_INFO("  Current Version  : %s\n", local_fw_current_version);
+        EXAMPLE_INFO("  Available Version: %s\n", local_fw_available_version);
     EXAMPLE_INFO("  Proceeding to download...\n");
 
     /* ====================================================================
@@ -476,8 +487,13 @@ int main(void)
     pthread_mutex_unlock(&g_download_mutex);
 
     /* Check download result */
-    if (g_download_status != DWNL_COMPLETED) {
-        EXAMPLE_ERROR("Download failed (status=%d)\n", g_download_status);
+        int local_download_status;
+        pthread_mutex_lock(&g_download_mutex);
+        local_download_status = g_download_status;
+        pthread_mutex_unlock(&g_download_mutex);
+
+        if (local_download_status != DWNL_COMPLETED) {
+            EXAMPLE_ERROR("Download failed (status=%d)\n", local_download_status);
         g_exit_code = EXIT_FAILURE;
         goto cleanup_unregister;
     }
@@ -545,8 +561,13 @@ int main(void)
     pthread_mutex_unlock(&g_update_mutex);
 
     /* Check flash result */
-    if (g_update_status != UPDATE_COMPLETED) {
-        EXAMPLE_ERROR("Firmware flash failed (status=%d)\n", g_update_status);
+        int local_update_status;
+        pthread_mutex_lock(&g_update_mutex);
+        local_update_status = g_update_status;
+        pthread_mutex_unlock(&g_update_mutex);
+
+        if (local_update_status != UPDATE_COMPLETED) {
+            EXAMPLE_ERROR("Firmware flash failed (status=%d)\n", local_update_status);
         g_exit_code = EXIT_FAILURE;
         goto cleanup_unregister;
     }
@@ -571,7 +592,11 @@ cleanup_unregister:
      * ==================================================================== */
     if (g_exit_code == EXIT_SUCCESS) {
         EXAMPLE_INFO("FIRMWARE UPDATE WORKFLOW COMPLETED\n");
-        if (g_update_status == UPDATE_COMPLETED) {
+            int final_update_status;
+            pthread_mutex_lock(&g_update_mutex);
+            final_update_status = g_update_status;
+            pthread_mutex_unlock(&g_update_mutex);
+            if (final_update_status == UPDATE_COMPLETED) {
             EXAMPLE_INFO("  Firmware flashed successfully.\n");
             EXAMPLE_INFO("  System reboot required to activate new firmware.\n");
         }
