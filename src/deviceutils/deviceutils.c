@@ -53,7 +53,7 @@ int v_secure_pclose(FILE *fp);
 #define BUNDLE_METADATA_RFS_APPS_PATH    "/tmp/rfc/apps"
 #endif
 
-#define WPEFRAMEWORKSECURITYUTILITY     "/usr/bin/WPEFrameworkSecurityUtility"
+#define THUNDERSECURITYUTILITY     "/usr/bin/ThunderSecurityUtility"
 #define MFRUTIL                         "/usr/bin/mfr_util %s" // --PDRIVersion"
 #define MD5SUM                          "/usr/bin/md5sum %s"
 
@@ -119,7 +119,7 @@ char *pPeripheralName[MAX_PERIPHERAL_ITEMS] = {
             Function Notes - Available commands along with corresponding SYSCMD enum are;
                 COMMAND                                                     ENUM
  
-            "/usr/bin/WPEFrameworkSecurityUtility"                      eWpeFrameworkSecurityUtility
+            "/usr/bin/ThunderSecurityUtility"                      eThunderSecurityUtility
             "/usr/bin/mfr_util %s"                                      eMfrUtil
             "/usr/bin/md5sum %s"                                        eMD5Sum
             "/lib/rdk/cdlSupport.sh getRemoteInfo"                      eGetRemoteInfo
@@ -174,8 +174,8 @@ size_t RunCommand( SYSCMD eSysCmd, const char *pArgs, char *pResult, size_t szRe
                }
                break;
 
-           case eWpeFrameworkSecurityUtility :
-               fp = v_secure_popen( "r", WPEFRAMEWORKSECURITYUTILITY );
+           case eThunderSecurityUtility :
+               fp = v_secure_popen( "r", THUNDERSECURITYUTILITY );
                break;
 
 
@@ -338,7 +338,7 @@ int getJsonRpc(char *post_data, DownloadData* pJsonRpc )
 
     *token = 0;
     *jsondata = 0;
-    RunCommand( eWpeFrameworkSecurityUtility, NULL, jsondata, sizeof(jsondata) );
+    RunCommand( eThunderSecurityUtility, NULL, jsondata, sizeof(jsondata) );
     
     getJRPCTokenData(token, jsondata, sizeof(token));
     if (pJsonRpc->pvOut != NULL) {
