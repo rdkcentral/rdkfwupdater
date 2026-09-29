@@ -3306,12 +3306,8 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     SWLOG_INFO("[DOWNLOAD_WORKER] ----------------------------------------\n");
     SWLOG_INFO("[DOWNLOAD_WORKER] *** WORKER THREAD COMPLETE ***\n");
     SWLOG_INFO("====================DOWNLOAD WORKER THREAD FINISHED====================\n");
-    
+
     g_task_return_boolean(task, TRUE);
-    // Free monitor context
-    if (monitor_ctx != NULL) {
-	    g_free(monitor_ctx);  // or free(monitor_ctx) depending on allocation
-}
 }
 
 /**
