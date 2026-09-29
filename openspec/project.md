@@ -218,7 +218,7 @@ Used for data model provider registration (rBus integration via `rbusInterface/r
 
 ### 6.4 JSON-RPC (via Thunder)
 
-Used to query MaintenanceManager mode via JSON-RPC over HTTP to WPEFramework's local endpoint (`http://127.0.0.1:9998`).
+Used to query MaintenanceManager mode via JSON-RPC over HTTP to Thunder's local endpoint (`http://127.0.0.1:9998`).
 
 ---
 
