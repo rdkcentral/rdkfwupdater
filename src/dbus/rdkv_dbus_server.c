@@ -3309,6 +3309,7 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     SWLOG_INFO("====================DOWNLOAD WORKER THREAD FINISHED====================\n");
     
     g_task_return_boolean(task, TRUE);
+}
     // Free monitor context (only if thread was not started — thread owns it otherwise)
     if (monitor_ctx != NULL) {
 	    if (monitor_ctx->handler_id) g_free(monitor_ctx->handler_id);
