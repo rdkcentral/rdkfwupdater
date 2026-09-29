@@ -1810,9 +1810,8 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		g_free(rebootImmediately);
 		g_free(loc_of_firmware);
 		
-		/* Coverity fix: RESOURCE_LEAK - Ownership of flash_ctx transferred to worker thread.
-		 * The thread will free flash_ctx when it completes. Do NOT set to NULL to avoid
-		 * false positive "resource leak" warnings from Coverity on the NULL assignment. */
+            /* coverity[leaked_storage] - Ownership of flash_ctx is transferred to rdkfw_flash_worker_thread()
+             * via g_thread_try_new(); worker thread is responsible for freeing flash_ctx and its members. */
 		// flash_ctx is now owned by the worker thread and will be freed there
 	}
 
@@ -3158,7 +3157,9 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
          * used again after this point. */
         SWLOG_DEBUG("[DOWNLOAD_WORKER] Waiting for monitor thread to exit...\n");
         g_thread_join(monitor_thread);
-        /* coverity[leaked_storage] - False positive: g_thread_join() already freed the GThread.
+            /* coverity[leaked_storage] - g_thread_join() consumes/frees the GThread handle (GLib API);
+             * NULL assignment is defensive to prevent accidental reuse/double-join. */
+            /* coverity[leaked_storage] - False positive: g_thread_join() already freed the GThread.
          * Setting to NULL is defensive programming to prevent double-join. GLib documentation
          * confirms the thread handle is consumed by g_thread_join(). */
         monitor_thread = NULL;
@@ -3167,6 +3168,8 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
         
         // CRITICAL FIX: monitor_ctx is cleaned up by the thread itself in its cleanup section
         // We MUST set it to NULL here to prevent double-free in error paths below
+            /* coverity[leaked_storage] - monitor_ctx ownership is transferred to rdkfw_progress_monitor_thread();
+             * the monitor thread is responsible for freeing monitor_ctx and its members before exit. */
         monitor_ctx = NULL;
         
         // Note: monitor_mutex is also freed by the thread, no action needed here
