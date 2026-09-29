@@ -473,6 +473,11 @@ metaDataFileList_st *getMetaDataFile(const char *dir)
             if (pDirent->d_type == DT_REG && strstr(pDirent->d_name, "_package.json") != NULL)
             {
                 newnode = (metaDataFileList_st *)malloc(sizeof(metaDataFileList_st));
+                if (newnode == NULL)
+                {
+                SWLOG_INFO("GetInstalledBundles: malloc failed\n");
+                continue;
+                }
                 SWLOG_INFO("GetInstalledBundles: found %s\n", pDirent->d_name);
                 snprintf(newnode->fileName, sizeof(newnode->fileName), "%s/%s", dir, pDirent->d_name);
                 newnode->next = NULL;
