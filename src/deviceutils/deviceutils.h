@@ -36,7 +36,7 @@ typedef enum {
     eMD5Sum,
     eRdkSsaCli,
     eMfrUtil,
-    eWpeFrameworkSecurityUtility
+    eThunderSecurityUtility
 #ifdef GETRDMMANIFESTVERSION_IN_SCRIPT
     ,eGetInstalledRdmManifestVersion
 #endif
@@ -68,7 +68,7 @@ typedef struct metaDataFileList
             Function Notes - Available commands along with corresponding SYSCMD enum are;
                 COMMAND                                                     ENUM
  
-            "/usr/bin/WPEFrameworkSecurityUtility"                      eWpeFrameworkSecurityUtility
+            "/usr/bin/ThunderSecurityUtility"                      eThunderSecurityUtility
             "/usr/bin/mfr_util %s"                                      eMfrUtil
             "/usr/bin/md5sum %s"                                        eMD5Sum
             "/lib/rdk/cdlSupport.sh getRemoteInfo"                      eGetRemoteInfo
