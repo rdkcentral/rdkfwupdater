@@ -379,7 +379,7 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
               if( pJson != NULL ) {
                   pItem = GetJsonItem( pJson, "result" );
                   res_val = GetJsonItem( pItem, "currentState" );
-                  if (res_val != NULL && !cJSON_IsString(res_val)) {
+if (res_val == NULL || !cJSON_IsString(res_val) || res_val->valuestring == NULL || res_val->valuestring[0] == '\0') {
                       SWLOG_ERROR("%s :: invalid currentState in JsonRpc response\n", __FUNCTION__);
                       res_val = NULL;
                   }
