@@ -3321,7 +3321,7 @@ if (monitor_ctx->mutex) {
     g_free(monitor_ctx);
     monitor_ctx = NULL;
     }
-    }
+    
 
 /**
  * @brief GTask completion callback - cleans up after download completes
