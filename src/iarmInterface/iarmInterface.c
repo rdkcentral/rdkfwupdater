@@ -389,7 +389,25 @@ size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
 
     return len;
 }
-
+/**
+ * @brief Retrieves the device model name from MFR Manager.
+ *
+ * Calls the MFR Manager through IARM to retrieve the serialized
+ * device model name. Removes trailing newline and carriage return
+ * characters and copies the model name into the provided buffer.
+ *
+ * @param[out] pModelName  Pointer to the buffer where the model name
+ *                         will be stored.
+ * @param[in]  szBufSize   Size of the output buffer in bytes.
+ *
+ * @return Length of the retrieved model name (excluding the null
+ *         terminator) on success, or 0 on failure.
+ *
+ * @note The output buffer is initialized to an empty string before
+ *       attempting retrieval.
+ * @note Returns 0 if the buffer is invalid, the IARM call fails,
+ *       the model name is empty, or the output buffer is too small.
+ */
 size_t GetModelNameUsingMFR(char *pModelName, size_t szBufSize)
 {
     IARM_Bus_MFRLib_GetSerializedData_Param_t param;
