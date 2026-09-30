@@ -23,6 +23,10 @@
     #define GETRDMMANIFESTVERSION_IN_SCRIPT
 #endif
 
+#if defined(IARM_ENABLED) 
+#include "iarmInterface.h"
+#endif
+
 #ifndef GTEST_ENABLE
 #include "rdk_fwdl_utils.h"
 #include "common_device_api.h"

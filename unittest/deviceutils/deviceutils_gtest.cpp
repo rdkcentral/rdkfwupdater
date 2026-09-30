@@ -43,7 +43,8 @@ using ::testing::Return;
 using ::testing::StrEq;
 
 
-DeviceUtilsMock *g_DeviceUtilsMock = NULL;
+//extern DeviceUtilsMock *g_DeviceUtilsMock = NULL;
+extern DeviceUtilsMock *g_DeviceUtilsMock;
 
 class DeviceUtilsTestFixture : public ::testing::Test {
     protected:

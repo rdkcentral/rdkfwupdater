@@ -219,6 +219,20 @@ size_t RunCommand( SYSCMD eSysCmd, const char *pArgs, char *pResult, size_t szRe
     return nbytes_read;
 }
 
+/* Static cache for peripheral product name, populated by BuildRemoteInfo() */
+static char pProductNumber[128] = {0};
+
+int getPeripheralProduct(char *buf, size_t szIn)
+{
+    if (buf == NULL || szIn == 0) return -1;
+    if (pProductNumber[0] != '\0') {
+        snprintf(buf, szIn, "%s", pProductNumber);
+    } else {
+        snprintf(buf, szIn, "%s", "remCtrl");
+    }
+    return 0;
+}
+
 /* function BuildRemoteInfo - Formats the "periperalFirmwares" string for remote info part of xconf communication
  
         Usage: size_t BuildRemoteInfo <JSON *pItem> <char *pRemoteInfo> <size_t szMaxBuf> <bool bAddremCtrl>
@@ -254,6 +268,9 @@ size_t BuildRemoteInfo( JSON *pItem, char *pRemoteInfo, size_t szMaxBuf, bool bA
         i = GetJsonVal( pItem, "Product", productBuf, sizeof(productBuf) );
         if( i )
         {
+            /* Cache peripheral product name for Direct CDN URL key lookup */
+            snprintf(pProductNumber, sizeof(pProductNumber), "remCtrl%s", productBuf);
+
             if( bAddremCtrl == true )
             {
                 pPrefix = pRemCtrlStrings;

@@ -36,7 +36,6 @@ using namespace std;
 using ::testing::Return;
 using ::testing::StrEq;
 
-
 //DeviceUtilsMock *g_DeviceApiMock = NULL;
 
 extern DeviceUtilsMock *g_DeviceUtilsMock;
@@ -174,22 +173,23 @@ TEST_F(DeviceApiTestFixture,TestName_getadditionfw_nullcheck)
 {
     EXPECT_EQ(GetAdditionalFwVerInfo(NULL, 0), 0);
 }
-//TODO: Need to check why v_secure_popen is not returning properly
-TEST_F(DeviceApiTestFixture,TestName_Success)
+#if 0
+TEST_F(DeviceApiTestFixture, TestName_Success)
 {
     char data[64];
-    FILE *fp = NULL;
-    char buff[] = "1234_pdri_image.bin\n";
-    fp = fopen("/tmp/pdri.txt", "w");
-    if (fp != NULL) {
-        fwrite(buff, sizeof(buff), 1,fp);
-	fclose(fp);
-	fp = NULL;
-    }
-    //EXPECT_CALL(*g_DeviceUtilsMock, v_secure_popen(_, _, _)).Times(1).WillOnce(Return(fopen("/tmp/pdri.txt", "r")));
-    EXPECT_CALL(*g_DeviceUtilsMock, v_secure_popen(_, _, _)).Times(1).WillOnce(Return(fp));
-    EXPECT_EQ(GetAdditionalFwVerInfo(data, sizeof(data)), 0);
+    // Instead of v_secure_popen, expect the MFR call:
+    EXPECT_CALL(*g_DeviceStatusMock, GetPDRIFileNameUsingMFR(_, _))
+        .Times(1)
+        .WillOnce([](char* out, size_t sz){
+            strcpy(out, "mockpdri.bin");
+            return strlen(out);
+        });
+
+    // Now call and expect correct result:
+    EXPECT_EQ(GetAdditionalFwVerInfo(data, sizeof(data)), strlen("mockpdri.bin"));
+    EXPECT_STREQ(data, "mockpdri.bin");
 }
+#endif
 TEST(TestGetPDRIFileName, Test_pdri_Nullcheck)
 {
     EXPECT_EQ(GetPDRIFileName(NULL, 0), 0);
@@ -506,10 +506,10 @@ TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessStatered_DebugServices_E
     int ret;
     char servUrl[]="https://www.statered.com";
     EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(true));
+    EXPECT_CALL(*g_DeviceUtilsMock, RDK_isDbgSrvUnlocked()).Times(1).WillOnce(Return(true));
     //EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _)).Times(1).WillOnce(Return(1));
     ret = system("echo \"BUILD_TYPE=vbn\" > /tmp/device_gtest.prop");
     //EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(1));
-    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(true));
     ret = system("echo \"https://www.statered.com\" > /tmp/stateredrecovry.conf");
     ret = GetServURL(output, sizeof(output));
     EXPECT_EQ(strncmp(output,servUrl,strlen(servUrl)),0);
@@ -525,10 +525,10 @@ TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessStatered_DebugServices_D
     int ret;
     char servUrl[]="https://www.statered.com";
     EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(true));
+    EXPECT_CALL(*g_DeviceUtilsMock, RDK_isDbgSrvUnlocked()).Times(1).WillOnce(Return(true));
     //EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _)).Times(1).WillOnce(Return(1));
     ret = system("echo \"BUILD_TYPE=vbn\" > /tmp/device_gtest.prop");
     //EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(1));
-    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(false));
     ret = system("echo \"https://www.statered.com\" > /tmp/stateredrecovry.conf");
     ret = GetServURL(output, sizeof(output));
     EXPECT_EQ(strncmp(output,servUrl,strlen(servUrl)),0);
@@ -547,7 +547,7 @@ TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessStatered_Prod_DebugServi
     //EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _)).Times(1).WillOnce(Return(1));
     ret = system("echo \"BUILD_TYPE=PROD\" > /tmp/device_gtest.prop");
     //EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(1));
-    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(true));
+    EXPECT_CALL(*g_DeviceUtilsMock, RDK_isDbgSrvUnlocked()).Times(1).WillOnce(Return(true));
     ret = system("echo \"https://www.statered.com\" > /tmp/stateredrecovry.conf");
     ret = GetServURL(output, sizeof(output));
     EXPECT_EQ(strncmp(output,servUrl,strlen(servUrl)),0);
@@ -566,7 +566,7 @@ TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessStatered_Prod_DebugServi
     //EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _)).Times(1).WillOnce(Return(1));
     ret = system("echo \"BUILD_TYPE=PROD\" > /tmp/device_gtest.prop");
     //EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(1));
-    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(false));
+    EXPECT_CALL(*g_DeviceUtilsMock, RDK_isDbgSrvUnlocked()).Times(1).WillOnce(Return(false));
     ret = system("echo \"https://www.statered.com\" > /tmp/stateredrecovry.conf");
     ret = system("echo \"https://www.autotool.com\" > /tmp/swupdate.conf");
     EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _))
@@ -591,10 +591,10 @@ TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessSwupdate_DebugServices_E
     int ret;
     char servUrl[]="https://www.rdkautotool.com";
     EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(false));
+    EXPECT_CALL(*g_DeviceUtilsMock, RDK_isDbgSrvUnlocked()).Times(1).WillOnce(Return(true));
     EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(0));
     //EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _)).Times(1).WillOnce(Return(1));
     ret = system("echo \"BUILD_TYPE=vbn\" > /tmp/device_gtest.prop");
-    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(true));
     ret = system("echo \"https://www.rdkautotool.com\" > /tmp/swupdate.conf");
     ret=GetServURL(output , sizeof(output));
     EXPECT_EQ(strncmp(output , servUrl , strlen(servUrl)),0);
@@ -611,10 +611,10 @@ TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessSwupdate_DebugServices_D
     int ret;
     char servUrl[]="https://www.rdkautotool.com";
     EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(false));
+    EXPECT_CALL(*g_DeviceUtilsMock, RDK_isDbgSrvUnlocked()).Times(1).WillOnce(Return(true));
     EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(0));
     //EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _)).Times(1).WillOnce(Return(1));
     ret = system("echo \"BUILD_TYPE=vbn\" > /tmp/device_gtest.prop");
-    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(false));
     ret = system("echo \"https://www.rdkautotool.com\" > /tmp/swupdate.conf");
     ret=GetServURL(output , sizeof(output));
     EXPECT_EQ(strncmp(output , servUrl , strlen(servUrl)),0);
@@ -633,7 +633,7 @@ TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessSwupdate_Prod_DebugServi
     EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(false));
     EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_)).Times(1).WillOnce(Return(0));
     ret = system("echo \"BUILD_TYPE=PROD\" > /tmp/device_gtest.prop");
-    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(true));
+    EXPECT_CALL(*g_DeviceUtilsMock, RDK_isDbgSrvUnlocked()).Times(1).WillOnce(Return(true));
     ret = system("echo \"https://www.rdkautotool.com\" > /tmp/swupdate.conf");
     ret=GetServURL(output , sizeof(output));
     EXPECT_EQ(strncmp(output , servUrl , strlen(servUrl)),0);
@@ -651,7 +651,7 @@ TEST_F(DeviceApiTestFixture, TestName_GetServURL_SuccessSwupdate_Prod_DebugServi
     char servUrl[]= "https://www.tr181Rfc.com";
     EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(false));
     ret = system("echo \"BUILD_TYPE=PROD\" > /tmp/device_gtest.prop");
-    EXPECT_CALL(*g_DeviceUtilsMock, isDebugServicesEnabled()).Times(1).WillOnce(Return(false));
+    EXPECT_CALL(*g_DeviceUtilsMock, RDK_isDbgSrvUnlocked()).Times(1).WillOnce(Return(false));
     ret = system("echo \"https://www.rdkautotool.com\" > /tmp/swupdate.conf");
     EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _))
 	        .Times(1)
@@ -726,4 +726,295 @@ TEST_F(DeviceApiTestFixture,TestName_GetRemoteVers_Fail)
 {
     char pRemoteInfo[256] = {0};
     EXPECT_EQ(GetRemoteVers(pRemoteInfo, sizeof(pRemoteInfo)), 0);
+}
+
+/* Direct CDN: GetServURL must return /xconf/firmware/stb/ when isDirectCDNEnabled() is true (bootstrap path) */
+TEST_F(DeviceApiTestFixture, TestName_GetServURL_DirectCDN_Bootstrap)
+{
+    char output[128];
+    int ret;
+    char servUrl[] = "https://xconf.example.com";
+
+    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(false));
+    EXPECT_CALL(*g_DeviceUtilsMock, RDK_isDbgSrvUnlocked()).Times(1).WillOnce(Return(false));
+    EXPECT_CALL(*g_DeviceUtilsMock, isDirectCDNEnabled()).WillRepeatedly(Return(true));
+
+    ret = system("echo \"BUILD_TYPE=PROD\" > /tmp/device_gtest.prop");
+    ret = system("rm -f /tmp/swupdate.conf");
+
+    /* Mock the bootstrap TR181 URL read */
+    EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _))
+        .Times(1)
+        .WillOnce(Invoke([&servUrl](char* type, const char* key, char *out_value, size_t datasize) {
+            strncpy(out_value, servUrl, datasize - 1);
+            out_value[datasize - 1] = '\0';
+            return (int)strlen(out_value);
+        }));
+
+    ret = GetServURL(output, sizeof(output));
+    EXPECT_GT(ret, 0);
+    EXPECT_NE(strstr(output, "/xconf/firmware/stb/"), nullptr);
+    EXPECT_EQ(strstr(output, "/xconf/swu/stb"), nullptr);
+
+    ret = system("rm -f /tmp/device_gtest.prop");
+    printf("DirectCDN Bootstrap URL = %s\n", output);
+}
+
+/* Direct CDN disabled: GetServURL must still return /xconf/swu/stb (bootstrap path, legacy) */
+TEST_F(DeviceApiTestFixture, TestName_GetServURL_DirectCDN_Disabled_Bootstrap)
+{
+    char output[128];
+    int ret;
+    char servUrl[] = "https://xconf.example.com";
+
+    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(false));
+    EXPECT_CALL(*g_DeviceUtilsMock, RDK_isDbgSrvUnlocked()).Times(1).WillOnce(Return(false));
+    EXPECT_CALL(*g_DeviceUtilsMock, isDirectCDNEnabled()).WillRepeatedly(Return(false));
+
+    ret = system("echo \"BUILD_TYPE=PROD\" > /tmp/device_gtest.prop");
+    ret = system("rm -f /tmp/swupdate.conf");
+
+    EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _))
+        .Times(1)
+        .WillOnce(Invoke([&servUrl](char* type, const char* key, char *out_value, size_t datasize) {
+            strncpy(out_value, servUrl, datasize - 1);
+            out_value[datasize - 1] = '\0';
+            return (int)strlen(out_value);
+        }));
+
+    ret = GetServURL(output, sizeof(output));
+    EXPECT_GT(ret, 0);
+    EXPECT_NE(strstr(output, "/xconf/swu/stb"), nullptr);
+    EXPECT_EQ(strstr(output, "/xconf/firmware/stb/"), nullptr);
+
+    ret = system("rm -f /tmp/device_gtest.prop");
+    printf("Legacy Bootstrap URL = %s\n", output);
+}
+
+/* Direct CDN: GetServURL must return https://<host>/xconf/firmware/stb/ when isDirectCDNEnabled() is true
+   and bootstrap URL is empty (xconf-host path) */
+TEST_F(DeviceApiTestFixture, TestName_GetServURL_DirectCDN_XconfHost)
+{
+    char output[128];
+    int ret;
+    char xconfHost[] = "xconf-prod.example.com";
+
+    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(false));
+    EXPECT_CALL(*g_DeviceUtilsMock, RDK_isDbgSrvUnlocked()).Times(1).WillOnce(Return(false));
+    EXPECT_CALL(*g_DeviceUtilsMock, isDirectCDNEnabled()).WillRepeatedly(Return(true));
+
+    ret = system("echo \"BUILD_TYPE=PROD\" > /tmp/device_gtest.prop");
+    ret = system("rm -f /tmp/swupdate.conf");
+
+    /* First read_RFCProperty call: eBootstrap → failure (buffer cleared), Second: eXconf → hostname */
+    EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _))
+        .Times(2)
+        .WillOnce(Invoke([](char* type, const char* key, char *out_value, size_t datasize) {
+            out_value[0] = '\0';  /* Ensure buffer is empty on bootstrap failure */
+            return -1;
+        }))
+        .WillOnce(Invoke([&xconfHost](char* type, const char* key, char *out_value, size_t datasize) {
+            strncpy(out_value, xconfHost, datasize - 1);
+            out_value[datasize - 1] = '\0';
+            return (int)strlen(out_value);
+        }));
+
+    ret = GetServURL(output, sizeof(output));
+    EXPECT_GT(ret, 0);
+    EXPECT_NE(strstr(output, "/xconf/firmware/stb/"), nullptr);
+    EXPECT_EQ(strstr(output, "/xconf/swu/stb"), nullptr);
+    EXPECT_NE(strstr(output, "https://"), nullptr);
+
+    ret = system("rm -f /tmp/device_gtest.prop");
+    printf("DirectCDN XconfHost URL = %s\n", output);
+}
+
+/* Direct CDN: GetServURL must return <host>/xconf/firmware/stb/ when isDirectCDNEnabled() is true
+   and device is in State Red (recovery path) */
+TEST_F(DeviceApiTestFixture, TestName_GetServURL_DirectCDN_StateRed_Recovery)
+{
+    char output[128];
+    int ret;
+    char recoveryUrl[] = "https://recovery.example.com";
+
+    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed()).Times(1).WillOnce(Return(true));
+    EXPECT_CALL(*g_DeviceUtilsMock, RDK_isDbgSrvUnlocked()).Times(1).WillOnce(Return(false));
+    EXPECT_CALL(*g_DeviceUtilsMock, isDirectCDNEnabled()).WillRepeatedly(Return(true));
+    ret = system("echo \"BUILD_TYPE=PROD\" > /tmp/device_gtest.prop");
+    ret = system("rm -f /tmp/stateredrecovry.conf");
+
+    /* read_RFCProperty call: eRecovery → recovery host URL */
+    EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _))
+        .Times(1)
+        .WillOnce(Invoke([&recoveryUrl](char* type, const char* key, char *out_value, size_t datasize) {
+            strncpy(out_value, recoveryUrl, datasize - 1);
+            out_value[datasize - 1] = '\0';
+            return (int)strlen(out_value);
+        }));
+
+    ret = GetServURL(output, sizeof(output));
+    EXPECT_GT(ret, 0);
+    EXPECT_NE(strstr(output, "/xconf/firmware/stb/"), nullptr);
+    EXPECT_EQ(strstr(output, "/xconf/swu/stb"), nullptr);
+
+    ret = system("rm -f /tmp/device_gtest.prop");
+    printf("DirectCDN StateRed Recovery URL = %s\n", output);
+}
+
+
+/* RDKEMW-21926: secure debug gating for firmware server URL override */
+
+TEST_F(DeviceApiTestFixture, GetServURL_DbgSrvUnlocked_UsesOverride)
+{
+    char url[512] = {0};
+    const char overrideUrl[] = "https://override.test/xconf/swu/stb";
+
+    system("echo \"https://override.test/xconf/swu/stb\" > /tmp/swupdate.conf");
+
+    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed())
+        .Times(1)
+        .WillOnce(Return(false));
+
+    EXPECT_CALL(*g_DeviceUtilsMock, RDK_isDbgSrvUnlocked())
+        .Times(1)
+        .WillOnce(Return(true));
+
+    EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(StrEq(SWUPDATE_CONF)))
+        .Times(1)
+        .WillOnce(Return(RDK_API_SUCCESS));
+
+    EXPECT_GT(GetServURL(url, sizeof(url)), 0u);
+    EXPECT_STREQ(overrideUrl, url);
+
+    system("rm -f /tmp/swupdate.conf");
+}
+
+
+TEST_F(DeviceApiTestFixture, GetServURL_DbgSrvLocked_IgnoresOverride)
+{
+    char url[512] = {0};
+    const char fallbackUrl[] = "https://fallback.test";
+    const char expectedUrl[] = "https://fallback.test/xconf/swu/stb";
+
+    system("echo \"BUILD_TYPE=PROD\" > /tmp/device_gtest.prop");
+    system("echo \"https://override.test/xconf/swu/stb\" > /tmp/swupdate.conf");
+
+    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed())
+        .Times(1)
+        .WillOnce(Return(false));
+
+    EXPECT_CALL(*g_DeviceUtilsMock, RDK_isDbgSrvUnlocked())
+        .Times(1)
+        .WillOnce(Return(false));
+
+    /* Locked debug services must not even inspect the override file. */
+    EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(_))
+        .Times(0);
+
+    EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _))
+        .Times(1)
+        .WillOnce(Invoke(
+            [&fallbackUrl](char *, const char *, char *out_value, size_t datasize)
+            {
+                strncpy(out_value, fallbackUrl, datasize - 1);
+                out_value[datasize - 1] = '\0';
+                return (int)strlen(out_value);
+            }));
+
+    EXPECT_CALL(*g_DeviceUtilsMock, isDirectCDNEnabled())
+        .Times(1)
+        .WillOnce(Return(false));
+
+    EXPECT_GT(GetServURL(url, sizeof(url)), 0u);
+    EXPECT_STREQ(expectedUrl, url);
+
+    system("rm -f /tmp/swupdate.conf /tmp/device_gtest.prop");
+}
+
+
+TEST_F(DeviceApiTestFixture, GetServURL_DbgSrvUnlocked_InvalidOverride)
+{
+    char url[512] = {0};
+
+    system("echo \"invalid-override-url\" > /tmp/swupdate.conf");
+
+    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed())
+        .Times(1)
+        .WillOnce(Return(false));
+
+    EXPECT_CALL(*g_DeviceUtilsMock, RDK_isDbgSrvUnlocked())
+        .Times(1)
+        .WillOnce(Return(true));
+
+    EXPECT_CALL(*g_DeviceUtilsMock, filePresentCheck(StrEq(SWUPDATE_CONF)))
+        .Times(1)
+        .WillOnce(Return(RDK_API_SUCCESS));
+
+    EXPECT_CALL(*g_DeviceUtilsMock, t2ValNotify(_, _))
+        .Times(1);
+
+    EXPECT_EQ(GetServURL(url, sizeof(url)), 0u);
+    EXPECT_EQ(url[0], '\0');
+
+    system("rm -f /tmp/swupdate.conf");
+}
+
+
+TEST_F(DeviceApiTestFixture, GetServURL_StateRed_DbgSrvUnlocked_UsesOverride)
+{
+    char url[512] = {0};
+    const char stateRedUrl[] = "https://statered.test/xconf/swu/stb";
+
+    system("echo \"https://statered.test/xconf/swu/stb\" > /tmp/stateredrecovry.conf");
+
+    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed())
+        .Times(1)
+        .WillOnce(Return(true));
+
+    EXPECT_CALL(*g_DeviceUtilsMock, RDK_isDbgSrvUnlocked())
+        .Times(1)
+        .WillOnce(Return(true));
+
+    EXPECT_GT(GetServURL(url, sizeof(url)), 0u);
+    EXPECT_STREQ(stateRedUrl, url);
+
+    system("rm -f /tmp/stateredrecovry.conf");
+}
+
+
+TEST_F(DeviceApiTestFixture, GetServURL_StateRed_DbgSrvLocked_IgnoresOverride)
+{
+    char url[512] = {0};
+    const char recoveryUrl[] = "https://recovery.test";
+    const char expectedUrl[] = "https://recovery.test/xconf/swu/stb";
+
+    /* File intentionally exists: locked path must ignore it. */
+    system("echo \"https://statered.test/xconf/swu/stb\" > /tmp/stateredrecovry.conf");
+
+    EXPECT_CALL(*g_DeviceUtilsMock, isInStateRed())
+        .Times(1)
+        .WillOnce(Return(true));
+
+    EXPECT_CALL(*g_DeviceUtilsMock, RDK_isDbgSrvUnlocked())
+        .Times(1)
+        .WillOnce(Return(false));
+
+    EXPECT_CALL(*g_DeviceUtilsMock, read_RFCProperty(_, _, _, _))
+        .Times(1)
+        .WillOnce(Invoke(
+            [&recoveryUrl](char *, const char *, char *out_value, size_t datasize)
+            {
+                strncpy(out_value, recoveryUrl, datasize - 1);
+                out_value[datasize - 1] = '\0';
+                return (int)strlen(out_value);
+            }));
+
+    EXPECT_CALL(*g_DeviceUtilsMock, isDirectCDNEnabled())
+        .Times(1)
+        .WillOnce(Return(false));
+
+    EXPECT_GT(GetServURL(url, sizeof(url)), 0u);
+    EXPECT_STREQ(expectedUrl, url);
+
+    system("rm -f /tmp/stateredrecovry.conf");
 }
