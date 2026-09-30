@@ -3166,10 +3166,10 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
             
         // CRITICAL FIX: monitor_ctx is cleaned up by the thread itself in its cleanup section
         // We MUST set it to NULL here to prevent double-free in error paths below
-        /* coverity[leaked_storage] - ownership of monitor_ctx transferred to monitor thread;
-        * the thread frees monitor_ctx in its own cleanup section before returning. */
+        /* coverity[leaked_storage] - monitor_ctx ownership transferred to monitor thread;
+        the thread frees monitor_ctx and monitor_mutex in its cleanup section */
         monitor_ctx = NULL;
-        
+            
         // Note: monitor_mutex is also freed by the thread, no action needed here
     } else {
         SWLOG_DEBUG("[DOWNLOAD_WORKER] No monitor thread to stop (was not started)\n");
@@ -3309,19 +3309,7 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     SWLOG_INFO("====================DOWNLOAD WORKER THREAD FINISHED====================\n");
     
     g_task_return_boolean(task, TRUE);
-}
-    // Free monitor context (only if thread was not started — thread owns it otherwise)
-    if (monitor_ctx != NULL) {
-	    if (monitor_ctx->handler_id) g_free(monitor_ctx->handler_id);
-if (monitor_ctx->firmware_name) g_free(monitor_ctx->firmware_name);
-if (monitor_ctx->mutex) {
-    g_mutex_clear(monitor_ctx->mutex);
-    g_free(monitor_ctx->mutex);
     }
-    g_free(monitor_ctx);
-    monitor_ctx = NULL;
-    }
-    
 
 /**
  * @brief GTask completion callback - cleans up after download completes
