@@ -596,9 +596,9 @@ int isDwnlBlock(int type)
     int ret = -1;
     int block_time = 0;
     char file_name[128] = {0};
-    unsigned int current_time = 0;
-    unsigned int last_mod_time = 0;
-    unsigned int modification_time = 0;
+    time_t current_time = 0;
+    time_t last_mod_time = 0;
+    time_t modification_time = 0;
     int remtime = 0;
     int block = 0;
     if (type == HTTP_SSR_DIRECT || type == HTTP_XCONF_DIRECT) {
