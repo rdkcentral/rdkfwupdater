@@ -24,7 +24,8 @@ export ROOT=/usr
 export INSTALL_DIR=${ROOT}/local
 mkdir -p $INSTALL_DIR
 # Ensure debug.ini exists and only add the entry once
-echo "LOG.RDK.DEFAULT" >> /etc/debug.ini
+ls /usr/local/etc | grep -nri "debug.ini"
+cp /usr/local/etc/debug.ini /etc/debug.ini
 git clone https://github.com/rdkcentral/common_utilities.git
 cd common_utilities
 git checkout develop
