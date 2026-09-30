@@ -110,7 +110,7 @@ public:
     MOCK_METHOD(void*, allocDowndLoadDataMem, (size_t), ());
     MOCK_METHOD(int, GetFileContents, (const char*, char**, size_t*), ());
     MOCK_METHOD(int, GetFirmwareVersion, (char*, size_t), ());
-    MOCK_METHOD(int, GetBuildType, (char*, size_t), ());
+    MOCK_METHOD(int, GetBuildType, (char*, size_t, BUILDTYPE*), ());
     MOCK_METHOD(int, GetMFRName, (char*, size_t), ());
     MOCK_METHOD(int, GetUTCTime, (char*, size_t), ());
     MOCK_METHOD(int, GetTimezone, (char*, size_t), ());
@@ -511,12 +511,17 @@ extern "C" {
         return global_mockexternal_ptr->GetFirmwareVersion(buffer, size);
     }
 
-    int GetBuildType(char *buffer, size_t size) {
+    int GetBuildType(char *buffer, size_t size, BUILDTYPE *buildType) {
         if (global_mockexternal_ptr == nullptr) {
-            snprintf(buffer, size, "PROD");
+            if (buffer != nullptr && size > 0) {
+                snprintf(buffer, size, "PROD");
+            }
+            if (buildType != nullptr) {
+                *buildType = ePROD;
+            }
             return 0;
         }
-        return global_mockexternal_ptr->GetBuildType(buffer, size);
+        return global_mockexternal_ptr->GetBuildType(buffer, size, buildType);
     }
 
     int GetMFRName(char *buffer, size_t size) {

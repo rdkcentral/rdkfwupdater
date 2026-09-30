@@ -1894,6 +1894,14 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		// Look up process info to validate ownership and get process name for logging
 		ProcessInfo *process_info = g_hash_table_lookup(registered_processes, GINT_TO_POINTER(handler));
 		const gchar *process_name = process_info ? process_info->process_name : "UNKNOWN";
+		if (process_info && g_strcmp0(process_info->sender_id, rdkv_req_caller_id) != 0) {
+			SWLOG_ERROR("[UNREGISTER] REJECTED: Sender '%s' does not own handler %"G_GUINT64_FORMAT"\n",
+			            rdkv_req_caller_id, handler);
+			g_dbus_method_invocation_return_error(resp_ctx,
+			        G_DBUS_ERROR, G_DBUS_ERROR_ACCESS_DENIED,
+			        "Sender does not own handler ID %"G_GUINT64_FORMAT, handler);
+			return;
+		}
 		
 		// Remove from tracking system
 		SWLOG_INFO("[UNREGISTER] Attempting to remove process '%s' from tracking...\n", process_name);
