@@ -280,13 +280,13 @@ example_plugin_LDFLAGS = \
 
 
 if INSTALL_TEST_FWUPGRADER
-bin_PROGRAMS += testrdkvfwupgrader
+#bin_PROGRAMS += testrdkvfwupgrader
 
-testrdkvfwupgrader_SOURCES = \
-     ${top_srcdir}/test/testiarmInterface.c
+#testrdkvfwupgrader_SOURCES = \
+#     ${top_srcdir}/test/testiarmInterface.c
 
-testrdkvfwupgrader_CFLAGS = $(AM_CFLAGS) $(TEST_FWUPGRADER_CFLAGS)
-testrdkvfwupgrader_LDADD = -lIARMBus $(AM_LDFLAGS) librdksw_jsonparse.la
+#testrdkvfwupgrader_CFLAGS = $(AM_CFLAGS) $(TEST_FWUPGRADER_CFLAGS)
+#testrdkvfwupgrader_LDADD = -lIARMBus $(AM_LDFLAGS) librdksw_jsonparse.la
 endif
 
 
@@ -305,7 +305,7 @@ endif
 if IS_IARMEVENT_ENABLED
 rdkvfwupgrader_CFLAGS += $(IARM_EVENT_FLAG)
 rdkFwupdateMgr_CFLAGS += $(IARM_EVENT_FLAG)
-testrdkvfwupgrader_CFLAGS = $(IARM_EVENT_FLAG)
+#testrdkvfwupgrader_CFLAGS = $(IARM_EVENT_FLAG)
 AM_LDFLAGS += -lIARMBus
 endif
 
