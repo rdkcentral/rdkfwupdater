@@ -54,6 +54,8 @@ echo "-------------> Retrun value $rdkFwupdateMgr_handlers"
 rdkfwupdatemgr_main_flow=$?
 echo "-------------> Return value $rdkfwupdatemgr_main_flow"
 
+./dbus_handlers_gtest
+
 dbus_handlers_gtest=$?
 echo "-------------> Return value $dbus_handlers_gtest"
 
