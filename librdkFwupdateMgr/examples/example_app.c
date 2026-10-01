@@ -571,7 +571,10 @@ cleanup_unregister:
      * ==================================================================== */
     if (g_exit_code == EXIT_SUCCESS) {
         EXAMPLE_INFO("FIRMWARE UPDATE WORKFLOW COMPLETED\n");
-        if (g_update_status == UPDATE_COMPLETED) {
+            pthread_mutex_lock(&g_update_mutex);
+            int update_completed = (g_update_status == UPDATE_COMPLETED);
+            pthread_mutex_unlock(&g_update_mutex);
+            if (update_completed) {
             EXAMPLE_INFO("  Firmware flashed successfully.\n");
             EXAMPLE_INFO("  System reboot required to activate new firmware.\n");
         }
