@@ -48,6 +48,16 @@ RDKFW_XCONF_REBOOT_URL: str = "https://mockxconf:50052/firmwareupdate/getreboott
 RDKFW_XCONF_PERIPHERAL_URL: str = "https://mockxconf:50052/firmwareupdate/getperipheralfirmwaredata"
 RDKFW_XCONF_404PERIPHERAL_URL: str = "https://mockxconf:50052/firmwareupdate/get404peripheralfirmwaredata"
 RDKFW_XCONF_CERTBUNDLE_URL: str = "https://mockxconf:50052/firmwareupdate/getcertbundlefirmwaredata"
+RDKFW_DCDN_XCONF_URL: str = "https://mockxconf:50065/firmwareupdate/DCDN/getfirmwaredata"
+RDKFW_DCDN_XCONF_404_URL: str = "https://mockxconf:50065/firmwareupdate404/getfirmwaredata"
+RDKFW_DCDN_XCONF_INVALID_DATA_URL: str = "https://mockxconf:50065/firmwareupdate/DCDN/getinvalidfirmwaredata"
+RDKFW_DCDN_XCONF_UNRESOLVED_URL: str = "https://unmockxconf:50052/featureControl/getSettings"
+RDKFW_DCDN_XCONF_INVALIDPCI_URL: str = "https://mockxconf:50065/firmwareupdate/DCDN/getinvalidpcifirmwaredata"
+RDKFW_DCDN_XCONF_DELAYDWNL_URL: str = "https://mockxconf:50065/firmwareupdate/DCDN/delaydwnlfirmwaredata"
+RDKFW_DCDN_XCONF_REBOOT_URL: str = "https://mockxconf:50065/firmwareupdate/DCDN/getreboottruefirmwaredata"
+RDKFW_DCDN_XCONF_PERIPHERAL_URL: str = "https://mockxconf:50065/firmwareupdate/DCDN/getperipheralfirmwaredata"
+RDKFW_DCDN_XCONF_404PERIPHERAL_URL: str = "https://mockxconf:50065/firmwareupdate/DCDN/get404peripheralfirmwaredata"
+RDKFW_DCDN_XCONF_CERTBUNDLE_URL: str = "https://mockxconf:50065/firmwareupdate/DCDN/getcertbundlefirmwaredata"
 
 
 def write_on_file(file: str, content: str) -> None:
@@ -189,17 +199,23 @@ def initial_rdkfw_setup():
     # Sample MAC
     write_on_file("/tmp/.estb_mac", "01:23:45:67:89:ab")
     
-    #RFC SERVER_URL
-    write_on_file(SWUPDATE_CONF_FILE, RDKFW_XCONF_URL)
-    write_on_file(ERR_SWUPDATE_CONF_FILE, RDKFW_XCONF_404_URL)
-    write_on_file(UNRESOLVED_SWUPDATE_CONF_FILE, RDKFW_XCONF_UNRESOLVED_URL)
-    write_on_file(INVALID_SWUPDATE_CONF_FILE, RDKFW_XCONF_INVALID_DATA_URL)
-    write_on_file(INVALIDPCI_SWUPDATE_CONF_FILE, RDKFW_XCONF_INVALIDPCI_URL)
-    write_on_file(DELAYDWNL_SWUPDATE_CONF_FILE, RDKFW_XCONF_DELAYDWNL_URL)
-    write_on_file(REBOOT_SWUPDATE_CONF_FILE, RDKFW_XCONF_REBOOT_URL)
-    write_on_file(PERIPHERAL_SWUPDATE_CONF_FILE, RDKFW_XCONF_PERIPHERAL_URL)
-    write_on_file(PERIPHERAL_SWUPDATE_404CONF_FILE, RDKFW_XCONF_404PERIPHERAL_URL)
-    write_on_file(CERTBUNDLE_SWUPDATE_CONF_FILE, RDKFW_XCONF_CERTBUNDLE_URL)
+    # XConf fixture files must contain exactly one endpoint so a preceding DCDN
+    # suite cannot leave a stale URL at the start of the standard configuration.
+    xconf_configs = {
+        SWUPDATE_CONF_FILE: RDKFW_XCONF_URL,
+        ERR_SWUPDATE_CONF_FILE: RDKFW_XCONF_404_URL,
+        UNRESOLVED_SWUPDATE_CONF_FILE: RDKFW_XCONF_UNRESOLVED_URL,
+        INVALID_SWUPDATE_CONF_FILE: RDKFW_XCONF_INVALID_DATA_URL,
+        INVALIDPCI_SWUPDATE_CONF_FILE: RDKFW_XCONF_INVALIDPCI_URL,
+        DELAYDWNL_SWUPDATE_CONF_FILE: RDKFW_XCONF_DELAYDWNL_URL,
+        REBOOT_SWUPDATE_CONF_FILE: RDKFW_XCONF_REBOOT_URL,
+        PERIPHERAL_SWUPDATE_CONF_FILE: RDKFW_XCONF_PERIPHERAL_URL,
+        PERIPHERAL_SWUPDATE_404CONF_FILE: RDKFW_XCONF_404PERIPHERAL_URL,
+        CERTBUNDLE_SWUPDATE_CONF_FILE: RDKFW_XCONF_CERTBUNDLE_URL,
+    }
+    for file_path, url in xconf_configs.items():
+        with open(file_path, "w") as config_file:
+            config_file.write(url)
     
     # /opt/secure/RFC directory
     os.makedirs("/opt/CDL", exist_ok=True)
@@ -213,3 +229,23 @@ def initial_rdkfw_setup():
     
     # RFC Prev FW Version
     #write_on_file(RFC_SEC_DIR+".version", get_FWversion() + "_PREV")
+
+
+def initial_dcdn_rdkfw_setup():
+    os.environ["RDKFW_FORCE_DIRECTCDN"] = "true"
+    initial_rdkfw_setup()
+    dcdn_configs = {
+        SWUPDATE_CONF_FILE: RDKFW_DCDN_XCONF_URL,
+        ERR_SWUPDATE_CONF_FILE: RDKFW_DCDN_XCONF_404_URL,
+        UNRESOLVED_SWUPDATE_CONF_FILE: RDKFW_DCDN_XCONF_UNRESOLVED_URL,
+        INVALID_SWUPDATE_CONF_FILE: RDKFW_DCDN_XCONF_INVALID_DATA_URL,
+        INVALIDPCI_SWUPDATE_CONF_FILE: RDKFW_DCDN_XCONF_INVALIDPCI_URL,
+        DELAYDWNL_SWUPDATE_CONF_FILE: RDKFW_DCDN_XCONF_DELAYDWNL_URL,
+        REBOOT_SWUPDATE_CONF_FILE: RDKFW_DCDN_XCONF_REBOOT_URL,
+        PERIPHERAL_SWUPDATE_CONF_FILE: RDKFW_DCDN_XCONF_PERIPHERAL_URL,
+        PERIPHERAL_SWUPDATE_404CONF_FILE: RDKFW_DCDN_XCONF_404PERIPHERAL_URL,
+        CERTBUNDLE_SWUPDATE_CONF_FILE: RDKFW_DCDN_XCONF_CERTBUNDLE_URL,
+    }
+    for file_path, url in dcdn_configs.items():
+        with open(file_path, "w") as config_file:
+            config_file.write(url)
