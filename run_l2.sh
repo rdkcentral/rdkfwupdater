@@ -20,6 +20,7 @@ RESULT_DIR="/tmp/l2_test_report"
 mkdir -p "$RESULT_DIR"
 # Ensure debug.ini exists and only add the entry once
 ls /usr/local/etc | grep -nri "debug.ini"
+cp /usr/local/etc/debug.ini /etc/debug.ini
 WORKDIR=`pwd`
 export ROOT=/usr
 export INSTALL_DIR=${ROOT}/local
