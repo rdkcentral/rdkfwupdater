@@ -99,7 +99,7 @@ echo ""
 
 
 rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLDirect.Enable boolean false
-unset RDKFW_FORCE_DIRECTCDN
+#unset RDKFW_FORCE_DIRECTCDN
 
 # ========================================
 # PHASE 1: Standard Certificate Tests (client.p12)
