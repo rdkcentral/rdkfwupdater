@@ -113,7 +113,7 @@ pytest --json-report --json-report-file $RESULT_DIR/rdkfwupdater_image_tests.jso
     test/functional-tests/tests/test_peripheral_imagedwnl.py
 
 rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLDirect.Enable boolean true
-export RDKFW_FORCE_DIRECTCDN=true
+# export RDKFW_FORCE_DIRECTCDN=true
 
 echo "Running DirectCDN image download tests..."
 pytest --json-report --json-report-file $RESULT_DIR/rdkfwupdater_dcdn_image_tests.json \
@@ -123,7 +123,7 @@ pytest --json-report --json-report-file $RESULT_DIR/rdkfwupdater_dcdn_image_test
     test/functional-tests/tests/test_DCDN_peripheral_imagedwnl.py
 
 rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLDirect.Enable boolean false
-unset RDKFW_FORCE_DIRECTCDN
+# unset RDKFW_FORCE_DIRECTCDN
 
 # ========================================
 # PHASE 2: D-Bus Handler and Cache Tests
