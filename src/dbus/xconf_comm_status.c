@@ -238,8 +238,8 @@ void cleanupXConfCommStatus(void)
     SWLOG_INFO("[XCONF_STATUS] Cleaning up (final status: %s)\n",
                IsCheckUpdateInProgress ? "IN_PROGRESS" : "IDLE");
     
+        IsCheckUpdateInProgress = FALSE;
     g_mutex_clear(&check_update_mutex);
-    IsCheckUpdateInProgress = FALSE;
     xconf_status_initialized = FALSE;
     
     SWLOG_INFO("[XCONF_STATUS] Cleanup complete\n");
