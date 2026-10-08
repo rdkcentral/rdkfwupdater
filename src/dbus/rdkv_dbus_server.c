@@ -1810,11 +1810,10 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		g_free(rebootImmediately);
 		g_free(loc_of_firmware);
 		
-		/* Coverity fix: RESOURCE_LEAK - Ownership of flash_ctx transferred to worker thread.
-		 * The thread will free flash_ctx when it completes. Do NOT set to NULL to avoid
-		 * false positive "resource leak" warnings from Coverity on the NULL assignment. */
-		// flash_ctx is now owned by the worker thread and will be freed there
-	}
+		/* coverity[leaked_storage] - ownership of flash_ctx transferred to worker thread
+		 * rdkfw_flash_worker_thread(); the thread frees flash_ctx when it completes. */
+		 // flash_ctx is now owned by the worker thread and will be freed there
+		}
 
 	/* REGISTER PROCESS */
 	else if (g_strcmp0(rdkv_req_method, "RegisterProcess") == 0) {
@@ -1894,6 +1893,14 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		// Look up process info to validate ownership and get process name for logging
 		ProcessInfo *process_info = g_hash_table_lookup(registered_processes, GINT_TO_POINTER(handler));
 		const gchar *process_name = process_info ? process_info->process_name : "UNKNOWN";
+		if (process_info && g_strcmp0(process_info->sender_id, rdkv_req_caller_id) != 0) {
+			SWLOG_ERROR("[UNREGISTER] REJECTED: Sender '%s' does not own handler %"G_GUINT64_FORMAT"\n",
+			            rdkv_req_caller_id, handler);
+			g_dbus_method_invocation_return_error(resp_ctx,
+			        G_DBUS_ERROR, G_DBUS_ERROR_ACCESS_DENIED,
+			        "Sender does not own handler ID %"G_GUINT64_FORMAT, handler);
+			return;
+		}
 		
 		// Remove from tracking system
 		SWLOG_INFO("[UNREGISTER] Attempting to remove process '%s' from tracking...\n", process_name);
@@ -3162,13 +3169,15 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
          * Setting to NULL is defensive programming to prevent double-join. GLib documentation
          * confirms the thread handle is consumed by g_thread_join(). */
         monitor_thread = NULL;
-        
+            
         SWLOG_INFO("[DOWNLOAD_WORKER]  Progress monitor thread stopped cleanly\n");
-        
+            
         // CRITICAL FIX: monitor_ctx is cleaned up by the thread itself in its cleanup section
         // We MUST set it to NULL here to prevent double-free in error paths below
+        /* coverity[leaked_storage] - monitor_ctx ownership transferred to monitor thread;
+        the thread frees monitor_ctx and monitor_mutex in its cleanup section */
         monitor_ctx = NULL;
-        
+            
         // Note: monitor_mutex is also freed by the thread, no action needed here
     } else {
         SWLOG_DEBUG("[DOWNLOAD_WORKER] No monitor thread to stop (was not started)\n");
@@ -3308,11 +3317,7 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
     SWLOG_INFO("====================DOWNLOAD WORKER THREAD FINISHED====================\n");
     
     g_task_return_boolean(task, TRUE);
-    // Free monitor context
-    if (monitor_ctx != NULL) {
-	    g_free(monitor_ctx);  // or free(monitor_ctx) depending on allocation
-}
-}
+    }
 
 /**
  * @brief GTask completion callback - cleans up after download completes
