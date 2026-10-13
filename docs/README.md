@@ -89,7 +89,6 @@ Active and archived design records for tracked changes.
 | Entry                                                                                                          | Status   | What It Covers                                                                    |
 | -------------------------------------------------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------- |
 | [../openspec/changes/fix-state-red-dual-instance-race/](../openspec/changes/fix-state-red-dual-instance-race/) | Active   | Fix for state-red + dual-instance race condition (proposal, design, specs, tasks) |
-| [../openspec/changes/direct-cdn-token-and-mtls-fix/](../openspec/changes/direct-cdn-token-and-mtls-fix/)       | Active   | Corrects direct-CDN token and mTLS handling                                       |
 | [../openspec/changes/archive/](../openspec/changes/archive/)                                                   | Archived | Completed change records (direct-cdn-adoption, parity-guards, L1 segfault fix)    |
 
 ---
@@ -159,11 +158,11 @@ All events emitted by the daemon to external subscribers.
 
 ### Key Configuration Files
 
-| File                               | Purpose                                                                                                                            | Override Mechanism                                         |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `/etc/device.properties`           | Device model, MAC address, partner ID, firmware storage path, build type, and other device identity fields                         | Platform-provided; read-only at runtime                    |
-| `/opt/fwdnldstatus.txt`            | Persistent firmware download status record (method, protocol, download state, reboot flag, failure reason, version, URL, last run) | Written by `updateFWDownloadStatus()` on each state change |
-| `/opt/maintenance_mgr_record.conf` | Maintenance-manager record containing the `softwareoptout` entry (`IGNORE_UPDATE` or `ENFORCE_OPTOUT`)                             | Platform-managed; read by `getOPTOUTValue()`               |
+| File                               | Purpose                                                                                                                                                                                              | Override Mechanism                                         |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `/etc/device.properties`           | Device model, MAC address, partner ID, firmware storage path, build type, and other device identity fields                                                                                           | Platform-provided; read-only at runtime                    |
+| `/opt/fwdnldstatus.txt`            | Persistent firmware download status record (method, protocol, download state, reboot flag, failure reason, version, downloaded file name, URL, last run, firmware update state, delay-download flag) | Written by `updateFWDownloadStatus()` on each state change |
+| `/opt/maintenance_mgr_record.conf` | Maintenance-manager record containing the `softwareoptout` entry (`IGNORE_UPDATE`, `BYPASS_OPTOUT`, or `ENFORCE_OPTOUT`); `BYPASS_OPTOUT` is rewritten to `ENFORCE_OPTOUT` by `updateOPTOUTFile()`   | Platform-managed; read by `getOPTOUTValue()`               |
 
 ### Runtime Cache Files
 
