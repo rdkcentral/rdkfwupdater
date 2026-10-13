@@ -1810,6 +1810,11 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		g_free(rebootImmediately);
 		g_free(loc_of_firmware);
 		
+		/* Coverity fix: RESOURCE_LEAK - Ownership of flash_ctx transferred to worker thread.
+		 * The thread will free flash_ctx when it completes. Do NOT set to NULL to avoid
+		 * false positive "resource leak" warnings from Coverity on the NULL assignment. */
+		// flash_ctx is now owned by the worker thread and will be freed there
+	/* coverity[leaked_storage] - ownership of flash_ctx transfers to rdkfw_flash_worker_thread via g_thread_try_new; worker thread frees it on completion */
 		/* coverity[leaked_storage] - ownership of flash_ctx transferred to worker thread
 		 * rdkfw_flash_worker_thread(); the thread frees flash_ctx when it completes. */
 		 // flash_ctx is now owned by the worker thread and will be freed there
