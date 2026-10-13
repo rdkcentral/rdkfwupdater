@@ -10,10 +10,10 @@ This folder contains all architectural specifications, runtime documentation, an
 
 ## Quick Navigation
 
-| Document                                     | What It Covers                                                                                  |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| [project.md](project.md)                     | Baseline architecture overview — system purpose, artifact inventory, subsystem responsibilities |
-| [gaps-and-unknowns.md](gaps-and-unknowns.md) | Known unknowns, inferences, and assumptions requiring manual validation                         |
+| Document                                                             | What It Covers                                                                                  |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| [../openspec/project.md](../openspec/project.md)                     | Baseline architecture overview — system purpose, artifact inventory, subsystem responsibilities |
+| [../openspec/gaps-and-unknowns.md](../openspec/gaps-and-unknowns.md) | Known unknowns, inferences, and assumptions requiring manual validation                         |
 
 ---
 
@@ -23,18 +23,18 @@ This folder contains all architectural specifications, runtime documentation, an
 
 Behavioral contracts and API specifications per subsystem. Each folder contains a `spec.md`.
 
-| Spec                                                                   | Subsystem                                                       | Priority |
-| ---------------------------------------------------------------------- | --------------------------------------------------------------- | -------- |
-| [specs/client-sdk/spec.md](specs/client-sdk/spec.md)                   | `librdkFwupdateMgr.so` public C API and async callback model    | P0       |
-| [specs/dbus-ipc/spec.md](specs/dbus-ipc/spec.md)                       | D-Bus method/signal contracts for `org.rdkfwupdater.Interface`  | P0       |
-| [specs/daemon-runtime/spec.md](specs/daemon-runtime/spec.md)           | Daemon lifecycle state machine (`STATE_INIT` → `STATE_IDLE`)    | P0       |
-| [specs/download-engine/spec.md](specs/download-engine/spec.md)         | HTTP/HTTPS firmware download engine (libcurl, throttling, mTLS) | P0       |
-| [specs/direct-cdn-download/spec.md](specs/direct-cdn-download/spec.md) | Direct CDN download path and CodeBig fallback                   | P1       |
-| [specs/firmware-validation/spec.md](specs/firmware-validation/spec.md) | Firmware image validation and version comparison                | P1       |
-| [specs/updater-execution/spec.md](specs/updater-execution/spec.md)     | One-shot orchestrator (`rdkvfwupgrader`) behavioral contract    | P1       |
-| [specs/operational-safety/spec.md](specs/operational-safety/spec.md)   | Concurrency control, mutex ownership, piggybacking semantics    | P1       |
-| [specs/retry-recovery/spec.md](specs/retry-recovery/spec.md)           | Download retry logic and state-red recovery path                | P1       |
-| [specs/test-mock-isolation/spec.md](specs/test-mock-isolation/spec.md) | Test isolation boundaries and mock interfaces                   | P2       |
+| Spec                                                                                           | Subsystem                                                       | Priority |
+| ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | -------- |
+| [../openspec/specs/client-sdk/spec.md](../openspec/specs/client-sdk/spec.md)                   | `librdkFwupdateMgr.so` public C API and async callback model    | P0       |
+| [../openspec/specs/dbus-ipc/spec.md](../openspec/specs/dbus-ipc/spec.md)                       | D-Bus method/signal contracts for `org.rdkfwupdater.Interface`  | P0       |
+| [../openspec/specs/daemon-runtime/spec.md](../openspec/specs/daemon-runtime/spec.md)           | Daemon lifecycle state machine (`STATE_INIT` → `STATE_IDLE`)    | P0       |
+| [../openspec/specs/download-engine/spec.md](../openspec/specs/download-engine/spec.md)         | HTTP/HTTPS firmware download engine (libcurl, throttling, mTLS) | P0       |
+| [../openspec/specs/direct-cdn-download/spec.md](../openspec/specs/direct-cdn-download/spec.md) | Direct CDN download path and CodeBig fallback                   | P1       |
+| [../openspec/specs/firmware-validation/spec.md](../openspec/specs/firmware-validation/spec.md) | Firmware image validation and version comparison                | P1       |
+| [../openspec/specs/updater-execution/spec.md](../openspec/specs/updater-execution/spec.md)     | One-shot orchestrator (`rdkvfwupgrader`) behavioral contract    | P1       |
+| [../openspec/specs/operational-safety/spec.md](../openspec/specs/operational-safety/spec.md)   | Concurrency control, mutex ownership, piggybacking semantics    | P1       |
+| [../openspec/specs/retry-recovery/spec.md](../openspec/specs/retry-recovery/spec.md)           | Download retry logic and state-red recovery path                | P1       |
+| [../openspec/specs/test-mock-isolation/spec.md](../openspec/specs/test-mock-isolation/spec.md) | Test isolation boundaries and mock interfaces                   | P2       |
 
 ---
 
@@ -42,43 +42,43 @@ Behavioral contracts and API specifications per subsystem. Each folder contains 
 
 Sequence diagrams and lifecycle documentation for both execution models.
 
-| Document                                                                     | What It Covers                                                           |
-| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| [runtime/rdkFwupdateMgr-lifecycle.md](runtime/rdkFwupdateMgr-lifecycle.md)   | Daemon lifecycle: systemd service config, state machine, signal handling |
-| [runtime/rdkFwupdateMgr-sequence.md](runtime/rdkFwupdateMgr-sequence.md)     | Daemon request/response sequence diagrams                                |
-| [runtime/rdkvfwupgrader-lifecycle.md](runtime/rdkvfwupgrader-lifecycle.md)   | One-shot updater lifecycle and exit code semantics                       |
-| [runtime/rdkvfwupgrader-sequence.md](runtime/rdkvfwupgrader-sequence.md)     | One-shot updater sequence diagrams                                       |
-| [runtime/client-daemon-interaction.md](runtime/client-daemon-interaction.md) | D-Bus fire-and-forget protocol between client library and daemon         |
-| [runtime/daemon-threading-model.md](runtime/daemon-threading-model.md)       | GLib main loop, GTask worker threads, mutex ownership map                |
-| [runtime/firmware-update-flows.md](runtime/firmware-update-flows.md)         | End-to-end call flows: CheckForUpdate, DownloadFirmware, UpdateFirmware  |
+| Document                                                                                             | What It Covers                                                           |
+| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| [../openspec/runtime/rdkFwupdateMgr-lifecycle.md](../openspec/runtime/rdkFwupdateMgr-lifecycle.md)   | Daemon lifecycle: systemd service config, state machine, signal handling |
+| [../openspec/runtime/rdkFwupdateMgr-sequence.md](../openspec/runtime/rdkFwupdateMgr-sequence.md)     | Daemon request/response sequence diagrams                                |
+| [../openspec/runtime/rdkvfwupgrader-lifecycle.md](../openspec/runtime/rdkvfwupgrader-lifecycle.md)   | One-shot updater lifecycle and exit code semantics                       |
+| [../openspec/runtime/rdkvfwupgrader-sequence.md](../openspec/runtime/rdkvfwupgrader-sequence.md)     | One-shot updater sequence diagrams                                       |
+| [../openspec/runtime/client-daemon-interaction.md](../openspec/runtime/client-daemon-interaction.md) | D-Bus fire-and-forget protocol between client library and daemon         |
+| [../openspec/runtime/daemon-threading-model.md](../openspec/runtime/daemon-threading-model.md)       | GLib main loop, GTask worker threads, mutex ownership map                |
+| [../openspec/runtime/firmware-update-flows.md](../openspec/runtime/firmware-update-flows.md)         | End-to-end call flows: CheckForUpdate, DownloadFirmware, UpdateFirmware  |
 
 ---
 
 ### `dbus/` — D-Bus Interface Reference
 
-| Document                                               | What It Covers                                                                          |
-| ------------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| [dbus/dbus-architecture.md](dbus/dbus-architecture.md) | Full D-Bus interface introspection XML, method signatures, signal payloads, error codes |
+| Document                                                                       | What It Covers                                                                          |
+| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| [../openspec/dbus/dbus-architecture.md](../openspec/dbus/dbus-architecture.md) | Full D-Bus interface introspection XML, method signatures, signal payloads, error codes |
 
 ---
 
 ### `diagrams/` — Architecture Diagrams
 
-| Document                                                                 | What It Covers                                            |
-| ------------------------------------------------------------------------ | --------------------------------------------------------- |
-| [diagrams/architecture-diagrams.md](diagrams/architecture-diagrams.md)   | System component diagram, shared library dependency graph |
-| [diagrams/subsystem-architecture.md](diagrams/subsystem-architecture.md) | Subsystem interaction diagram and layer boundaries        |
+| Document                                                                                         | What It Covers                                            |
+| ------------------------------------------------------------------------------------------------ | --------------------------------------------------------- |
+| [../openspec/diagrams/architecture-diagrams.md](../openspec/diagrams/architecture-diagrams.md)   | System component diagram, shared library dependency graph |
+| [../openspec/diagrams/subsystem-architecture.md](../openspec/diagrams/subsystem-architecture.md) | Subsystem interaction diagram and layer boundaries        |
 
 ---
 
 ### `subsystems/` — Subsystem Analysis
 
-| Document                                                               | What It Covers                                                                 |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| [subsystems/subsystem-inventory.md](subsystems/subsystem-inventory.md) | Full inventory of 17 subsystems with type, scope, and spec priority            |
-| [subsystems/subsystem-map.md](subsystems/subsystem-map.md)             | Classification matrix: which subsystems are shared vs execution-model-specific |
-| [subsystems/spec-boundaries.md](subsystems/spec-boundaries.md)         | Prioritized spec recommendations (P0–P3 tiers) with rationale                  |
-| [subsystems/client-library.md](subsystems/client-library.md)           | Client library architecture: public API surface, background thread model       |
+| Document                                                                                       | What It Covers                                                                 |
+| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| [../openspec/subsystems/subsystem-inventory.md](../openspec/subsystems/subsystem-inventory.md) | Full inventory of 17 subsystems with type, scope, and spec priority            |
+| [../openspec/subsystems/subsystem-map.md](../openspec/subsystems/subsystem-map.md)             | Classification matrix: which subsystems are shared vs execution-model-specific |
+| [../openspec/subsystems/spec-boundaries.md](../openspec/subsystems/spec-boundaries.md)         | Prioritized spec recommendations (P0–P3 tiers) with rationale                  |
+| [../openspec/subsystems/client-library.md](../openspec/subsystems/client-library.md)           | Client library architecture: public API surface, background thread model       |
 
 ---
 
@@ -86,36 +86,37 @@ Sequence diagrams and lifecycle documentation for both execution models.
 
 Active and archived design records for tracked changes.
 
-| Entry                                                                                  | Status   | What It Covers                                                                    |
-| -------------------------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------- |
-| [changes/fix-state-red-dual-instance-race/](changes/fix-state-red-dual-instance-race/) | Active   | Fix for state-red + dual-instance race condition (proposal, design, specs, tasks) |
-| [changes/archive/](changes/archive/)                                                   | Archived | Completed change records (direct-cdn-adoption, parity-guards, L1 segfault fix)    |
+| Entry                                                                                                          | Status   | What It Covers                                                                    |
+| -------------------------------------------------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------- |
+| [../openspec/changes/fix-state-red-dual-instance-race/](../openspec/changes/fix-state-red-dual-instance-race/) | Active   | Fix for state-red + dual-instance race condition (proposal, design, specs, tasks) |
+| [../openspec/changes/direct-cdn-token-and-mtls-fix/](../openspec/changes/direct-cdn-token-and-mtls-fix/)       | Active   | Corrects direct-CDN token and mTLS handling                                       |
+| [../openspec/changes/archive/](../openspec/changes/archive/)                                                   | Archived | Completed change records (direct-cdn-adoption, parity-guards, L1 segfault fix)    |
 
 ---
 
 ## How to Update This Documentation
 
-- **If a subsystem behavior changes** → update the relevant `specs/<subsystem>/spec.md`
-- **If the D-Bus interface changes** → update `dbus/dbus-architecture.md` and `specs/dbus-ipc/spec.md`
-- **If a new design change is planned** → create `changes/<change-name>/` with `proposal.md`, `design.md`, `tasks.md`
-- **If a gap is resolved or a new unknown is discovered** → update `gaps-and-unknowns.md`
-- **For architecture-level additions** → update `project.md` and the relevant `diagrams/` file
+- **If a subsystem behavior changes** → update the relevant `../openspec/specs/<subsystem>/spec.md`
+- **If the D-Bus interface changes** → update `../openspec/dbus/dbus-architecture.md` and `../openspec/specs/dbus-ipc/spec.md`
+- **If a new design change is planned** → create `../openspec/changes/<change-name>/` with `proposal.md`, `design.md`, `tasks.md`
+- **If a gap is resolved or a new unknown is discovered** → update `../openspec/gaps-and-unknowns.md`
+- **For architecture-level additions** → update `../openspec/project.md` and the relevant `../openspec/diagrams/` file
 
 ---
 
 ## Key Concepts
 
-| Term                    | Meaning                                                                           |
-| ----------------------- | --------------------------------------------------------------------------------- |
-| `rdkFwupdateMgr`        | Persistent systemd daemon; serves firmware operations via D-Bus                   |
-| `rdkvfwupgrader`        | Legacy one-shot CLI binary; invoked by Maintenance Manager                        |
-| `librdkFwupdateMgr.so`  | Client shared library; abstracts D-Bus behind a plain C callback API              |
-| XConf                   | Cloud configuration server; queried via HTTP POST for firmware availability       |
-| CDN                     | Content delivery network hosting firmware images for HTTP/HTTPS download          |
-| IARM                    | Inter-Application Resource Manager; platform event bus for RDK-V                  |
-| RFC                     | Runtime Feature Configuration; key-value store for tunable parameters             |
-| PCI / PDRI / Peripheral | Firmware artifact types: main image / disaster-recovery image / peripheral device |
-| D-Bus bus name          | `org.rdkfwupdater.Interface` on the system bus                                    |
+| Term                    | Meaning                                                                              |
+| ----------------------- | ------------------------------------------------------------------------------------ |
+| `rdkFwupdateMgr`        | Persistent systemd daemon; serves firmware operations via D-Bus                      |
+| `rdkvfwupgrader`        | Legacy one-shot CLI binary; invoked by Maintenance Manager                           |
+| `librdkFwupdateMgr.so`  | Client shared library; abstracts D-Bus behind a plain C callback API                 |
+| XConf                   | Cloud configuration server; queried via HTTP POST for firmware availability          |
+| CDN                     | Content delivery network hosting firmware images for HTTP/HTTPS download             |
+| IARM                    | Inter-Application Resource Manager; platform event bus for RDK-V                     |
+| RFC                     | Runtime Feature Configuration; key-value store for tunable parameters                |
+| PCI / PDRI / Peripheral | Firmware artifact types: main image / disaster-recovery image / peripheral device    |
+| D-Bus bus name          | `org.rdkfwupdater.Service` on the system bus; interface `org.rdkfwupdater.Interface` |
 
 ---
 
@@ -158,15 +159,15 @@ All events emitted by the daemon to external subscribers.
 
 ### Key Configuration Files
 
-| File                     | Purpose                                                                                                                            | Override Mechanism                                         |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `/etc/device.properties` | Device model, MAC address, partner ID, firmware storage path, build type, and other device identity fields                         | Platform-provided; read-only at runtime                    |
-| `/opt/fwdnldstatus.txt`  | Persistent firmware download status record (method, protocol, download state, reboot flag, failure reason, version, URL, last run) | Written by `updateFWDownloadStatus()` on each state change |
-| `softwareoptout`         | Opt-out status for firmware updates; contains `IGNORE_UPDATE` or `ENFORCE_OPTOUT` value                                            | Platform-managed; read by `getOPTOUTValue()`               |
+| File                               | Purpose                                                                                                                            | Override Mechanism                                         |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `/etc/device.properties`           | Device model, MAC address, partner ID, firmware storage path, build type, and other device identity fields                         | Platform-provided; read-only at runtime                    |
+| `/opt/fwdnldstatus.txt`            | Persistent firmware download status record (method, protocol, download state, reboot flag, failure reason, version, URL, last run) | Written by `updateFWDownloadStatus()` on each state change |
+| `/opt/maintenance_mgr_record.conf` | Maintenance-manager record containing the `softwareoptout` entry (`IGNORE_UPDATE` or `ENFORCE_OPTOUT`)                             | Platform-managed; read by `getOPTOUTValue()`               |
 
 ### Runtime Cache Files
 
-These files are session-scoped and refreshed by the daemon during normal operation; they are not configuration inputs.
+These files are stored in `/tmp` and may survive daemon restarts until reboot; the daemon reuses an existing response cache and refreshes it after successful XConf queries. They are not configuration inputs.
 
 | Cache File                        | Purpose                                                                                                                                                            |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -175,16 +176,17 @@ These files are session-scoped and refreshed by the daemon during normal operati
 
 ### RFC Parameters
 
-| Parameter                                                                      | Type | Default | Description                                                |
-| ------------------------------------------------------------------------------ | ---- | ------- | ---------------------------------------------------------- |
-| `Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLSpLimit.Enable`            | bool | `false` | Enables download speed throttling                          |
-| `Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLSpLimit.TopSpeed`          | uint | `0`     | Maximum download speed in bytes/second (0 = unlimited)     |
-| `Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.IncrementalCDL.Enable`         | bool | `false` | Enables incremental (delta) firmware download              |
-| `Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.MTLS.mTlsXConfDownload.Enable` | bool | `false` | Enables mutual TLS for XConf server communication          |
-| `Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.FWUpdate.AutoExcluded.Enable`  | bool | `false` | Enables the auto-exclude firmware update opt-out mechanism |
-| `Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.RedRecovery.Status`            | bool | `false` | Enables state-red recovery firmware acquisition path       |
+| Parameter                                                                      | Type   | Default          | Description                                                                                              |
+| ------------------------------------------------------------------------------ | ------ | ---------------- | -------------------------------------------------------------------------------------------------------- |
+| `Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLSpLimit.Enable`            | bool   | `false`          | Enables download speed throttling                                                                        |
+| `Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLSpLimit.TopSpeed`          | uint   | platform-defined | Maximum throttled download speed in bytes/second; `0` stops or rejects a throttled download              |
+| `Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.IncrementalCDL.Enable`         | bool   | `false`          | Enables incremental (delta) firmware download                                                            |
+| `Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.MTLS.mTlsXConfDownload.Enable` | bool   | build-dependent  | Controls mutual TLS when `MTLS_DEFAULT_DISABLE` is defined; otherwise mTLS is forced on                  |
+| `Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLDirect.Enable`             | bool   | platform-defined | Enables direct CDN downloads                                                                             |
+| `Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.FWUpdate.AutoExcluded.Enable`  | bool   | `false`          | Enables the auto-exclude firmware update opt-out mechanism                                               |
+| `Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.RedRecovery.Status`            | string | platform-managed | Records state-red recovery lifecycle (`STARTED`, `DOWNLOADED`, `PROGRAMMED`, `COMPLETED`, or `DISABLED`) |
 
-> **Runtime vs startup:** All RFC parameters are read at daemon startup via `getRFCSettings()` and apply for the lifetime of that session — **except** `SWDLSpLimit.TopSpeed`, which is re-read live whenever an `IARM_BUS_RDKVFWUPGRADER_MODECHANGED` event is received. Speed throttle changes therefore take effect on the next foreground/background mode transition without a restart.
+> **Runtime vs startup:** `getRFCSettings()` runs at daemon startup and again in XConf/download workers. The `IARM_BUS_RDKVFWUPGRADER_MODECHANGED` handler uses the cached global `rfc_list.rfc_topspeed`; it does not re-read `SWDLSpLimit.TopSpeed`, so changing that RFC alone does not take effect on the next mode transition.
 
 ---
 
@@ -192,15 +194,15 @@ These files are session-scoped and refreshed by the daemon during normal operati
 
 Consolidated reference of all HAL and external library APIs called by the daemon.
 
-| API                         | Purpose                                                                                                   | Implementation File                 |
-| --------------------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| `flashImage()`              | Writes a downloaded firmware image (PCI, PDRI, or peripheral) to the appropriate device storage partition | `src/flash.c`                       |
-| `doHttpFileDownload()`      | Performs HTTP/HTTPS file download using libcurl with configurable speed limit and mTLS credentials        | `src/rdkv_upgrade.c`                |
-| `chunkDownload()`           | Resumes a partial firmware download using HTTP range requests                                             | `src/chunk.c`                       |
-| `doInteruptDwnl()`          | Pauses or resumes an active curl download with a new speed cap                                            | `src/rdkFwupdateMgr.c`              |
-| `doStopDownload()`          | Stops and releases an active curl download session                                                        | `src/rdkFwupdateMgr.c`              |
-| `doGetDwnlBytes()`          | Reads the number of bytes downloaded so far from the active curl handle                                   | `src/rdkFwupdateMgr.c`              |
-| `getDeviceProperties()`     | Reads device model, partner ID, serial number, and firmware storage path from the platform                | `src/rdkFwupdateMgr.c`              |
-| `getImageDetails()`         | Reads the currently running firmware version and image name                                               | `src/rdkFwupdateMgr.c`              |
-| `IARM_Bus_BroadcastEvent()` | Publishes firmware download and state events to platform event subscribers                                | `src/iarmInterface/iarmInterface.c` |
-| `IARM_Bus_Call()`           | Sends peripheral firmware update notification to the control manager                                      | `src/iarmInterface/iarmInterface.c` |
+| API                         | Purpose                                                                                                   | Defined In / Call Sites                                                                                                                                  |
+| --------------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `flashImage()`              | Writes a downloaded firmware image (PCI, PDRI, or peripheral) to the appropriate device storage partition | Implemented in `src/flash.c`                                                                                                                             |
+| `doHttpFileDownload()`      | Performs HTTP/HTTPS file download using libcurl with configurable speed limit and mTLS credentials        | External download utility (`downloadUtil.h` / `libdwnlutil`); called from `src/rdkv_upgrade.c`, `src/chunk.c`                                            |
+| `chunkDownload()`           | Resumes a partial firmware download using HTTP range requests                                             | Implemented in `src/chunk.c`                                                                                                                             |
+| `doInteruptDwnl()`          | Pauses or resumes an active curl download with a new speed cap                                            | External download utility (`downloadUtil.h` / `libdwnlutil`); called from `src/rdkFwupdateMgr.c`, `src/rdkv_main.c`                                      |
+| `doStopDownload()`          | Stops and releases an active curl download session                                                        | External download utility (`downloadUtil.h` / `libdwnlutil`); called from `src/rdkFwupdateMgr.c`, `src/rdkv_main.c`, `src/rdkv_upgrade.c`, `src/chunk.c` |
+| `doGetDwnlBytes()`          | Reads the number of bytes downloaded so far from the active curl handle                                   | External download utility (`downloadUtil.h` / `libdwnlutil`); called from `src/rdkFwupdateMgr.c`, `src/rdkv_main.c`                                      |
+| `getDeviceProperties()`     | Reads device model, partner ID, serial number, and firmware storage path from the platform                | External library (`rdk_fwdl_utils.h` / `librdksw_fwutils`); called from `src/rdkFwupdateMgr.c`, `src/rdkv_main.c`, `src/dbus/rdkv_dbus_server.c`         |
+| `getImageDetails()`         | Reads the currently running firmware version and image name                                               | External library (`rdk_fwdl_utils.h` / `librdksw_fwutils`); called from `src/rdkFwupdateMgr.c`, `src/rdkv_main.c`                                        |
+| `IARM_Bus_BroadcastEvent()` | Publishes firmware download and state events to platform event subscribers                                | `src/iarmInterface/iarmInterface.c`                                                                                                                      |
+| `IARM_Bus_Call()`           | Sends peripheral firmware update notification to the control manager                                      | `src/iarmInterface/iarmInterface.c`                                                                                                                      |
