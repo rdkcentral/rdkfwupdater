@@ -3168,6 +3168,7 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
         /* coverity[leaked_storage] - False positive: g_thread_join() already freed the GThread.
          * Setting to NULL is defensive programming to prevent double-join. GLib documentation
          * confirms the thread handle is consumed by g_thread_join(). */
+        /* coverity[leaked_storage] - monitor_thread handle consumed by g_thread_join() above */
         monitor_thread = NULL;
             
         SWLOG_INFO("[DOWNLOAD_WORKER]  Progress monitor thread stopped cleanly\n");
