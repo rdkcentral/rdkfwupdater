@@ -620,7 +620,7 @@ int isDwnlBlock(int type)
             remtime = (long)(block_time/60) - (long)(modification_time/60);
             SWLOG_INFO("%s remtime=%ld\n",req_type, remtime);
         if (modification_time <= block_time) {
-            SWLOG_INFO("ImageUpgrade: Last %s failed blocking is still valid for %d mins, preventing direct\n", req_type, remtime);
+            SWLOG_INFO("ImageUpgrade: Last %s failed blocking is still valid for %ld mins, preventing direct\n", req_type, remtime);
             block = 1;
         } else {
             SWLOG_INFO("ImageUpgrade: Last %s failed blocking has expired, removing %s, allowing direct\n", req_type, file_name);
