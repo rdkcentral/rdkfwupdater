@@ -4,7 +4,7 @@
 > **Purpose:** Specification, architecture, and design documentation for the RDK Firmware Update Manager  
 > **Status:** Active — code-verified baseline
 
-This folder contains all architectural specifications, runtime documentation, and design records for the `rdkfwupdater` project. It covers both production binaries (`rdkFwupdateMgr` daemon and `rdkvfwupgrader` one-shot updater) and the client-facing shared library (`librdkFwupdateMgr.so`).
+This README indexes the architectural specifications, runtime documentation, and design records under `../openspec/` for the `rdkfwupdater` project. The indexed material covers both production binaries (`rdkFwupdateMgr` daemon and `rdkvfwupgrader` one-shot updater) and the client-facing shared library (`librdkFwupdateMgr.so`).
 
 ---
 
@@ -125,7 +125,7 @@ Full reference of all external systems this component communicates with.
 
 | Target Component / Layer            | Interaction Purpose                                                                       | Key APIs / Topics                                                                                                                                                            |
 | ----------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **XConf Server**                    | Firmware availability query — HTTP POST with device identity and current firmware version | `createJsonString()`, `getJsonRpc()`                                                                                                                                         |
+| **XConf Server**                    | Firmware availability query — HTTP POST with device identity and current firmware version | `createJsonString()`, `rdkv_upgrade_request()`, `getXconfRespData()`                                                                                                         |
 | **Firmware CDN**                    | Firmware image download over HTTP/HTTPS                                                   | `rdkv_upgrade_request()`, `downloadFile()`, `codebigdownloadFile()`, libcurl                                                                                                 |
 | **System Manager (IARM)**           | Broadcast download and firmware state transitions to platform event subscribers           | `IARM_Bus_BroadcastEvent()` — `IARM_BUS_SYSMGR_SYSSTATE_FIRMWARE_DWNLD`, `IARM_BUS_SYSMGR_SYSSTATE_FIRMWARE_UPDATE_STATE`, `IARM_BUS_SYSMGR_SYSSTATE_RED_RECOV_UPDATE_STATE` |
 | **Maintenance Manager (IARM)**      | Report firmware download module status for maintenance window coordination                | `IARM_Bus_BroadcastEvent()` — `IARM_BUS_MAINTENANCEMGR_EVENT_UPDATE`                                                                                                         |
@@ -142,15 +142,15 @@ Full reference of all external systems this component communicates with.
 
 All events emitted by the daemon to external subscribers.
 
-| Event Name                | IARM / D-Bus Topic                                | Trigger Condition                                                         | Subscriber                            |
-| ------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------- |
-| `ImageDwldEvent`          | `IARM_BUS_SYSMGR_SYSSTATE_FIRMWARE_DWNLD`         | Firmware download state changes                                           | System Manager subscribers            |
-| `FirmwareStateEvent`      | `IARM_BUS_SYSMGR_SYSSTATE_FIRMWARE_UPDATE_STATE`  | Firmware update state changes (started, completed, failed)                | System Manager subscribers            |
-| `RedStateEvent`           | `IARM_BUS_SYSMGR_SYSSTATE_RED_RECOV_UPDATE_STATE` | Device enters or exits state-red recovery                                 | System Manager subscribers            |
-| Maintenance module status | `IARM_BUS_MAINTENANCEMGR_EVENT_UPDATE`            | Download starts, completes, or errors when Maintenance Manager is enabled | Maintenance Manager                   |
-| `CheckForUpdateComplete`  | D-Bus signal on `org.rdkfwupdater.Interface`      | XConf query worker thread completes                                       | `librdkFwupdateMgr` background thread |
-| `DownloadProgress`        | D-Bus signal on `org.rdkfwupdater.Interface`      | Download bytes progress, completion, or error                             | `librdkFwupdateMgr` background thread |
-| `UpdateProgress`          | D-Bus signal on `org.rdkfwupdater.Interface`      | Flash progress, completion, or error                                      | `librdkFwupdateMgr` background thread |
+| Event Name                | IARM / D-Bus Topic                                | Trigger Condition                                                                                                                                                             | Subscriber                            |
+| ------------------------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| `ImageDwldEvent`          | `IARM_BUS_SYSMGR_SYSSTATE_FIRMWARE_DWNLD`         | Firmware download state changes                                                                                                                                               | System Manager subscribers            |
+| `FirmwareStateEvent`      | `IARM_BUS_SYSMGR_SYSSTATE_FIRMWARE_UPDATE_STATE`  | Firmware lifecycle transitions: uninitialized, requesting, downloading, failed, download/validation complete, opt-out hold, preparing/critical reboot, or no upgrade required | System Manager subscribers            |
+| `RedStateEvent`           | `IARM_BUS_SYSMGR_SYSSTATE_RED_RECOV_UPDATE_STATE` | State-red recovery transitions: started, downloaded, programmed, or completed                                                                                                 | System Manager subscribers            |
+| Maintenance module status | `IARM_BUS_MAINTENANCEMGR_EVENT_UPDATE`            | Download in progress, complete, error, aborted, critical-update, or reboot-required status when Maintenance Manager is enabled                                                | Maintenance Manager                   |
+| `CheckForUpdateComplete`  | D-Bus signal on `org.rdkfwupdater.Interface`      | XConf query worker thread completes                                                                                                                                           | `librdkFwupdateMgr` background thread |
+| `DownloadProgress`        | D-Bus signal on `org.rdkfwupdater.Interface`      | Download bytes progress, completion, or error                                                                                                                                 | `librdkFwupdateMgr` background thread |
+| `UpdateProgress`          | D-Bus signal on `org.rdkfwupdater.Interface`      | Flash progress, completion, or error                                                                                                                                          | `librdkFwupdateMgr` background thread |
 
 ---
 
