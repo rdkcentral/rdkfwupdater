@@ -659,6 +659,11 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type
             SWLOG_INFO("%s: upgrade_type %d succeeded (http %d)\n", __FUNCTION__, upgrade_type, http_code);
             return 0;
         }
+        /* rdkv_upgrade_request returns 100 when the PDRI image is already current; a no-op, not a failure */
+        if (curl_ret == 100 && upgrade_type == PDRI_UPGRADE) {
+            SWLOG_INFO("%s: PDRI already up to date, no upgrade required\n", __FUNCTION__);
+            return 0;
+        }
         /* Transient curl-level failures → retryable */
         if (curl_ret == CURL_COULDNT_RESOLVE_HOST || curl_ret == CURL_CONNECTIVITY_ISSUE ||
             curl_ret == CURLTIMEOUT || curl_ret == CURL_LOW_BANDWIDTH ||
