@@ -257,6 +257,11 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
         remainlen = szPostFieldOut - totlen;
         totlen += snprintf( (pTmpPost + totlen), remainlen, "capabilities=%s", tmpbuf );
     }
+	if( isInStateRed() ) {
+		strcpy(tmpbuf, "&recovery=true");
+		remainlen = szPostFieldOut - totlen;
+        totlen += snprintf( (pTmpPost + totlen), remainlen, "%s", tmpbuf );
+	}
     SWLOG_INFO( "createJsonString: totlen = %zu\n%s\n", totlen, pPostFieldOut );
     return totlen;
 }
