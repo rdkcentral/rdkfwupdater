@@ -908,10 +908,6 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
                     {
                         len = snprintf( pServURL, szBufSize, "%s/xconf/firmware/stb/", buf );
                     }
-                    else
-                    {
-                        len = snprintf( pServURL, szBufSize, "%s/xconf/swu/stb", buf );
-                    }
                 }
             }
         }
