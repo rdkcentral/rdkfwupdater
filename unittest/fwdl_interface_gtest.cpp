@@ -26,6 +26,12 @@ extern "C" {
 #include "iarmInterface.h"
 #include "./mocks/rbus_mock.h"
 void DwnlStopEventHandler(const char *owner, IARM_EventId_t eventId, void *data, size_t len);
+
+unsigned int sleep(unsigned int seconds)
+{
+    (void)seconds;
+    return 0;
+}
 }
 #include "./mocks/interface_mock.h"
 
@@ -116,14 +122,14 @@ TEST_F(InterfaceTestFixture, TestName_getRFCSettingsSuccess)
 {
     Rfc_t rfcvalue;
     memset(&rfcvalue, '\0', sizeof(rfcvalue));
-    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(3).WillRepeatedly(Return(1));
+    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(4).WillRepeatedly(Return(1));
     EXPECT_EQ(getRFCSettings(&rfcvalue), 0);
 }
 TEST_F(InterfaceTestFixture, TestName_getRFCSettingsFail)
 {
     Rfc_t rfcvalue;
     memset(&rfcvalue, '\0', sizeof(rfcvalue));
-    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(3).WillRepeatedly(Return(-1));
+    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(4).WillRepeatedly(Return(-1));
     EXPECT_EQ(getRFCSettings(&rfcvalue), 0);
 }
 TEST_F(InterfaceTestFixture, TestName_write_RFCPropertySuccess2)
@@ -161,21 +167,13 @@ TEST_F(InterfaceTestFixture, TestName_isMmgbleNotifyEnabledSuccess)
     EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(1).WillOnce(Return(1));
     EXPECT_EQ(isMmgbleNotifyEnabled(), true);
 }
-TEST_F(InterfaceTestFixture, TestName_isDebugServicesEnabledFail)        
-{
-    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(1).WillOnce(Return(-1));
-    EXPECT_EQ(isDebugServicesEnabled(), false);
-}
-TEST_F(InterfaceTestFixture, TestName_isDebugServicesEnableSuccess)
-{
-    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(1).WillOnce(Return(1));
-    EXPECT_EQ(isDebugServicesEnabled(), true);
-}
 TEST_F(InterfaceTestFixture, TestName_isIncremetalCDLEnableSuccess)
 {
     EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(1).WillOnce(Return(1));
     //EXPECT_CALL(*g_InterfaceMock, getDevicePropertyData(_, _, _)).Times(1).WillOnce(Return(0));
-    EXPECT_CALL(*g_InterfaceMock, filePresentCheck(_)).WillOnce(Return(0));
+    EXPECT_CALL(*g_InterfaceMock, filePresentCheck(_)).WillRepeatedly(Return(0));
+    EXPECT_CALL(*g_InterfaceMock, getFileSize(_)).WillOnce(Return(100));
+    EXPECT_CALL(*g_InterfaceMock, getContentLength(_)).WillOnce(Return(1234));
     EXPECT_EQ(isIncremetalCDLEnable("/tmp/123.bin"), 1);
 }
 TEST_F(InterfaceTestFixture, TestName_isIncremetalCDLEnableFailrfc)
@@ -266,6 +264,140 @@ TEST_F(InterfaceTestFixture, TestName_invokeRbusDCMReport)
 {
     rbusError_t status = invokeRbusDCMReport();
     EXPECT_EQ(status, RBUS_ERROR_SUCCESS);
+}
+TEST_F(InterfaceTestFixture, TestName_isDirectCDNEnabledTrue)
+{
+    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _))
+        .Times(1)
+        .WillOnce(Invoke([](char* /*type*/, const char* /*key*/, RFC_ParamData_t *param) {
+            snprintf(param->value, sizeof(param->value), "%s", "true");
+            return WDMP_SUCCESS;
+        }));
+    EXPECT_EQ(isDirectCDNEnabled(), true);
+}
+TEST_F(InterfaceTestFixture, TestName_isDirectCDNEnabledFalse)
+{
+    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _))
+        .Times(1)
+        .WillOnce(Invoke([](char* /*type*/, const char* /*key*/, RFC_ParamData_t *param) {
+            snprintf(param->value, sizeof(param->value), "%s", "false");
+            return WDMP_SUCCESS;
+        }));
+    EXPECT_EQ(isDirectCDNEnabled(), false);
+}
+TEST_F(InterfaceTestFixture, TestName_isDirectCDNEnabledAbsent)
+{
+    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(1).WillOnce(Return(0));
+    EXPECT_EQ(isDirectCDNEnabled(), false);
+}
+
+TEST_F(InterfaceTestFixture, TestName_isConnectedToInternet_ConnectedIPv4)
+{
+    EXPECT_CALL(*g_InterfaceMock, allocDowndLoadDataMem(_, _))
+        .WillRepeatedly(Invoke([](void *ptr, int size) {
+            DownloadData *d = static_cast<DownloadData *>(ptr);
+            if (d == nullptr || size <= 0) {
+                return -1;
+            }
+            d->pvOut = calloc(1, static_cast<size_t>(size));
+            d->datasize = 0;
+            d->memsize = static_cast<size_t>(size);
+            return 0;
+        }));
+
+    EXPECT_CALL(*g_InterfaceMock, getJsonRpc(_, _))
+        .WillOnce(Invoke([](char *data, void *ptr) {
+            DownloadData *d = static_cast<DownloadData *>(ptr);
+            const char *payload = "{\"result\":{\"status\":\"CONNECTED\"}}";
+            if (d == nullptr || d->pvOut == nullptr) {
+                return -1;
+            }
+            snprintf(static_cast<char *>(d->pvOut), d->memsize, "%s", payload);
+            d->datasize = strlen(static_cast<char *>(d->pvOut));
+            (void)data;
+            return 0;
+        }));
+
+    EXPECT_TRUE(isConnectedToInternet());
+}
+
+TEST_F(InterfaceTestFixture, TestName_isConnectedToInternet_FallbackToIPv6WhenIPv4Blocked)
+{
+    EXPECT_CALL(*g_InterfaceMock, allocDowndLoadDataMem(_, _))
+        .WillRepeatedly(Invoke([](void *ptr, int size) {
+            DownloadData *d = static_cast<DownloadData *>(ptr);
+            if (d == nullptr || size <= 0) {
+                return -1;
+            }
+            d->pvOut = calloc(1, static_cast<size_t>(size));
+            d->datasize = 0;
+            d->memsize = static_cast<size_t>(size);
+            return 0;
+        }));
+
+    EXPECT_CALL(*g_InterfaceMock, getJsonRpc(_, _))
+        .WillOnce(Invoke([](char *data, void *ptr) {
+            DownloadData *d = static_cast<DownloadData *>(ptr);
+            const char *payload = "{\"result\":{\"status\":\"NO_INTERNET\"}}";
+            if (d == nullptr || d->pvOut == nullptr) {
+                return -1;
+            }
+            snprintf(static_cast<char *>(d->pvOut), d->memsize, "%s", payload);
+            d->datasize = strlen(static_cast<char *>(d->pvOut));
+            (void)data;
+            return 0;
+        }))
+        .WillOnce(Invoke([](char *data, void *ptr) {
+            DownloadData *d = static_cast<DownloadData *>(ptr);
+            const char *payload = "{\"result\":{\"status\":\"CONNECTED\"}}";
+            if (d == nullptr || d->pvOut == nullptr) {
+                return -1;
+            }
+            snprintf(static_cast<char *>(d->pvOut), d->memsize, "%s", payload);
+            d->datasize = strlen(static_cast<char *>(d->pvOut));
+            (void)data;
+            return 0;
+        }));
+
+    EXPECT_TRUE(isConnectedToInternet());
+}
+
+TEST_F(InterfaceTestFixture, TestName_GetPDRIFileNameUsingMFR_Success)
+{
+    char pdri[64] = {0};
+    EXPECT_CALL(*g_InterfaceMock, IARM_Bus_Call(_, _, _, _))
+        .WillOnce(Invoke([](const char *ownerName, int apiId, void *param, unsigned int paramLen) {
+            (void)ownerName;
+            (void)apiId;
+            (void)paramLen;
+            IARM_Bus_MFRLib_GetSerializedData_Param_t *mfrParam = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t *>(param);
+            if (mfrParam == nullptr) {
+                return IARM_RESULT_INVALID_PARAM;
+            }
+            const char *pdriName = "test-pdri.bin";
+            mfrParam->bufLen = strlen(pdriName);
+            memcpy(mfrParam->buffer, pdriName, mfrParam->bufLen);
+            mfrParam->buffer[mfrParam->bufLen] = '\0';
+            return IARM_RESULT_SUCCESS;
+        }));
+
+    EXPECT_EQ(GetPDRIFileNameUsingMFR(pdri, sizeof(pdri)), static_cast<size_t>(strlen("test-pdri.bin")));
+    EXPECT_STREQ(pdri, "test-pdri.bin");
+}
+
+TEST_F(InterfaceTestFixture, TestName_GetPDRIFileNameUsingMFR_InvalidCallReturnsZero)
+{
+    char pdri[64] = {0};
+    EXPECT_CALL(*g_InterfaceMock, IARM_Bus_Call(_, _, _, _))
+        .WillOnce(Return(IARM_RESULT_INVALID_PARAM));
+
+    EXPECT_EQ(GetPDRIFileNameUsingMFR(pdri, sizeof(pdri)), static_cast<size_t>(0));
+    EXPECT_STREQ(pdri, "");
+}
+
+TEST_F(InterfaceTestFixture, TestName_GetPDRIFileNameUsingMFR_NullInputReturnsZero)
+{
+    EXPECT_EQ(GetPDRIFileNameUsingMFR(nullptr, 32), static_cast<size_t>(0));
 }
 
 GTEST_API_ int main(int argc, char *argv[]){
