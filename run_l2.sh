@@ -61,7 +61,7 @@ rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLSpLimit.Enable b
 rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLSpLimit.TopSpeed int 1280000
 rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Identity.DbgServices.Enable boolean true
 rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLDirect.Enable boolean false
-#unset RDKFW_FORCE_DIRECTCDN
+unset RDKFW_FORCE_DIRECTCDN
 cp test/functional-tests/tests/rc-proxy-params.json /tmp/rc-proxy-params.json
 
 # ========================================
@@ -100,7 +100,7 @@ echo ""
 
 
 rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLDirect.Enable boolean false
-#unset RDKFW_FORCE_DIRECTCDN
+unset RDKFW_FORCE_DIRECTCDN
 
 # ========================================
 # PHASE 1: Standard Certificate Tests (client.p12)
@@ -115,7 +115,7 @@ pytest --json-report --json-report-file $RESULT_DIR/rdkfwupdater_image_tests.jso
     test/functional-tests/tests/test_peripheral_imagedwnl.py
 
 rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLDirect.Enable boolean true
-# export RDKFW_FORCE_DIRECTCDN=true
+export RDKFW_FORCE_DIRECTCDN=true
 
 echo "Running DirectCDN image download tests..."
 pytest --json-report --json-report-file $RESULT_DIR/rdkfwupdater_dcdn_image_tests.json \
@@ -125,7 +125,7 @@ pytest --json-report --json-report-file $RESULT_DIR/rdkfwupdater_dcdn_image_test
     test/functional-tests/tests/test_DCDN_peripheral_imagedwnl.py
 
 rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLDirect.Enable boolean false
-# unset RDKFW_FORCE_DIRECTCDN
+unset RDKFW_FORCE_DIRECTCDN
 
 # ========================================
 # PHASE 2: D-Bus Handler and Cache Tests
