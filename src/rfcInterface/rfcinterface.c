@@ -294,7 +294,33 @@ bool isMmgbleNotifyEnabled(void)
     return status;
 }
 
+#ifdef RDKFW_L2_TEST_BUILD
+bool isDirectCDNEnabled(void)
+{
+    const char *force_directcdn = getenv("RDKFW_FORCE_DIRECTCDN");
 
+    if (force_directcdn != NULL && strcmp(force_directcdn, "true") == 0) {
+        SWLOG_INFO("%s: RDKFW_FORCE_DIRECTCDN=true; enabling DirectCDN for L2 test build\n", __FUNCTION__);
+        return true;
+    }
+
+    bool status = false;
+    int ret = -1;
+    char rfc_data[RFC_VALUE_BUF_SIZE];
+
+    *rfc_data = 0;
+    ret = read_RFCProperty("DIRECTCDN", RFC_DIRECTCDN, rfc_data, sizeof(rfc_data));
+    if (ret == -1) {
+        SWLOG_ERROR("%s: rfc DirectCDN =%s failed Status %d\n", __FUNCTION__, RFC_DIRECTCDN, ret);
+    } else {
+        SWLOG_INFO("%s: rfc DirectCDN= %s\n", __FUNCTION__, rfc_data);
+        if ((strncmp(rfc_data, "true", 4)) == 0) {
+            status = true;
+        }
+    }
+    return status;
+}
+#else
 bool isDirectCDNEnabled(void)
 {
     bool status = false;
@@ -313,3 +339,4 @@ bool isDirectCDNEnabled(void)
     }
     return status;
 }
+#endif
