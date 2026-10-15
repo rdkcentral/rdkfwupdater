@@ -402,14 +402,17 @@ int main(void)
         }
     }
     pthread_mutex_unlock(&g_check_mutex);
-
+    
     /* Check result */
-    if (g_check_status != FIRMWARE_AVAILABLE) {
+    pthread_mutex_lock(&g_check_mutex);
+        CheckForUpdateStatus local_check_status = g_check_status;
+        pthread_mutex_unlock(&g_check_mutex);
+        if (local_check_status != FIRMWARE_AVAILABLE) {
         EXAMPLE_WARN("No firmware update available\n");
-        EXAMPLE_INFO("  Status: %d\n", g_check_status);
-        EXAMPLE_INFO("  Current Version: %s\n", g_fw_current_version);
-        
-        if (g_check_status == FIRMWARE_NOT_AVAILABLE) {
+        EXAMPLE_INFO("  Status: %d\n", local_check_status);
+    EXAMPLE_INFO("  Current Version: %s\n", g_fw_current_version);
+            
+    if (local_check_status == FIRMWARE_NOT_AVAILABLE) {
             EXAMPLE_INFO("  Already on latest version. No action needed.\n");
             g_exit_code = EXIT_SUCCESS;
         } else {
@@ -474,10 +477,13 @@ int main(void)
         }
     }
     pthread_mutex_unlock(&g_download_mutex);
-
+    
     /* Check download result */
-    if (g_download_status != DWNL_COMPLETED) {
-        EXAMPLE_ERROR("Download failed (status=%d)\n", g_download_status);
+    pthread_mutex_lock(&g_download_mutex);
+        DownloadStatus local_download_status = g_download_status;
+    pthread_mutex_unlock(&g_download_mutex);
+    if (local_download_status != DWNL_COMPLETED) {
+    EXAMPLE_ERROR("Download failed (status=%d)\n", local_download_status);
         g_exit_code = EXIT_FAILURE;
         goto cleanup_unregister;
     }
@@ -543,10 +549,13 @@ int main(void)
         }
     }
     pthread_mutex_unlock(&g_update_mutex);
-
+    
     /* Check flash result */
-    if (g_update_status != UPDATE_COMPLETED) {
-        EXAMPLE_ERROR("Firmware flash failed (status=%d)\n", g_update_status);
+    pthread_mutex_lock(&g_update_mutex);
+        UpdateStatus local_update_status = g_update_status;
+    pthread_mutex_unlock(&g_update_mutex);
+    if (local_update_status != UPDATE_COMPLETED) {
+    EXAMPLE_ERROR("Firmware flash failed (status=%d)\n", local_update_status);
         g_exit_code = EXIT_FAILURE;
         goto cleanup_unregister;
     }
@@ -569,9 +578,12 @@ cleanup_unregister:
     /* ====================================================================
      * Final Status
      * ==================================================================== */
+    pthread_mutex_lock(&g_update_mutex);
+        UpdateStatus final_update_status = g_update_status;
+        pthread_mutex_unlock(&g_update_mutex);
     if (g_exit_code == EXIT_SUCCESS) {
-        EXAMPLE_INFO("FIRMWARE UPDATE WORKFLOW COMPLETED\n");
-        if (g_update_status == UPDATE_COMPLETED) {
+    EXAMPLE_INFO("FIRMWARE UPDATE WORKFLOW COMPLETED\n");
+    if (final_update_status == UPDATE_COMPLETED) {
             EXAMPLE_INFO("  Firmware flashed successfully.\n");
             EXAMPLE_INFO("  System reboot required to activate new firmware.\n");
         }
