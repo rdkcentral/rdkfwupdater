@@ -632,7 +632,7 @@ extern "C" size_t GetModelNameUsingMFR(char* buffer, size_t len) {
     }
     return 0;
 }
-size_t GetMFRName(char* buffer, size_t len) {
+
 int GetMFRName(char* buffer, size_t len) {
     if (buffer && len > 0) {
         strncpy(buffer, "TEST_MFR", len - 1);
