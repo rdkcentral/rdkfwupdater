@@ -389,6 +389,82 @@ size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
 
     return len;
 }
+/**
+ * @brief Retrieves the device model name from MFR Manager.
+ *
+ * Calls the MFR Manager through IARM to retrieve the serialized
+ * device model name. Removes trailing newline and carriage return
+ * characters and copies the model name into the provided buffer.
+ *
+ * @param[out] pModelName  Pointer to the buffer where the model name
+ *                         will be stored.
+ * @param[in]  szBufSize   Size of the output buffer in bytes.
+ *
+ * @return Length of the retrieved model name (excluding the null
+ *         terminator) on success, or 0 on failure.
+ *
+ * @note The output buffer is initialized to an empty string before
+ *       attempting retrieval.
+ * @note Returns 0 if the buffer is invalid, the IARM call fails,
+ *       the model name is empty, or the output buffer is too small.
+ */
+size_t GetModelNameUsingMFR(char *pModelName, size_t szBufSize)
+{
+    IARM_Bus_MFRLib_GetSerializedData_Param_t param;
+    IARM_Result_t ret;
+    size_t modelLen;
+
+    if (pModelName == NULL || szBufSize == 0) {
+        SWLOG_ERROR("GetModelNameUsingMFR: Invalid output buffer\n");
+        return 0;
+    }
+
+    pModelName[0] = '\0';
+    memset(&param, 0, sizeof(param));
+    param.type = mfrSERIALIZED_TYPE_MODELNAME;
+
+    SWLOG_INFO("GetModelNameUsingMFR: Fetching model name from MFRMgr\n");
+    ret = IARM_Bus_Call(
+        IARM_BUS_MFRLIB_NAME,
+        IARM_BUS_MFRLIB_API_GetSerializedData,
+        (void *)&param,
+        sizeof(param)
+    );
+
+    if (ret != IARM_RESULT_SUCCESS) {
+        SWLOG_ERROR("GetModelNameUsingMFR: IARM_Bus_Call failed (ret=%d)\n", ret);
+        return 0;
+    }
+
+    if (param.bufLen == 0 || param.bufLen > sizeof(param.buffer)) {
+        SWLOG_ERROR("GetModelNameUsingMFR: Invalid model length (bufLen=%zu, buffer size=%zu)\n",
+                    (size_t)param.bufLen, sizeof(param.buffer));
+        return 0;
+    }
+
+    modelLen = param.bufLen;
+    while (modelLen > 0 &&
+           (param.buffer[modelLen - 1] == '\n' || param.buffer[modelLen - 1] == '\r')) {
+        --modelLen;
+    }
+
+    if (modelLen == 0) {
+        SWLOG_ERROR("GetModelNameUsingMFR: MFR returned an empty model name\n");
+        return 0;
+    }
+
+    if (modelLen >= szBufSize) {
+        SWLOG_ERROR("GetModelNameUsingMFR: Model truncated (modelLen=%zu, szBufSize=%zu)\n",
+                    modelLen, szBufSize);
+        return 0;
+    }
+
+    memcpy(pModelName, param.buffer, modelLen);
+    pModelName[modelLen] = '\0';
+    SWLOG_INFO("GetModelNameUsingMFR: Retrieved model name = %s\n", pModelName);
+
+    return modelLen;
+}
 #else
 
 // Do nothing act as pass through function .

@@ -81,6 +81,7 @@ endif
 
 if IS_IARMEVENT_ENABLED
 librdksw_fwutils_la_CFLAGS += $(IARM_EVENT_FLAG)
+librdksw_jsonparse_la_CFLAGS += $(IARM_EVENT_FLAG)
 endif
 
 if IS_LIBRFCAPI_ENABLED
