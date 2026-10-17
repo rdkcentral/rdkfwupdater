@@ -581,6 +581,53 @@ TEST(TestDwnlStatus, TestName_notifyDwnlStatusNull)
 {
     EXPECT_EQ(notifyDwnlStatus(NULL, NULL, 0), -1);
 }
+
+TEST(TestcheckForValidPCIUpgrade, TestName_checkForValidPCIUpgrade_FwFileExtVariants)
+{
+    static const char *ext_variants[] = {
+        "",
+        " ",
+        ".ota.wic.tar.gz",
+        "-ota.wic.tar.gz",
+        "ota.wic.tar.gz",
+        ".wic.tar.gz",
+        "-wic.tar.gz",
+        "wic.tar.gz",
+        ".ota",
+        "-ota",
+        "ota",
+        ".img",
+        "-img",
+        "img",
+        ".wic",
+        "-wic",
+        "wic",
+        ".tar.gz",
+        "-tar.gz",
+        "tar.gz",
+        ".bin",
+        "-bin",
+        "bin"
+    };
+    int ret = 0;
+    size_t i = 0;
+
+    ret = system("echo \"lib32-rdk-fullstack-image-20261015054355\" > /tmp/currently_running_image_name");
+    for (i = 0; i < (sizeof(ext_variants) / sizeof(ext_variants[0])); ++i) {
+        SCOPED_TRACE(ext_variants[i]);
+        EXPECT_CALL(*g_DeviceStatusMock, getDevicePropertyData(_, _, _))
+            .WillRepeatedly(Invoke([&](const char *key, char *data, int size) {
+                if (strcmp(key, "FW_FILE_EXT") == 0) {
+                    snprintf(data, size, "%s", ext_variants[i]);
+                    return 0;
+                }
+                return -1;
+            }));
+        EXPECT_EQ(checkForValidPCIUpgrade(1, "20261015054355", "20261015054355", "lib32-rdk-fullstack-image-20261015054355-ota.wic.tar.gz"), false);
+    }
+    ret = system("rm -f /tmp/currently_running_image_name");
+}
+
 GTEST_API_ int main(int argc, char *argv[]){
     char testresults_fullfilepath[GTEST_REPORT_FILEPATH_SIZE];
     char buffer[GTEST_REPORT_FILEPATH_SIZE];

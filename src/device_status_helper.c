@@ -38,8 +38,8 @@ extern Rfc_t rfc_list;
 
 /* Description: Use to check either alreday any instances for same process
  *              is running or not. If Running return true else return false.
- * @param: file : procees id store file name 
- * return :bool : Success: true and flase : failure 
+ * @param: file : procees id store file name
+ * return :bool : Success: true and flase : failure
  * */
 bool CurrentRunningInst(const char *file)
 {
@@ -395,7 +395,7 @@ int checkAndEnterStateRed(int curlret, const char *disableStatsUpdate) {
 		perror("Error deleting HTTP_CDL_FLAG");
 	}
         //updateFWDownloadStatus "" "Failure" "" "TLS/SSL Error" "" "" "$runtime" "Failed" "$DelayDownloadXconf"
-        
+
         snprintf(fwdls.method, sizeof(fwdls.method), "Method|xconf\n");
         snprintf(fwdls.proto, sizeof(fwdls.proto), "Proto|\n");
         snprintf(fwdls.status, sizeof(fwdls.status), "Status|Failure\n");
@@ -683,7 +683,7 @@ bool GetPDRIVersion( char *pPdriVersion, size_t szBufSize )
         if( isPDRIEnable() == true )
         {
             GetPDRIFileName( pPdriVersion, szBufSize );
-            
+
             SWLOG_INFO( "current pdri image = %s\n", pPdriVersion );
             tmp = strstr( pPdriVersion, ".bin" );
             if( tmp != NULL )
@@ -847,6 +847,37 @@ bool prevFlashedFile(char *img_name, size_t img_name_size)
     return status;
 }
 
+/**
+ * Description: Normalize the firmware image name by removing the file extension.
+ * @param out: Output buffer to store the normalized firmware image name.
+ * @param out_size: Size of the output buffer.
+ * @param in: Input firmware image name to be normalized.
+ */
+static void normalizeFirmwareImageName(char *out, size_t out_size, const char *in)
+{
+    char ext[64] = {0};
+    size_t len = 0;
+    size_t ext_len = 0;
+    int ret = UTILS_FAILURE;
+
+    if (out == NULL || in == NULL || out_size == 0) {
+        return;
+    }
+    snprintf(out, out_size, "%s", in);
+
+    ret = getDevicePropertyData("FW_FILE_EXT", ext, sizeof(ext));
+    if ((ret != UTILS_SUCCESS) || (ext[0] == '\0')) {
+        SWLOG_DEBUG("%s: FW_FILE_EXT not found or empty, skipping normalization\n", __FUNCTION__);
+        return;
+    }
+
+    ext_len = strlen(ext);
+    len = strlen(in);
+    if ((ext_len > 0) && (len >= ext_len) && (0 == strncasecmp(in + len - ext_len, ext, ext_len))) {
+        out[len - ext_len] = '\0';
+    }
+}
+
 /* Description: Use For check either pci upgrade is required or not
  * @param: trigger_type : which type of download trigger value from 0 to 6
  * @param: myfwversion : running firmware version on the dveice
@@ -861,6 +892,9 @@ bool checkForValidPCIUpgrade(int trigger_type, const char *myfwversion, const ch
     bool current_img_status = false;
     char last_dwnl_img[64] = {0};
     char current_img[64] = {0};
+    char last_dwnl_img_norm[64] = {0};
+    char current_img_norm[64] = {0};
+    char cloudFWFile_norm[64] = {0};
     struct FWDownloadStatus fwdls;
 
     if (myfwversion == NULL || cloudFWVersion == NULL || cloudFWFile == NULL) {
@@ -875,6 +909,16 @@ bool checkForValidPCIUpgrade(int trigger_type, const char *myfwversion, const ch
     SWLOG_INFO("Trigger Type=%d\n", trigger_type);
     last_dwnl_status = lastDwnlImg(last_dwnl_img, sizeof(last_dwnl_img));
     current_img_status = currentImg(current_img, sizeof(current_img));
+    normalizeFirmwareImageName(cloudFWFile_norm, sizeof(cloudFWFile_norm), cloudFWFile);
+    SWLOG_INFO("NormalizedCloudFWFile=%s\n", cloudFWFile_norm);
+    if (current_img_status) {
+        normalizeFirmwareImageName(current_img_norm, sizeof(current_img_norm), current_img);
+        SWLOG_INFO("NormalizedCurrentImg=%s\n", current_img_norm);
+    }
+    if (last_dwnl_status) {
+        normalizeFirmwareImageName(last_dwnl_img_norm, sizeof(last_dwnl_img_norm), last_dwnl_img);
+        SWLOG_INFO("NormalizedLastDwnlImg=%s\n", last_dwnl_img_norm);
+    }
     SWLOG_INFO("last_dwnl_status=%i and current_img_status=%i\n", last_dwnl_status, current_img_status);
     SWLOG_INFO("myfwversion:%s\n", myfwversion);
     SWLOG_INFO("cloudFWVersion:%s\n", cloudFWVersion);
@@ -892,7 +936,7 @@ bool checkForValidPCIUpgrade(int trigger_type, const char *myfwversion, const ch
             }
         }
         if (true == current_img_status) {
-            if (strcasecmp(current_img, cloudFWFile)) {
+            if (strcasecmp(current_img_norm, cloudFWFile_norm)) {
                 SWLOG_INFO("pci file check true\n");
                 pci_valid_status = true;
                 return pci_valid_status;
@@ -900,8 +944,8 @@ bool checkForValidPCIUpgrade(int trigger_type, const char *myfwversion, const ch
         }
     }
     if (false == pci_valid_status) {
-        if ((true == current_img_status) && (strcasecmp(current_img, cloudFWFile))) {
-            if ((true == last_dwnl_status) && (strcasecmp(last_dwnl_img, cloudFWFile))) {
+        if ((true == current_img_status) && (strcasecmp(current_img_norm, cloudFWFile_norm))) {
+            if ((true == last_dwnl_status) && (strcasecmp(last_dwnl_img_norm, cloudFWFile_norm))) {
                 SWLOG_INFO("pci File Check  is true\n");
                 pci_valid_status = true;
 	    } else {
@@ -935,4 +979,3 @@ bool checkForValidPCIUpgrade(int trigger_type, const char *myfwversion, const ch
     }
     return pci_valid_status;
 }
-
