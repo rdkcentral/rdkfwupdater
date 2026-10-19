@@ -858,7 +858,7 @@ static void normalizeFirmwareImageName(char *out, size_t out_size, const char *i
     char ext[64] = {0};
     size_t len = 0;
     size_t ext_len = 0;
-    int ret = UTILS_FAILURE;
+    int ret = UTILS_FAIL;
 
     if (out == NULL || in == NULL || out_size == 0) {
         return;
