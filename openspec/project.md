@@ -259,7 +259,96 @@ Used to query MaintenanceManager mode via JSON-RPC over HTTP to WPEFramework's l
 
 ---
 
-## 9. Evidence Classification
+## 9. Component Interaction Matrix
+
+Full reference of all external systems this component communicates with.
+
+| Target Component / Layer            | Interaction Purpose                                                                       | Key APIs / Topics                                                                                                                                                            |
+| ----------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **XConf Server**                    | Firmware availability query — HTTP POST with device identity and current firmware version | `createJsonString()`, `rdkv_upgrade_request()`, `getXconfRespData()`                                                                                                         |
+| **Firmware CDN**                    | Firmware image download over HTTP/HTTPS                                                   | `rdkv_upgrade_request()`, `downloadFile()`, `codebigdownloadFile()`, libcurl                                                                                                 |
+| **System Manager (IARM)**           | Broadcast download and firmware state transitions to platform event subscribers           | `IARM_Bus_BroadcastEvent()` — `IARM_BUS_SYSMGR_SYSSTATE_FIRMWARE_DWNLD`, `IARM_BUS_SYSMGR_SYSSTATE_FIRMWARE_UPDATE_STATE`, `IARM_BUS_SYSMGR_SYSSTATE_RED_RECOV_UPDATE_STATE` |
+| **Maintenance Manager (IARM)**      | Report firmware download module status for maintenance window coordination                | `IARM_Bus_BroadcastEvent()` — `IARM_BUS_MAINTENANCEMGR_EVENT_UPDATE`                                                                                                         |
+| **Application Mode Source (IARM)**  | Receive foreground/background transitions to control download speed                       | `IARM_BUS_RDKVFWUPGRADER_MODECHANGED`                                                                                                                                        |
+| **RFC API**                         | Read runtime configuration parameters; write download status notifications                | `getRFCSettings()`, `read_RFCProperty()`, `write_RFCProperty()` — `Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.*`                                                                 |
+| **Flash HAL (`librdksw_flash.so`)** | Write firmware image to device storage partition                                          | `flashImage()`                                                                                                                                                               |
+| **libcurl**                         | HTTP/HTTPS communication for XConf queries and firmware downloads                         | `doHttpFileDownload()`, `doInteruptDwnl()`, `doGetDwnlBytes()`, `doStopDownload()`                                                                                           |
+| **D-Bus (system bus)**              | Expose firmware management service to client applications                                 | `org.rdkfwupdater.Interface` on `org.rdkfwupdater.Service`                                                                                                                   |
+| **`librdkFwupdateMgr` consumers**   | Provide firmware lifecycle APIs to TR-069 agents, UI services, and monitoring daemons     | `registerProcess()`, `checkForUpdate()`, `downloadFirmware()`, `updateFirmware()`, `unregisterProcess()`                                                                     |
+
+---
+
+## 10. Events Published
+
+All events emitted by the daemon to external subscribers.
+
+| Event Name                | IARM / D-Bus Topic                                | Trigger Condition                                                                                                                                                             | Subscriber                            |
+| ------------------------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| `ImageDwldEvent`          | `IARM_BUS_SYSMGR_SYSSTATE_FIRMWARE_DWNLD`         | Firmware download state changes                                                                                                                                               | System Manager subscribers            |
+| `FirmwareStateEvent`      | `IARM_BUS_SYSMGR_SYSSTATE_FIRMWARE_UPDATE_STATE`  | Firmware lifecycle transitions: uninitialized, requesting, downloading, failed, download/validation complete, opt-out hold, preparing/critical reboot, or no upgrade required | System Manager subscribers            |
+| `RedStateEvent`           | `IARM_BUS_SYSMGR_SYSSTATE_RED_RECOV_UPDATE_STATE` | State-red recovery transitions: started, downloaded, programmed, or completed                                                                                                 | System Manager subscribers            |
+| Maintenance module status | `IARM_BUS_MAINTENANCEMGR_EVENT_UPDATE`            | Download in progress, complete, error, aborted, critical-update, or reboot-required status when Maintenance Manager is enabled                                                | Maintenance Manager                   |
+| `CheckForUpdateComplete`  | D-Bus signal on `org.rdkfwupdater.Interface`      | XConf query worker thread completes                                                                                                                                           | `librdkFwupdateMgr` background thread |
+| `DownloadProgress`        | D-Bus signal on `org.rdkfwupdater.Interface`      | Download bytes progress, completion, or error                                                                                                                                 | `librdkFwupdateMgr` background thread |
+| `UpdateProgress`          | D-Bus signal on `org.rdkfwupdater.Interface`      | Flash progress, completion, or error                                                                                                                                          | `librdkFwupdateMgr` background thread |
+
+---
+
+## 11. Configuration Reference
+
+### 11.1 Key Configuration Files
+
+| File                               | Purpose                                                                                                                                                                                                    | Override Mechanism                                                                  |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `/etc/device.properties`           | Device model, MAC address, partner ID, firmware storage path, build type, and other device identity fields                                                                                                 | Platform-provided; read-only at runtime                                             |
+| `/opt/fwdnldstatus.txt`            | Persistent firmware download status record (method, protocol, download state, reboot flag, failure reason, version, downloaded filename, URL, last run, firmware-update state, and delay-download setting) | Written by `updateFWDownloadStatus()` on each state change                          |
+| `/opt/maintenance_mgr_record.conf` | Maintenance-manager record containing the `softwareoptout` entry (`IGNORE_UPDATE`, `ENFORCE_OPTOUT`, or `BYPASS_OPTOUT`)                                                                                   | Platform-managed; read by `getOPTOUTValue()` and normalized by `updateOPTOUTFile()` |
+
+### 11.2 Runtime Cache Files
+
+These files are stored in `/tmp` and may survive daemon restarts until reboot; the daemon reuses an existing response cache and refreshes it after successful XConf queries. They are not configuration inputs.
+
+| Cache File                        | Purpose                                                                                                                                                            |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/tmp/xconf_response_thunder.txt` | Cached raw XConf server HTTP response body; written after a successful XConf query and read by subsequent `DownloadFirmware` calls to avoid re-querying the server |
+| `/tmp/xconf_httpcode_thunder.txt` | Cached HTTP response code from the last XConf query; written alongside the response body cache                                                                     |
+
+### 11.3 RFC Parameters
+
+| Parameter                                                                      | Type   | Default          | Description                                                                                              |
+| ------------------------------------------------------------------------------ | ------ | ---------------- | -------------------------------------------------------------------------------------------------------- |
+| `Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLSpLimit.Enable`            | bool   | `false`          | Enables download speed throttling                                                                        |
+| `Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLSpLimit.TopSpeed`          | uint   | platform-defined | Maximum throttled download speed in bytes/second; `0` stops or rejects a throttled download              |
+| `Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.IncrementalCDL.Enable`         | bool   | `false`          | Enables incremental (delta) firmware download                                                            |
+| `Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.MTLS.mTlsXConfDownload.Enable` | bool   | build-dependent  | Controls mutual TLS when `MTLS_DEFAULT_DISABLE` is defined; otherwise mTLS is forced on                  |
+| `Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLDirect.Enable`             | bool   | platform-defined | Enables direct CDN downloads                                                                             |
+| `Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.FWUpdate.AutoExcluded.Enable`  | bool   | `false`          | Enables the auto-exclude firmware update opt-out mechanism                                               |
+| `Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.RedRecovery.Status`            | string | platform-managed | Records state-red recovery lifecycle (`STARTED`, `DOWNLOADED`, `PROGRAMMED`, `COMPLETED`, or `DISABLED`) |
+
+> **Runtime vs startup:** `getRFCSettings()` runs at daemon startup and again in XConf/download workers. The `IARM_BUS_RDKVFWUPGRADER_MODECHANGED` handler uses the cached global `rfc_list.rfc_topspeed`; it does not re-read `SWDLSpLimit.TopSpeed`, so changing that RFC alone does not take effect on the next mode transition.
+
+---
+
+## 12. HAL / Library APIs Integration
+
+Consolidated reference of all HAL and external library APIs called by the daemon.
+
+| API                         | Purpose                                                                                                   | Defined In / Call Sites                                                                                                                                  |
+| --------------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `flashImage()`              | Writes a downloaded firmware image (PCI, PDRI, or peripheral) to the appropriate device storage partition | Implemented in `src/flash.c`                                                                                                                             |
+| `doHttpFileDownload()`      | Performs HTTP/HTTPS file download using libcurl with configurable speed limit and mTLS credentials        | External download utility (`downloadUtil.h` / `libdwnlutil`); called from `src/rdkv_upgrade.c`, `src/chunk.c`                                            |
+| `chunkDownload()`           | Resumes a partial firmware download using HTTP range requests                                             | Implemented in `src/chunk.c`                                                                                                                             |
+| `doInteruptDwnl()`          | Pauses or resumes an active curl download with a new speed cap                                            | External download utility (`downloadUtil.h` / `libdwnlutil`); called from `src/rdkFwupdateMgr.c`, `src/rdkv_main.c`                                      |
+| `doStopDownload()`          | Stops and releases an active curl download session                                                        | External download utility (`downloadUtil.h` / `libdwnlutil`); called from `src/rdkFwupdateMgr.c`, `src/rdkv_main.c`, `src/rdkv_upgrade.c`, `src/chunk.c` |
+| `doGetDwnlBytes()`          | Reads the number of bytes downloaded so far from the active curl handle                                   | External download utility (`downloadUtil.h` / `libdwnlutil`); called from `src/rdkFwupdateMgr.c`, `src/rdkv_main.c`                                      |
+| `getDeviceProperties()`     | Reads device model, partner ID, serial number, and firmware storage path from the platform                | External library (`rdk_fwdl_utils.h` / `librdksw_fwutils`); called from `src/rdkFwupdateMgr.c`, `src/rdkv_main.c`, `src/dbus/rdkv_dbus_server.c`         |
+| `getImageDetails()`         | Reads the currently running firmware version and image name                                               | External library (`rdk_fwdl_utils.h` / `librdksw_fwutils`); called from `src/rdkFwupdateMgr.c`, `src/rdkv_main.c`                                        |
+| `IARM_Bus_BroadcastEvent()` | Publishes firmware download and state events to platform event subscribers                                | `src/iarmInterface/iarmInterface.c`                                                                                                                      |
+| `IARM_Bus_Call()`           | Sends peripheral firmware update notification to the control manager                                      | `src/iarmInterface/iarmInterface.c`                                                                                                                      |
+
+---
+
+## 13. Evidence Classification
 
 Throughout supporting documents, findings are classified as:
 
