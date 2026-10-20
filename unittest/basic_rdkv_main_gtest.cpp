@@ -1397,6 +1397,8 @@ static void RunCanaryPowerStateTest(const char *responseJson, int rpcResult, boo
             return rpcResult;
         }));
     EXPECT_CALL(deviceMock, doStopDownload(_)).Times(1);
+    EXPECT_CALL(mockexternal, t2_event_d(StrEq("SYST_INFO_CDLSuccess"), 1)).Times(1);
+    EXPECT_CALL(mockexternal, t2_event_d(StrEq("SYST_INFO_ImgFlashOK"), 1)).Times(1);
     EXPECT_CALL(mockexternal, t2_event_d(StrEq("SYS_INFO_DEFER_CANARY_REBOOT"), 1))
         .Times(expectDeferred ? 1 : 0);
 
