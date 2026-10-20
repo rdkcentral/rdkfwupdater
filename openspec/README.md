@@ -4,16 +4,16 @@
 > **Purpose:** Specification, architecture, and design documentation for the RDK Firmware Update Manager  
 > **Status:** Active — code-verified baseline
 
-This README indexes the architectural specifications, runtime documentation, and design records under `../openspec/` for the `rdkfwupdater` project. The indexed material covers both production binaries (`rdkFwupdateMgr` daemon and `rdkvfwupgrader` one-shot updater) and the client-facing shared library (`librdkFwupdateMgr.so`).
+This README indexes the architectural specifications, runtime documentation, and design records under this directory for the `rdkfwupdater` project. The indexed material covers both production binaries (`rdkFwupdateMgr` daemon and `rdkvfwupgrader` one-shot updater) and the client-facing shared library (`librdkFwupdateMgr.so`).
 
 ---
 
 ## Quick Navigation
 
-| Document                                                             | What It Covers                                                                                  |
-| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| [../openspec/project.md](../openspec/project.md)                     | Baseline architecture overview — system purpose, artifact inventory, subsystem responsibilities |
-| [../openspec/gaps-and-unknowns.md](../openspec/gaps-and-unknowns.md) | Known unknowns, inferences, and assumptions requiring manual validation                         |
+| Document                                                    | What It Covers                                                                                  |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| [project.md](project.md)                     | Baseline architecture overview — system purpose, artifact inventory, subsystem responsibilities |
+| [gaps-and-unknowns.md](gaps-and-unknowns.md) | Known unknowns, inferences, and assumptions requiring manual validation                         |
 
 ---
 
@@ -23,18 +23,18 @@ This README indexes the architectural specifications, runtime documentation, and
 
 Behavioral contracts and API specifications per subsystem. Each folder contains a `spec.md`.
 
-| Spec                                                                                           | Subsystem                                                       | Priority |
-| ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | -------- |
-| [../openspec/specs/client-sdk/spec.md](../openspec/specs/client-sdk/spec.md)                   | `librdkFwupdateMgr.so` public C API and async callback model    | P0       |
-| [../openspec/specs/dbus-ipc/spec.md](../openspec/specs/dbus-ipc/spec.md)                       | D-Bus method/signal contracts for `org.rdkfwupdater.Interface`  | P0       |
-| [../openspec/specs/daemon-runtime/spec.md](../openspec/specs/daemon-runtime/spec.md)           | Daemon lifecycle state machine (`STATE_INIT` → `STATE_IDLE`)    | P0       |
-| [../openspec/specs/download-engine/spec.md](../openspec/specs/download-engine/spec.md)         | HTTP/HTTPS firmware download engine (libcurl, throttling, mTLS) | P0       |
-| [../openspec/specs/direct-cdn-download/spec.md](../openspec/specs/direct-cdn-download/spec.md) | Direct CDN download path and CodeBig fallback                   | P1       |
-| [../openspec/specs/firmware-validation/spec.md](../openspec/specs/firmware-validation/spec.md) | Firmware image validation and version comparison                | P1       |
-| [../openspec/specs/updater-execution/spec.md](../openspec/specs/updater-execution/spec.md)     | One-shot orchestrator (`rdkvfwupgrader`) behavioral contract    | P1       |
-| [../openspec/specs/operational-safety/spec.md](../openspec/specs/operational-safety/spec.md)   | Concurrency control, mutex ownership, piggybacking semantics    | P1       |
-| [../openspec/specs/retry-recovery/spec.md](../openspec/specs/retry-recovery/spec.md)           | Download retry logic and state-red recovery path                | P1       |
-| [../openspec/specs/test-mock-isolation/spec.md](../openspec/specs/test-mock-isolation/spec.md) | Test isolation boundaries and mock interfaces                   | P2       |
+| Spec                                                | Subsystem                                                       | Priority |
+| --------------------------------------------------- | --------------------------------------------------------------- | -------- |
+| `specs/client-sdk/spec.md`                   | `librdkFwupdateMgr.so` public C API and async callback model    | P0       |
+| `specs/dbus-ipc/spec.md`                       | D-Bus method/signal contracts for `org.rdkfwupdater.Interface`  | P0       |
+| `specs/daemon-runtime/spec.md`           | Daemon lifecycle state machine (`STATE_INIT` → `STATE_IDLE`)    | P0       |
+| `specs/download-engine/spec.md`         | HTTP/HTTPS firmware download engine (libcurl, throttling, mTLS) | P0       |
+| `specs/direct-cdn-download/spec.md` | Direct CDN download path and CodeBig fallback                   | P1       |
+| `specs/firmware-validation/spec.md` | Firmware image validation and version comparison                | P1       |
+| `specs/updater-execution/spec.md`     | One-shot orchestrator (`rdkvfwupgrader`) behavioral contract    | P1       |
+| `specs/operational-safety/spec.md`   | Concurrency control, mutex ownership, piggybacking semantics    | P1       |
+| `specs/retry-recovery/spec.md`           | Download retry logic and state-red recovery path                | P1       |
+| `specs/test-mock-isolation/spec.md` | Test isolation boundaries and mock interfaces                   | P2       |
 
 ---
 
@@ -42,43 +42,43 @@ Behavioral contracts and API specifications per subsystem. Each folder contains 
 
 Sequence diagrams and lifecycle documentation for both execution models.
 
-| Document                                                                                             | What It Covers                                                           |
-| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| [../openspec/runtime/rdkFwupdateMgr-lifecycle.md](../openspec/runtime/rdkFwupdateMgr-lifecycle.md)   | Daemon lifecycle: systemd service config, state machine, signal handling |
-| [../openspec/runtime/rdkFwupdateMgr-sequence.md](../openspec/runtime/rdkFwupdateMgr-sequence.md)     | Daemon request/response sequence diagrams                                |
-| [../openspec/runtime/rdkvfwupgrader-lifecycle.md](../openspec/runtime/rdkvfwupgrader-lifecycle.md)   | One-shot updater lifecycle and exit code semantics                       |
-| [../openspec/runtime/rdkvfwupgrader-sequence.md](../openspec/runtime/rdkvfwupgrader-sequence.md)     | One-shot updater sequence diagrams                                       |
-| [../openspec/runtime/client-daemon-interaction.md](../openspec/runtime/client-daemon-interaction.md) | D-Bus fire-and-forget protocol between client library and daemon         |
-| [../openspec/runtime/daemon-threading-model.md](../openspec/runtime/daemon-threading-model.md)       | GLib main loop, GTask worker threads, mutex ownership map                |
-| [../openspec/runtime/firmware-update-flows.md](../openspec/runtime/firmware-update-flows.md)         | End-to-end call flows: CheckForUpdate, DownloadFirmware, UpdateFirmware  |
+| Document                                                       | What It Covers                                                           |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `runtime/rdkFwupdateMgr-lifecycle.md`   | Daemon lifecycle: systemd service config, state machine, signal handling |
+| `runtime/rdkFwupdateMgr-sequence.md`     | Daemon request/response sequence diagrams                                |
+| `runtime/rdkvfwupgrader-lifecycle.md`   | One-shot updater lifecycle and exit code semantics                       |
+| `runtime/rdkvfwupgrader-sequence.md`     | One-shot updater sequence diagrams                                       |
+| `runtime/client-daemon-interaction.md` | D-Bus fire-and-forget protocol between client library and daemon         |
+| `runtime/daemon-threading-model.md`       | GLib main loop, GTask worker threads, mutex ownership map                |
+| `runtime/firmware-update-flows.md`         | End-to-end call flows: CheckForUpdate, DownloadFirmware, UpdateFirmware  |
 
 ---
 
 ### `dbus/` — D-Bus Interface Reference
 
-| Document                                                                       | What It Covers                                                                          |
-| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| [../openspec/dbus/dbus-architecture.md](../openspec/dbus/dbus-architecture.md) | Full D-Bus interface introspection XML, method signatures, signal payloads, error codes |
+| Document                                    | What It Covers                                                                          |
+| -------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `dbus/dbus-architecture.md` | Full D-Bus interface introspection XML, method signatures, signal payloads, error codes |
 
 ---
 
 ### `diagrams/` — Architecture Diagrams
 
-| Document                                                                                         | What It Covers                                            |
-| ------------------------------------------------------------------------------------------------ | --------------------------------------------------------- |
-| [../openspec/diagrams/architecture-diagrams.md](../openspec/diagrams/architecture-diagrams.md)   | System component diagram, shared library dependency graph |
-| [../openspec/diagrams/subsystem-architecture.md](../openspec/diagrams/subsystem-architecture.md) | Subsystem interaction diagram and layer boundaries        |
+| Document                                                 | What It Covers                                            |
+| -------------------------------------------------------- | --------------------------------------------------------- |
+| `diagrams/architecture-diagrams.md`   | System component diagram, shared library dependency graph |
+| `diagrams/subsystem-architecture.md` | Subsystem interaction diagram and layer boundaries        |
 
 ---
 
 ### `subsystems/` — Subsystem Analysis
 
-| Document                                                                                       | What It Covers                                                                 |
-| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| [../openspec/subsystems/subsystem-inventory.md](../openspec/subsystems/subsystem-inventory.md) | Full inventory of 17 subsystems with type, scope, and spec priority            |
-| [../openspec/subsystems/subsystem-map.md](../openspec/subsystems/subsystem-map.md)             | Classification matrix: which subsystems are shared vs execution-model-specific |
-| [../openspec/subsystems/spec-boundaries.md](../openspec/subsystems/spec-boundaries.md)         | Prioritized spec recommendations (P0–P3 tiers) with rationale                  |
-| [../openspec/subsystems/client-library.md](../openspec/subsystems/client-library.md)           | Client library architecture: public API surface, background thread model       |
+| Document                                              | What It Covers                                                                 |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `subsystems/subsystem-inventory.md` | Full inventory of 17 subsystems with type, scope, and spec priority            |
+| `subsystems/subsystem-map.md`             | Classification matrix: which subsystems are shared vs execution-model-specific |
+| `subsystems/spec-boundaries.md`         | Prioritized spec recommendations (P0–P3 tiers) with rationale                  |
+| `subsystems/client-library.md`           | Client library architecture: public API surface, background thread model       |
 
 ---
 
@@ -86,21 +86,21 @@ Sequence diagrams and lifecycle documentation for both execution models.
 
 Active and archived design records for tracked changes.
 
-| Entry                                                                                                          | Status   | What It Covers                                                                    |
-| -------------------------------------------------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------- |
-| [../openspec/changes/fix-state-red-dual-instance-race/](../openspec/changes/fix-state-red-dual-instance-race/) | Active   | Fix for state-red + dual-instance race condition (proposal, design, specs, tasks) |
-| [../openspec/changes/direct-cdn-token-and-mtls-fix/](../openspec/changes/direct-cdn-token-and-mtls-fix/)       | Active   | Corrects direct-CDN token and mTLS handling                                       |
-| [../openspec/changes/archive/](../openspec/changes/archive/)                                                   | Archived | Completed change records (direct-cdn-adoption, parity-guards, L1 segfault fix)    |
+| Entry                                           | Status   | What It Covers                                                                    |
+| ----------------------------------------------- | -------- | --------------------------------------------------------------------------------- |
+| `changes/fix-state-red-dual-instance-race/` | Active   | Fix for state-red + dual-instance race condition (proposal, design, specs, tasks) |
+| `changes/direct-cdn-token-and-mtls-fix/`       | Active   | Corrects direct-CDN token and mTLS handling                                       |
+| `changes/archive/`                                   | Archived | Completed change records (direct-cdn-adoption, parity-guards, L1 segfault fix)    |
 
 ---
 
 ## How to Update This Documentation
 
-- **If a subsystem behavior changes** → update the relevant `../openspec/specs/<subsystem>/spec.md`
-- **If the D-Bus interface changes** → update `../openspec/dbus/dbus-architecture.md` and `../openspec/specs/dbus-ipc/spec.md`
-- **If a new design change is planned** → create `../openspec/changes/<change-name>/` with `proposal.md`, `design.md`, `tasks.md`
-- **If a gap is resolved or a new unknown is discovered** → update `../openspec/gaps-and-unknowns.md`
-- **For architecture-level additions** → update `../openspec/project.md` and the relevant `../openspec/diagrams/` file
+- **If a subsystem behavior changes** → update the relevant `specs/<subsystem>/spec.md`
+- **If the D-Bus interface changes** → update `dbus/dbus-architecture.md` and `specs/dbus-ipc/spec.md`
+- **If a new design change is planned** → create `changes/<change-name>/` with `proposal.md`, `design.md`, `tasks.md`
+- **If a gap is resolved or a new unknown is discovered** → update `gaps-and-unknowns.md`
+- **For architecture-level additions** → update `project.md` and the relevant `diagrams/` file
 
 ---
 
