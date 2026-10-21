@@ -986,7 +986,6 @@ TEST_F(DeviceApiTestFixture, GetServURL_StateRed_DbgSrvLocked_IgnoresOverride)
 {
     char url[512] = {0};
     const char recoveryUrl[] = "https://recovery.test";
-    const char expectedUrl[] = "https://recovery.test/xconf/swu/stb";
 
     /* File intentionally exists: locked path must ignore it. */
     system("echo \"https://statered.test/xconf/swu/stb\" > /tmp/stateredrecovry.conf");
@@ -1014,7 +1013,7 @@ TEST_F(DeviceApiTestFixture, GetServURL_StateRed_DbgSrvLocked_IgnoresOverride)
         .WillOnce(Return(false));
 
     EXPECT_GT(GetServURL(url, sizeof(url)), 0u);
-    EXPECT_STREQ(expectedUrl, url);
+    EXPECT_STREQ(recoveryUrl, url);
 
     system("rm -f /tmp/stateredrecovry.conf");
 }
