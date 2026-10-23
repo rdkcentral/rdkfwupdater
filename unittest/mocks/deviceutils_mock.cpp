@@ -243,6 +243,16 @@ extern "C" size_t GetModelNum( char *pModelNum, size_t szBufSize )
     snprintf(pModelNum, szBufSize, "%s", "12345");
     return g_DeviceUtilsMock->GetModelNum(pModelNum, szBufSize);
 }
+extern "C" size_t GetModelNameUsingMFR(char *pModelName, size_t szBufSize)
+{
+    if (!g_DeviceUtilsMock)
+    {
+	cout << "GetModelNameUsingMFR g_DeviceUtilsMock object is NULL" << endl;
+        return 0;
+    }
+    printf("Inside Mock Function GetModelNameUsingMFR\n");
+    return g_DeviceUtilsMock->GetModelNameUsingMFR(pModelName, szBufSize);
+}
 extern "C" size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
 {
     if (!g_DeviceUtilsMock) {
@@ -444,9 +454,20 @@ extern "C" void swLog(const char *file, const char *func, int line, int level, c
 
 extern "C" int allocDowndLoadDataMem(void *ptr, int size)
 {
-    // Mock for external function from common_utilities (libdwnutils)
-    // This function allocates memory for download data
-    // For testing purposes, just return success
+    DownloadData *downloadData = static_cast<DownloadData *>(ptr);
+
+    if (downloadData == NULL || size <= 0) {
+        return -1;
+    }
+
+    downloadData->pvOut = malloc(size);
+    if (downloadData->pvOut == NULL) {
+        return -1;
+    }
+
+    downloadData->memsize = size;
+    downloadData->datasize = 0;
+    memset(downloadData->pvOut, 0, size);
     return 0;
 }
 

@@ -81,6 +81,7 @@ endif
 
 if IS_IARMEVENT_ENABLED
 librdksw_fwutils_la_CFLAGS += $(IARM_EVENT_FLAG)
+librdksw_jsonparse_la_CFLAGS += $(IARM_EVENT_FLAG)
 endif
 
 if IS_LIBRFCAPI_ENABLED
@@ -119,7 +120,11 @@ else
 librdksw_iarmIntf_la_LIBADD = $(AM_LDFLAGS)
 endif
 librdksw_jsonparse_la_LDFLAGS = -shared
+if IS_IARMEVENT_ENABLED
+librdksw_jsonparse_la_LIBADD = librdksw_iarmIntf.la $(AM_LDFLAGS)
+else
 librdksw_jsonparse_la_LIBADD = $(AM_LDFLAGS)
+endif
 librdksw_flash_la_LDFLAGS = -shared
 librdksw_flash_la_LIBADD = $(AM_LDFLAGS)
 librdksw_fwutils_la_LDFLAGS = -shared

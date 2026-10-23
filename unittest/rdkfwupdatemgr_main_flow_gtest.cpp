@@ -59,7 +59,6 @@ void handle_signal(int no, siginfo_t* info, void* uc);
 int prevCurUpdateInfo(void);
 int initialValidation(void);
 int initialize(void);
-void uninitialize(int fwDwnlStatus);
 int copyFile(const char *src, const char *target);
 void updateUpgradeFlag(int action);
 int getOPTOUTValue(const char *file_name);
@@ -227,6 +226,38 @@ protected:
 
     bool optoutFileExisted = false;
 };
+
+TEST_F(RdkFwupdateMgrMainFlowTest, InitializeUsesCompleteMFRModel) {
+    DeviceUtilsMock deviceMock;
+    g_DeviceUtilsMock = &deviceMock;
+    snprintf(device_info.model, sizeof(device_info.model), "%s", "LEGACY_MODEL");
+    EXPECT_CALL(deviceMock, GetModelNameUsingMFR(_, _))
+        .WillOnce(Invoke([](char *model, size_t size) {
+            snprintf(model, size, "%s", "XUSPTC11MWR");
+            return strlen(model);
+        }));
+
+    EXPECT_EQ(initialize(), 1);
+    EXPECT_STREQ(device_info.model, "XUSPTC11MWR");
+
+    g_DeviceUtilsMock = nullptr;
+}
+
+TEST_F(RdkFwupdateMgrMainFlowTest, InitializePreservesLegacyModelWhenMFRFails) {
+    DeviceUtilsMock deviceMock;
+    g_DeviceUtilsMock = &deviceMock;
+    snprintf(device_info.model, sizeof(device_info.model), "%s", "LEGACY_MODEL");
+    EXPECT_CALL(deviceMock, GetModelNameUsingMFR(_, _))
+        .WillOnce(Invoke([](char *model, size_t) {
+            model[0] = '\0';
+            return 0;
+        }));
+
+    EXPECT_EQ(initialize(), 1);
+    EXPECT_STREQ(device_info.model, "LEGACY_MODEL");
+
+    g_DeviceUtilsMock = nullptr;
+}
 
 // =============================================================================
 // TEST SUITE 1: getTriggerType()
