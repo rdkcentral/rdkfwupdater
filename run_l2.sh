@@ -34,6 +34,13 @@ make && make install
 
 cd ../
 
+git clone https://github.com/JagadheesanD/memleakutil.git
+cd memleakutil/
+ls -l
+make -f Makefile.raw
+cd ..
+ls -l
+
 #Build rdkfwupdater
 autoreconf -i
 ./configure --prefix=${INSTALL_DIR} --enable-rdkcertselector=yes --enable-mountutils=yes --enable-rfcapi=yes CFLAGS="-DRDK_LOGGER -DRDKFW_L2_TEST_BUILD"
