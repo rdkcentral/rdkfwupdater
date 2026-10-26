@@ -293,6 +293,10 @@ int initialize(void) {
     DownloadData DwnLoc;
     int ret = -1;
     char post_data[] = "{\"jsonrpc\":\"2.0\",\"id\":\"3\",\"method\":\"org.rdk.MaintenanceManager.1.getMaintenanceMode\",\"params\":{}}";
+#if defined(IARM_ENABLED)
+    char mfr_model[sizeof(device_info.model)] = {0};
+    size_t mfr_model_len = 0;
+#endif
 
 #ifdef T2_EVENT_ENABLED
     t2_init("rdkfwupgrader");
@@ -321,6 +325,15 @@ int initialize(void) {
         return ret;
     }
     init_event_handler();
+#if defined(IARM_ENABLED)
+    mfr_model_len = GetModelNameUsingMFR(mfr_model, sizeof(mfr_model));
+    if (mfr_model_len > 0) {
+        snprintf(device_info.model, sizeof(device_info.model), "%s", mfr_model);
+        SWLOG_INFO("initialize: Using model name retrieved from MFR: %s\n", device_info.model);
+    } else {
+        SWLOG_ERROR("initialize: MFR model retrieval failed; retaining legacy model: %s\n", device_info.model);
+    }
+#endif
     if (0 == (strncmp(device_info.maint_status, "true", 4))) {
         DwnLoc.pvOut = NULL;
         DwnLoc.datasize = 0;
@@ -555,7 +568,14 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
                     peripheral_context.rfc_list = &rfc_list;
 
                     iCurlCode = rdkv_upgrade_request(&peripheral_context, &curl, &http_code);
-                    if( iCurlCode == 0 && http_code == 200 )
+                    
+                    // Handle library-specific errors (negative values) - Daemon NEVER exits
+                    if (iCurlCode < 0) {
+                        SWLOG_ERROR("%s: Peripheral upgrade failed with library error: %s (code: %d)\n",
+                                   __FUNCTION__, rdkv_upgrade_strerror(iCurlCode), iCurlCode);
+                        // Daemon continues running - just log error and continue
+                        iRet = -1;
+                    } else if( iCurlCode == 0 && http_code == 200 )
                     {
                         if( szRunningLen )
                         {
@@ -607,7 +627,7 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
 }
 
 
-int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
+int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type)
 {
     int http_code;
     int upgrade_status = -1;
@@ -693,6 +713,13 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
         pci_context.rfc_list = &rfc_list;
 
         pci_curl_code = rdkv_upgrade_request(&pci_context, &curl, &http_code);
+        
+        // Handle library-specific errors (negative values) - Daemon NEVER exits
+        if (pci_curl_code < 0) {
+            SWLOG_ERROR("%s: PCI upgrade failed with library error: %s (code: %d)\n",
+                       __FUNCTION__, rdkv_upgrade_strerror(pci_curl_code), pci_curl_code);
+            // Daemon continues running - error already logged
+        }
     } else {
         SWLOG_INFO("checkForValidPCIUpgrade return false\n");
         pci_curl_code = 0;
@@ -735,6 +762,14 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model)
             pdri_context.rfc_list = &rfc_list;
 
             pdri_curl_code = rdkv_upgrade_request(&pdri_context, &curl, &http_code);
+            
+            // Handle library-specific errors (negative values) - Daemon NEVER exits
+            if (pdri_curl_code < 0) {
+                SWLOG_ERROR("%s: PDRI upgrade failed with library error: %s (code: %d)\n",
+                           __FUNCTION__, rdkv_upgrade_strerror(pdri_curl_code), pdri_curl_code);
+                // Daemon continues running - error already logged
+            }
+            
             snprintf(disableStatsUpdate, sizeof(disableStatsUpdate), "%s","no");
             if (pdri_curl_code == 100) {
                 pdri_curl_code = 0;
@@ -858,7 +893,13 @@ static int MakeXconfComms( XCONFRES *pResponse, int server_type, int *pHttp_code
                     xconf_context.rfc_list = &rfc_list;
 
                     ret = rdkv_upgrade_request(&xconf_context, &curl, pHttp_code);
-                    if( ret == 0 && *pHttp_code == 200 && DwnLoc.pvOut != NULL )
+                    
+                    // Handle library-specific errors (negative values) - Daemon NEVER exits
+                    if (ret < 0) {
+                        SWLOG_ERROR("%s: XCONF upgrade failed with library error: %s (code: %d)\n",
+                                   __FUNCTION__, rdkv_upgrade_strerror(ret), ret);
+                        // Daemon continues running - ret is already < 0, will be handled by existing error logic
+                    } else if( ret == 0 && *pHttp_code == 200 && DwnLoc.pvOut != NULL )
                     {
                         SWLOG_INFO( "MakeXconfComms: Calling getXconfRespData with input = %s\n", (char *)DwnLoc.pvOut );
                         ret = getXconfRespData( pResponse, (char *)DwnLoc.pvOut );
@@ -1197,7 +1238,7 @@ int main(int argc, char *argv[]) {
 				       proto = 0;
 				       }
 				       if ((proto == 1) && (json_res == 0)) {
-				       ret_curl_code = checkTriggerUpgrade(&response, device_info.model);
+				       ret_curl_code = checkTriggerUpgrade(&response, device_info.model, LEGACY_ALL_UPGRADE);
 
 				       char *msg = printCurlError(ret_curl_code);
 				       if (msg != NULL) {
@@ -1216,31 +1257,38 @@ int main(int argc, char *argv[]) {
 				       }
 				       */
 			    }
+			     else if(init_validate_status == INITIAL_VALIDATION_DWNL_COMPLETED){
+				    /**
+				     * A previous firmware download+flash already completed
+				     * (/tmp/fw_preparing_to_reboot was present).
+				     * The file has been cleaned up by initialValidation().
+				     * initialValidation() is also responsible for emitting
+				     * the MAINT_FWDOWNLOAD_COMPLETE event for this case.
+				     * In daemon mode, we transition to IDLE and wait for
+				     * the pending reboot or the next D-Bus request.
+				     */
+				    SWLOG_INFO("Software Update already completed (pending reboot). "
+						    "Transitioning to IDLE.\n");
+				    currentState = STATE_IDLE;
+			    }
+			    else if(init_validate_status == INITIAL_VALIDATION_DWNL_INPROGRESS){
+				    /**
+				     * Another instance is currently downloading firmware.
+				     * In the daemon model, transition to IDLE and wait.
+				     * The in-progress download will complete independently.
+				     */
+				    SWLOG_INFO("Firmware download already in progress by another process. "
+						    "Transitioning to IDLE.\n");
+				    if (0 == (strncmp(device_info.maint_status, "true", 4))) {
+					    eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_INPROGRESS);
+				    }
+				    currentState = STATE_IDLE;
+			    }
 			    else{
-				    SWLOG_ERROR("Initial validation failed\n");
+				     /* INITIAL_VALIDATION_FAIL or unknown status */
+				    SWLOG_ERROR("Initial validation failed (status=%d)\n", init_validate_status);
 				    goto cleanup_and_exit;
 			    }
-			    /*this is for sending the intermediate updates back to apps and */
-			    /*
-				if (init_validate_status == INITIAL_VALIDATION_DWNL_INPROGRESS){
-				if (!(strncmp(device_info.maint_status, "true", 4))) {
-				eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_INPROGRESS); //Sending status to maintenance manager
-				}
-				}else if(init_validate_status == INITIAL_VALIDATION_DWNL_COMPLETED) {
-				SWLOG_INFO("Software Update is completed by AS/EPG, Exiting from firmware download.\n");
-				}else if ((ret_curl_code != 0) || (json_res != 0)) {
-				if (!(strncmp(device_info.maint_status, "true", 4))) {
-				eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_ERROR); //Sending status to maintenance manager
-				}
-				if (trigger_type == 6) {
-				unsetStateRed();
-				}
-				}else {
-				if (!(strncmp(device_info.maint_status, "true", 4))) {
-				eventManager("MaintenanceMGR", MAINT_FWDOWNLOAD_COMPLETE); //Sending status to maintenance manager
-				}
-				}
-				*/
 				break;
 		    case STATE_IDLE:
 				/**

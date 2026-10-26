@@ -307,6 +307,10 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
     eventManager(IMG_DWL_EVENT, IMAGE_FWDNLD_FLASH_COMPLETE);
     if( isInStateRed() ) {
 	    eventManager(RED_STATE_EVENT, RED_RECOVERY_PROGRAMMED);
+	    int rfc_ret = write_RFCProperty("REDRECV", RFC_RED_RECV, "PROGRAMMED", RFC_STRING);
+	    if (rfc_ret == WRITE_RFC_FAILURE) {
+		    SWLOG_ERROR("write_RFCProperty() return failed Status %d\n", rfc_ret);
+	    }
 	    SWLOG_INFO("Creating red_state_reboot file\n");
 	    fp = fopen(RED_STATE_REBOOT, "w");
 	    if (fp != NULL) {
@@ -356,7 +360,7 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
         }
 	if ((0 == strcasecmp("CANARY", pXconfCheckNow)) && (trigger_type == 3)) {
 
-            char post_data[] = "{\"jsonrpc\":\"2.0\",\"id\":\"42\",\"method\": \"org.rdk.System.getPowerState\"}";
+            char post_data[] = "{\"jsonrpc\":\"2.0\",\"id\":\"42\",\"method\": \"org.rdk.PowerManager.getPowerState\"}";
             DownloadData DwnLoc = {NULL, 0, 0};
             JSON *pJson = NULL;
             JSON *pItem = NULL;
@@ -374,7 +378,11 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
               pJson = ParseJsonStr( (char *)DwnLoc.pvOut );
               if( pJson != NULL ) {
                   pItem = GetJsonItem( pJson, "result" );
-                  res_val = GetJsonItem( pItem, "powerState" );
+                  res_val = GetJsonItem( pItem, "currentState" );
+if (res_val == NULL || !cJSON_IsString(res_val) || res_val->valuestring == NULL || res_val->valuestring[0] == '\0') {
+                      SWLOG_ERROR("%s :: invalid currentState in JsonRpc response\n", __FUNCTION__);
+                      res_val = NULL;
+                  }
               }
               else {
                   SWLOG_INFO("%s :: isconnected JsonRpc response is empty\n",__FUNCTION__);
