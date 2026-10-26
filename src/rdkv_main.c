@@ -236,6 +236,10 @@ int initialize(void) {
     DownloadData DwnLoc;
     int ret = -1;
     char post_data[] = "{\"jsonrpc\":\"2.0\",\"id\":\"3\",\"method\":\"org.rdk.MaintenanceManager.1.getMaintenanceMode\",\"params\":{}}";
+#if defined(IARM_ENABLED)
+    char mfr_model[sizeof(device_info.model)] = {0};
+    size_t mfr_model_len = 0;
+#endif
 
 #ifdef T2_EVENT_ENABLED
     t2_init("rdkfwupgrader");
@@ -264,6 +268,15 @@ int initialize(void) {
         return ret;
     }
     init_event_handler();
+#if defined(IARM_ENABLED)
+    mfr_model_len = GetModelNameUsingMFR(mfr_model, sizeof(mfr_model));
+    if (mfr_model_len > 0) {
+        snprintf(device_info.model, sizeof(device_info.model), "%s", mfr_model);
+        SWLOG_INFO("initialize: Using model name retrieved from MFR: %s\n", device_info.model);
+    } else {
+        SWLOG_ERROR("initialize: MFR model retrieval failed; retaining legacy model: %s\n", device_info.model);
+    }
+#endif
     if (0 == (strncmp(device_info.maint_status, "true", 4))) {
         DwnLoc.pvOut = NULL;
         DwnLoc.datasize = 0;
