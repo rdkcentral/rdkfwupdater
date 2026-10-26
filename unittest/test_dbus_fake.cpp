@@ -42,6 +42,7 @@
 
 #include <gio/gio.h>
 #include <glib.h>
+#include <dlfcn.h>
 #include <string>
 #include <vector>
 
@@ -163,7 +164,13 @@ int fake_dbus_get_signal_count() {
  * @brief Get last emitted status as integer
  */
 gint32 fake_dbus_get_last_status_int() {
-    // Try to parse status string as integer
+    if (FakeDBus::g_last_status == "COMPLETED") {
+        return 2;
+    }
+    if (FakeDBus::g_last_status == "INPROGRESS" ||
+        FakeDBus::g_last_status == "NOTSTARTED") {
+        return 0;
+    }
     if (!FakeDBus::g_last_status.empty()) {
         return atoi(FakeDBus::g_last_status.c_str());
     }
@@ -416,9 +423,16 @@ FILE* fopen(const char* path, const char* mode) {
         }
         return tmp;
     }
-    
-    // For all other files, return NULL (tests should not need other files)
-    return nullptr;
+
+    // Forward all other file opens to the real libc fopen so normal file-based
+    // tests continue to work while /opt/curl_progress remains controllable.
+    using RealFopen = FILE* (*)(const char*, const char*);
+    static RealFopen real_fopen = nullptr;
+    if (real_fopen == nullptr) {
+        real_fopen = reinterpret_cast<RealFopen>(dlsym(RTLD_NEXT, "fopen"));
+    }
+
+    return real_fopen ? real_fopen(path, mode) : nullptr;
 }
 
 } // extern "C"

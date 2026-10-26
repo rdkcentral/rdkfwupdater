@@ -26,6 +26,12 @@ extern "C" {
 #include "iarmInterface.h"
 #include "./mocks/rbus_mock.h"
 void DwnlStopEventHandler(const char *owner, IARM_EventId_t eventId, void *data, size_t len);
+
+unsigned int sleep(unsigned int seconds)
+{
+    (void)seconds;
+    return 0;
+}
 }
 #include "./mocks/interface_mock.h"
 
@@ -217,6 +223,127 @@ TEST_F(InterfaceTestFixture, TestName_term_event_handlerSuccess)
     EXPECT_CALL(*g_InterfaceMock, IARM_Bus_UnRegisterEventHandler(_,_)).WillOnce(Return(0));
     EXPECT_EQ(term_event_handler(), 0);
 }
+TEST_F(InterfaceTestFixture, GetModelNameUsingMFRSuccess)
+{
+    char model[32] = {0};
+    EXPECT_CALL(*g_InterfaceMock, IARM_Bus_Init(_)).Times(0);
+    EXPECT_CALL(*g_InterfaceMock, IARM_Bus_Connect()).Times(0);
+    EXPECT_CALL(*g_InterfaceMock, IARM_Bus_Disconnect()).Times(0);
+    EXPECT_CALL(*g_InterfaceMock, IARM_Bus_Term()).Times(0);
+    EXPECT_CALL(*g_InterfaceMock, allocDowndLoadDataMem(_, _)).Times(0);
+    EXPECT_CALL(*g_InterfaceMock, IARM_Bus_Call(StrEq(IARM_BUS_MFRLIB_NAME),
+                                                IARM_BUS_MFRLIB_API_GetSerializedData,
+                                                _, sizeof(IARM_Bus_MFRLib_GetSerializedData_Param_t)))
+        .WillOnce(Invoke([](const char*, int, void *data, unsigned int) {
+            IARM_Bus_MFRLib_GetSerializedData_Param_t *param =
+                static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t *>(data);
+            EXPECT_EQ(param->type, mfrSERIALIZED_TYPE_MODELNAME);
+            EXPECT_EQ(param->bufLen, 0u);
+            for (size_t index = 0; index < sizeof(param->buffer); ++index) {
+                EXPECT_EQ(param->buffer[index], '\0');
+            }
+            const char value[] = "XUSPTC11MWR";
+            memcpy(param->buffer, value, sizeof(value) - 1);
+            param->bufLen = sizeof(value) - 1;
+            return IARM_RESULT_SUCCESS;
+        }));
+
+    EXPECT_EQ(GetModelNameUsingMFR(model, sizeof(model)), 11u);
+    EXPECT_STREQ(model, "XUSPTC11MWR");
+}
+TEST_F(InterfaceTestFixture, GetModelNameUsingMFRNormalizesLineEndings)
+{
+    char model[32] = {0};
+    EXPECT_CALL(*g_InterfaceMock, IARM_Bus_Call(_, _, _, _))
+        .WillOnce(Invoke([](const char*, int, void *data, unsigned int) {
+            IARM_Bus_MFRLib_GetSerializedData_Param_t *param =
+                static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t *>(data);
+            const char value[] = "XUSHTC11MWR\r\n";
+            memcpy(param->buffer, value, sizeof(value) - 1);
+            param->bufLen = sizeof(value) - 1;
+            return IARM_RESULT_SUCCESS;
+        }));
+
+    EXPECT_EQ(GetModelNameUsingMFR(model, sizeof(model)), 11u);
+    EXPECT_STREQ(model, "XUSHTC11MWR");
+}
+TEST_F(InterfaceTestFixture, GetModelNameUsingMFRAllowsNormalizedValueThatFits)
+{
+    char model[6] = {0};
+    EXPECT_CALL(*g_InterfaceMock, IARM_Bus_Call(_, _, _, _))
+        .WillOnce(Invoke([](const char*, int, void *data, unsigned int) {
+            IARM_Bus_MFRLib_GetSerializedData_Param_t *param =
+                static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t *>(data);
+            const char value[] = "MODEL\r\n";
+            memcpy(param->buffer, value, sizeof(value) - 1);
+            param->bufLen = sizeof(value) - 1;
+            return IARM_RESULT_SUCCESS;
+        }));
+
+    EXPECT_EQ(GetModelNameUsingMFR(model, sizeof(model)), 5u);
+    EXPECT_STREQ(model, "MODEL");
+}
+TEST_F(InterfaceTestFixture, GetModelNameUsingMFRRejectsTruncation)
+{
+    char model[5] = "old";
+    EXPECT_CALL(*g_InterfaceMock, IARM_Bus_Call(_, _, _, _))
+        .WillOnce(Invoke([](const char*, int, void *data, unsigned int) {
+            IARM_Bus_MFRLib_GetSerializedData_Param_t *param =
+                static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t *>(data);
+            const char value[] = "MODEL";
+            memcpy(param->buffer, value, sizeof(value) - 1);
+            param->bufLen = sizeof(value) - 1;
+            return IARM_RESULT_SUCCESS;
+        }));
+
+    EXPECT_EQ(GetModelNameUsingMFR(model, sizeof(model)), 0u);
+    EXPECT_STREQ(model, "");
+}
+TEST_F(InterfaceTestFixture, GetModelNameUsingMFRRejectsInvalidLengths)
+{
+    char model[16] = "old";
+    EXPECT_CALL(*g_InterfaceMock, IARM_Bus_Call(_, _, _, _))
+        .WillOnce(Invoke([](const char*, int, void *data, unsigned int) {
+            IARM_Bus_MFRLib_GetSerializedData_Param_t *param =
+                static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t *>(data);
+            param->bufLen = sizeof(param->buffer) + 1;
+            return IARM_RESULT_SUCCESS;
+        }));
+
+    EXPECT_EQ(GetModelNameUsingMFR(model, sizeof(model)), 0u);
+    EXPECT_STREQ(model, "");
+}
+TEST_F(InterfaceTestFixture, GetModelNameUsingMFRRejectsEmptyResponse)
+{
+    char model[16] = "old";
+    EXPECT_CALL(*g_InterfaceMock, IARM_Bus_Call(_, _, _, _))
+        .WillOnce(Invoke([](const char*, int, void *data, unsigned int) {
+            IARM_Bus_MFRLib_GetSerializedData_Param_t *param =
+                static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t *>(data);
+            param->bufLen = 0;
+            return IARM_RESULT_SUCCESS;
+        }));
+
+    EXPECT_EQ(GetModelNameUsingMFR(model, sizeof(model)), 0u);
+    EXPECT_STREQ(model, "");
+}
+TEST_F(InterfaceTestFixture, GetModelNameUsingMFRHandlesIARMFailure)
+{
+    char model[16] = "old";
+    EXPECT_CALL(*g_InterfaceMock, IARM_Bus_Call(_, _, _, _))
+        .WillOnce(Return(IARM_RESULT_INVALID_STATE));
+
+    EXPECT_EQ(GetModelNameUsingMFR(model, sizeof(model)), 0u);
+    EXPECT_STREQ(model, "");
+}
+TEST_F(InterfaceTestFixture, GetModelNameUsingMFRRejectsInvalidArguments)
+{
+    char model[1] = {'X'};
+    EXPECT_CALL(*g_InterfaceMock, IARM_Bus_Call(_, _, _, _)).Times(0);
+
+    EXPECT_EQ(GetModelNameUsingMFR(NULL, sizeof(model)), 0u);
+    EXPECT_EQ(GetModelNameUsingMFR(model, 0), 0u);
+}
 TEST_F(InterfaceTestFixture, TestName_DwnlStopEventHandlerSuccess)
 {
     int data = 1;
@@ -283,6 +410,115 @@ TEST_F(InterfaceTestFixture, TestName_isDirectCDNEnabledAbsent)
 {
     EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(1).WillOnce(Return(0));
     EXPECT_EQ(isDirectCDNEnabled(), false);
+}
+
+TEST_F(InterfaceTestFixture, TestName_isConnectedToInternet_ConnectedIPv4)
+{
+    EXPECT_CALL(*g_InterfaceMock, allocDowndLoadDataMem(_, _))
+        .WillRepeatedly(Invoke([](void *ptr, int size) {
+            DownloadData *d = static_cast<DownloadData *>(ptr);
+            if (d == nullptr || size <= 0) {
+                return -1;
+            }
+            d->pvOut = calloc(1, static_cast<size_t>(size));
+            d->datasize = 0;
+            d->memsize = static_cast<size_t>(size);
+            return 0;
+        }));
+
+    EXPECT_CALL(*g_InterfaceMock, getJsonRpc(_, _))
+        .WillOnce(Invoke([](char *data, void *ptr) {
+            DownloadData *d = static_cast<DownloadData *>(ptr);
+            const char *payload = "{\"result\":{\"status\":\"CONNECTED\"}}";
+            if (d == nullptr || d->pvOut == nullptr) {
+                return -1;
+            }
+            snprintf(static_cast<char *>(d->pvOut), d->memsize, "%s", payload);
+            d->datasize = strlen(static_cast<char *>(d->pvOut));
+            (void)data;
+            return 0;
+        }));
+
+    EXPECT_TRUE(isConnectedToInternet());
+}
+
+TEST_F(InterfaceTestFixture, TestName_isConnectedToInternet_FallbackToIPv6WhenIPv4Blocked)
+{
+    EXPECT_CALL(*g_InterfaceMock, allocDowndLoadDataMem(_, _))
+        .WillRepeatedly(Invoke([](void *ptr, int size) {
+            DownloadData *d = static_cast<DownloadData *>(ptr);
+            if (d == nullptr || size <= 0) {
+                return -1;
+            }
+            d->pvOut = calloc(1, static_cast<size_t>(size));
+            d->datasize = 0;
+            d->memsize = static_cast<size_t>(size);
+            return 0;
+        }));
+
+    EXPECT_CALL(*g_InterfaceMock, getJsonRpc(_, _))
+        .WillOnce(Invoke([](char *data, void *ptr) {
+            DownloadData *d = static_cast<DownloadData *>(ptr);
+            const char *payload = "{\"result\":{\"status\":\"NO_INTERNET\"}}";
+            if (d == nullptr || d->pvOut == nullptr) {
+                return -1;
+            }
+            snprintf(static_cast<char *>(d->pvOut), d->memsize, "%s", payload);
+            d->datasize = strlen(static_cast<char *>(d->pvOut));
+            (void)data;
+            return 0;
+        }))
+        .WillOnce(Invoke([](char *data, void *ptr) {
+            DownloadData *d = static_cast<DownloadData *>(ptr);
+            const char *payload = "{\"result\":{\"status\":\"CONNECTED\"}}";
+            if (d == nullptr || d->pvOut == nullptr) {
+                return -1;
+            }
+            snprintf(static_cast<char *>(d->pvOut), d->memsize, "%s", payload);
+            d->datasize = strlen(static_cast<char *>(d->pvOut));
+            (void)data;
+            return 0;
+        }));
+
+    EXPECT_TRUE(isConnectedToInternet());
+}
+
+TEST_F(InterfaceTestFixture, TestName_GetPDRIFileNameUsingMFR_Success)
+{
+    char pdri[64] = {0};
+    EXPECT_CALL(*g_InterfaceMock, IARM_Bus_Call(_, _, _, _))
+        .WillOnce(Invoke([](const char *ownerName, int apiId, void *param, unsigned int paramLen) {
+            (void)ownerName;
+            (void)apiId;
+            (void)paramLen;
+            IARM_Bus_MFRLib_GetSerializedData_Param_t *mfrParam = static_cast<IARM_Bus_MFRLib_GetSerializedData_Param_t *>(param);
+            if (mfrParam == nullptr) {
+                return IARM_RESULT_INVALID_PARAM;
+            }
+            const char *pdriName = "test-pdri.bin";
+            mfrParam->bufLen = strlen(pdriName);
+            memcpy(mfrParam->buffer, pdriName, mfrParam->bufLen);
+            mfrParam->buffer[mfrParam->bufLen] = '\0';
+            return IARM_RESULT_SUCCESS;
+        }));
+
+    EXPECT_EQ(GetPDRIFileNameUsingMFR(pdri, sizeof(pdri)), static_cast<size_t>(strlen("test-pdri.bin")));
+    EXPECT_STREQ(pdri, "test-pdri.bin");
+}
+
+TEST_F(InterfaceTestFixture, TestName_GetPDRIFileNameUsingMFR_InvalidCallReturnsZero)
+{
+    char pdri[64] = {0};
+    EXPECT_CALL(*g_InterfaceMock, IARM_Bus_Call(_, _, _, _))
+        .WillOnce(Return(IARM_RESULT_INVALID_PARAM));
+
+    EXPECT_EQ(GetPDRIFileNameUsingMFR(pdri, sizeof(pdri)), static_cast<size_t>(0));
+    EXPECT_STREQ(pdri, "");
+}
+
+TEST_F(InterfaceTestFixture, TestName_GetPDRIFileNameUsingMFR_NullInputReturnsZero)
+{
+    EXPECT_EQ(GetPDRIFileNameUsingMFR(nullptr, 32), static_cast<size_t>(0));
 }
 
 GTEST_API_ int main(int argc, char *argv[]){

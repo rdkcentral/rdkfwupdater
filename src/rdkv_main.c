@@ -236,6 +236,10 @@ int initialize(void) {
     DownloadData DwnLoc;
     int ret = -1;
     char post_data[] = "{\"jsonrpc\":\"2.0\",\"id\":\"3\",\"method\":\"org.rdk.MaintenanceManager.1.getMaintenanceMode\",\"params\":{}}";
+#if defined(IARM_ENABLED)
+    char mfr_model[sizeof(device_info.model)] = {0};
+    size_t mfr_model_len = 0;
+#endif
 
 #ifdef T2_EVENT_ENABLED
     t2_init("rdkfwupgrader");
@@ -264,6 +268,15 @@ int initialize(void) {
         return ret;
     }
     init_event_handler();
+#if defined(IARM_ENABLED)
+    mfr_model_len = GetModelNameUsingMFR(mfr_model, sizeof(mfr_model));
+    if (mfr_model_len > 0) {
+        snprintf(device_info.model, sizeof(device_info.model), "%s", mfr_model);
+        SWLOG_INFO("initialize: Using model name retrieved from MFR: %s\n", device_info.model);
+    } else {
+        SWLOG_ERROR("initialize: MFR model retrieval failed; retaining legacy model: %s\n", device_info.model);
+    }
+#endif
     if (0 == (strncmp(device_info.maint_status, "true", 4))) {
         DwnLoc.pvOut = NULL;
         DwnLoc.datasize = 0;
@@ -657,6 +670,11 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type
 
         if (curl_ret == 0 && (http_code == HTTP_SUCCESS || http_code == HTTP_CHUNK_SUCCESS)) {
             SWLOG_INFO("%s: upgrade_type %d succeeded (http %d)\n", __FUNCTION__, upgrade_type, http_code);
+            return 0;
+        }
+        /* rdkv_upgrade_request returns 100 when the PDRI image is already current; a no-op, not a failure */
+        if (curl_ret == 100 && upgrade_type == PDRI_UPGRADE) {
+            SWLOG_INFO("%s: PDRI already up to date, no upgrade required\n", __FUNCTION__);
             return 0;
         }
         /* Transient curl-level failures → retryable */

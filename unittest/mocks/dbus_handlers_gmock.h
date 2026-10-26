@@ -108,7 +108,7 @@ class MockIarmInterface {
 public:
     virtual ~MockIarmInterface() {}
     
-    MOCK_METHOD(int, eventManager, (int event_type, int event_status));
+    MOCK_METHOD(void, eventManager, (const char *event_type, const char *event_status));
 };
 
 /**
@@ -164,25 +164,26 @@ extern "C" {
 // declared in json_process.h - we don't redeclare them here to avoid linkage conflicts
 
 // Utility function stubs
-int getDevicePropertyData(DeviceProperty_t* device_info, const char* property);
+int getDevicePropertyData(const char* key, char* value, unsigned int size);
 int waitForNtp(void);
 // t2ValNotify is already declared in rdkv_cdl.h - don't redeclare
 char* makeHttpHttps(const char* url);
 int v_secure_system(const char* command);
-int GetBuildType(char* buffer, size_t len);
-int GetModelNum(char* buffer, size_t len);
-int GetMFRName(char* buffer, size_t len);
-int GetUTCTime(char* buffer, size_t len);
-int GetTimezone(char* buffer, size_t len);
-int GetCapabilities(char* buffer, size_t len);
+size_t GetBuildType(char* buffer, size_t len, BUILDTYPE* build_type);
+size_t GetModelNum(char* buffer, size_t len);
+size_t GetMFRName(char* buffer, size_t len);
+size_t GetUTCTime(char* buffer, size_t len);
+size_t GetTimezone(char* buffer, const char* cpu_arch, size_t len);
+size_t GetCapabilities(char* buffer, size_t len);
 char* stripinvalidchar(const char* input);
 // read_RFCProperty is already declared in rfcinterface.h - don't redeclare
-int GetHwMacAddress(char* buffer, size_t len);
+size_t GetHwMacAddress(char* iface, char* buffer, size_t len);
+size_t GetPDRIFileNameUsingMFR(char *buffer, size_t len);
 int isInStateRed(void);
 FILE* v_secure_popen(const char* direction, const char* command);
 int v_secure_pclose(FILE* fp);
 void* doCurlInit(void);
-int getJsonRpcData(void* curl, const char* url, char** output);
+int getJsonRpcData(void *curl_req, FileDwnl_t *req_data, char *token_header, int *http_code);
 void doStopDownload(void* curl);
 
 // NOTE: SWLOG_* macros are already defined in rdkv_cdl_log_wrapper.h
@@ -192,8 +193,8 @@ void doStopDownload(void* curl);
 extern DeviceProperty_t device_info;
 extern ImageDetails_t cur_img_detail;
 extern Rfc_t rfc_list;
-extern char lastDwnlImg[256];
-extern char currentImg[256];
+size_t lastDwnlImg(char *img_name, size_t img_name_size);
+size_t currentImg(char *img_name, size_t img_name_size);
 
 #ifdef __cplusplus
 }
