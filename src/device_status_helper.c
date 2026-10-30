@@ -553,7 +553,7 @@ bool isUpgradeInProgress(void)
  * @param : file_name: File name
  * @return: int Success: return time and -1: fail
  * */
-unsigned int getFileLastModifyTime(char *file_name)
+time_t getFileLastModifyTime(char *file_name)
 {
     struct stat attr;
     int ret = 0;
@@ -596,10 +596,10 @@ int isDwnlBlock(int type)
     int ret = -1;
     int block_time = 0;
     char file_name[128] = {0};
-    unsigned int current_time = 0;
-    unsigned int last_mod_time = 0;
-    unsigned int modification_time = 0;
-    int remtime = 0;
+    time_t current_time = 0;
+    time_t last_mod_time = 0;
+    time_t modification_time = 0;
+    long remtime = 0;
     int block = 0;
     if (type == HTTP_SSR_DIRECT || type == HTTP_XCONF_DIRECT) {
         snprintf(file_name, sizeof(file_name), "%s", DIRECT_BLOCK_FILENAME);
@@ -615,16 +615,30 @@ int isDwnlBlock(int type)
     last_mod_time = getFileLastModifyTime(file_name);
     if (last_mod_time != 0) {
         current_time = getCurrentSysTimeSec();
-        modification_time = current_time - last_mod_time;
-        SWLOG_INFO("%s modtime=%u\n",req_type, modification_time);
-        remtime = (block_time/60) - (modification_time/60);
-        SWLOG_INFO("%s remtime=%u\n",req_type, remtime);
-        if (modification_time <= block_time) {
-            SWLOG_INFO("ImageUpgrade: Last %s failed blocking is still valid for %d mins, preventing direct\n", req_type, remtime);
+        if (current_time == 0) {
+            SWLOG_ERROR("%s: unable to read system time; conservatively keeping download blocked\n", __FUNCTION__);
             block = 1;
+        } else if (last_mod_time > current_time) {
+            SWLOG_WARN("ImageUpgrade: Last %s failure marker is future-dated; removing %s\n",
+                       req_type, file_name);
+            if (unlink(file_name) != 0) {
+                SWLOG_ERROR("ImageUpgrade: failed to remove future-dated marker %s\n", file_name);
+                block = 1;
+            }
         } else {
-            SWLOG_INFO("ImageUpgrade: Last %s failed blocking has expired, removing %s, allowing direct\n", req_type, file_name);
-            unlink(file_name);
+            modification_time = current_time - last_mod_time;
+            SWLOG_INFO("%s modtime=%ld\n", req_type, (long)modification_time);
+            remtime = (long)(block_time / 60) - (long)(modification_time / 60);
+            SWLOG_INFO("%s remtime=%ld\n", req_type, remtime);
+            if (modification_time <= block_time) {
+                SWLOG_INFO("ImageUpgrade: Last %s failed blocking is still valid for %ld mins, preventing direct\n",
+                           req_type, remtime);
+                block = 1;
+            } else {
+                SWLOG_INFO("ImageUpgrade: Last %s failed blocking has expired, removing %s, allowing direct\n",
+                           req_type, file_name);
+                unlink(file_name);
+            }
         }
     }
     return block;

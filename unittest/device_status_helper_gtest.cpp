@@ -20,6 +20,7 @@
 #include <gmock/gmock.h>
 #include <iostream>
 #include <unistd.h>
+#include <utime.h>
 extern "C" {
 #include "json_process.h"
 #include "device_status_helper.h"
@@ -560,6 +561,29 @@ TEST(TestisDwnlBlock, TestName_codebig_block)
     ret = system("touch /tmp/.lastcodebigfail_cdl");
     EXPECT_EQ(isDwnlBlock(HTTP_XCONF_CODEBIG), 1);
     ret = system("rm /tmp/.lastcodebigfail_cdl");
+}
+TEST(TestisDwnlBlock, FutureDatedMarkersAreRemovedAndDoNotBlock)
+{
+    const char *markers[] = {
+        "/tmp/.lastcodebigfail_cdl",
+        "/tmp/.lastdirectfail_cdl"
+    };
+    const int block_types[] = {HTTP_XCONF_CODEBIG, HTTP_XCONF_DIRECT};
+
+    for (size_t i = 0; i < sizeof(markers) / sizeof(markers[0]); ++i) {
+        unlink(markers[i]);
+        int fd = open(markers[i], O_CREAT | O_WRONLY, 0600);
+        ASSERT_NE(fd, -1);
+        close(fd);
+
+        struct utimbuf marker_times;
+        marker_times.actime = time(NULL) + 2 * 24 * 60 * 60;
+        marker_times.modtime = marker_times.actime;
+        ASSERT_EQ(utime(markers[i], &marker_times), 0);
+
+        EXPECT_EQ(isDwnlBlock(block_types[i]), 0);
+        EXPECT_EQ(access(markers[i], F_OK), -1);
+    }
 }
 TEST(TestDwnlStatus, TestName_updateFWDownloadStatusNull)
 {
