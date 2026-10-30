@@ -67,6 +67,6 @@ bool checkCodebigAccess(void);
 bool CurrentRunningInst(const char *file);
 void waitForNtp(void);
 bool prevFlashedFile(char *img_name, size_t img_name_size);
-time_t getFileLastModifyTime(char *file_name);
+unsigned int getFileLastModifyTime(char *file_name);
 
 #endif /* VIDEO_DEVICE_STATUS_HELPER_H_ */
