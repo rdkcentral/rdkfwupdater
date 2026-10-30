@@ -19,6 +19,7 @@
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 #include <iostream>
+#include <stdlib.h>
 #include <unistd.h>
 
 #include "../mocks/deviceutils_mock.h"
@@ -225,6 +226,32 @@ TEST_F(DeviceUtilsTestFixture, TestName_getMetaDataFile_Null)
 {
     metaDataFileList_st *meta_ret = NULL;
     EXPECT_EQ(getMetaDataFile("./test"), meta_ret);
+}
+TEST_F(DeviceUtilsTestFixture, MissingMetadataDirectoryIsSuccessfulEmptyScan)
+{
+    char path[] = "/tmp/rdkfwupdater-missing-metadata-XXXXXX";
+    ASSERT_NE(mkdtemp(path), nullptr);
+    ASSERT_EQ(rmdir(path), 0);
+
+    int scan_status = -1;
+    metaDataFileList_st *metadata = getMetaDataFileWithStatus(path, &scan_status);
+
+    EXPECT_EQ(metadata, nullptr);
+    EXPECT_EQ(scan_status, 0);
+}
+TEST_F(DeviceUtilsTestFixture, NonDirectoryMetadataPathReportsScanFailure)
+{
+    char path[] = "/tmp/rdkfwupdater-metadata-file-XXXXXX";
+    int file_descriptor = mkstemp(path);
+    ASSERT_NE(file_descriptor, -1);
+    close(file_descriptor);
+
+    int scan_status = 0;
+    metaDataFileList_st *metadata = getMetaDataFileWithStatus(path, &scan_status);
+
+    EXPECT_EQ(metadata, nullptr);
+    EXPECT_EQ(scan_status, -1);
+    unlink(path);
 }
 TEST_F(DeviceUtilsTestFixture, TestName_mergeLists_Null)
 {

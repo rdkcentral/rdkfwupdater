@@ -40,6 +40,7 @@ int v_secure_pclose(FILE *fp);
 #include "deviceutils.h"
 #include "json_parse.h"
 #include <dirent.h>
+#include <errno.h>
 
 #ifndef GTEST_ENABLE
 #define BUNDLE_METADATA_NVM_CERT_PATH    "/media/apps/etc/certs"
@@ -500,52 +501,72 @@ metaDataFileList_st *getMetaDataFileWithStatus(const char *dir, int *scan_status
 {
     metaDataFileList_st *newnode = NULL, *prevnode = NULL, *headNode = NULL;
     struct dirent *pDirent = NULL;
+    int local_scan_status = 0;
 
-    if (scan_status != NULL) {
-        *scan_status = 0;
+    if (scan_status == NULL) {
+        scan_status = &local_scan_status;
     }
+    *scan_status = 0;
 
     DIR *directory = opendir(dir);
-    if (directory)
-    {
-        while ((pDirent = readdir(directory)) != NULL)
-        {
-            if (pDirent->d_type == DT_REG && strstr(pDirent->d_name, "_package.json") != NULL)
-            {
-                newnode = (metaDataFileList_st *)malloc(sizeof(metaDataFileList_st));
-                    if (newnode == NULL)
-                    {
-                        SWLOG_ERROR("GetInstalledBundles: malloc failed for %s\n", pDirent->d_name);
-                        if (scan_status != NULL) {
-                            *scan_status = -1;
-                        }
-                        while (headNode != NULL) {
-                            metaDataFileList_st *next = headNode->next;
-                            free(headNode);
-                            headNode = next;
-                        }
-                        break;
-                    }
-                SWLOG_INFO("GetInstalledBundles: found %s\n", pDirent->d_name);
-                snprintf(newnode->fileName, sizeof(newnode->fileName), "%s/%s", dir, pDirent->d_name);
-                newnode->next = NULL;
-                if (headNode == NULL)
-                {
-                    headNode = newnode;
-                    prevnode = headNode;
-                }
-                else
-                {
-                    prevnode->next = newnode;
-                    prevnode = newnode;
-                }
-            }
+    if (directory == NULL) {
+        int open_error = errno;
+        if (open_error != ENOENT) {
+            *scan_status = -1;
         }
-        closedir(directory);
+        if (open_error == ENOENT) {
+            SWLOG_INFO("Optional metadata directory %s does not exist\n", dir);
+        } else {
+            SWLOG_ERROR("Failed to open metadata directory %s (errno=%d)\n", dir, open_error);
+        }
+        return NULL;
     }
-    else
-    {
-        SWLOG_INFO("%s does not exist\n", dir);
+
+    for (;;) {
+        errno = 0;
+        pDirent = readdir(directory);
+        if (pDirent == NULL) {
+            if (errno != 0) {
+                SWLOG_ERROR("Failed to read metadata directory %s (errno=%d)\n", dir, errno);
+                *scan_status = -1;
+            }
+            break;
+        }
+
+        if (pDirent->d_type != DT_REG || strstr(pDirent->d_name, "_package.json") == NULL) {
+            continue;
+        }
+
+        newnode = (metaDataFileList_st *)malloc(sizeof(metaDataFileList_st));
+        if (newnode == NULL) {
+            SWLOG_ERROR("GetInstalledBundles: malloc failed for %s\n", pDirent->d_name);
+            *scan_status = -1;
+            break;
+        }
+
+        SWLOG_INFO("GetInstalledBundles: found %s\n", pDirent->d_name);
+        snprintf(newnode->fileName, sizeof(newnode->fileName), "%s/%s", dir, pDirent->d_name);
+        newnode->next = NULL;
+        if (headNode == NULL) {
+            headNode = newnode;
+            prevnode = headNode;
+        } else {
+            prevnode->next = newnode;
+            prevnode = newnode;
+        }
+    }
+
+    if (closedir(directory) != 0) {
+        SWLOG_ERROR("Failed to close metadata directory %s (errno=%d)\n", dir, errno);
+        *scan_status = -1;
+    }
+
+    if (*scan_status != 0) {
+        while (headNode != NULL) {
+            metaDataFileList_st *next = headNode->next;
+            free(headNode);
+            headNode = next;
+        }
     }
     return headNode;
 }
