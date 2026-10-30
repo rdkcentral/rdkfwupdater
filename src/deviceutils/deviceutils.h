@@ -114,8 +114,6 @@ int getJRPCTokenData(char *token, char *pJsonStr, unsigned int token_size);
 
 metaDataFileList_st *getInstalledBundleFileList(const char *bundleType);
 metaDataFileList_st *getMetaDataFile(const char *dir);
-metaDataFileList_st *getInstalledBundleFileListWithStatus(const char *bundleType, int *scan_status);
-metaDataFileList_st *getMetaDataFileWithStatus(const char *dir, int *scan_status);
 metaDataFileList_st * mergeLists(metaDataFileList_st *nvmList, metaDataFileList_st *rfsList);
 
 

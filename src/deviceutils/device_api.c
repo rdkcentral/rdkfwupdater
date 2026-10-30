@@ -185,15 +185,6 @@ size_t GetPDRIFileName( char *pPDRIFilename, size_t szBufSize )
 
 size_t GetInstalledBundles(char *pBundles, size_t szBufSize, const char *bundleType)
 {
-    size_t written = 0;
-    if (GetInstalledBundlesWithStatus(pBundles, szBufSize, bundleType, &written) != 0) {
-        return 0;
-    }
-    return written;
-}
-
-int GetInstalledBundlesWithStatus(char *pBundles, size_t szBufSize, const char *bundleType, size_t *written)
-{
     JSON *pJsonTop;
     JSON *pJson;
     char *pJsonStr;
@@ -201,21 +192,11 @@ int GetInstalledBundlesWithStatus(char *pBundles, size_t szBufSize, const char *
     size_t szRunningLen = 0;
     metaDataFileList_st *installedBundleListNode = NULL, *tmpNode = NULL;
 
-    if (written == NULL || pBundles == NULL || szBufSize == 0)
-    {
-        return -1;
-    }
-
-    *written = 0;
-    *pBundles = 0;
     if (pBundles != NULL)
     {
+        *pBundles = 0;
         SWLOG_INFO("GetInstalledBundles: Invoking getInstalledBundleFileList to get %s bundle list ",bundleType);
-        int scan_status = 0;
-        installedBundleListNode = getInstalledBundleFileListWithStatus(bundleType, &scan_status);
-        if (scan_status != 0) {
-            return -1;
-        }
+        installedBundleListNode = getInstalledBundleFileList(bundleType);
 
         while (installedBundleListNode != NULL)
         {
@@ -260,8 +241,7 @@ int GetInstalledBundlesWithStatus(char *pBundles, size_t szBufSize, const char *
         SWLOG_INFO("GetInstalledBundles: szRunningLen = %zu\n", szRunningLen);
     }
 
-    *written = szRunningLen;
-    return 0;
+    return szRunningLen;
 }
 /* function GetPartnerId - gets the partner ID of the device.
  

@@ -398,18 +398,8 @@ int getJRPCTokenData( char *token, char *pJsonStr, unsigned int token_size )
 */
 metaDataFileList_st *getInstalledBundleFileList(const char *bundleType)
 {
-    int scan_status = 0;
-    return getInstalledBundleFileListWithStatus(bundleType, &scan_status);
-}
-
-metaDataFileList_st *getInstalledBundleFileListWithStatus(const char *bundleType, int *scan_status)
-{
     const char *BUNDLE_METADATA_NVM_PATH = NULL;
     const char *BUNDLE_METADATA_RFS_PATH = NULL;
-
-    if (scan_status != NULL) {
-        *scan_status = -1;
-    }
 
     if (bundleType == NULL || bundleType[0] == '\0') {
 	SWLOG_ERROR("getInstalledBundleFileList: bundleType is NULL or empty\n");
@@ -431,33 +421,16 @@ metaDataFileList_st *getInstalledBundleFileListWithStatus(const char *bundleType
 
     metaDataFileList_st *metadataNVMls = NULL, *metadataRFSls = NULL, *metaDataList = NULL;
 
-    int nvm_scan_status = 0;
-    int rfs_scan_status = 0;
-    metadataNVMls = getMetaDataFileWithStatus(BUNDLE_METADATA_NVM_PATH, &nvm_scan_status);
+    metadataNVMls = getMetaDataFile(BUNDLE_METADATA_NVM_PATH);
     if (metadataNVMls == NULL)
     {
         SWLOG_INFO("Certificate does not exist in NVM Path\n");
     }
 
-    metadataRFSls = getMetaDataFileWithStatus(BUNDLE_METADATA_RFS_PATH, &rfs_scan_status);
+    metadataRFSls = getMetaDataFile(BUNDLE_METADATA_RFS_PATH);
     if (metadataRFSls == NULL)
     {
         SWLOG_INFO("Certificate does not exist in RFS Path\n");
-    }
-
-    if (nvm_scan_status != 0 || rfs_scan_status != 0) {
-        SWLOG_ERROR("getInstalledBundleFileList: metadata scan failed for %s bundle\n", bundleType);
-        while (metadataNVMls != NULL) {
-            metaDataFileList_st *next = metadataNVMls->next;
-            free(metadataNVMls);
-            metadataNVMls = next;
-        }
-        while (metadataRFSls != NULL) {
-            metaDataFileList_st *next = metadataRFSls->next;
-            free(metadataRFSls);
-            metadataRFSls = next;
-        }
-        return NULL;
     }
 
     if ((metadataNVMls == NULL) && (metadataRFSls == NULL))
@@ -479,9 +452,6 @@ metaDataFileList_st *getInstalledBundleFileListWithStatus(const char *bundleType
         metaDataList = mergeLists(metadataNVMls, metadataRFSls);
     }
 
-    if (scan_status != NULL) {
-        *scan_status = 0;
-    }
     return metaDataList;
 }
 
@@ -492,18 +462,8 @@ metaDataFileList_st *getInstalledBundleFileListWithStatus(const char *bundleType
 */
 metaDataFileList_st *getMetaDataFile(const char *dir)
 {
-    int scan_status = 0;
-    return getMetaDataFileWithStatus(dir, &scan_status);
-}
-
-metaDataFileList_st *getMetaDataFileWithStatus(const char *dir, int *scan_status)
-{
     metaDataFileList_st *newnode = NULL, *prevnode = NULL, *headNode = NULL;
     struct dirent *pDirent = NULL;
-
-    if (scan_status != NULL) {
-        *scan_status = 0;
-    }
 
     DIR *directory = opendir(dir);
     if (directory)
@@ -516,14 +476,6 @@ metaDataFileList_st *getMetaDataFileWithStatus(const char *dir, int *scan_status
                     if (newnode == NULL)
                     {
                         SWLOG_ERROR("GetInstalledBundles: malloc failed for %s\n", pDirent->d_name);
-                        if (scan_status != NULL) {
-                            *scan_status = -1;
-                        }
-                        while (headNode != NULL) {
-                            metaDataFileList_st *next = headNode->next;
-                            free(headNode);
-                            headNode = next;
-                        }
                         break;
                     }
                 SWLOG_INFO("GetInstalledBundles: found %s\n", pDirent->d_name);
