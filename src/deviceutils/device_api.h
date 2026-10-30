@@ -152,6 +152,7 @@ size_t GetPDRIFileName(char *pPDRIFilename, size_t szBufSize);
             RETURN - number of characters copied to the output buffer.
 */
 size_t GetInstalledBundles(char *pBundles, size_t szBufSize, const char *bundleType);
+int GetInstalledBundlesWithStatus(char *pBundles, size_t szBufSize, const char *bundleType, size_t *written);
 /* function GetPartnerId - gets the partner ID of the device.
  
         Usage: size_t GetPartnerId <char *pPartnerId> <size_t szBufSize>

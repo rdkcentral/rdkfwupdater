@@ -219,7 +219,10 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
         remainlen = szPostFieldOut - totlen;
         totlen += snprintf( (pTmpPost + totlen), remainlen, "localtime=%s", tmpbuf );
     }
-    len = GetInstalledBundles( tmpbuf, sizeof(tmpbuf), "dlCertBundle" );
+    if (GetInstalledBundlesWithStatus(tmpbuf, sizeof(tmpbuf), "dlCertBundle", &len) != 0) {
+        SWLOG_ERROR("createJsonString: failed to scan installed certificate bundles\n");
+        return CREATE_JSON_STRING_ERROR;
+    }
     if( totlen )
     {
         *(pTmpPost + totlen) = '&';
@@ -227,7 +230,10 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
     }
     remainlen = szPostFieldOut - totlen;
     totlen += snprintf( (pTmpPost + totlen), remainlen, "dlCertBundle=%s", tmpbuf );
-    len = GetInstalledBundles( tmpbuf, sizeof(tmpbuf), "dlAppBundle" );
+    if (GetInstalledBundlesWithStatus(tmpbuf, sizeof(tmpbuf), "dlAppBundle", &len) != 0) {
+        SWLOG_ERROR("createJsonString: failed to scan installed application bundles\n");
+        return CREATE_JSON_STRING_ERROR;
+    }
     if( totlen )
     {
         *(pTmpPost + totlen) = '&';

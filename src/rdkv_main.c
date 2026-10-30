@@ -947,6 +947,15 @@ static int MakeXconfComms( XCONFRES *pResponse, int server_type, int *pHttp_code
                 if( len )
                 {
                     len = createJsonString( pJSONStr, JSON_STR_LEN );
+                    if (len >= JSON_STR_LEN) {
+                        SWLOG_ERROR("MakeXconfComms: failed to build device JSON data (length=%zu)\n", len);
+                        free(pServURL);
+                        free(pJSONStr);
+                        if (DwnLoc.pvOut != NULL) {
+                            free(DwnLoc.pvOut);
+                        }
+                        return ret;
+                    }
 
                     //context structure for XCONF upgrade request
                     RdkUpgradeContext_t xconf_context = {0};
