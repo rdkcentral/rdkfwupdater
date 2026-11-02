@@ -553,7 +553,7 @@ bool isUpgradeInProgress(void)
  * @param : file_name: File name
  * @return: int Success: return time and -1: fail
  * */
-time_t getDownloadBlockMarkerTime(char *file_name)
+time_t getFileLastModifyTime(char *file_name)
 {
     struct stat attr;
     int ret = 0;
@@ -612,7 +612,7 @@ int isDwnlBlock(int type)
     }
     char *req_type = ((type == HTTP_SSR_DIRECT || type == HTTP_XCONF_DIRECT) ? "direct" : "codebig");
     SWLOG_INFO(" %s : Checking for %s\n", __FUNCTION__, req_type);
-    last_mod_time = getDownloadBlockMarkerTime(file_name);
+    last_mod_time = getFileLastModifyTime(file_name);
     if (last_mod_time != 0) {
         current_time = getCurrentSysTimeSec();
         if (current_time == 0) {
