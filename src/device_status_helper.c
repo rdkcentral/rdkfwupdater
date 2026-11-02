@@ -616,14 +616,13 @@ int isDwnlBlock(int type)
     if (last_mod_time != 0) {
         current_time = getCurrentSysTimeSec();
         if (current_time == 0) {
-            SWLOG_ERROR("%s: unable to read system time; conservatively keeping download blocked\n", __FUNCTION__);
-            block = 1;
+            SWLOG_ERROR("%s: unable to read system time; allowing download\n", __FUNCTION__);
         } else if (last_mod_time > current_time) {
             SWLOG_WARN("ImageUpgrade: Last %s failure marker is future-dated; removing %s\n",
                        req_type, file_name);
             if (unlink(file_name) != 0) {
-                SWLOG_ERROR("ImageUpgrade: failed to remove future-dated marker %s\n", file_name);
-                block = 1;
+                SWLOG_ERROR("ImageUpgrade: failed to remove future-dated marker %s; allowing download\n",
+                            file_name);
             }
         } else {
             modification_time = current_time - last_mod_time;

@@ -585,6 +585,22 @@ TEST(TestisDwnlBlock, FutureDatedMarkersAreRemovedAndDoNotBlock)
         EXPECT_EQ(access(markers[i], F_OK), -1);
     }
 }
+TEST(TestisDwnlBlock, FutureDatedMarkerUnlinkFailureDoesNotBlock)
+{
+    const char *marker = "/tmp/.lastcodebigfail_cdl";
+    unlink(marker);
+    ASSERT_EQ(mkdir(marker, 0700), 0);
+
+    struct utimbuf marker_times;
+    marker_times.actime = time(NULL) + 2 * 24 * 60 * 60;
+    marker_times.modtime = marker_times.actime;
+    ASSERT_EQ(utime(marker, &marker_times), 0);
+
+    EXPECT_EQ(isDwnlBlock(HTTP_XCONF_CODEBIG), 0);
+    EXPECT_EQ(access(marker, F_OK), 0);
+
+    EXPECT_EQ(rmdir(marker), 0);
+}
 TEST(TestDwnlStatus, TestName_updateFWDownloadStatusNull)
 {
     EXPECT_EQ(updateFWDownloadStatus(NULL, NULL), -1);
