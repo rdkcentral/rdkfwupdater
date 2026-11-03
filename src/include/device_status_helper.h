@@ -23,7 +23,9 @@
 #include <time.h>
 
 #ifndef GTEST_ENABLE
+#define getFileLastModifyTime common_utils_getFileLastModifyTime
 #include "system_utils.h"
+#undef getFileLastModifyTime
 #endif
 #define DNS_RESOLV_FILE "/etc/resolv.dnsmasq"
 #define IP_ROUTE_FLAG "/tmp/route_available"
