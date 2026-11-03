@@ -124,8 +124,10 @@ int internal_system_init(void)
      */
     g_bg_thread.context   = g_main_context_new();
     g_bg_thread.main_loop = g_main_loop_new(g_bg_thread.context, FALSE);
-    g_bg_thread.running   = false;
-
+    pthread_mutex_lock(&g_bg_thread.mutex);
+g_bg_thread.running   = false;
+    pthread_mutex_unlock(&g_bg_thread.mutex);
+    
     if (pthread_create(&g_bg_thread.thread, NULL, background_thread_func, NULL) != 0) {
         FWUPMGR_ERROR("internal_system_init: pthread_create failed\n");
         g_main_loop_unref(g_bg_thread.main_loop);
