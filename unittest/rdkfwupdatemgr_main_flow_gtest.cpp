@@ -1164,6 +1164,23 @@ TEST_F(RdkFwupdateMgrMainFlowTest, PeripheralFirmwareDownload_Success_WritesDown
     EXPECT_EQ(ReadFileContent(TEST_DOWNLOADED_PERIPHERAL_VERS), "XR11-20_firmware_1.1.4.1.tgz");
 }
 
+TEST_F(RdkFwupdateMgrMainFlowTest, AppendDownloadedVersion_ExactFitAndRejectsOverflow) {
+    char buffer[12] = {};
+    size_t length = 0;
+
+    ASSERT_TRUE(appendDownloadedVersion(buffer, sizeof(buffer), &length, "a"));
+    EXPECT_EQ(length, 5u);
+    EXPECT_STREQ(buffer, "a.tgz");
+
+    ASSERT_TRUE(appendDownloadedVersion(buffer, sizeof(buffer), &length, "b"));
+    EXPECT_EQ(length, 11u);
+    EXPECT_STREQ(buffer, "a.tgz,b.tgz");
+
+    EXPECT_FALSE(appendDownloadedVersion(buffer, sizeof(buffer), &length, "c"));
+    EXPECT_EQ(length, 11u);
+    EXPECT_STREQ(buffer, "a.tgz,b.tgz");
+}
+
 TEST_F(RdkFwupdateMgrMainFlowTest, GetOPTOUTValue_NullFile_ReturnsError) {
     EXPECT_EQ(getOPTOUTValue(NULL), -1);
 }
