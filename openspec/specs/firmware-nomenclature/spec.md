@@ -51,21 +51,24 @@ The following fields apply across the naming grammar for RDKE firmware images:
 - `branch`: branch identifier used to distinguish `develop`, `hotfix`, or other release tracks
 - `layer`: Optional RDKE layer token for layered builds only: `VENDOR`, `MIDDLEWARE`, `APPLICATION`, or `FULLSTACK` for assembler-style integration artifacts; omitted for direct model builds
 - `timestamp`: UTC timestamp in the format `YEARMMDDHHMNSS`
-- `signed/not-signed`: `-signed` for signed release images; for current DEV build variants, the explicit signed marker is not always used in the observed naming pattern
+- `signed-status`: `-signed` for signed artifacts, and no `-signed` suffix for unsigned artifacts. The absence of `-signed` is the canonical unsigned representation; `-not-signed` is invalid and MUST NOT be used. Any image or artifact that does not include `-signed` is considered unsigned.
 - `filetype`: file extension for the canonical firmware naming contract for all artifacts. Supported values are `tgz` for tarball and `bin` for monolith image. The extension MUST be present.
 
 ### 3.1 Product Release Builds
 
 Product release builds follow this pattern:
 
-`<model#>_<Version>_<deploytype><signed/not-signed>.<filetype>`
+`<model#>_<Version>_<deploytype>[-signed].<filetype>`
+
+The `-signed` suffix is optional only for signed artifacts: when the suffix is present, the artifact is signed; when the suffix is absent, the artifact is unsigned. `-not-signed` is invalid and MUST NOT be used.
 
 #### Examples
+- `RPI4B_4.8.3_PROD.bin`
 - `RPI4B_4.8.3_PROD-signed.bin`
 - `RPI4B_4.8.3_PROD-signed.tgz`
 - `RPI4B_4.8.3_DEV-signed.bin`
 
-> Canonical rule: signed release artifacts include `-signed` immediately before the file extension.
+> Canonical rule: signed release artifacts include `-signed` immediately before the file extension; unsigned release artifacts omit that suffix entirely and are therefore considered unsigned. Any release artifact without `-signed` is unsigned.
 
 ### 3.2 Regular Build (Product / DEV)
 
@@ -144,7 +147,7 @@ The following rules apply to all RDKE firmware image names:
 7. `filetype` MUST be one of the supported values:
    - `bin` for monolith images
    - `tgz` for tarball images
-8. Signed release images MUST be clearly marked with `-signed` for release builds.
+8. Signed release images MUST be clearly marked with `-signed` for release builds. Unsigned release images MUST NOT include `-signed`; the absence of `-signed` is the canonical unsigned representation. `-not-signed` is invalid.
 9. The current DEV naming convention may omit explicit signed markers and instead rely on the UTC timestamp and branch metadata for uniqueness.
 10. Vendor artifacts for layered builds follow `<model#>_VENDOR_<deploytype>_<branch>_<timestamp>.<filetype>`.
 11. Middleware artifacts for layered builds follow `<model#>_MIDDLEWARE_<deploytype>_<branch>_<timestamp>.<filetype>`.
@@ -155,7 +158,8 @@ The following rules apply to all RDKE firmware image names:
 
 | Artifact Type | Example |
 |---|---|
-| Product release | `RPI4B_4.8.3_PROD-signed.bin` |
+| Product release (unsigned) | `RPI4B_4.8.3_PROD.bin` |
+| Product release (signed) | `RPI4B_4.8.3_PROD-signed.bin` |
 | Product release tarball | `RPI4B_4.8.3_PROD-signed.tgz` |
 | Dev release | `RPI4B_4.8.3_DEV-signed.bin` |
 | Layered DEV middleware | `RPI4B_MIDDLEWARE_DEV_develop_20260916070903.bin` |
@@ -174,6 +178,8 @@ Implementation and tooling validating filenames MUST enforce the following behav
 - Layered vendor and middleware builds MUST include `VENDOR` and `MIDDLEWARE` respectively; other layered builds MAY include `APPLICATION` or `FULLSTACK`.
 - Direct model or assembler builds MAY omit the layer token entirely.
 - Signed release images MUST use the `-signed` marker immediately before the file extension.
+- Unsigned release images MUST omit the `-signed` suffix entirely; filenames without `-signed` are considered unsigned.
+- `-not-signed` is invalid and MUST NOT be used.
 - DEV naming does not require an explicit signed marker in the observed artifact naming convention.
 - Packaged build artifact MUST end with a valid `.filetype` extension.
 
