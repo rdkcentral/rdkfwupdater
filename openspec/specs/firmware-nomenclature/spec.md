@@ -24,7 +24,7 @@ The naming scheme must be consistent across:
 
 `PROD` indicates a production release build intended for shipping or deployment in a production environment.
 
-- Product release artifacts MUST use the release-build naming pattern.
+- Product release artifacts MUST use the release-build naming pattern defined in [Section 3.1, Product Release Builds](#31-product-release-builds).
 - Signed artifacts MUST use the `-signed` indicator.
 - Unsigned production artifacts are not the default path, but if allowed they MUST be clearly identifiable and not confused with signed artifacts.
 
@@ -32,9 +32,9 @@ The naming scheme must be consistent across:
 
 `DEV` indicates a development or integration build used for validation, staging, or engineering testing.
 
-- DEV builds MUST be distinguishable from release builds by the `DEV` deploy-type token.
+- DEV builds MUST be distinguishable from PROD builds by the `DEV` deploy-type token.
 - DEV builds MAY be created from `develop`, `hotfix`, or other working branches.
-- DEV artifacts MUST carry a UTC timestamp to preserve uniqueness across daily or nightly builds.
+- Regular daily/nightly DEV artifacts MUST carry a UTC timestamp to preserve uniqueness.
 
 ---
 
@@ -52,7 +52,7 @@ The following fields apply across the naming grammar for RDKE firmware images:
 - `layer`: Optional RDKE layer token for layered builds only: `VENDOR`, `MIDDLEWARE`, `APPLICATION`, or `FULLSTACK` for assembler-style integration artifacts; omitted for direct model builds
 - `timestamp`: UTC timestamp in the format `YEARMMDDHHMNSS`
 - `signed/not-signed`: `-signed` for signed release images; for current DEV build variants, the explicit signed marker is not always used in the observed naming pattern
-- `filetype`: `tgz` for tarball, `bin` for monolith image
+- `filetype`: file extension for the canonical firmware naming contract for all artifacts. Supported values are `tgz` for tarball and `bin` for monolith image. The extension MUST be present.
 
 ### 3.1 Product Release Builds
 
@@ -71,7 +71,7 @@ Product release builds follow this pattern:
 
 Regular non-release daily/nightly builds follow the pattern below for the currently observed RDKE naming convention:
 
-`<model#>[_<layer>]_<_deploytype>_<branch>_<timestamp>`
+`<model#>[_<layer>]_<deploytype>_<branch>_<timestamp>.<filetype>`
 
 Notes:
 - `layer` is optional and appears only for layered builds such as `VENDOR`, `MIDDLEWARE`, `APPLICATION`, or `FULLSTACK`.
@@ -87,19 +87,16 @@ Notes:
 - Timestamp is in UTC
 
 #### Examples
-- `RPI4B_MIDDLEWARE_DEV_develop_20260916070903`
-- `RPI4B_FULLSTACK_DEV_develop_20261103160449`
-- `RPI4B_VENDOR_DEV_develop_20261103160449`
-- `RPI4B_DEV_develop_20261029225222`
-- `RPI4B_DEV_develop_20261021072552`
-
-> The signed marker is not required in the current DEV naming convention shown by the observed build artifacts.
+- `RPI4B_MIDDLEWARE_DEV_develop_20260916070903.bin`
+- `RPI4B_FULLSTACK_DEV_develop_20261103160449.tgz`
+- `RPI4B_VENDOR_DEV_develop_20261103160449-signed.bin`
+- `RPI4B_DEV_develop_20261029225222-signed.tgz`
 
 ### 3.3 Vendor Image
 
 Vendor images are a combination of kernel, bootloader, and other vendor components for middleware integration. They follow this naming convention:
 
-`<model#>_VENDOR_<deploytype>_<branch>_<timestamp>`
+`<model#>_VENDOR_<deploytype>_<branch>_<timestamp>.<filetype>`
 
 #### Field definitions
 - `model#`: This is the T&PD model number
@@ -109,7 +106,7 @@ Vendor images are a combination of kernel, bootloader, and other vendor componen
 - `timestamp`: UTC timestamp in the format `YEARMMDDHHMNSS`
 
 #### Examples
-- `RPI4B_VENDOR_DEV_develop_20261103160449`
+- `RPI4B_VENDOR_DEV_develop_20261103160449.bin`
 
 > Vendor images are a distinct artifact class and MUST NOT be conflated with product release or direct model builds.
 
@@ -117,7 +114,7 @@ Vendor images are a combination of kernel, bootloader, and other vendor componen
 
 Middleware images are a combination of vendor images and middleware components for application-layer integration. They follow this naming convention:
 
-`<model#>_MIDDLEWARE_<deploytype>_<branch>_<timestamp>`
+`<model#>_MIDDLEWARE_<deploytype>_<branch>_<timestamp>.<filetype>`
 
 #### Field definitions
 - `model#`: This is the T&PD model number
@@ -127,8 +124,8 @@ Middleware images are a combination of vendor images and middleware components f
 - `timestamp`: UTC timestamp in the format `YEARMMDDHHMNSS`
 
 #### Examples
-- `RPI4B_MIDDLEWARE_DEV_develop_20260916070903`
-- `RPI4B_MIDDLEWARE_DEV_develop_20261029231609`
+- `RPI4B_MIDDLEWARE_DEV_develop_20260916070903.tgz`
+- `RPI4B_MIDDLEWARE_PROD_develop_20261029231609-signed.bin`
 
 > Middleware images are a distinct integration artifact class and MUST use the `_MIDDLEWARE_` token in the filename when the build is a middleware-layer artifact.
 
@@ -142,15 +139,15 @@ The following rules apply to all RDKE firmware image names:
 2. `Version` MUST use semantic versioning: `X.Y.Z` for release artifacts.
 3. `deploytype` MUST be uppercase: `DEV` or `PROD`.
 4. `branch` MUST identify the source branch, such as `main`, `develop`, or `hotfix`.
-5. `layer` is optional and used only for layered builds; it MUST be omitted for direct model / assembler builds.
+5. `layer` is optional and used only for layered builds; it MUST be omitted for direct model builds. Assembler-style integration artifacts MAY include the `FULLSTACK` layer token.
 6. `timestamp` MUST be UTC and formatted as `YYYYMMDDHHMNSS`.
-7. `filetype` MUST be one of the supported values when a file extension is used:
+7. `filetype` MUST be one of the supported values:
    - `bin` for monolith images
    - `tgz` for tarball images
 8. Signed release images MUST be clearly marked with `-signed` for release builds.
 9. The current DEV naming convention may omit explicit signed markers and instead rely on the UTC timestamp and branch metadata for uniqueness.
-10. Vendor artifacts for layered builds follow `<model#>_VENDOR_<deploytype>_<branch>_<timestamp>`.
-11. Middleware artifacts for layered builds follow `<model#>_MIDDLEWARE_<deploytype>_<branch>_<timestamp>`.
+10. Vendor artifacts for layered builds follow `<model#>_VENDOR_<deploytype>_<branch>_<timestamp>.<filetype>`.
+11. Middleware artifacts for layered builds follow `<model#>_MIDDLEWARE_<deploytype>_<branch>_<timestamp>.<filetype>`.
 
 ---
 
@@ -161,11 +158,9 @@ The following rules apply to all RDKE firmware image names:
 | Product release | `RPI4B_4.8.3_PROD-signed.bin` |
 | Product release tarball | `RPI4B_4.8.3_PROD-signed.tgz` |
 | Dev release | `RPI4B_4.8.3_DEV-signed.bin` |
-| Layered DEV middleware | `RPI4B_MIDDLEWARE_DEV_develop_20260916070903` |
-| Layered DEV vendor | `RPI4B_VENDOR_DEV_develop_20261103160449` |
-| Layered DEV fullstack | `RPI4B_FULLSTACK_DEV_develop_20261103160449` |
-| Direct DEV build | `RPI4B_DEV_develop_20261029225222` |
-| Direct DEV model build | `RPI4B_DEV_develop_20261021072552` |
+| Layered DEV middleware | `RPI4B_MIDDLEWARE_DEV_develop_20260916070903.bin` |
+| Layered DEV vendor | `RPI4B_VENDOR_DEV_develop_20261103160449.tgz` |
+| Layered DEV fullstack | `RPI4B_FULLSTACK_DEV_develop_20261103160449-signed.bin` |
 
 ---
 
@@ -176,12 +171,11 @@ Implementation and tooling validating filenames MUST enforce the following behav
 - Only uppercase `DEV` and `PROD` values are valid deployment types.
 - Release builds MUST include a semantic version in `X.Y.Z` format.
 - Regular build images MUST include a UTC timestamp in `YYYYMMDDHHMNSS` format.
-- Layered builds MAY include `VENDOR`, `MIDDLEWARE`, `APPLICATION`, or `FULLSTACK` as the optional layer token.
+- Layered vendor and middleware builds MUST include `VENDOR` and `MIDDLEWARE` respectively; other layered builds MAY include `APPLICATION` or `FULLSTACK`.
 - Direct model or assembler builds MAY omit the layer token entirely.
-- Vendor images MUST match `<model#>_VENDOR_<deploytype>_<branch>_<timestamp>` when the layer token is present.
-- Middleware images MUST match `<model#>_MIDDLEWARE_<deploytype>_<branch>_<timestamp>` when the layer token is present.
 - Signed release images MUST use the `-signed` marker immediately before the file extension.
 - DEV naming does not require an explicit signed marker in the observed artifact naming convention.
+- Packaged build artifact MUST end with a valid `.filetype` extension.
 
 ---
 
