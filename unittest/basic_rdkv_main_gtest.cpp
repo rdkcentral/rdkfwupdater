@@ -21,6 +21,9 @@
 #include <iostream>
 #include <unistd.h>
 #include <string>
+#include <fstream>
+#include <iterator>
+#include <utility>
 #include <sys/stat.h>
 
 #include "rdkv_cdl_log_wrapper.h"
@@ -874,6 +877,89 @@ TEST(checkTriggerUpgradeTest, ReturnsZeroWhenSuccessful) {
     EXPECT_EQ(result, 0);
 }
 */
+
+class PeripheralFirmwareCliRollbackTest : public TestWithParam<std::pair<int, int>> {
+protected:
+    NiceMock<MockDownloadFileOps> downloadMock;
+    NiceMock<DeviceUtilsMock> deviceMock;
+    NiceMock<MockExternal> externalMock;
+    DeviceUtilsMock* previousDeviceMock = nullptr;
+    MockDownloadFileOps* previousDownloadMock = nullptr;
+    MockExternal* previousExternalMock = nullptr;
+    bool previousListExists = false;
+    std::string previousList;
+    bool previousMarkerExists = false;
+    std::string previousMarker;
+
+    void SetUp() override {
+        previousDeviceMock = g_DeviceUtilsMock;
+        previousDownloadMock = global_mockdownloadfileops_ptr;
+        previousExternalMock = global_mockexternal_ptr;
+        g_DeviceUtilsMock = &deviceMock;
+        global_mockdownloadfileops_ptr = &downloadMock;
+        global_mockexternal_ptr = &externalMock;
+        ON_CALL(deviceMock, filePresentCheck(_)).WillByDefault(Return(1));
+        previousListExists = access("/tmp/downloaded_peripheral_versions.txt", F_OK) == 0;
+        if (previousListExists) {
+            std::ifstream input("/tmp/downloaded_peripheral_versions.txt");
+            previousList.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+        }
+        unlink("/tmp/downloaded_peripheral_versions.txt");
+        previousMarkerExists = access("/tmp/.xconfssrdownloadurl", F_OK) == 0;
+        if (previousMarkerExists) {
+            std::ifstream input("/tmp/.xconfssrdownloadurl");
+            previousMarker.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+        }
+    }
+
+    void TearDown() override {
+        if (previousListExists) {
+            EXPECT_TRUE(WriteTextFile("/tmp/downloaded_peripheral_versions.txt", previousList));
+        } else {
+            unlink("/tmp/downloaded_peripheral_versions.txt");
+        }
+        if (previousMarkerExists) {
+            EXPECT_TRUE(WriteTextFile("/tmp/.xconfssrdownloadurl", previousMarker));
+        } else {
+            unlink("/tmp/.xconfssrdownloadurl");
+        }
+        global_mockdownloadfileops_ptr = previousDownloadMock;
+        global_mockexternal_ptr = previousExternalMock;
+        g_DeviceUtilsMock = previousDeviceMock;
+    }
+};
+
+TEST_P(PeripheralFirmwareCliRollbackTest, PersistsOnlySuccessfulDownloads) {
+    char cloudBaseUrl[] = "https://cloud.example.com/firmwares";
+    char peripheralList[] = "QRA_firmware_1,QRB_firmware_2,QRC_firmware_3";
+    const std::pair<int, int> failure = GetParam();
+    const int failedAttempts = failure.first == CURL_LOW_BANDWIDTH ? 1 + RETRY_COUNT : 1;
+    InSequence sequence;
+
+    EXPECT_CALL(downloadMock, downloadFile(HTTP_SSR_DIRECT,
+        StrEq("https://cloud.example.com/firmwares/QRA_firmware_1.tgz"), _, _, _))
+        .WillOnce(DoAll(SetArgPointee<4>(HTTP_SUCCESS), Return(CURL_SUCCESS)));
+    EXPECT_CALL(downloadMock, downloadFile(HTTP_SSR_DIRECT,
+        StrEq("https://cloud.example.com/firmwares/QRB_firmware_2.tgz"), _, _, _))
+        .Times(failedAttempts)
+        .WillRepeatedly(DoAll(SetArgPointee<4>(failure.second), Return(failure.first)));
+    EXPECT_CALL(downloadMock, downloadFile(HTTP_SSR_DIRECT,
+        StrEq("https://cloud.example.com/firmwares/QRC_firmware_3.tgz"), _, _, _))
+        .WillOnce(DoAll(SetArgPointee<4>(HTTP_SUCCESS), Return(CURL_SUCCESS)));
+    EXPECT_CALL(downloadMock, codebigdownloadFile(_, _, _, _, _)).Times(0);
+
+    EXPECT_EQ(peripheral_firmware_dndl(cloudBaseUrl, peripheralList), -1);
+    std::ifstream input("/tmp/downloaded_peripheral_versions.txt");
+    ASSERT_TRUE(input.is_open());
+    const std::string recordedList((std::istreambuf_iterator<char>(input)),
+                                   std::istreambuf_iterator<char>());
+    EXPECT_EQ(recordedList, "QRA_firmware_1.tgz,QRC_firmware_3.tgz");
+}
+
+INSTANTIATE_TEST_SUITE_P(DownloadFailures, PeripheralFirmwareCliRollbackTest,
+    Values(std::make_pair(static_cast<int>(RDKV_UPGRADE_ERROR_STATE_RED), HTTP_SUCCESS),
+           std::make_pair(CURL_LOW_BANDWIDTH, HTTP_SUCCESS),
+           std::make_pair(CURL_SUCCESS, HTTP_PAGE_NOT_FOUND)));
 
 TEST(PeripheralFirmwareDndlTest, HandlesValidInput) {
 
