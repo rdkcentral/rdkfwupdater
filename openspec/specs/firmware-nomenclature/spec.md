@@ -71,7 +71,7 @@ Product release builds follow this pattern:
 
 Regular non-release daily/nightly builds follow the pattern below for the currently observed RDKE naming convention:
 
-`<model#>[_<layer>]_<deploytype>_<branch>_<timestamp>.<filetype>`
+`<model#>[_<layer>]_<deploytype>_<branch>_<timestamp>[-signed].<filetype>`
 
 Notes:
 - `layer` is optional and appears only for layered builds such as `VENDOR`, `MIDDLEWARE`, `APPLICATION`, or `FULLSTACK`.
