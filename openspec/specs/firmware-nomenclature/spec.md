@@ -60,7 +60,7 @@ Product release builds follow this pattern:
 
 `<model#>_<Version>_<deploytype>[-signed].<filetype>`
 
-The `-signed` suffix is optional only for signed artifacts: when the suffix is present, the artifact is signed; when the suffix is absent, the artifact is unsigned. `-not-signed` is invalid and MUST NOT be used.
+The `-signed` suffix MUST be present for signed artifacts and MUST be absent for unsigned artifacts. `-not-signed` is invalid and MUST NOT be used.
 
 #### Examples
 - `RPI4B_4.8.3_PROD.bin`
