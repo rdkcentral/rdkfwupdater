@@ -33,16 +33,37 @@
 #include "device_api.h"
 
 #ifndef HANDLER_TEST_ONLY
-// TODO: Convert to array of function pointer calls to reduce size of this function
+static bool appendXconfField(char *output, size_t capacity, size_t *length,
+                             const char *key, const char *value)
+{
+    int written;
+    size_t remaining;
+
+    if (*length >= capacity) {
+        return false;
+    }
+    remaining = capacity - *length;
+    written = snprintf(output + *length, remaining, "%s%s=%s",
+                       *length ? "&" : "", key, value);
+    if (written < 0 || (size_t)written >= remaining) {
+        return false;
+    }
+    *length += (size_t)written;
+    return true;
+}
+
 size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
 {
-    char *pTmpPost = pPostFieldOut;     // keep original pointer in case needed
-    size_t len, totlen = 0, remainlen;
+    size_t len, totlen = 0;
     int ret = -1;
-    char tmpbuf[400];
+    char tmpbuf[400] = {0};
     char cpuarch[16];
     char devicename[32];
-   
+
+    if (pPostFieldOut == NULL || szPostFieldOut == 0) {
+        return XCONF_REQUEST_BUILD_FAILED;
+    }
+    pPostFieldOut[0] = '\0';
     cpuarch[0] = 0;
     devicename[0] = 0;
     ret = getDevicePropertyData("CPU_ARCH", cpuarch, sizeof(cpuarch));
@@ -59,43 +80,20 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
     }
 
     len = GetEstbMac( tmpbuf, sizeof(tmpbuf) );
-    if( len )
-    {
-        remainlen = szPostFieldOut - totlen;
-        totlen += snprintf( (pTmpPost + totlen), remainlen, "eStbMac=%s", tmpbuf );
+    if (len && !appendXconfField(pPostFieldOut, szPostFieldOut, &totlen, "eStbMac", tmpbuf)) {
+        goto build_failed;
     }
     len = GetFirmwareVersion( tmpbuf, sizeof(tmpbuf) );
-    if( len )
-    {
-        if( totlen )
-        {
-            *(pTmpPost + totlen) = '&';
-            ++totlen;
-        }
-        remainlen = szPostFieldOut - totlen;
-        totlen += snprintf( pTmpPost + totlen, remainlen, "firmwareVersion=%s", tmpbuf );
+    if (len && !appendXconfField(pPostFieldOut, szPostFieldOut, &totlen, "firmwareVersion", tmpbuf)) {
+        goto build_failed;
     }
     len = GetAdditionalFwVerInfo( tmpbuf, sizeof(tmpbuf) );
-    if( len )
-    {
-        if( totlen )
-        {
-            *(pTmpPost + totlen) = '&';
-            ++totlen;
-        }
-        remainlen = szPostFieldOut - totlen;
-        totlen += snprintf( (pTmpPost + totlen), remainlen, "additionalFwVerInfo=%s", tmpbuf );
+    if (len && !appendXconfField(pPostFieldOut, szPostFieldOut, &totlen, "additionalFwVerInfo", tmpbuf)) {
+        goto build_failed;
     }
     len = GetBuildType( tmpbuf, sizeof(tmpbuf), NULL );
-    if( len )
-    {
-        if( totlen )
-        {
-            *(pTmpPost + totlen) = '&';
-            ++totlen;
-        }
-        remainlen = szPostFieldOut - totlen;
-        totlen += snprintf( (pTmpPost + totlen), remainlen, "env=%s", tmpbuf );
+    if (len && !appendXconfField(pPostFieldOut, szPostFieldOut, &totlen, "env", tmpbuf)) {
+        goto build_failed;
     }
 #if defined(IARM_ENABLED)
     SWLOG_INFO("Calling GetModelNameUsingMFR function\n");
@@ -109,177 +107,88 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
     SWLOG_INFO("Calling GetModelNum function\n");
     len = GetModelNum(tmpbuf, sizeof(tmpbuf));
 #endif
-    if( len )
-    {
-        if( totlen )
-        {
-            *(pTmpPost + totlen) = '&';
-            ++totlen;
-        }
-        remainlen = szPostFieldOut - totlen;
-        totlen += snprintf( (pTmpPost + totlen), remainlen, "model=%s", tmpbuf );
+    if (len && !appendXconfField(pPostFieldOut, szPostFieldOut, &totlen, "model", tmpbuf)) {
+        goto build_failed;
     }
     len = GetMFRName( tmpbuf, sizeof(tmpbuf) ); 
-    if( len )
-    {
-        if( totlen )
-        {
-            *(pTmpPost + totlen) = '&';
-            ++totlen;
-        }
-        remainlen = szPostFieldOut - totlen;
-        totlen += snprintf( (pTmpPost + totlen), remainlen, "manufacturer=%s", tmpbuf );
+    if (len && !appendXconfField(pPostFieldOut, szPostFieldOut, &totlen, "manufacturer", tmpbuf)) {
+        goto build_failed;
     }
     len = GetPartnerId( tmpbuf, sizeof(tmpbuf) );
     if( len )
     {
-        if( totlen )
-        {
-            *(pTmpPost + totlen) = '&';
-            ++totlen;
+        if (!appendXconfField(pPostFieldOut, szPostFieldOut, &totlen, "partnerId", tmpbuf) ||
+            !appendXconfField(pPostFieldOut, szPostFieldOut, &totlen, "activationInProgress", "false")) {
+            goto build_failed;
         }
-        remainlen = szPostFieldOut - totlen;
-        totlen += snprintf( (pTmpPost + totlen), remainlen, "partnerId=%s", tmpbuf );
-        remainlen = szPostFieldOut - totlen;
-        totlen += snprintf( (pTmpPost + totlen), remainlen, "&activationInProgress=false" );
     }
     else    // there's no partner ID (kind of impossible since there's a default
     {
-        if( totlen )
-        {
-            *(pTmpPost + totlen) = '&';
-            ++totlen;
+        if (!appendXconfField(pPostFieldOut, szPostFieldOut, &totlen, "activationInProgress", "true")) {
+            goto build_failed;
         }
-        remainlen = szPostFieldOut - totlen;
-        totlen += snprintf( (pTmpPost + totlen), remainlen, "activationInProgress=true" );
     }
     len = GetOsClass( tmpbuf, sizeof(tmpbuf) );
-    if( len )
-    {
-        if( totlen )
-        {
-            *(pTmpPost + totlen) = '&';
-            ++totlen;
-        }
-        remainlen = szPostFieldOut - totlen;
-        totlen += snprintf( (pTmpPost + totlen), remainlen, "osClass=%s", tmpbuf );
+    if (len && !appendXconfField(pPostFieldOut, szPostFieldOut, &totlen, "osClass", tmpbuf)) {
+        goto build_failed;
     }
     len = GetAccountID( tmpbuf, sizeof(tmpbuf) );
-    if( len )
-    {
-        if( totlen )
-        {
-            *(pTmpPost + totlen) = '&';
-            ++totlen;
-        }
-        remainlen = szPostFieldOut - totlen;
-        totlen += snprintf( (pTmpPost + totlen), remainlen, "accountId=%s", tmpbuf );
+    if (len && !appendXconfField(pPostFieldOut, szPostFieldOut, &totlen, "accountId", tmpbuf)) {
+        goto build_failed;
     }
     len = GetExperience( tmpbuf, sizeof(tmpbuf) );
-    if( len )
-    {
-        if( totlen )
-        {
-            *(pTmpPost + totlen) = '&';
-            ++totlen;
-        }
-        remainlen = szPostFieldOut - totlen;
-        totlen += snprintf( (pTmpPost + totlen), remainlen, "experience=%s", tmpbuf );
+    if (len && !appendXconfField(pPostFieldOut, szPostFieldOut, &totlen, "experience", tmpbuf)) {
+        goto build_failed;
     }
     len = GetMigrationReady( tmpbuf, sizeof(tmpbuf) );
-     if( len )
-     {
-         if( totlen )
-         {
-             *(pTmpPost + totlen) = '&';
-             ++totlen;
-         }
-         remainlen = szPostFieldOut - totlen;
-         totlen += snprintf( (pTmpPost + totlen), remainlen, "migrationReady=%s", tmpbuf );
-     }
+    if (len && !appendXconfField(pPostFieldOut, szPostFieldOut, &totlen, "migrationReady", tmpbuf)) {
+        goto build_failed;
+    }
     len = GetSerialNum( tmpbuf, sizeof(tmpbuf) );
-    if( len )
-    {
-        if( totlen )
-        {
-            *(pTmpPost + totlen) = '&';
-            ++totlen;
-        }
-        remainlen = szPostFieldOut - totlen;
-        totlen += snprintf( (pTmpPost + totlen), remainlen, "serial=%s", tmpbuf );
+    if (len && !appendXconfField(pPostFieldOut, szPostFieldOut, &totlen, "serial", tmpbuf)) {
+        goto build_failed;
     }
     len = GetUTCTime( tmpbuf, sizeof(tmpbuf) );
-    if( len )
-    {
-        if( totlen )
-        {
-            *(pTmpPost + totlen) = '&';
-            ++totlen;
-        }
-        remainlen = szPostFieldOut - totlen;
-        totlen += snprintf( (pTmpPost + totlen), remainlen, "localtime=%s", tmpbuf );
+    if (len && !appendXconfField(pPostFieldOut, szPostFieldOut, &totlen, "localtime", tmpbuf)) {
+        goto build_failed;
     }
+    tmpbuf[0] = '\0';
     len = GetInstalledBundles( tmpbuf, sizeof(tmpbuf), "dlCertBundle" );
-    if( totlen )
-    {
-        *(pTmpPost + totlen) = '&';
-        ++totlen;
+    if (!appendXconfField(pPostFieldOut, szPostFieldOut, &totlen, "dlCertBundle", tmpbuf)) {
+        goto build_failed;
     }
-    remainlen = szPostFieldOut - totlen;
-    totlen += snprintf( (pTmpPost + totlen), remainlen, "dlCertBundle=%s", tmpbuf );
+    tmpbuf[0] = '\0';
     len = GetInstalledBundles( tmpbuf, sizeof(tmpbuf), "dlAppBundle" );
-    if( totlen )
-    {
-        *(pTmpPost + totlen) = '&';
-        ++totlen;
+    if (!appendXconfField(pPostFieldOut, szPostFieldOut, &totlen, "dlAppBundle", tmpbuf)) {
+        goto build_failed;
     }
-    remainlen = szPostFieldOut - totlen;
-    totlen += snprintf( (pTmpPost + totlen), remainlen, "dlAppBundle=%s", tmpbuf );
+    tmpbuf[0] = '\0';
     len = GetRdmManifestVersion( tmpbuf, sizeof(tmpbuf) );
-    if( totlen )
-    {
-        *(pTmpPost + totlen) = '&';
-        ++totlen;
+    if (!appendXconfField(pPostFieldOut, szPostFieldOut, &totlen, "rdmCatalogueVersion", tmpbuf)) {
+        goto build_failed;
     }
-    remainlen = szPostFieldOut - totlen;
-    totlen += snprintf( (pTmpPost + totlen), remainlen, "rdmCatalogueVersion=%s", tmpbuf );
     //TODO: WAREHOUSE_ENV="$RAMDISK_PATH/warehouse_mode_active" this is not present then call
     len = GetTimezone( tmpbuf, cpuarch, sizeof(tmpbuf) );
-    if( len )
-    {
-        if( totlen )
-        {
-            *(pTmpPost + totlen) = '&';
-            ++totlen;
-        }
-        remainlen = szPostFieldOut - totlen;
-        totlen += snprintf( (pTmpPost + totlen), remainlen, "timezone=%s", tmpbuf );
+    if (len && !appendXconfField(pPostFieldOut, szPostFieldOut, &totlen, "timezone", tmpbuf)) {
+        goto build_failed;
     }
     waitForNtp(); // Waiting for ntp server to start
     len = GetCapabilities( tmpbuf, sizeof(tmpbuf) );
-    if( len )
-    {
-        if( totlen )
-        {
-            *(pTmpPost + totlen) = '&';
-            ++totlen;
-        }
-        remainlen = szPostFieldOut - totlen;
-        totlen += snprintf( (pTmpPost + totlen), remainlen, "capabilities=%s", tmpbuf );
+    if (len && !appendXconfField(pPostFieldOut, szPostFieldOut, &totlen, "capabilities", tmpbuf)) {
+        goto build_failed;
     }
     if( isInStateRed() ) {
-        static const char recoveryParam[] = "&recovery=true";
-        if( totlen < szPostFieldOut &&
-            (szPostFieldOut - totlen) >= sizeof(recoveryParam) ) {
-            remainlen = szPostFieldOut - totlen;
-            totlen += snprintf( pTmpPost + totlen, remainlen, "%s", recoveryParam );
-        }
-        else {
-            totlen = szPostFieldOut;
+        if (!appendXconfField(pPostFieldOut, szPostFieldOut, &totlen, "recovery", "true")) {
+            goto build_failed;
         }
     }
     SWLOG_INFO( "createJsonString: totlen = %zu\n%s\n", totlen, pPostFieldOut );
     return totlen;
+
+build_failed:
+    pPostFieldOut[0] = '\0';
+    SWLOG_ERROR("createJsonString: request exceeds output capacity or formatting failed\n");
+    return XCONF_REQUEST_BUILD_FAILED;
 }
 #endif
 

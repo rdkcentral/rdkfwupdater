@@ -451,8 +451,8 @@ static int fetch_xconf_firmware_info( XCONFRES *pResponse, int server_type, int 
                 {
                     SWLOG_INFO("fetch_xconf_firmware_info: Server URL length: %d, preparing device JSON data...\n", (int)len);
                     len = createJsonString( pJSONStr, JSON_STR_LEN );
-		    if (len >= JSON_STR_LEN) {
-			    SWLOG_ERROR("JSON buffer overflow:  %zu >= %d", len, JSON_STR_LEN);
+                    if (len == XCONF_REQUEST_BUILD_FAILED || len >= JSON_STR_LEN) {
+                        SWLOG_ERROR("fetch_xconf_firmware_info: failed to construct XConf request\n");
 			    // Free allocated resources before returning
 			    if (DwnLoc.pvOut != NULL) {
 				    free(DwnLoc.pvOut);
