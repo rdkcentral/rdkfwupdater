@@ -256,8 +256,6 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
         remainlen = szPostFieldOut - totlen;
         totlen += snprintf( (pTmpPost + totlen), remainlen, "capabilities=%s", tmpbuf );
     }
-    SWLOG_INFO( "createJsonString: totlen = %zu\n%s\n", totlen, pPostFieldOut );
-    return totlen;
 	if( isInStateRed() ) {
         static const char recoveryParam[] = "&recovery=true";
         if( totlen < szPostFieldOut &&
@@ -269,6 +267,8 @@ size_t createJsonString( char *pPostFieldOut, size_t szPostFieldOut )
             totlen = szPostFieldOut;
         }
     }
+    SWLOG_INFO( "createJsonString: totlen = %zu\n%s\n", totlen, pPostFieldOut );
+    return totlen;
 }
 #endif
 
