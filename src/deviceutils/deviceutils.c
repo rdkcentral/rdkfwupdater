@@ -242,8 +242,9 @@ size_t BuildRemoteInfo( JSON *pItem, char *pRemoteInfo, size_t szMaxBuf, bool bA
     char productBuf[100];
     char versionBuf[50];
 
-    if( pItem != NULL && pRemoteInfo != NULL )
+    if( pItem != NULL && pRemoteInfo != NULL && szMaxBuf > 0 )
     {
+        pRemoteInfo[0] = '\0';
         szBufRemaining = szMaxBuf;
 	SWLOG_INFO( "BuildRemoteInfo: Start\n" );
 
@@ -278,9 +279,14 @@ size_t BuildRemoteInfo( JSON *pItem, char *pRemoteInfo, size_t szMaxBuf, bool bA
                 if( i )
                 {
                     iLen = snprintf( pRemoteInfo + szRunningLen, szBufRemaining, "%s%s%s%s%s", *pPrefix, productBuf, *pMid, versionBuf, pSuffix );
-		    if (iLen >= szBufRemaining) {
+            if (iLen < 0) {
+            pRemoteInfo[szRunningLen] = '\0';
+            break;
+            }
+            if ((size_t)iLen >= szBufRemaining) {
 			SWLOG_INFO( "Buffer is Full\n" );
-			iLen = szBufRemaining;
+            szRunningLen += szBufRemaining - 1;
+            pRemoteInfo[szRunningLen] = '\0';
 			break;
 		    }
                     ++pPrefix;
@@ -296,7 +302,7 @@ size_t BuildRemoteInfo( JSON *pItem, char *pRemoteInfo, size_t szMaxBuf, bool bA
     {
         SWLOG_ERROR( "BuildRemoteInfo: Error, input argument(s) invalid\n" );
     }
-    return (size_t)iLen;
+    return szRunningLen;
 }
 
 /* function getJsonRpc - Use to get jsonrpc using curl lib
