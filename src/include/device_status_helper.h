@@ -23,9 +23,7 @@
 #include <time.h>
 
 #ifndef GTEST_ENABLE
-#define getFileLastModifyTime common_utils_getFileLastModifyTime
 #include "system_utils.h"
-#undef getFileLastModifyTime
 #endif
 #define DNS_RESOLV_FILE "/etc/resolv.dnsmasq"
 #define IP_ROUTE_FLAG "/tmp/route_available"
@@ -69,6 +67,6 @@ bool checkCodebigAccess(void);
 bool CurrentRunningInst(const char *file);
 void waitForNtp(void);
 bool prevFlashedFile(char *img_name, size_t img_name_size);
-time_t getFileLastModifyTime(char *file_name);
+time_t rdkfw_getFileLastModifyTime(char *file_name);
 
 #endif /* VIDEO_DEVICE_STATUS_HELPER_H_ */

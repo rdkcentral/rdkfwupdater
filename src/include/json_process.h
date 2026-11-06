@@ -21,9 +21,7 @@
 
 #include <stddef.h>
 #ifndef GTEST_ENABLE
-#define getFileLastModifyTime common_utils_getFileLastModifyTime
 #include <common_device_api.h>
-#undef getFileLastModifyTime
 #endif
 #define CLD_URL_MAX_LEN 512
 

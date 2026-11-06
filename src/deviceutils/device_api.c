@@ -26,9 +26,7 @@
 #ifndef GTEST_ENABLE
 #include "urlHelper.h"
 #include "rdk_fwdl_utils.h"
-#define getFileLastModifyTime common_utils_getFileLastModifyTime
-#include <system_utils.h>
-#undef getFileLastModifyTime
+#include "system_utils.h"
 #endif
 
 #include "rdkv_cdl.h"

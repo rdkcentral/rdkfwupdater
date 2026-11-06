@@ -536,9 +536,9 @@ TEST(TestisThrottleEnabled, TestName_success)
     snprintf(rfc_list.rfc_throttle, sizeof(rfc_list.rfc_throttle), "%s", "true");
     EXPECT_EQ(isThrottleEnabled("PLATCO", "false", 1), -1);
 }
-TEST(TestgetFileLastModifyTime, TestName_NullCheck)
+TEST(TestRdkfwGetFileLastModifyTime, TestName_NullCheck)
 {
-    EXPECT_EQ(getFileLastModifyTime(NULL), 0);
+    EXPECT_EQ(rdkfw_getFileLastModifyTime(NULL), 0);
 }
 TEST(TestisDwnlBlock, TestName_direct_not_block)
 {
