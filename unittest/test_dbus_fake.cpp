@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Comcast Cable Communications Management, LLC
+ * Copyright 2025 Comcast Cable Communications Management, LLC
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,6 +42,10 @@
 
 #include <gio/gio.h>
 #include <glib.h>
+#include <dlfcn.h>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -52,6 +56,8 @@
 namespace FakeDBus {
     // Track if signal was emitted
     static bool g_emit_called = false;
+    static std::mutex g_signal_mutex;
+    static std::condition_variable g_signal_cond;
     
     // Track last emitted signal parameters
     static guint64 g_last_handler_id = 0;
@@ -98,6 +104,7 @@ extern "C" {
  * @brief Reset fake D-Bus state between tests
  */
 void fake_dbus_reset() {
+    std::lock_guard<std::mutex> lock(FakeDBus::g_signal_mutex);
     FakeDBus::g_emit_called = false;
     FakeDBus::g_last_handler_id = 0;
     FakeDBus::g_last_firmware_name.clear();
@@ -114,7 +121,15 @@ void fake_dbus_reset() {
  * @brief Check if signal was emitted
  */
 bool fake_dbus_was_signal_emitted() {
+    std::lock_guard<std::mutex> lock(FakeDBus::g_signal_mutex);
     return FakeDBus::g_emit_called;
+}
+
+bool fake_dbus_wait_for_signal(unsigned int timeout_ms) {
+    std::unique_lock<std::mutex> lock(FakeDBus::g_signal_mutex);
+    return FakeDBus::g_signal_cond.wait_for(
+        lock, std::chrono::milliseconds(timeout_ms),
+        [] { return FakeDBus::g_emit_called; });
 }
 
 /**
@@ -163,7 +178,13 @@ int fake_dbus_get_signal_count() {
  * @brief Get last emitted status as integer
  */
 gint32 fake_dbus_get_last_status_int() {
-    // Try to parse status string as integer
+    if (FakeDBus::g_last_status == "COMPLETED") {
+        return 2;
+    }
+    if (FakeDBus::g_last_status == "INPROGRESS" ||
+        FakeDBus::g_last_status == "NOTSTARTED") {
+        return 0;
+    }
     if (!FakeDBus::g_last_status.empty()) {
         return atoi(FakeDBus::g_last_status.c_str());
     }
@@ -217,7 +238,11 @@ gboolean g_dbus_connection_emit_signal(
     (void)signal_name;          // Unused
     
     // Mark that signal was emitted
-    FakeDBus::g_emit_called = true;
+    {
+        std::lock_guard<std::mutex> lock(FakeDBus::g_signal_mutex);
+        FakeDBus::g_emit_called = true;
+    }
+    FakeDBus::g_signal_cond.notify_all();
     
     // Simulate failure if configured
     if (FakeDBus::g_should_fail) {
@@ -416,9 +441,16 @@ FILE* fopen(const char* path, const char* mode) {
         }
         return tmp;
     }
-    
-    // For all other files, return NULL (tests should not need other files)
-    return nullptr;
+
+    // Forward all other file opens to the real libc fopen so normal file-based
+    // tests continue to work while /opt/curl_progress remains controllable.
+    using RealFopen = FILE* (*)(const char*, const char*);
+    static RealFopen real_fopen = nullptr;
+    if (real_fopen == nullptr) {
+        real_fopen = reinterpret_cast<RealFopen>(dlsym(RTLD_NEXT, "fopen"));
+    }
+
+    return real_fopen ? real_fopen(path, mode) : nullptr;
 }
 
 } // extern "C"

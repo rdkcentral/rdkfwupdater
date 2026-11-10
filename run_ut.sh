@@ -15,15 +15,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-git clone https://github.com/rdkcentral/common_utilities.git
-cd common_utilities
-git checkout develop
-autoreconf -i
-./configure  --enable-rdkcertselector --prefix=${INSTALL_DIR} CFLAGS=" -DRDK_LOGGER "
-make && make install
-
-cd ../
-
 cd ./unittest/
 
 automake --add-missing
@@ -62,6 +53,8 @@ echo "-------------> Retrun value $rdkFwupdateMgr_handlers"
 
 rdkfwupdatemgr_main_flow=$?
 echo "-------------> Return value $rdkfwupdatemgr_main_flow"
+
+./dbus_handlers_gtest
 
 dbus_handlers_gtest=$?
 echo "-------------> Return value $dbus_handlers_gtest"

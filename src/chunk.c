@@ -19,6 +19,7 @@
 #include <sys/stat.h>
 
 #include "include/rdkv_cdl.h"
+#include "include/rdkv_upgrade.h"
 #include "rdkv_cdl_log_wrapper.h"
 #ifndef GTEST_ENABLE
 #include "downloadUtil.h"
@@ -106,11 +107,21 @@ int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_li
             SWLOG_INFO("chunkDownload() file size=%d and range=%s\n", file_size, range);
         }   else {
             SWLOG_ERROR( "chunkDownload() error getFileSize=%s\n", pfile_dwnl->pathname);
+            unlink(pfile_dwnl->pathname);
+            if ((filePresentCheck(headerfile)) == 0) {
+                unlink(headerfile);
+            }
             return -1;
         }
     }else {
         SWLOG_ERROR( "chunkDownload() Error to proceed for chunk download due to below reason.\nContent length not present=%zu or Partial image file not present.\n", content_len);
         t2CountNotify("SYST_ERR_FWCTNFetch", 1);
+        if ((filePresentCheck(pfile_dwnl->pathname)) == 0) {
+            unlink(pfile_dwnl->pathname);
+        }
+        if ((filePresentCheck(headerfile)) == 0) {
+            unlink(headerfile);
+        }
         return curl_code_header_req;
     }
     if (httpcode != NULL) {
@@ -129,11 +140,11 @@ int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_li
     if (curl != NULL) {
         doStopDownload(curl);
     }
-    /*During Download Stop and exit the app. This feature for Throttling
+    /*During Download Stop and return error to caller. This feature for Throttling
      * when throttle speed limit set to 0*/
     if (force_exit == 1 && (curl_ret_code == 23)) {
-	uninitialize(INITIAL_VALIDATION_SUCCESS);
-        exit(1);
+        SWLOG_INFO("chunkDownload() Force exit requested (curl error 23)\n");
+        return RDKV_UPGRADE_ERROR_FORCE_EXIT;
     }
     SWLOG_INFO("chunkDownload() curl ret status=%u\n", curl_ret_code);
     if (curl_ret_code == 33 || curl_ret_code == 36) {
@@ -155,11 +166,11 @@ int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_li
             if (curl != NULL) {
                 doStopDownload(curl);
             }
-             /*During Download Stop and exit the app. This feature for Throttling
+             /*During Download Stop and return error to caller. This feature for Throttling
              * when throttle speed limit set to 0*/
             if (force_exit == 1 && (curl_ret_code == 23)) {
-                uninitialize(INITIAL_VALIDATION_SUCCESS);
-                exit(1);
+                SWLOG_INFO("chunkDownload() Force exit after retry (curl error 23)\n");
+                return RDKV_UPGRADE_ERROR_FORCE_EXIT;
             }
         }
     } else if ((curl_ret_code == 0) && ((filePresentCheck(pfile_dwnl->pathname)) == 0)) {
@@ -188,8 +199,8 @@ int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_li
                 doStopDownload(curl);
             }
             if (force_exit == 1 && (curl_ret_code == 23)) {
-                uninitialize(INITIAL_VALIDATION_SUCCESS);
-                exit(1);
+                SWLOG_INFO("chunkDownload() Force exit after completion check (curl error 23)\n");
+                return RDKV_UPGRADE_ERROR_FORCE_EXIT;
             }
 	}
     } else {

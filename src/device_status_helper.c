@@ -19,6 +19,7 @@
 #include "device_status_helper.h"
 #include "rdkv_cdl.h"
 #include "rdkv_cdl_log_wrapper.h"
+#include "rdkv_upgrade.h"
 #ifndef GTEST_ENABLE
 #include "rdk_fwdl_utils.h"
 #include "json_parse.h"
@@ -73,7 +74,7 @@ bool CurrentRunningInst(const char *file)
                 while(getdelim(&arg, &size, 0,fp) != -1){
                     if (arg != NULL) {
                         SWLOG_INFO("proc entry process name:%s\n",arg);
-		        /* Checking process name is same as rdkvfwupgrader, rdkFwupdateMgr(deamon), or deviceInitiatedFWDnld*/
+		        /* Checking process name is same as rdkvfwupgrader, rdkFwupdateMgr(daemon), or deviceInitiatedFWDnld*/
 		        if (strstr(arg, "rdkvfwupgrader") || strstr(arg, "rdkFwupdateMgr") || strstr(arg, "deviceInitiatedFWDnld")) {
 		            SWLOG_INFO("proc entry cmdline and process name matched.\nDevice initiated CDL is in progress..\n");
 		            SWLOG_INFO("Exiting without triggering device initiated firmware download.\n");
@@ -292,6 +293,10 @@ bool checkCodebigAccess(void)
 {
     int ret = -1;
     bool codebigEnable = false;
+    if (isDirectCDNEnabled()) {
+        SWLOG_INFO("CodebigAccess Not Present For direct cdn\n");
+        return false;
+    }
     ret = v_secure_system("GetServiceUrl 2 temp");
     SWLOG_INFO("Exit code for codebigcheck:%d\n", ret);
     if (ret == 0) {
@@ -345,34 +350,40 @@ void unsetStateRed(void)
     if (ret == 0) {
         SWLOG_INFO("RED:unsetStateRed: Exiting State Red\n");
 	unlink(STATEREDFLAG);
+	int rfc_ret = write_RFCProperty("REDRECV", RFC_RED_RECV, "DISABLED", RFC_STRING);
+	if (rfc_ret == WRITE_RFC_FAILURE) {
+		SWLOG_ERROR("write_RFCProperty() return failed Status %d\n", rfc_ret);
+        }
     } else {
         SWLOG_INFO("RED:unsetStateRed: Not in State Red\n");
     }
 }
 
 
-/* Description: If state red support is present eneter to state red
- * @param curlret: Receving curl status from Caller
+/* Description: If state red support is present enter state red recovery
+ * @param curlret: Receiving curl status from Caller
+ * @return: 0 on success (no state red entry needed or flag already set)
+ *         RDKV_UPGRADE_ERROR_STATE_RED on TLS/SSL error (state red entered, caller should short-circuit)
  * */
-void checkAndEnterStateRed(int curlret, const char *disableStatsUpdate) {
+int checkAndEnterStateRed(int curlret, const char *disableStatsUpdate) {
     int ret = -1;
-    FILE *fp = NULL;
     struct FWDownloadStatus fwdls;
     ret = isStateRedSupported();
     if(ret == 0) {
-        return;
+        return 0;
     }
     ret = isInStateRed();
     if(ret == 1) {
         SWLOG_INFO("RED checkAndEnterStateRed: device state red recovery flag already set\n");
         t2CountNotify("SYST_INFO_RedstateSet", 1);
-        return;
+        return 0;
     }
     if((curlret == 35) || (curlret == 51) || (curlret == 53) || (curlret == 54) || (curlret == 58) || (curlret == 59) || (curlret == 60)
             || (curlret == 64) || (curlret == 66) || (curlret == 77) || (curlret == 80) || (curlret == 82) || (curlret == 83) || (curlret == 90)
             || (curlret == 91)|| (curlret == 495)) {
-        SWLOG_INFO("RED checkAndEnterStateRed: Curl SSL/TLS error %d. Set State Red Recovery Flag and Exit!!!", curlret);
+        SWLOG_INFO("RED checkAndEnterStateRed: Curl SSL/TLS error %d. Entering state red recovery.", curlret);
         t2CountNotify("CDLrdkportal_split", curlret);
+	t2CountNotify("RED_STATE_REASON", curlret);
         //CID:280507-Unchecked return value
 	if(remove(DIRECT_BLOCK_FILENAME) != 0){
 		perror("Error deleting DIRECT_BLOCK_FAILURE");
@@ -400,12 +411,8 @@ void checkAndEnterStateRed(int curlret, const char *disableStatsUpdate) {
         //TODO sprintf(fwdls.DelayDownload, "DelayDownload|%s\n", delaydnld); // This data should come from script as a argument
         updateFWDownloadStatus(&fwdls, disableStatsUpdate);
 
-        uninitialize(INITIAL_VALIDATION_SUCCESS);
-        fp = fopen(STATEREDFLAG, "w");
-        if(fp != NULL) {
-            fclose(fp);
-        }
-        exit(1);
+        SWLOG_ERROR("RED checkAndEnterStateRed: State red entered due to TLS/SSL error %d. Returning error to caller.\n", curlret);
+        return RDKV_UPGRADE_ERROR_STATE_RED;
     } else {
         //Recovery completed event send for the failure case but not due to fatal error
         if( (filePresentCheck( RED_STATE_REBOOT ) == RDK_API_SUCCESS) ) {
@@ -414,6 +421,7 @@ void checkAndEnterStateRed(int curlret, const char *disableStatsUpdate) {
              unlink(RED_STATE_REBOOT);
         }
     }
+    return 0;
 }
 
 
@@ -545,7 +553,7 @@ bool isUpgradeInProgress(void)
  * @param : file_name: File name
  * @return: int Success: return time and -1: fail
  * */
-unsigned int getFileLastModifyTime(char *file_name)
+time_t rdkfw_getFileLastModifyTime(char *file_name)
 {
     struct stat attr;
     int ret = 0;
@@ -588,10 +596,10 @@ int isDwnlBlock(int type)
     int ret = -1;
     int block_time = 0;
     char file_name[128] = {0};
-    unsigned int current_time = 0;
-    unsigned int last_mod_time = 0;
-    unsigned int modification_time = 0;
-    int remtime = 0;
+    time_t current_time = 0;
+    time_t last_mod_time = 0;
+    time_t modification_time = 0;
+    long remtime = 0;
     int block = 0;
     if (type == HTTP_SSR_DIRECT || type == HTTP_XCONF_DIRECT) {
         snprintf(file_name, sizeof(file_name), "%s", DIRECT_BLOCK_FILENAME);
@@ -604,19 +612,32 @@ int isDwnlBlock(int type)
     }
     char *req_type = ((type == HTTP_SSR_DIRECT || type == HTTP_XCONF_DIRECT) ? "direct" : "codebig");
     SWLOG_INFO(" %s : Checking for %s\n", __FUNCTION__, req_type);
-    last_mod_time = getFileLastModifyTime(file_name);
+    last_mod_time = rdkfw_getFileLastModifyTime(file_name);
     if (last_mod_time != 0) {
         current_time = getCurrentSysTimeSec();
-        modification_time = current_time - last_mod_time;
-        SWLOG_INFO("%s modtime=%u\n",req_type, modification_time);
-        remtime = (block_time/60) - (modification_time/60);
-        SWLOG_INFO("%s remtime=%u\n",req_type, remtime);
-        if (modification_time <= block_time) {
-            SWLOG_INFO("ImageUpgrade: Last %s failed blocking is still valid for %d mins, preventing direct\n", req_type, remtime);
-            block = 1;
+        if (current_time == 0) {
+            SWLOG_ERROR("%s: unable to read system time; allowing download\n", __FUNCTION__);
+        } else if (last_mod_time > current_time) {
+            SWLOG_WARN("ImageUpgrade: Last %s failure marker is future-dated; removing %s\n",
+                       req_type, file_name);
+            if (unlink(file_name) != 0) {
+                SWLOG_ERROR("ImageUpgrade: failed to remove future-dated marker %s; allowing download\n",
+                            file_name);
+            }
         } else {
-            SWLOG_INFO("ImageUpgrade: Last %s failed blocking has expired, removing %s, allowing direct\n", req_type, file_name);
-            unlink(file_name);
+            modification_time = current_time - last_mod_time;
+            SWLOG_INFO("%s modtime=%ld\n", req_type, (long)modification_time);
+            remtime = (long)(block_time / 60) - (long)(modification_time / 60);
+            SWLOG_INFO("%s remtime=%ld\n", req_type, remtime);
+            if (modification_time <= block_time) {
+                SWLOG_INFO("ImageUpgrade: Last %s failed blocking is still valid for %ld mins, preventing direct\n",
+                           req_type, remtime);
+                block = 1;
+            } else {
+                SWLOG_INFO("ImageUpgrade: Last %s failed blocking has expired, removing %s, allowing direct\n",
+                           req_type, file_name);
+                unlink(file_name);
+            }
         }
     }
     return block;
@@ -874,7 +895,7 @@ bool checkForValidPCIUpgrade(int trigger_type, const char *myfwversion, const ch
     t2ValNotify("cloudFWFile_split", (char *)cloudFWFile);
     SWLOG_INFO("lastdwnlfile:%s\n", last_dwnl_img);
     SWLOG_INFO("currentImg:%s\n", current_img);
-    if (trigger_type == 1 || trigger_type == 3 || trigger_type == 4) {
+    if (trigger_type == 1 || trigger_type == 3 || trigger_type == 4 || trigger_type == 6) {
         if ((false == current_img_status) || (false == last_dwnl_status)) {
             SWLOG_INFO("Unable to fetch current running image file name or last download file\n");
             SWLOG_INFO("Error identified with image file comparison !!! Proceeding with firmware version check.\n");

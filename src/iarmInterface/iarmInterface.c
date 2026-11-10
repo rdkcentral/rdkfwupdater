@@ -18,6 +18,7 @@
 
 #include <stdbool.h>
 #include <pthread.h>
+#include <string.h>
 #include "rdkv_cdl_log_wrapper.h"
 #if defined(IARM_ENABLED)
 
@@ -318,10 +319,185 @@ bool isConnectedToInternet (void)
     return isconnected;
 }
 
+size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
+{
+    size_t len = 0;
+    IARM_Result_t ret;
+    IARM_Bus_MFRLib_GetSerializedData_Param_t param;
+
+    if (pPDRIFilename == NULL || szBufSize == 0) {
+        SWLOG_ERROR("GetPDRIFileNameUsingMFR: Error, input argument NULL\n");
+        return 0;
+    }
+
+    SWLOG_INFO("GetPDRIFileNameUsingMFR Fetching PDRI image name via IARM_Bus_Call (MFRMgr)");
+
+    memset(&param, 0, sizeof(param));
+    param.type = mfrSERIALIZED_TYPE_PDRIVERSION;
+
+    ret = IARM_Bus_Call(
+        IARM_BUS_MFRLIB_NAME,
+        IARM_BUS_MFRLIB_API_GetSerializedData,
+        (void *)&param,
+        sizeof(param)
+    );
+
+    if (ret == IARM_RESULT_SUCCESS )
+    {
+	    SWLOG_INFO("GetPDRIFileNameUsingMFR: IARM_Bus_Call Success , param.bufLen : %zu\n" , (size_t)param.bufLen);
+	    if(param.bufLen > 0 && param.bufLen <= sizeof(param.buffer)) 
+	    {	
+            if (param.bufLen < szBufSize)
+            {
+		memcpy(pPDRIFilename, param.buffer, param.bufLen);
+                pPDRIFilename[param.bufLen] = '\0';
+                len = param.bufLen;
+                SWLOG_INFO("GetPDRIFileNameUsingMFR: IARM_Bus_Call OK, PDRI Version = %s", pPDRIFilename);   
+	        }
+            else
+	        {
+		  // Truncate and null-terminate
+                memcpy(pPDRIFilename, param.buffer, szBufSize - 1);
+                pPDRIFilename[szBufSize - 1] = '\0';
+                len = szBufSize - 1;
+                SWLOG_ERROR("GetPDRIFileNameUsingMFR: Buffer too small for PDRI Version (bufLen=%zu, szBufSize=%zu) - truncated to fit",(size_t)param.bufLen, szBufSize);   
+	        }	    
+        } 
+        else 
+        {
+        // Error path: be explicit
+	       pPDRIFilename[0] = '\0';
+           SWLOG_ERROR("GetPDRIFileNameUsingMFR: Invalid bufLen returned (bufLen=%zu, buffer size=%zu)",
+                        (size_t)param.bufLen, sizeof(param.buffer));
+            len = 0;
+
+        }
+    }
+    else
+    {
+        // Error path: be explicit
+        pPDRIFilename[0] = '\0';
+        SWLOG_ERROR("GetPDRIFileNameUsingMFR: IARM_Bus_Call failed (ret=%d, bufLen=%zu). Cannot retrieve PDRI image name.",ret, (size_t)param.bufLen);
+        len = 0;
+    }
+
+    /* Strip trailing newline/carriage-return if present (MFR may include them) */
+    len = strnlen(pPDRIFilename, szBufSize);
+    while (len > 0 && (pPDRIFilename[len - 1] == '\n' || pPDRIFilename[len - 1] == '\r')) {
+        pPDRIFilename[--len] = '\0';
+    }
+
+    return len;
+}
+/**
+ * @brief Retrieves the device model name from MFR Manager.
+ *
+ * Calls the MFR Manager through IARM to retrieve the serialized
+ * device model name. Removes trailing newline and carriage return
+ * characters and copies the model name into the provided buffer.
+ *
+ * @param[out] pModelName  Pointer to the buffer where the model name
+ *                         will be stored.
+ * @param[in]  szBufSize   Size of the output buffer in bytes.
+ *
+ * @return Length of the retrieved model name (excluding the null
+ *         terminator) on success, or 0 on failure.
+ *
+ * @note The output buffer is initialized to an empty string before
+ *       attempting retrieval.
+ * @note Returns 0 if the buffer is invalid, the IARM call fails,
+ *       the model name is empty, or the output buffer is too small.
+ */
+size_t GetModelNameUsingMFR(char *pModelName, size_t szBufSize)
+{
+    IARM_Bus_MFRLib_GetSerializedData_Param_t param;
+    IARM_Result_t ret;
+    size_t modelLen;
+
+    if (pModelName == NULL || szBufSize == 0) {
+        SWLOG_ERROR("GetModelNameUsingMFR: Invalid output buffer\n");
+        return 0;
+    }
+
+    pModelName[0] = '\0';
+    memset(&param, 0, sizeof(param));
+    param.type = mfrSERIALIZED_TYPE_MODELNAME;
+
+    SWLOG_INFO("GetModelNameUsingMFR: Fetching model name from MFRMgr\n");
+    ret = IARM_Bus_Call(
+        IARM_BUS_MFRLIB_NAME,
+        IARM_BUS_MFRLIB_API_GetSerializedData,
+        (void *)&param,
+        sizeof(param)
+    );
+
+    if (ret != IARM_RESULT_SUCCESS) {
+        SWLOG_ERROR("GetModelNameUsingMFR: IARM_Bus_Call failed (ret=%d)\n", ret);
+        return 0;
+    }
+
+    if (param.bufLen == 0 || param.bufLen > sizeof(param.buffer)) {
+        SWLOG_ERROR("GetModelNameUsingMFR: Invalid model length (bufLen=%zu, buffer size=%zu)\n",
+                    (size_t)param.bufLen, sizeof(param.buffer));
+        return 0;
+    }
+
+    modelLen = param.bufLen;
+    while (modelLen > 0 &&
+           (param.buffer[modelLen - 1] == '\n' || param.buffer[modelLen - 1] == '\r')) {
+        --modelLen;
+    }
+
+    if (modelLen == 0) {
+        SWLOG_ERROR("GetModelNameUsingMFR: MFR returned an empty model name\n");
+        return 0;
+    }
+
+    if (modelLen >= szBufSize) {
+        SWLOG_ERROR("GetModelNameUsingMFR: Model truncated (modelLen=%zu, szBufSize=%zu)\n",
+                    modelLen, szBufSize);
+        return 0;
+    }
+
+    memcpy(pModelName, param.buffer, modelLen);
+    pModelName[modelLen] = '\0';
+    SWLOG_INFO("GetModelNameUsingMFR: Retrieved model name = %s\n", pModelName);
+
+    return modelLen;
+}
 #else
 
 // Do nothing act as pass through function .
 // Iarm eventing is not the main purpose of the code download module
+size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize) {
+   const char *pdriFileName = "/etc/pdri/pdri_mfr.conf";  // example
+
+    if (pPDRIFilename == NULL || szBufSize == 0)
+    {
+        return 0;
+    }
+
+    size_t len = strlen(pdriFileName);
+
+    /* Not enough space (including null terminator) */
+    if (len + 1 > szBufSize)
+    {
+        pPDRIFilename[0] = '\0';
+        return 0;
+    }
+
+    /* Bounded copy with explicit null termination */
+    strncpy(pPDRIFilename, pdriFileName, szBufSize - 1);
+    pPDRIFilename[szBufSize - 1] = '\0';
+
+    /* Strip trailing newline/carriage-return if present */
+    len = strnlen(pPDRIFilename, szBufSize);
+    while (len > 0 && (pPDRIFilename[len - 1] == '\n' || pPDRIFilename[len - 1] == '\r')) {
+        pPDRIFilename[--len] = '\0';
+    }
+
+    return len;  /* length excluding '\0' */
+}
 void eventManager(const char *cur_event_name, const char *event_status) {
     return ;
 }

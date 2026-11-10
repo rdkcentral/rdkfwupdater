@@ -38,7 +38,7 @@ jobs:
 
       - name: Start l2-container service with mTLS enabled
         run: |
-          docker run -d --name native-platform --link mockxconf -e ENABLE_MTLS=true -v ${{ github.workspace }}:/mnt/L2_CONTAINER_SHARED_VOLUME ghcr.io/rdkcentral/docker-device-mgt-service-test/native-platform:latest
+          docker run -d --name native-platform --link mockxconf -e ENABLE_MTLS=true -e ENABLE_PKCS11=true -v ${{ github.workspace }}:/mnt/L2_CONTAINER_SHARED_VOLUME ghcr.io/rdkcentral/docker-device-mgt-service-test/native-platform:latest
 
       - name: Enter Inside Platform native container and run L2 Test
         run: |

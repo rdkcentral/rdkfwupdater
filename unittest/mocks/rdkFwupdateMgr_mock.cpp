@@ -17,7 +17,10 @@
  */
 
 #include "rdkFwupdateMgr_mock.h"
+#include "rdkFwupdateMgr_handlers.h"  // For DownloadFirmwareResult
+#include "rdkv_upgrade.h"              // For RdkUpgradeContext_t
 #include <cstring>
+#include <cstdio>
 #include <iostream>
 
 using namespace std;
@@ -92,6 +95,14 @@ extern "C" int getRFCSettings(Rfc_t *rfc_list) {
     return 0;
 }
 
+extern "C" bool isDirectCDNEnabled(void) {
+    /* Default to false (legacy behavior) when mock is not set up */
+    if (!g_RdkFwupdateMgrMock) {
+        return false;
+    }
+    return g_RdkFwupdateMgrMock->isDirectCDNEnabled();
+}
+
 // =============================================================================
 // Device/Image information functions
 // =============================================================================
@@ -135,18 +146,30 @@ extern "C" size_t GetFirmwareVersion(char *pFWVersion, size_t szBufSize) {
     }
     return g_RdkFwupdateMgrMock->GetFirmwareVersion(pFWVersion, szBufSize);
 }
-
+#if 0
+extern "C" size_t GetPDRIFileNameUsingMFR(char *pPDRIFilename, size_t szBufSize)
+{
+    if (!g_RdkFwupdateMgrMock) {
+        cout << "GetPDRIFileNameUsingMFR g_IarmInterfaceMock object is NULL" << endl;
+        return 0;
+    }
+    printf("Inside Mock Function GetPDRIFileNameUsingMFR\n");
+    // Give a fake file name for tests unless you want to do more in your mock object
+    const char *mockPDRI = "mock-PDRI-image.bin";
+    size_t len = strlen(mockPDRI);
+    if (pPDRIFilename && szBufSize > len) {
+        strncpy(pPDRIFilename, mockPDRI, szBufSize);
+        pPDRIFilename[szBufSize - 1] = '\0';
+        return len;
+    }
+    return g_RdkFwupdateMgrMock->GetPDRIFileNameUsingMFR(pPDRIFilename, szBufSize);
+}
+#endif
 // =============================================================================
 // File operations
 // =============================================================================
 
-extern "C" int filePresentCheck(const char *filename) {
-    if (!g_RdkFwupdateMgrMock) {
-        cerr << "filePresentCheck: g_RdkFwupdateMgrMock is NULL" << endl;
-        return 0;
-    }
-    return g_RdkFwupdateMgrMock->filePresentCheck(filename);
-}
+// filePresentCheck is now in deviceutils_mock.cpp
 
 extern "C" bool isConnectedToInternet() {
     if (!g_RdkFwupdateMgrMock) {
@@ -200,13 +223,7 @@ extern "C" size_t GetBuildType(char *pBuildType, size_t szBufSize) {
     return 3;
 }
 
-extern "C" size_t GetModelNum(char *pModelNum, size_t szBufSize) {
-    if (pModelNum && szBufSize > 0) {
-        strncpy(pModelNum, "TEST_MODEL", szBufSize - 1);
-        pModelNum[szBufSize - 1] = '\0';
-    }
-    return strlen(pModelNum);
-}
+// GetModelNum is now in deviceutils_mock.cpp
 
 extern "C" size_t GetMFRName(char *pMFRName, size_t szBufSize) {
     if (pMFRName && szBufSize > 0) {
@@ -308,21 +325,7 @@ extern "C" size_t GetCapabilities(char *pCapabilities, size_t szBufSize) {
     return strlen(pCapabilities);
 }
 
-extern "C" int getDevicePropertyData(const char *model, char *data, int size) {
-    if (!data || size <= 0) {
-        return -1;
-    }
-    
-    if (strncmp(model, "CPU_ARCH", 8) == 0) {
-        strncpy(data, "X86", size - 1);
-    } else if (strncmp(model, "DEVICE_NAME", 11) == 0) {
-        strncpy(data, "PLATCO", size - 1);
-    } else {
-        strncpy(data, "UNKNOWN", size - 1);
-    }
-    data[size - 1] = '\0';
-    return 0;
-}
+// getDevicePropertyData is now in deviceutils_mock.cpp
 
 // =============================================================================
 // Utility functions used by json_process.c
@@ -347,14 +350,11 @@ extern "C" size_t lastDwnlImg(char *pLastImg, size_t szBufSize) {
     return strlen(pLastImg);
 }
 
-extern "C" int v_secure_system(const char *command, ...) {
-    // Stub - just return success
-    return 0;
-}
+// v_secure_system is now in deviceutils_mock.cpp
 
-extern "C" void eventManager(int event_type, const char *event_data) {
+extern "C" void eventManager(const char *cur_event_name, const char *event_status) {
     // Stub - event manager
-    printf("EventManager: type=%d, data=%s\n", event_type, event_data ? event_data : "NULL");
+    //printf("EventManager: type=%d, data=%s\n", , event_data ? event_data : "NULL");
 }
 /*
 extern "C" int processJsonResponse(XCONFRES *response, const char *myfwversion, const char *model, const char *maint) {
@@ -427,5 +427,103 @@ extern "C" {
     
     void SWLOG_ERROR(const char* format, ...) {
         // Stub - suppress output in tests
+    }
+    
+    // =============================================================================
+    // rdkFwupdateMgr_handlers.c Dependencies (Stubs for Unit Testing)
+    // =============================================================================
+    
+    /**
+     * @brief Stub for rdkFwupdateMgr_downloadFirmware (not yet fully implemented)
+     * 
+     * This stub allows handler tests to compile and link. It returns a
+     * minimal error response indicating the function is not implemented.
+     * 
+     * The actual implementation will be added when download functionality
+     * is fully integrated with the D-Bus server.
+     */
+    DownloadFirmwareResult rdkFwupdateMgr_downloadFirmware(
+        const gchar *handler_id,
+        const gchar *firmware_name,
+        const gchar *firmware_type,
+        const gchar *localFilePath,
+        const gchar *download_url)
+    {
+        DownloadFirmwareResult result;
+        result.result_code = DOWNLOAD_ERROR;
+        result.error_message = g_strdup("rdkFwupdateMgr_downloadFirmware: stub implementation (not yet available)");
+        return result;
+    }
+    
+    // NOTE: rdkv_upgrade_request is already defined above (line 165) as extern "C" wrapper
+    // that delegates to the mock. Do NOT redefine it here to avoid duplicate symbol errors.
+    
+    /**
+     * @brief Stub for rdkv_upgrade_strerror (from rdkv_upgrade.c)
+     * 
+     * Converts error codes to human-readable strings.
+     */
+    const char* rdkv_upgrade_strerror(int error) {
+        switch(error) {
+            case 0: return "Success";
+            case -1: return "Throttle speed set to 0";
+            case -2: return "Force exit requested";
+            default:
+                if (error > 0) return "CURL error";
+                return "Unknown library error";
+        }
+    }
+    
+    /**
+     * @brief Test stub for getOPTOUTValue with production-equivalent parsing.
+     *
+     * Returns:
+     * 1 for IGNORE_UPDATE, 0 for ENFORCE_OPTOUT, -1 for errors/unknown values.
+     */
+    int getOPTOUTValue(const char* path) {
+        int status = -1;
+        char line[80] = {0};
+
+        if (path == nullptr) {
+            return status;
+        }
+
+        FILE* fp = fopen(path, "r");
+        if (fp == nullptr) {
+            return status;
+        }
+
+        while (fgets(line, sizeof(line), fp) != nullptr) {
+            if (strstr(line, "softwareoptout") != nullptr) {
+                break;
+            }
+        }
+
+        if (strstr(line, "IGNORE_UPDATE") != nullptr) {
+            status = 1;
+        } else if (strstr(line, "ENFORCE_OPTOUT") != nullptr) {
+            status = 0;
+        }
+
+        fclose(fp);
+        return status;
+    }
+    
+    /**
+     * @brief Stub for notifyDwnlStatus (from download_status_helper.c)
+     * 
+     * Notifies download status changes via RFC.
+     */
+    int notifyDwnlStatus(const char *key, const char *value, RFCVALDATATYPE datatype) {
+        return 0; // Success
+    }
+    
+    /**
+     * @brief Stub for updateFWDownloadStatus (from download_status_helper.c)
+     * 
+     * Updates firmware download status file.
+     */
+    int updateFWDownloadStatus(struct FWDownloadStatus* status, const char* path) {
+        return 0; // Success
     }
 }
