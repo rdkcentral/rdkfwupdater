@@ -476,6 +476,12 @@ metaDataFileList_st *getMetaDataFile(const char *dir)
                     if (newnode == NULL)
                     {
                         SWLOG_ERROR("GetInstalledBundles: malloc failed for %s\n", pDirent->d_name);
+                        while (headNode != NULL)
+                        {
+                            metaDataFileList_st *next = headNode->next;
+                            free(headNode);
+                            headNode = next;
+                        }
                         break;
                     }
                 SWLOG_INFO("GetInstalledBundles: found %s\n", pDirent->d_name);
