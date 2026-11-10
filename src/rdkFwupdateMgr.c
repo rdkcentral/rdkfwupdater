@@ -639,12 +639,18 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type
     char dwlpath_filename[DWNL_PATH_FILE_LEN1];
     FILE *fp = NULL;
     int optout = -1;
+    int pathLength;
 
     imageHTTPURL[0] = 0;
     dwlpath_filename[0] = 0;
-    if (model == NULL) {
+    if (model == NULL || pResponse == NULL) {
         SWLOG_ERROR("%s : Parameter is NULL\n", __FUNCTION__);
         return upgrade_status;
+    }
+    if ((pResponse->cloudFWFile[0] && !isFirmwareFilenameValid(pResponse->cloudFWFile)) ||
+        (pResponse->cloudPDRIVersion[0] && !isFirmwareFilenameValid(pResponse->cloudPDRIVersion))) {
+        SWLOG_ERROR("%s: rejected unsafe firmware filename\n", __FUNCTION__);
+        return -1;
     }
     if (true == isUpgradeInProgress()) {
         SWLOG_ERROR("Exiting from DEVICE INITIATED HTTP CDL\nAnother upgrade is in progress\n");
@@ -693,7 +699,10 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type
             fprintf(fp, "%s\n", imageHTTPURL);
             fclose(fp);
         }
-	snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s", device_info.difw_path, pResponse->cloudFWFile);
+	pathLength = snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s", device_info.difw_path, pResponse->cloudFWFile);
+        if (pathLength < 0 || (size_t)pathLength >= sizeof(dwlpath_filename)) {
+            return -1;
+        }
 	SWLOG_INFO("DWNL path with img name=%s\n", dwlpath_filename);
 	eraseFolderExceParamFile(device_info.difw_path, pResponse->cloudFWFile, pResponse->cloudPDRIVersion,device_info.model);
         // context structure for PCI rdkv_upgrade_request
@@ -732,12 +741,19 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type
             SWLOG_INFO("cloudImmediateRebootFlag is %s. Starting PDRI upgrade check ... \n", pResponse->cloudImmediateRebootFlag);
             if ((strstr(pResponse->cloudPDRIVersion, ".bin")) == NULL) {
                 optout = strnlen( pResponse->cloudPDRIVersion, sizeof(pResponse->cloudPDRIVersion) );   // reuse variable
+                if ((size_t)optout + sizeof(".bin") > sizeof(pResponse->cloudPDRIVersion)) {
+                    SWLOG_ERROR("%s: PDRI filename cannot fit .bin suffix\n", __FUNCTION__);
+                    return -1;
+                }
                 snprintf( pResponse->cloudPDRIVersion + optout, sizeof(pResponse->cloudPDRIVersion) - optout, ".bin" ); // prevent buffer overflow
                 SWLOG_INFO("Added .bin in pdri image=%s\n", pResponse->cloudPDRIVersion);
             }
             snprintf(imageHTTPURL, sizeof(imageHTTPURL), "%s/%s", pResponse->cloudFWLocation, pResponse->cloudPDRIVersion);
             SWLOG_INFO("pdri imageHTTPURL=%s\n", imageHTTPURL);
-            snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s", device_info.difw_path, pResponse->cloudPDRIVersion);
+            pathLength = snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s", device_info.difw_path, pResponse->cloudPDRIVersion);
+            if (pathLength < 0 || (size_t)pathLength >= sizeof(dwlpath_filename)) {
+                return -1;
+            }
             SWLOG_INFO("pdri DWNL path with img name=%s\n", dwlpath_filename);
             if (true == valid_pci_status && pci_curl_code == 0) {
                 SWLOG_INFO("Adding a sleep of 30secs to avoid the PCI PDRI race condition during flashing\n");

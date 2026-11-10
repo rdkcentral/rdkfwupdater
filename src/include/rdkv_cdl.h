@@ -96,6 +96,25 @@ typedef struct deviceproperty DeviceProperty_t;
 #define SMALL_SIZE_BUFF 8
 #define DWNL_PATH_FILE_LEN 128
 
+static inline bool isFirmwareFilenameValid(const char *name)
+{
+    size_t index;
+
+    if (name == NULL || name[0] == '\0' || strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
+        return false;
+    }
+    for (index = 0; index < 256 && name[index] != '\0'; ++index) {
+        unsigned char character = (unsigned char)name[index];
+        if (!((character >= 'a' && character <= 'z') ||
+              (character >= 'A' && character <= 'Z') ||
+              (character >= '0' && character <= '9') ||
+              character == '.' || character == '_' || character == '-')) {
+            return false;
+        }
+    }
+    return index < 256;
+}
+
 //TLS values and timeouts
 //#define CURL_TLS_TIMEOUT 7200L
 #define TLS "--tlsv1.2"
