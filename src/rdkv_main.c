@@ -1049,6 +1049,72 @@ int copyFile(const char *src, const char *target)
     }
     return ret;
 }
+
+static const char *getSignedImageExtension(void)
+{
+    static char signed_ext[32] = {0};
+    int ret = UTILS_FAIL;
+
+    signed_ext[0] = '\0';
+    ret = getDevicePropertyData("FW_FILE_EXT", signed_ext, sizeof(signed_ext));
+    if (ret != UTILS_SUCCESS || signed_ext[0] == '\0') {
+        snprintf(signed_ext, sizeof(signed_ext), ".bin");
+        return signed_ext;
+    }
+
+    signed_ext[strcspn(signed_ext, "\r\n")] = '\0';
+    return signed_ext;
+}
+
+static void createSignedImageName(char *output, size_t output_size, const char *base_name, const char *extension)
+{
+    const char *signed_ext = extension;
+    size_t suffix_len = strlen("-signed");
+    size_t base_len = 0;
+    size_t ext_len = 0;
+    size_t available = 0;
+    size_t max_ext_len = 0;
+    size_t max_base_len = 0;
+
+    if (output == NULL || output_size == 0 || base_name == NULL) {
+        return;
+    }
+
+    if (signed_ext == NULL || signed_ext[0] == '\0') {
+        signed_ext = getSignedImageExtension();
+    }
+
+    base_len = strlen(base_name);
+    ext_len = strlen(signed_ext);
+    available = output_size - 1;
+
+    if (available == 0) {
+        output[0] = '\0';
+        return;
+    }
+
+    if (suffix_len >= available) {
+        max_base_len = available;
+        snprintf(output, output_size, "%.*s", (int)max_base_len, base_name);
+        return;
+    }
+
+    max_ext_len = ext_len;
+    if (suffix_len + ext_len + 1 > available) {
+        max_ext_len = available - suffix_len - 1;
+        if (max_ext_len > ext_len) {
+            max_ext_len = ext_len;
+        }
+    }
+
+    max_base_len = available - suffix_len - max_ext_len - 1;
+    if (max_base_len > base_len) {
+        max_base_len = base_len;
+    }
+
+    snprintf(output, output_size, "%.*s-signed%.*s\n", (int)max_base_len, base_name, (int)max_ext_len, signed_ext);
+}
+
 /* function prevCurUpdateInfo - makes the communication with the XCONF server
         Usage: int prevCurUpdateInfo
         RETURN - 0 on success, non-zero otherwise
@@ -1056,9 +1122,9 @@ int copyFile(const char *src, const char *target)
 int prevCurUpdateInfo(void)
 {
     char myFWVersion[64];
-    char cdlFlashedFileName[64];
-    char prevCdlFlashedFileName[64];
-    char currentImage[80];
+    char cdlFlashedFileName[128];
+    char prevCdlFlashedFileName[128];
+    char currentImage[128];
     int ret = -1;
     FILE *fp;
 
@@ -1085,7 +1151,7 @@ int prevCurUpdateInfo(void)
 	}
     }else {
         SWLOG_INFO("cdl_flashed_file_name file not found !!!\n");
-	snprintf(currentImage, sizeof(currentImage), "%s-signed.bin\n", myFWVersion);
+	createSignedImageName(currentImage, sizeof(currentImage), myFWVersion, getSignedImageExtension());
 	SWLOG_INFO("Updating currently_running_image_name:%s:with version.txt ...\n", currentImage);
 	fp = fopen(PREVIOUS_FLASHED_IMAGE, "w");
 	if (fp != NULL) {
