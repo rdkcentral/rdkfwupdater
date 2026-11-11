@@ -1814,6 +1814,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		 * The thread will free flash_ctx when it completes. Do NOT set to NULL to avoid
 		 * false positive "resource leak" warnings from Coverity on the NULL assignment. */
 		// flash_ctx is now owned by the worker thread and will be freed there
+            /* coverity[leaked_storage] - ownership of flash_ctx transfers to rdkfw_flash_worker_thread via g_thread_try_new; worker thread frees it on completion */
 	/* coverity[leaked_storage] - ownership of flash_ctx transfers to rdkfw_flash_worker_thread via g_thread_try_new; worker thread frees it on completion */
 		}
 
@@ -3167,11 +3168,9 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
          * used again after this point. */
         SWLOG_DEBUG("[DOWNLOAD_WORKER] Waiting for monitor thread to exit...\n");
         g_thread_join(monitor_thread);
-        /* coverity[leaked_storage] - False positive: g_thread_join() already freed the GThread.
-         * Setting to NULL is defensive programming to prevent double-join. GLib documentation
-         * confirms the thread handle is consumed by g_thread_join(). */
         /* coverity[leaked_storage] - monitor_thread handle consumed by g_thread_join() above */
-        monitor_thread = NULL;
+            /* coverity[leaked_storage] - monitor_thread handle consumed by g_thread_join() above */
+            monitor_thread = NULL;
             
         SWLOG_INFO("[DOWNLOAD_WORKER]  Progress monitor thread stopped cleanly\n");
             
