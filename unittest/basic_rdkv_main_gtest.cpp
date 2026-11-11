@@ -21,6 +21,7 @@
 #include <iostream>
 #include <unistd.h>
 #include <string>
+#include <vector>
 #include <sys/stat.h>
 
 #include "rdkv_cdl_log_wrapper.h"
@@ -1240,6 +1241,120 @@ TEST(MainHelperFunctionTest, initializePreservesLegacyModelWhenMFRFails){
 
     g_DeviceUtilsMock = &Deviceglobal;
     global_mockexternal_ptr = NULL;
+}
+
+class XconfRequestBuilderTest : public ::testing::Test {
+protected:
+    NiceMock<DeviceUtilsMock> deviceMock;
+    NiceMock<MockExternal> externalMock;
+    DeviceUtilsMock* previousDeviceMock = nullptr;
+    MockExternal* previousExternalMock = nullptr;
+
+    void SetUp() override {
+        previousDeviceMock = g_DeviceUtilsMock;
+        previousExternalMock = global_mockexternal_ptr;
+        g_DeviceUtilsMock = &deviceMock;
+        global_mockexternal_ptr = &externalMock;
+        ON_CALL(deviceMock, getDevicePropertyData(_, _, _))
+            .WillByDefault(Invoke([](const char*, char* output, int capacity) {
+                if (capacity > 0) output[0] = '\0';
+                return -1;
+            }));
+        ON_CALL(deviceMock, read_RFCProperty(_, _, _, _))
+            .WillByDefault(Invoke([](char*, const char*, char* output, size_t capacity) {
+                if (capacity > 0) output[0] = '\0';
+                return -1;
+            }));
+        ON_CALL(deviceMock, GetModelNameUsingMFR(_, _))
+            .WillByDefault(Invoke([](char* output, size_t capacity) {
+                return static_cast<size_t>(snprintf(output, capacity, "%s", "TEST_MODEL"));
+            }));
+    }
+
+    void TearDown() override {
+        g_DeviceUtilsMock = previousDeviceMock;
+        global_mockexternal_ptr = previousExternalMock;
+    }
+};
+
+TEST_F(XconfRequestBuilderTest, RejectsInvalidOutputArguments) {
+    char untouched = 'X';
+    EXPECT_EQ(createJsonString(nullptr, 1000), XCONF_REQUEST_BUILD_FAILED);
+    EXPECT_EQ(createJsonString(&untouched, 0), XCONF_REQUEST_BUILD_FAILED);
+    EXPECT_EQ(untouched, 'X');
+}
+
+TEST_F(XconfRequestBuilderTest, ExactFitAndShortBuffersPreserveGuards) {
+    char baseline[4096] = {};
+    const size_t payloadLength = createJsonString(baseline, sizeof(baseline));
+    ASSERT_NE(payloadLength, XCONF_REQUEST_BUILD_FAILED);
+    ASSERT_GT(payloadLength, 1u);
+    ASSERT_EQ(payloadLength, strlen(baseline));
+    ASSERT_NE(strstr(baseline, "model=TEST_MODEL"), nullptr);
+    ASSERT_NE(strstr(baseline, "dlCertBundle="), nullptr);
+    ASSERT_NE(strstr(baseline, "dlAppBundle="), nullptr);
+    EXPECT_EQ(strstr(baseline, "&&"), nullptr);
+
+    const size_t capacities[] = {1, payloadLength - 1, payloadLength, payloadLength + 1};
+    for (size_t capacity : capacities) {
+        SCOPED_TRACE(capacity);
+        std::vector<char> guarded(capacity + 2, '#');
+        const size_t result = createJsonString(guarded.data() + 1, capacity);
+        EXPECT_EQ(guarded.front(), '#');
+        EXPECT_EQ(guarded.back(), '#');
+        if (capacity == payloadLength + 1) {
+            EXPECT_EQ(result, payloadLength);
+            EXPECT_STREQ(guarded.data() + 1, baseline);
+        } else {
+            EXPECT_EQ(result, XCONF_REQUEST_BUILD_FAILED);
+            EXPECT_EQ(guarded[1], '\0');
+        }
+    }
+
+    const char* delimiter = strchr(baseline, '&');
+    ASSERT_NE(delimiter, nullptr);
+    const size_t prefixLength = static_cast<size_t>(delimiter - baseline);
+    std::vector<char> guarded(prefixLength + 3, '#');
+    EXPECT_EQ(createJsonString(guarded.data() + 1, prefixLength + 1), XCONF_REQUEST_BUILD_FAILED);
+    EXPECT_EQ(guarded[1], '\0');
+    EXPECT_EQ(guarded.front(), '#');
+    EXPECT_EQ(guarded.back(), '#');
+}
+
+TEST_F(XconfRequestBuilderTest, AggregateOverflowClearsOutputAndPreservesGuards) {
+    const auto longValue = [](char* output, size_t capacity) {
+        const size_t length = capacity - 1;
+        memset(output, 'A', length);
+        output[length] = '\0';
+        return static_cast<int>(length);
+    };
+    EXPECT_CALL(externalMock, GetFirmwareVersion(_, _)).WillOnce(Invoke(longValue));
+    EXPECT_CALL(externalMock, GetMFRName(_, _)).WillOnce(Invoke(longValue));
+    EXPECT_CALL(externalMock, GetCapabilities(_, _)).Times(0);
+    EXPECT_CALL(deviceMock, GetModelNameUsingMFR(_, _))
+        .WillOnce(Invoke([longValue](char* output, size_t capacity) {
+            return static_cast<size_t>(longValue(output, capacity));
+        }));
+
+    char guarded[1002];
+    memset(guarded, '#', sizeof(guarded));
+    EXPECT_EQ(createJsonString(guarded + 1, 1000), XCONF_REQUEST_BUILD_FAILED);
+    EXPECT_EQ(guarded[0], '#');
+    EXPECT_EQ(guarded[1001], '#');
+    EXPECT_EQ(guarded[1], '\0');
+}
+
+TEST_F(XconfRequestBuilderTest, RecoveryFieldIsIncludedInCapacityChecks) {
+    char baseline[4096] = {};
+    const size_t baseLength = createJsonString(baseline, sizeof(baseline));
+    ASSERT_NE(baseLength, XCONF_REQUEST_BUILD_FAILED);
+    ON_CALL(deviceMock, isInStateRed()).WillByDefault(Return(true));
+    const std::string expected = std::string(baseline) + "&recovery=true";
+    std::vector<char> output(expected.size() + 1);
+    EXPECT_EQ(createJsonString(output.data(), output.size()), expected.size());
+    EXPECT_STREQ(output.data(), expected.c_str());
+    EXPECT_EQ(createJsonString(output.data(), expected.size()), XCONF_REQUEST_BUILD_FAILED);
+    EXPECT_EQ(output[0], '\0');
 }
 
 TEST(MainHelperFunctionTest, createJsonStringPrefersMFRModel){
