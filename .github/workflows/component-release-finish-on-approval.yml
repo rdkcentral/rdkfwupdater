@@ -88,12 +88,18 @@ jobs:
           git checkout develop 2>/dev/null || git checkout -b develop origin/develop
           git checkout "${RELEASE_BRANCH}"
 
+          # Initialize git-flow with main as production branch
+          git config gitflow.branch.master main
+          git config gitflow.branch.develop develop
+          git config gitflow.prefix.feature feature/
+          git config gitflow.prefix.release release/
+          git config gitflow.prefix.hotfix hotfix/
+          git config gitflow.prefix.support support/
+          git config gitflow.prefix.versiontag ""
           git flow init -d
 
           git flow release finish -m "Release ${release_version}" "${release_version}"
-          git push origin main
-          git push origin --tags
-          git push origin develop
+          git push --atomic origin "refs/heads/main" "refs/heads/develop" "refs/tags/${release_version}"
           git push origin --delete "${RELEASE_BRANCH}" || true
 
       - name: Close the release PR
