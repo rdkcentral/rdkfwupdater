@@ -96,25 +96,34 @@ int getRFCSettings(Rfc_t *rfc_list) {
  * @return int 1 READ_RFC_SUCCESS on success and READ_RFC_FAILURE -1 on failure
  * */
 int read_RFCProperty(char* type, const char* key, char *out_value, size_t datasize) {
-    RFC_ParamData_t param;
-    int data_len;
+    RFC_ParamData_t param = {0};
+    size_t data_len;
+    const char *value;
     int ret = READ_RFC_FAILURE;
 
     if(key == NULL || out_value == NULL || datasize == 0 || type == NULL) {
         SWLOG_ERROR("read_RFCProperty() one or more input values are invalid\n");
         return ret;
     }
-    //SWLOG_INFO("key=%s\n", key);
+    *out_value = '\0';
     WDMP_STATUS status = getRFCParameter(type, key, &param);
     if(status == WDMP_SUCCESS || status == WDMP_ERR_DEFAULT_VALUE) {
-        data_len = strlen(param.value);
-        if(data_len >= 2 && (param.value[0] == '"') && (param.value[data_len - 1] == '"')) {
-            // remove quotes arround data
-            snprintf( out_value, datasize, "%s", &param.value[1] );
-            *(out_value + data_len - 2) = 0;
-        }else {
-            snprintf( out_value, datasize, "%s", param.value );
+        data_len = strnlen(param.value, sizeof(param.value));
+        if (data_len == sizeof(param.value)) {
+            SWLOG_ERROR("read_RFCProperty(): RFC value is not terminated\n");
+            return ret;
         }
+        value = param.value;
+        if(data_len >= 2 && (param.value[0] == '"') && (param.value[data_len - 1] == '"')) {
+            value++;
+            data_len -= 2;
+        }
+        if (data_len >= datasize) {
+            SWLOG_ERROR("read_RFCProperty(): RFC value exceeds output capacity\n");
+            return ret;
+        }
+        memcpy(out_value, value, data_len);
+        out_value[data_len] = '\0';
         SWLOG_INFO("read_RFCProperty() name=%s,type=%d,value=%s,status=%d\n", param.name, param.type, param.value, status);
         ret = READ_RFC_SUCCESS;
     }else {
