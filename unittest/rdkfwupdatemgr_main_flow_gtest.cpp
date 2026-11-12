@@ -1164,6 +1164,20 @@ TEST_F(RdkFwupdateMgrMainFlowTest, PeripheralFirmwareDownload_Success_WritesDown
     EXPECT_EQ(ReadFileContent(TEST_DOWNLOADED_PERIPHERAL_VERS), "XR11-20_firmware_1.1.4.1.tgz");
 }
 
+TEST_F(RdkFwupdateMgrMainFlowTest, XconfUnsafeFilenameRejectedBeforeUpgrade) {
+    NiceMock<MockExternal> mock;
+    MockExternal* previousMock = global_mockexternal_ptr;
+    global_mockexternal_ptr = &mock;
+    EXPECT_CALL(mock, isUpgradeInProgress()).Times(0);
+    XCONFRES response = {};
+    snprintf(response.cloudFWFile, sizeof(response.cloudFWFile), "%s", "../ABCD_bad.bin");
+    EXPECT_EQ(checkTriggerUpgrade(&response, "ABCD", LEGACY_ALL_UPGRADE), -1);
+    snprintf(response.cloudFWFile, sizeof(response.cloudFWFile), "%s", "ABCD_good.bin");
+    snprintf(response.cloudPDRIVersion, sizeof(response.cloudPDRIVersion), "%s", "../ABCD_PDRI_bad");
+    EXPECT_EQ(checkTriggerUpgrade(&response, "ABCD", LEGACY_ALL_UPGRADE), -1);
+    global_mockexternal_ptr = previousMock;
+}
+
 TEST_F(RdkFwupdateMgrMainFlowTest, GetOPTOUTValue_NullFile_ReturnsError) {
     EXPECT_EQ(getOPTOUTValue(NULL), -1);
 }
