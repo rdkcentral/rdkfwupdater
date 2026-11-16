@@ -240,7 +240,7 @@ TEST_F(DeviceApiTestFixture, BundleBounds_ExactFitAndRejectsIncompleteEntry)
 TEST_F(DeviceApiTestFixture,TestName_bundle_Success)
 {
     int ret;
-    char pBundles[32] = {0};
+    char pBundles[400] = {0};
     ret = system("mkdir /tmp/certs;cp ca-store-update-bundle_package.json /tmp/certs/ ");
     EXPECT_NE(GetInstalledBundles(pBundles, sizeof(pBundles), "dlCertBundle"), 0);
     ret = system("rm -rf /tmp/certs/ ");
@@ -249,7 +249,7 @@ TEST_F(DeviceApiTestFixture,TestName_bundle_Success)
 TEST_F(DeviceApiTestFixture,TestName_bundle_rfcpath)
 {
     int ret;
-    char pBundles[32] = {0};
+    char pBundles[400] = {0};
     ret = system("mkdir /tmp/rfc;mkdir /tmp/rfc/certs; cp ca-store-update-bundle_package.json /tmp/rfc/certs/ ");
     EXPECT_NE(GetInstalledBundles(pBundles, sizeof(pBundles), "dlCertBundle"), 0);
     ret = system("rm -rf /tmp/rfc/certs/ ");
