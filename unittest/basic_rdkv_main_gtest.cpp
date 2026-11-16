@@ -104,6 +104,55 @@ extern "C" {
     int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_limit, int *httpcode);
 }
 
+TEST(TrustedStateFileTest, RejectsSymlinkWithoutChangingTarget) {
+    char directory[] = "/tmp/rdkfw018-XXXXXX";
+    ASSERT_NE(mkdtemp(directory), nullptr);
+    const std::string target = std::string(directory) + "/target";
+    const std::string linkPath = std::string(directory) + "/link";
+    FILE *file = fopen(target.c_str(), "w");
+    ASSERT_NE(file, nullptr);
+    fputs("canary", file);
+    fclose(file);
+    ASSERT_EQ(symlink(target.c_str(), linkPath.c_str()), 0);
+    EXPECT_EQ(openTrustedStateFile(linkPath.c_str(), false), nullptr);
+    file = fopen(target.c_str(), "r");
+    ASSERT_NE(file, nullptr);
+    char data[16] = {};
+    fgets(data, sizeof(data), file);
+    fclose(file);
+    EXPECT_STREQ(data, "canary");
+    unlink(linkPath.c_str());
+    unlink(target.c_str());
+    rmdir(directory);
+}
+
+TEST(TrustedStateFileTest, CreatesRestrictedFileAndAppends) {
+    char directory[] = "/tmp/rdkfw018-XXXXXX";
+    ASSERT_NE(mkdtemp(directory), nullptr);
+    const std::string path = std::string(directory) + "/state";
+    FILE *file = openTrustedStateFile(path.c_str(), false);
+    ASSERT_NE(file, nullptr);
+    fputs("first", file);
+    fclose(file);
+    struct stat info;
+    ASSERT_EQ(stat(path.c_str(), &info), 0);
+    EXPECT_EQ(info.st_mode & 0777, 0600u);
+    file = openTrustedStateFile(path.c_str(), true);
+    ASSERT_NE(file, nullptr);
+    fputs("second", file);
+    fclose(file);
+    file = fopen(path.c_str(), "r");
+    ASSERT_NE(file, nullptr);
+    char data[32] = {};
+    fgets(data, sizeof(data), file);
+    fclose(file);
+    EXPECT_STREQ(data, "firstsecond");
+    ASSERT_EQ(chmod(path.c_str(), 0666), 0);
+    EXPECT_EQ(openTrustedStateFile(path.c_str(), false), nullptr);
+    unlink(path.c_str());
+    rmdir(directory);
+}
+
 static const char* kBuildTypeFile = "/tmp/device_gtest.prop";
 static const char* kRdmOverrideConfig = "/opt/rdm-versioned-packages.conf";
 static const char* kRdmBinaryPath = "/usr/bin/rdm";
