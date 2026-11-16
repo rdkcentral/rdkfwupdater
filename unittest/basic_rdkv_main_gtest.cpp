@@ -104,6 +104,22 @@ extern "C" {
     int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_limit, int *httpcode);
 }
 
+TEST(FirmwareCleanupSecurityTest, RejectsOutsideOrAmbiguousPaths) {
+    EXPECT_FALSE(isFirmwareCleanupPathValid("/opt/CDL/../canary", "/opt/CDL"));
+    EXPECT_FALSE(isFirmwareCleanupPathValid("/opt/CDL-other/canary", "/opt/CDL"));
+    EXPECT_FALSE(isFirmwareCleanupPathValid("/opt/CDL/nested/canary", "/opt/CDL"));
+    EXPECT_FALSE(isFirmwareCleanupPathValid("/tmp/canary", "/opt/CDL"));
+    EXPECT_FALSE(isFirmwareCleanupPathValid("/canary", "/"));
+    EXPECT_FALSE(isFirmwareCleanupPathValid(nullptr, "/opt/CDL"));
+}
+
+TEST(FirmwareCleanupSecurityTest, AcceptsDirectChildAndRejectsHeaderTruncation) {
+    EXPECT_TRUE(isFirmwareCleanupPathValid("/opt/CDL/ABCD-signed.bin", "/opt/CDL"));
+    EXPECT_TRUE(isFirmwareCleanupPathValid("/opt/CDL/remote_firmware_1.tgz", "/opt/CDL/"));
+    const std::string tooLong = "/opt/CDL/" + std::string(128, 'A');
+    EXPECT_FALSE(isFirmwareCleanupPathValid(tooLong.c_str(), "/opt/CDL"));
+}
+
 static const char* kBuildTypeFile = "/tmp/device_gtest.prop";
 static const char* kRdmOverrideConfig = "/opt/rdm-versioned-packages.conf";
 static const char* kRdmBinaryPath = "/usr/bin/rdm";
