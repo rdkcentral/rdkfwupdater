@@ -875,6 +875,26 @@ TEST(checkTriggerUpgradeTest, ReturnsZeroWhenSuccessful) {
 }
 */
 
+TEST(PeripheralPathSecurityTest, RejectsUnsafeTokensBeforeDownloads) {
+    NiceMock<MockDownloadFileOps> downloadMock;
+    NiceMock<DeviceUtilsMock> deviceMock;
+    auto *previousDownload = global_mockdownloadfileops_ptr;
+    auto *previousDevice = g_DeviceUtilsMock;
+    global_mockdownloadfileops_ptr = &downloadMock;
+    g_DeviceUtilsMock = &deviceMock;
+    EXPECT_CALL(downloadMock, downloadFile(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(downloadMock, codebigdownloadFile(_, _, _, _, _)).Times(0);
+    char url[] = "https://mock.example.com";
+    const char *tokens[] = {"../XR11_firmware_1", "/tmp/XR11_firmware_1",
+        "nested/XR11_firmware_1", "nested\\XR11_firmware_1", "%2e%2e_XR11_firmware_1"};
+    for (const char *token : tokens) {
+        std::string input(token);
+        EXPECT_EQ(peripheral_firmware_dndl(url, &input[0]), -1);
+    }
+    global_mockdownloadfileops_ptr = previousDownload;
+    g_DeviceUtilsMock = previousDevice;
+}
+
 TEST(PeripheralFirmwareDndlTest, HandlesValidInput) {
 
     MockDownloadFileOps mockdownloadfileops;
