@@ -297,9 +297,20 @@ static gchar* get_difw_path(void)
  * Creates hash table mapping handler_id -> ProcessInfo to track registered clients.
  * Called once at daemon startup.
  */
+static void free_process_info(gpointer data)
+{
+	ProcessInfo *info = (ProcessInfo *)data;
+	if (info != NULL) {
+		g_free(info->process_name);
+		g_free(info->lib_version);
+		g_free(info->sender_id);
+		g_free(info);
+	}
+}
+
 static void init_process_tracking()
 {
-    registered_processes = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, (GDestroyNotify)g_free);
+	registered_processes = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, free_process_info);
     SWLOG_INFO("[TRACKING] process tracking initialized\n");
 }
 
@@ -1894,7 +1905,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 
 		// Look up process info to validate ownership and get process name for logging
 		ProcessInfo *process_info = g_hash_table_lookup(registered_processes, GINT_TO_POINTER(handler));
-		const gchar *process_name = process_info ? process_info->process_name : "UNKNOWN";
+		g_autofree gchar *process_name = g_strdup(process_info ? process_info->process_name : "UNKNOWN");
 		if (process_info && g_strcmp0(process_info->sender_id, rdkv_req_caller_id) != 0) {
 			SWLOG_ERROR("[UNREGISTER] REJECTED: Sender '%s' does not own handler %"G_GUINT64_FORMAT"\n",
 			            rdkv_req_caller_id, handler);
