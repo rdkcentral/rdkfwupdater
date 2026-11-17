@@ -48,6 +48,7 @@ void fake_dbus_reset(void);
  * @return true if g_dbus_connection_emit_signal was called
  */
 bool fake_dbus_was_signal_emitted(void);
+bool fake_dbus_wait_for_signal(unsigned int timeout_ms);
 
 /**
  * @brief Get the last emitted progress percentage

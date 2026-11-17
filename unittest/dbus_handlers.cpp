@@ -2943,14 +2943,11 @@ TEST_F(DbusHandlersTest, ProgressMonitorThread_ResetFromNonZeroToZero_EmitsSigna
     GThread* thread = g_thread_new("monitor_reset", rdkfw_progress_monitor_thread, ctx);
     ASSERT_NE(thread, nullptr);
 
-    for (int i = 0; i < 200000; ++i) {
-        if (fake_dbus_get_signal_count() > 0) {
-            break;
-        }
-    }
+    const bool signal_received = fake_dbus_wait_for_signal(1000);
     g_atomic_int_set(&stop_flag, 1);
     g_thread_join(thread);
 
+    EXPECT_TRUE(signal_received);
     EXPECT_TRUE(fake_dbus_was_signal_emitted());
     EXPECT_EQ(fake_dbus_get_last_progress(), 0);
 }
