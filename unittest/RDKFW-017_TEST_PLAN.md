@@ -1,0 +1,11 @@
+# RDKFW-017: signal origin
+
+All three client subscriptions now filter DBUS_SERVICE_NAME, the same well-known name used by client API calls. GLib tracks its current unique owner. This assumes the system-bus policy protects ownership of org.rdkfwupdater.Service; a peer permitted to own the service is trusted by this change. Existing parser cleanup is present in this baseline; the reported per-signal leak is not newly fixed here and requires memory revalidation.
+
+User executes builds/tests; none run by assistant. Rebuild the actual client library and daemon. Existing async callback simulation tests remain regression coverage but bypass the bus subscription and cannot prove origin filtering.
+
+L2: connect a real linked client with a pending check/download/update callback. Using a DIFFERENT private bus connection that does NOT own org.rdkfwupdater.Service, emit each signal (CheckForUpdateComplete, DownloadProgress, UpdateProgress) at the expected object/interface with a valid matching handler ID and payload signature copied from current introspection. Confirm ZERO client callbacks/state completions for those rogue signals. Then trigger the equivalent legitimate daemon signals and confirm callbacks still arrive. Keep a pending operation active throughout; an empty client operation table is not proof of rejection. Record sender unique names and service owner. Do not grant the rogue peer permission to own the service or weaken policy.
+
+Restart/reacquire the legitimate service and verify GLib follows the new unique owner; then repeat spoof and positive cases. Repeat malformed/valid payload stress under sanitizer or leak profiler to revalidate the independently reported allocation claim; existing cleanup cannot be assumed sufficient without results. No standalone harness script exists in sibling rdkfwupdater_harness/rdkfwupdater-develop_Medium_010; use its INFO/INSTRUCTIONS rather than inventing one.
+
+Attach commit/library path, service policy/owner, signal signatures, rogue/legitimate traces, callback counts, restart regression and memory report. Device sanity uses a real consumer linked to the rebuilt library. Only sender-spoofing remediation is claimed until the memory part has approved review evidence.
