@@ -343,7 +343,7 @@ int getXconfRespData( XCONFRES *pResponse, char *pJsonStr )
 bool validateImage(const char *image_name, const char *model)
 {
     bool status = false;
-    if (image_name == NULL || model == NULL) {
+    if (!isFirmwareFilenameValid(image_name) || model == NULL) {
         SWLOG_INFO("%s: parameter is NULL\n", __FUNCTION__);
         return status;
     }
@@ -378,6 +378,12 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
 
     if( response != NULL && myfwversion != NULL && model != NULL )
     {
+        if (!isFirmwareFilenameValid(response->cloudFWFile) ||
+            (response->cloudPDRIVersion[0] != '\0' &&
+             !isFirmwareFilenameValid(response->cloudPDRIVersion))) {
+            SWLOG_ERROR("processJsonResponse: rejected unsafe firmware filename\n");
+            return -1;
+        }
         makeHttpHttps( response->cloudFWLocation, sizeof(response->cloudFWLocation) );
         makeHttpHttps( response->ipv6cloudFWLocation, sizeof(response->ipv6cloudFWLocation) );
         //check_pdri = isPDRIEnable(); 

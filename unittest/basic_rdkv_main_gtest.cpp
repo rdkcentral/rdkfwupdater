@@ -104,6 +104,29 @@ extern "C" {
     int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_limit, int *httpcode);
 }
 
+TEST(XconfFilenameSecurityTest, RejectsUnsafeNamesBeforeAnyTransfer) {
+    MockDownloadFileOps downloads;
+    global_mockdownloadfileops_ptr = &downloads;
+    EXPECT_CALL(downloads, downloadFile(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(downloads, codebigdownloadFile(_, _, _, _, _)).Times(0);
+    const int modes[] = {LEGACY_ALL_UPGRADE, PCI_UPGRADE, PDRI_UPGRADE};
+    for (int mode : modes) {
+        XCONFRES response = {};
+        snprintf(response.cloudFWFile, sizeof(response.cloudFWFile), "%s", "../ABCD_bad.bin");
+        EXPECT_EQ(checkTriggerUpgrade(&response, "ABCD", mode), -1);
+        snprintf(response.cloudFWFile, sizeof(response.cloudFWFile), "%s", "ABCD_good.bin");
+        snprintf(response.cloudPDRIVersion, sizeof(response.cloudPDRIVersion), "%s", "../ABCD_PDRI_bad");
+        EXPECT_EQ(checkTriggerUpgrade(&response, "ABCD", mode), -1);
+    }
+    global_mockdownloadfileops_ptr = nullptr;
+}
+
+TEST(XconfFilenameSecurityTest, RejectsResponseBeforeSideEffects) {
+    XCONFRES response = {};
+    snprintf(response.cloudFWFile, sizeof(response.cloudFWFile), "%s", "../ABCD_bad.bin");
+    EXPECT_EQ(processJsonResponse(&response, "ABCD_current", "ABCD", "false"), -1);
+}
+
 static const char* kBuildTypeFile = "/tmp/device_gtest.prop";
 static const char* kRdmOverrideConfig = "/opt/rdm-versioned-packages.conf";
 static const char* kRdmBinaryPath = "/usr/bin/rdm";
