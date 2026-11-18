@@ -490,6 +490,29 @@ TEST_F(RdkFwupdateMgrHandlersTest, XconfCacheExists_CacheDeleted_ReturnsFalse) {
     EXPECT_FALSE(result) << "xconf_cache_exists() should return FALSE after cache is deleted";
 }
 
+TEST_F(RdkFwupdateMgrHandlersTest, CacheSecurity_RejectsSymlink) {
+    CleanupTestFiles();
+    ASSERT_EQ(symlink("/etc/passwd", TEST_XCONF_CACHE_FILE), 0);
+    XCONFRES response = {};
+    EXPECT_FALSE(load_xconf_from_cache(&response));
+    unlink(TEST_XCONF_CACHE_FILE);
+}
+
+TEST_F(RdkFwupdateMgrHandlersTest, CacheSecurity_RejectsFifoWithoutWaiting) {
+    CleanupTestFiles();
+    ASSERT_EQ(mkfifo(TEST_XCONF_CACHE_FILE, 0600), 0);
+    XCONFRES response = {};
+    EXPECT_FALSE(load_xconf_from_cache(&response));
+    unlink(TEST_XCONF_CACHE_FILE);
+}
+
+TEST_F(RdkFwupdateMgrHandlersTest, CacheSecurity_RejectsWritableCache) {
+    CreateMockXconfCache(MOCK_XCONF_RESPONSE_UPDATE_AVAILABLE, 200);
+    ASSERT_EQ(chmod(TEST_XCONF_CACHE_FILE, 0666), 0);
+    XCONFRES response = {};
+    EXPECT_FALSE(load_xconf_from_cache(&response));
+}
+
 TEST_F(RdkFwupdateMgrHandlersTest, SaveXconfToCache_NullResponse_ReturnsFalse) {
     EXPECT_FALSE(save_xconf_to_cache(NULL, 200));
 }
