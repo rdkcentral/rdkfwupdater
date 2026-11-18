@@ -21,6 +21,7 @@ import subprocess
 import time
 import os
 import json
+import tempfile
 import pytest
 from pathlib import Path
 
@@ -161,6 +162,36 @@ def test_download_with_null_firmware_name():
     finally:
         cleanup_daemon_files()
         stop_daemon(proc)
+
+
+@pytest.mark.parametrize("name_kind", ["absolute", "traversal", "nested", "backslash", "encoded", "query"])
+def test_download_rejects_unsafe_firmware_name_before_transfer(name_kind):
+    initial_rdkfw_setup()
+    cleanup_daemon_files()
+    proc = start_daemon()
+    try:
+        with tempfile.TemporaryDirectory(prefix="rdkfw001-", dir="/opt") as directory:
+            canary = Path(directory) / "canary.bin"
+            canary.write_bytes(b"outside-download-directory")
+            names = {
+                "absolute": str(canary),
+                "traversal": "../" + Path(directory).name + "/canary.bin",
+                "nested": "nested/firmware.bin",
+                "backslash": "nested\\firmware.bin",
+                "encoded": "%2e%2e%2fcanary.bin",
+                "query": "firmware.bin?name=other",
+            }
+            api = iface()
+            registered = api.RegisterProcess("RDKFW001Negative", "1.0")
+            handler = registered[0] if isinstance(registered, tuple) else int(registered)
+            result = api.DownloadFirmware(str(handler), names[name_kind],
+                "https://mockxconf:50052/getfirmwarefile", "PCI")
+            assert str(result[0]) == "RDKFW_DWNL_FAILED", result
+            assert "Unsafe firmware filename" in str(result[2]), result
+            assert canary.read_bytes() == b"outside-download-directory"
+    finally:
+        stop_daemon(proc)
+        cleanup_daemon_files()
 
 
 def test_download_with_invalid_firmware_type():

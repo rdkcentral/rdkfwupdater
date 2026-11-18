@@ -50,6 +50,7 @@
 #include <time.h>
 #include <curl/curl.h>
 #include "rdkv_dbus_server.h"
+#include "rdkv_cdl.h"
 #include "rdkFwupdateMgr_handlers.h"
 #include "rdkv_cdl_log_wrapper.h"
 #include "rdkv_upgrade.h"  // For RdkUpgradeContext_t and rdkv_upgrade_request()
@@ -1047,13 +1048,13 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		}
 		
 		// 4. Validate firmware name (Scenario 3)
-		if (!firmware_name || strlen(firmware_name) == 0) {
-			SWLOG_ERROR("[DOWNLOADFIRMWARE] REJECTED: Invalid firmware name (NULL or empty)\n");
+		if (!isFirmwareFilenameValid(firmware_name)) {
+			SWLOG_ERROR("[DOWNLOADFIRMWARE] REJECTED: Unsafe firmware filename\n");
 			g_dbus_method_invocation_return_value(resp_ctx,
 				g_variant_new("(sss)", 
 					"RDKFW_DWNL_FAILED",
 					"DWNL_ERROR",
-					"Invalid firmware name"));
+					"Unsafe firmware filename"));
 			g_free(handler_id_str);
 			g_free(firmware_name);
 			g_free(download_url);
@@ -2707,7 +2708,13 @@ static void rdkfw_download_worker(GTask *task, gpointer source_object,
         return;
     }
     
-    // ========== STEP 1.5: DETERMINE EFFECTIVE DOWNLOAD URL ==========
+	if (!isFirmwareFilenameValid(ctx->firmware_name)) {
+		SWLOG_ERROR("[DOWNLOAD_WORKER] Rejected unsafe firmware filename\n");
+		g_task_return_boolean(task, FALSE);
+		return;
+	}
+
+	// ========== STEP 1.5: DETERMINE EFFECTIVE DOWNLOAD URL ==========
     // If download_url is provided, use it
     // If download_url is NULL/empty, try to load from XConf cache
     
