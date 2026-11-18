@@ -20,6 +20,7 @@
 #include <gmock/gmock.h>
 #include <iostream>
 #include <unistd.h>
+#include <utime.h>
 extern "C" {
 #include "json_process.h"
 #include "device_status_helper.h"
@@ -535,9 +536,9 @@ TEST(TestisThrottleEnabled, TestName_success)
     snprintf(rfc_list.rfc_throttle, sizeof(rfc_list.rfc_throttle), "%s", "true");
     EXPECT_EQ(isThrottleEnabled("PLATCO", "false", 1), -1);
 }
-TEST(TestgetFileLastModifyTime, TestName_NullCheck)
+TEST(TestRdkfwGetFileLastModifyTime, TestName_NullCheck)
 {
-    EXPECT_EQ(getFileLastModifyTime(NULL), 0);
+    EXPECT_EQ(rdkfw_getFileLastModifyTime(NULL), 0);
 }
 TEST(TestisDwnlBlock, TestName_direct_not_block)
 {
@@ -560,6 +561,45 @@ TEST(TestisDwnlBlock, TestName_codebig_block)
     ret = system("touch /tmp/.lastcodebigfail_cdl");
     EXPECT_EQ(isDwnlBlock(HTTP_XCONF_CODEBIG), 1);
     ret = system("rm /tmp/.lastcodebigfail_cdl");
+}
+TEST(TestisDwnlBlock, FutureDatedMarkersAreRemovedAndDoNotBlock)
+{
+    const char *markers[] = {
+        "/tmp/.lastcodebigfail_cdl",
+        "/tmp/.lastdirectfail_cdl"
+    };
+    const int block_types[] = {HTTP_XCONF_CODEBIG, HTTP_XCONF_DIRECT};
+
+    for (size_t i = 0; i < sizeof(markers) / sizeof(markers[0]); ++i) {
+        unlink(markers[i]);
+        int fd = open(markers[i], O_CREAT | O_WRONLY, 0600);
+        ASSERT_NE(fd, -1);
+        close(fd);
+
+        struct utimbuf marker_times;
+        marker_times.actime = time(NULL) + 2 * 24 * 60 * 60;
+        marker_times.modtime = marker_times.actime;
+        ASSERT_EQ(utime(markers[i], &marker_times), 0);
+
+        EXPECT_EQ(isDwnlBlock(block_types[i]), 0);
+        EXPECT_EQ(access(markers[i], F_OK), -1);
+    }
+}
+TEST(TestisDwnlBlock, FutureDatedMarkerUnlinkFailureDoesNotBlock)
+{
+    const char *marker = "/tmp/.lastcodebigfail_cdl";
+    unlink(marker);
+    ASSERT_EQ(mkdir(marker, 0700), 0);
+
+    struct utimbuf marker_times;
+    marker_times.actime = time(NULL) + 2 * 24 * 60 * 60;
+    marker_times.modtime = marker_times.actime;
+    ASSERT_EQ(utime(marker, &marker_times), 0);
+
+    EXPECT_EQ(isDwnlBlock(HTTP_XCONF_CODEBIG), 0);
+    EXPECT_EQ(access(marker, F_OK), 0);
+
+    EXPECT_EQ(rmdir(marker), 0);
 }
 TEST(TestDwnlStatus, TestName_updateFWDownloadStatusNull)
 {

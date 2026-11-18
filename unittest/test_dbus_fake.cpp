@@ -43,6 +43,9 @@
 #include <gio/gio.h>
 #include <glib.h>
 #include <dlfcn.h>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -53,6 +56,8 @@
 namespace FakeDBus {
     // Track if signal was emitted
     static bool g_emit_called = false;
+    static std::mutex g_signal_mutex;
+    static std::condition_variable g_signal_cond;
     
     // Track last emitted signal parameters
     static guint64 g_last_handler_id = 0;
@@ -99,6 +104,7 @@ extern "C" {
  * @brief Reset fake D-Bus state between tests
  */
 void fake_dbus_reset() {
+    std::lock_guard<std::mutex> lock(FakeDBus::g_signal_mutex);
     FakeDBus::g_emit_called = false;
     FakeDBus::g_last_handler_id = 0;
     FakeDBus::g_last_firmware_name.clear();
@@ -115,7 +121,15 @@ void fake_dbus_reset() {
  * @brief Check if signal was emitted
  */
 bool fake_dbus_was_signal_emitted() {
+    std::lock_guard<std::mutex> lock(FakeDBus::g_signal_mutex);
     return FakeDBus::g_emit_called;
+}
+
+bool fake_dbus_wait_for_signal(unsigned int timeout_ms) {
+    std::unique_lock<std::mutex> lock(FakeDBus::g_signal_mutex);
+    return FakeDBus::g_signal_cond.wait_for(
+        lock, std::chrono::milliseconds(timeout_ms),
+        [] { return FakeDBus::g_emit_called; });
 }
 
 /**
@@ -224,7 +238,11 @@ gboolean g_dbus_connection_emit_signal(
     (void)signal_name;          // Unused
     
     // Mark that signal was emitted
-    FakeDBus::g_emit_called = true;
+    {
+        std::lock_guard<std::mutex> lock(FakeDBus::g_signal_mutex);
+        FakeDBus::g_emit_called = true;
+    }
+    FakeDBus::g_signal_cond.notify_all();
     
     // Simulate failure if configured
     if (FakeDBus::g_should_fail) {
