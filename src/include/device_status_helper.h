@@ -44,7 +44,7 @@
 bool isDeviceReadyForDownload();
 int isStateRedSupported(void);
 int isInStateRed(void);
-void checkAndEnterStateRed(int curlret, const char *);
+int checkAndEnterStateRed(int curlret, const char *);
 int checkVideoStatus(const char *device_name);
 int isThrottleEnabled(const char *device_name, const char *reboot_immediate_flag, int app_mode);
 int isOCSPEnable(void);
@@ -67,6 +67,6 @@ bool checkCodebigAccess(void);
 bool CurrentRunningInst(const char *file);
 void waitForNtp(void);
 bool prevFlashedFile(char *img_name, size_t img_name_size);
-unsigned int getFileLastModifyTime(char *file_name);
+time_t rdkfw_getFileLastModifyTime(char *file_name);
 
 #endif /* VIDEO_DEVICE_STATUS_HELPER_H_ */

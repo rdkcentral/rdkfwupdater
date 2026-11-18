@@ -59,6 +59,26 @@ extern "C" int filePresentCheck(const char *filename)
     printf("Inside Mock Function filePresentCheck\n");
     return g_InterfaceMock->filePresentCheck(filename);
 }
+extern "C" int getFileSize(const char *filename)
+{
+    if (!g_InterfaceMock)
+    {
+        cout << "getFileSize g_InterfaceMock object is NULL" << endl;
+        return -1;
+    }
+    printf("Inside Mock Function getFileSize\n");
+    return g_InterfaceMock->getFileSize(filename);
+}
+extern "C" size_t getContentLength(const char *file)
+{
+    if (!g_InterfaceMock)
+    {
+        cout << "getContentLength g_InterfaceMock object is NULL" << endl;
+        return 0;
+    }
+    printf("Inside Mock Function  getContentLength\n");
+    return g_InterfaceMock->getContentLength(file);
+}
 extern "C" int getDevicePropertyData(const char *model, char *data, int size)
 {
     if (!g_InterfaceMock)
@@ -207,4 +227,15 @@ extern "C" int getJsonRpc(char *data, void *ptr)
     }
     printf("Inside Mock Function getJsonRpc\n");
     return g_InterfaceMock->getJsonRpc(data, ptr);
+}
+
+extern "C"  int IARM_Bus_Call(const char* ownerName, int apiId, void* param, unsigned int paramLen)
+{
+    if(!g_InterfaceMock)
+    {
+	cout << "g_InterfaceMock object is NULL" << endl;  
+        return -1;	
+    } 
+    printf("Inside Mock Function IARM_Bus_Call\n");
+    return g_InterfaceMock->IARM_Bus_Call(ownerName,apiId,param,paramLen);
 }
