@@ -475,6 +475,12 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
 
             while( pFW != NULL )
             {
+                if (!isFirmwareFilenameValid(pFW)) {
+                    SWLOG_ERROR("%s: rejected unsafe peripheral filename\n", __FUNCTION__);
+                    iRet = -1;
+                    pFW = strtok_r(NULL, ",", &pSavedFW);
+                    continue;
+                }
                 bTriggerDL = true;
 
                 SWLOG_INFO( "%s: pFW = %s\n", __FUNCTION__, pFW );
@@ -539,8 +545,15 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
                 }
                 if( bTriggerDL == true )
                 {
-                    snprintf( cSourceURL, sizeof(cSourceURL), "%s/%s.tgz", pCloudFWLocation, pFW );
-                    snprintf( cDLStoreLoc, sizeof(cDLStoreLoc), "%s/%s.tgz",  device_info.difw_path, pFW );         // where on the device the file downloads to
+                    int urlLength = snprintf(cSourceURL, sizeof(cSourceURL), "%s/%s.tgz", pCloudFWLocation, pFW);
+                    int pathLength = snprintf(cDLStoreLoc, sizeof(cDLStoreLoc), "%s/%s.tgz", device_info.difw_path, pFW);
+                    if (urlLength < 0 || (size_t)urlLength >= sizeof(cSourceURL) ||
+                        pathLength < 0 || (size_t)pathLength >= sizeof(cDLStoreLoc)) {
+                        SWLOG_ERROR("%s: peripheral destination or URL exceeds capacity\n", __FUNCTION__);
+                        iRet = -1;
+                        pFW = strtok_r(NULL, ",", &pSavedFW);
+                        continue;
+                    }
 
                     SWLOG_INFO( "%s: firmware filename with path = %s\n", __FUNCTION__,  cDLStoreLoc );
                     if( filePresentCheck( cDLStoreLoc ) != 0 )

@@ -1164,6 +1164,13 @@ TEST_F(RdkFwupdateMgrMainFlowTest, PeripheralFirmwareDownload_Success_WritesDown
     EXPECT_EQ(ReadFileContent(TEST_DOWNLOADED_PERIPHERAL_VERS), "XR11-20_firmware_1.1.4.1.tgz");
 }
 
+TEST_F(RdkFwupdateMgrMainFlowTest, PeripheralUnsafePathSkippedBeforeValidDownload) {
+    char url[] = "https://mock.example.com";
+    char tokens[] = "../XR11_firmware_1,XR11-20_firmware_1.1.4.1";
+    EXPECT_EQ(peripheral_firmware_dndl(url, tokens), -1);
+    EXPECT_EQ(ReadFileContent(TEST_DOWNLOADED_PERIPHERAL_VERS), "XR11-20_firmware_1.1.4.1.tgz");
+}
+
 TEST_F(RdkFwupdateMgrMainFlowTest, GetOPTOUTValue_NullFile_ReturnsError) {
     EXPECT_EQ(getOPTOUTValue(NULL), -1);
 }
