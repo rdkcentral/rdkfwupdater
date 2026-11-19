@@ -589,6 +589,38 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
     return iRet;
 }
 
+/* Format Direct CDN artifact paths without allowing partial, truncated values. */
+int buildDirectCdnArtifactPaths(const char *artifact_url, const char *directory,
+                                const char *artifact_file, const char *suffix,
+                                char *url_buffer, size_t url_buffer_size,
+                                char *path_buffer, size_t path_buffer_size)
+{
+    int url_length;
+    int path_length;
+
+    if (url_buffer != NULL && url_buffer_size > 0) {
+        url_buffer[0] = '\0';
+    }
+    if (path_buffer != NULL && path_buffer_size > 0) {
+        path_buffer[0] = '\0';
+    }
+    if (artifact_url == NULL || artifact_url[0] == '\0' || directory == NULL || directory[0] == '\0' ||
+        artifact_file == NULL || artifact_file[0] == '\0' || suffix == NULL ||
+        url_buffer == NULL || url_buffer_size == 0 || path_buffer == NULL || path_buffer_size == 0) {
+        return -1;
+    }
+
+    url_length = snprintf(url_buffer, url_buffer_size, "%s", artifact_url);
+    path_length = snprintf(path_buffer, path_buffer_size, "%s/%s%s", directory, artifact_file, suffix);
+    if (url_length < 0 || (size_t)url_length >= url_buffer_size ||
+        path_length < 0 || (size_t)path_length >= path_buffer_size) {
+        url_buffer[0] = '\0';
+        path_buffer[0] = '\0';
+        return -1;
+    }
+    return 0;
+}
+
 int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type)
 {
     int http_code;
@@ -654,13 +686,22 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type
             return 0;
         }
 
-        snprintf(imageHTTPURL, sizeof(imageHTTPURL), "%s", artifact_url);
+        /* Direct CDN skips the legacy peripheral loop, so apply its filename policy here too. */
+        if (upgrade_type == PERIPHERAL_UPGRADE && !isFirmwareFilenameValid(artifact_file)) {
+            SWLOG_ERROR("%s: rejected unsafe Direct CDN peripheral filename\n", __FUNCTION__);
+            return -1;
+        }
 
-        /* PDRI filename normalization: ensure .bin suffix on local save path */
+        /* Keep the established PDRI suffix rule, but reject partial URL/path strings. */
+        const char *path_suffix = "";
         if (upgrade_type == PDRI_UPGRADE && strstr(artifact_file, ".bin") == NULL) {
-            snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s.bin", device_info.difw_path, artifact_file);
-        } else {
-            snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s", device_info.difw_path, artifact_file);
+            path_suffix = ".bin";
+        }
+        if (buildDirectCdnArtifactPaths(artifact_url, device_info.difw_path, artifact_file, path_suffix,
+                                        imageHTTPURL, sizeof(imageHTTPURL),
+                                        dwlpath_filename, sizeof(dwlpath_filename)) != 0) {
+            SWLOG_ERROR("%s: Direct CDN URL or destination path is invalid or too long\n", __FUNCTION__);
+            return -1;
         }
 
         RdkUpgradeContext_t artifact_ctx = {0};
