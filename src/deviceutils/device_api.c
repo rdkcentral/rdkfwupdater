@@ -190,9 +190,10 @@ size_t GetInstalledBundles(char *pBundles, size_t szBufSize, const char *bundleT
     char *pJsonStr;
     size_t len;
     size_t szRunningLen = 0;
+    bool outputFull = false;
     metaDataFileList_st *installedBundleListNode = NULL, *tmpNode = NULL;
 
-    if (pBundles != NULL)
+    if (pBundles != NULL && szBufSize > 0)
     {
         *pBundles = 0;
         SWLOG_INFO("GetInstalledBundles: Invoking getInstalledBundleFileList to get %s bundle list ",bundleType);
@@ -200,6 +201,12 @@ size_t GetInstalledBundles(char *pBundles, size_t szBufSize, const char *bundleT
 
         while (installedBundleListNode != NULL)
         {
+            if (outputFull) {
+                tmpNode = installedBundleListNode;
+                installedBundleListNode = installedBundleListNode->next;
+                free(tmpNode);
+                continue;
+            }
             SWLOG_INFO("GetInstalledBundles: calling GetJson with arg = %s\n", installedBundleListNode->fileName);
             pJsonStr = GetJson(installedBundleListNode->fileName);
             if (pJsonStr != NULL)
@@ -215,17 +222,35 @@ size_t GetInstalledBundles(char *pBundles, size_t szBufSize, const char *bundleT
                         len = GetJsonVal(pJson, "name", installedBundleListNode->fileName, sizeof(installedBundleListNode->fileName));
                         if (len)
                         {
+                            size_t entryStart = szRunningLen;
+                            int written;
                             if (szRunningLen)
                             {
+                                if (szBufSize - szRunningLen <= 1) {
+                                    outputFull = true;
+                                    break;
+                                }
                                 *(pBundles + szRunningLen) = ',';
                                 ++szRunningLen;
                             }
-                            len = snprintf(pBundles + szRunningLen, szBufSize - szRunningLen, "%s:", installedBundleListNode->fileName);
-                            szRunningLen += len;
+                            written = snprintf(pBundles + szRunningLen, szBufSize - szRunningLen, "%s:", installedBundleListNode->fileName);
+                            if (written < 0 || (size_t)written >= szBufSize - szRunningLen) {
+                                pBundles[entryStart] = '\0';
+                                szRunningLen = entryStart;
+                                outputFull = true;
+                                break;
+                            }
+                            szRunningLen += (size_t)written;
                             len = GetJsonVal(pJson, "version", installedBundleListNode->fileName, sizeof(installedBundleListNode->fileName));
-                            len = snprintf(pBundles + szRunningLen, szBufSize - szRunningLen, "%s", installedBundleListNode->fileName);
+                            written = snprintf(pBundles + szRunningLen, szBufSize - szRunningLen, "%s", installedBundleListNode->fileName);
+                            if (written < 0 || (size_t)written >= szBufSize - szRunningLen) {
+                                pBundles[entryStart] = '\0';
+                                szRunningLen = entryStart;
+                                outputFull = true;
+                                break;
+                            }
                             SWLOG_INFO("Updated Bundles = %s\n", pBundles);
-                            szRunningLen += len;
+                            szRunningLen += (size_t)written;
                         }
                         pJson = pJson->next; // need "next" getter function
                     }
