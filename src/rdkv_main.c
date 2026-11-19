@@ -948,6 +948,14 @@ static int MakeXconfComms( XCONFRES *pResponse, int server_type, int *pHttp_code
                 {
                     len = createJsonString( pJSONStr, JSON_STR_LEN );
 
+                    if (len == XCONF_REQUEST_BUILD_FAILED || len >= JSON_STR_LEN) {
+                        SWLOG_ERROR("MakeXconfComms: failed to construct XConf request\n");
+                        free(pServURL);
+                        free(pJSONStr);
+                        free(DwnLoc.pvOut);
+                        return ret;
+                    }
+
                     //context structure for XCONF upgrade request
                     RdkUpgradeContext_t xconf_context = {0};
                     xconf_context.upgrade_type = XCONF_UPGRADE;
