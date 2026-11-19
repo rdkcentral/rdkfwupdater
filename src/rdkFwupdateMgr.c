@@ -451,6 +451,10 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
     bool bTriggerDL;
 
 
+    if (pCloudFWLocation == NULL || pPeripheralFirmwares == NULL ||
+        strnlen(pPeripheralFirmwares, 960) >= 960) {
+        return -1;
+    }
     SWLOG_INFO( "%s: pPeripheralFirmwares = %s\n", __FUNCTION__, pPeripheralFirmwares );
 
     GetFileContents( &pPrevDlVers, DOWNLOADED_PERIPHERAL_VERSION );
@@ -478,11 +482,25 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
                 bTriggerDL = true;
 
                 SWLOG_INFO( "%s: pFW = %s\n", __FUNCTION__, pFW );
-                snprintf( cTmpCloudFW, sizeof(cTmpCloudFW), "%s", pFW );      //save a copy, example XR11-20_firmware_1.1.4.1
+                if (strlen(pFW) >= sizeof(cTmpCloudFW) || pFW[0] == '_' ||
+                    pFW[strlen(pFW) - 1] == '_' || strstr(pFW, "__") != NULL) {
+                    SWLOG_ERROR("%s: rejected malformed peripheral token\n", __FUNCTION__);
+                    iRet = -1;
+                    pFW = strtok_r(NULL, ",", &pSavedFW);
+                    continue;
+                }
+                snprintf( cTmpCloudFW, sizeof(cTmpCloudFW), "%s", pFW );
 
                 pDeviceName = strtok_r( cTmpCloudFW, "_", &pSavedDetails );
                 pDeviceType = strtok_r( NULL, "_", &pSavedDetails );    // should be pointing to firmware, audio, dsp, or kw_model
                 pDeviceVer = strtok_r( NULL, "_", &pSavedDetails );     // really just the last bit
+
+                if (pDeviceName == NULL || pDeviceType == NULL || pDeviceVer == NULL) {
+                    SWLOG_ERROR("%s: rejected incomplete peripheral token\n", __FUNCTION__);
+                    iRet = -1;
+                    pFW = strtok_r(NULL, ",", &pSavedFW);
+                    continue;
+                }
 
                 SWLOG_INFO( "%s: pDeviceName = %s\n", __FUNCTION__, pDeviceName );
                 SWLOG_INFO( "%s: pDeviceType = %s\n", __FUNCTION__, pDeviceType );
