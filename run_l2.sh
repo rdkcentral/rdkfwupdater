@@ -57,6 +57,14 @@ fi
 # Compile Test binary for mfrutils
 cc -o /usr/bin/mfr_util test/functional-tests/tests/mfrutils.c 
 
+ls -l /usr/local/bin/
+pidof tr69hostif
+ps -ef
+/usr/local/bin/tr69hostif -c /etc/mgrlist.conf -p 10999 -s 11999 | tee /opt/logs/tr69hostIf.log.0 &
+
+pidof tr69hostif
+ps -ef
+/usr/local/bin/rfc_provider &
 rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLSpLimit.Enable boolean true
 rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLSpLimit.TopSpeed int 1280000
 rbuscli setv Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Identity.DbgServices.Enable boolean true
