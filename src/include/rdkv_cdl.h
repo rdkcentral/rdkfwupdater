@@ -96,6 +96,45 @@ typedef struct deviceproperty DeviceProperty_t;
 #define SMALL_SIZE_BUFF 8
 #define DWNL_PATH_FILE_LEN 128
 
+static inline bool appendDownloadedVersion(char *buffer, size_t capacity, size_t *length, const char *firmwareName)
+{
+    size_t remaining;
+    size_t nameLength;
+    size_t separatorLength;
+    size_t used;
+
+    if (buffer == NULL || length == NULL || firmwareName == NULL || *length >= capacity) {
+        return false;
+    }
+
+    used = *length;
+    remaining = capacity - used;
+    nameLength = strlen(firmwareName);
+    separatorLength = used > 0 ? 1 : 0;
+
+    if (nameLength >= remaining) {
+        return false;
+    }
+    remaining -= nameLength;
+    if (sizeof(".tgz") - 1 >= remaining) {
+        return false;
+    }
+    remaining -= sizeof(".tgz") - 1;
+    if (separatorLength >= remaining) {
+        return false;
+    }
+
+    if (separatorLength) {
+        buffer[used++] = ',';
+    }
+    memcpy(buffer + used, firmwareName, nameLength);
+    used += nameLength;
+    memcpy(buffer + used, ".tgz", sizeof(".tgz"));
+    used += sizeof(".tgz") - 1;
+    *length = used;
+    return true;
+}
+
 //TLS values and timeouts
 //#define CURL_TLS_TIMEOUT 7200L
 #define TLS "--tlsv1.2"
