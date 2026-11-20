@@ -414,6 +414,10 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
         }
     }
 
+    RdkUpgradeContext_t selected_context = *context;
+    selected_context.server_type = server_type;
+    context = &selected_context;
+
     if( ret_curl_code != DWNL_BLOCK )   // no point in continuing if both download types are blocked
     {
         if( server_type == HTTP_SSR_DIRECT || server_type == HTTP_SSR_CODEBIG )
