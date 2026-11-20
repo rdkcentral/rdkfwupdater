@@ -80,7 +80,7 @@ typedef struct {
  * @param pHttp_code Output parameter for HTTP response code
  * @return 0 on success, curl error code on failure
  */
-int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* pHttp_code);
+int rdkv_upgrade_request(RdkUpgradeContext_t* context, void** curl, int* pHttp_code);
 
 /**
  * @brief Download firmware file directly (HTTP/HTTPS)
