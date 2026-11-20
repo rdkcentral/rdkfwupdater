@@ -311,7 +311,7 @@ bool checkt2ValNotify( int iCurlCode, int iUpgradeType, char *Url  )
  * PDRI, and peripheral upgrades. It manages download coordination, status 
  * reporting, and error handling.
  */
-int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* pHttp_code)
+int rdkv_upgrade_request(RdkUpgradeContext_t* context, void** curl, int* pHttp_code)
 {
     const char* dwlpath_filename = NULL;
     int ret_curl_code = -1;
@@ -414,9 +414,8 @@ int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* p
         }
     }
 
-    RdkUpgradeContext_t selected_context = *context;
-    selected_context.server_type = server_type;
-    context = &selected_context;
+   
+    context->server_type = server_type;
 
     if( ret_curl_code != DWNL_BLOCK )   // no point in continuing if both download types are blocked
     {
