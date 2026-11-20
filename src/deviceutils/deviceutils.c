@@ -53,7 +53,11 @@ int v_secure_pclose(FILE *fp);
 #define BUNDLE_METADATA_RFS_APPS_PATH    "/tmp/rfc/apps"
 #endif
 
+#if(THUNDER_VERSION < 5) 
+#define THUNDERSECURITYUTILITY     "/usr/bin/WPEFrameworkSecurityUtility"
+#else
 #define THUNDERSECURITYUTILITY     "/usr/bin/ThunderSecurityUtility"
+#endif
 #define MFRUTIL                         "/usr/bin/mfr_util %s" // --PDRIVersion"
 #define MD5SUM                          "/usr/bin/md5sum %s"
 
