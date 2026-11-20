@@ -121,6 +121,8 @@ void fake_fileio_set_progress_file(const char* content);
  */
 int fake_fileio_get_fopen_count(void);
 
+bool fake_fileio_wait_for_open(unsigned int timeout_ms);
+
 /**
  * @brief Get number of times g_usleep was called (for verification)
  */

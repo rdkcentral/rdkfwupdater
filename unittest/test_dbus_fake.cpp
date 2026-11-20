@@ -88,6 +88,8 @@ namespace FakeDBus {
 // ============================================================================
 
 namespace FakeFileIO {
+    static std::mutex g_file_mutex;
+    static std::condition_variable g_file_cond;
     static bool g_file_exists = false;
     static std::string g_file_content;
     static int g_fopen_call_count = 0;
@@ -387,6 +389,7 @@ extern "C" {
  * @brief Reset file I/O fake state
  */
 void fake_fileio_reset() {
+    std::lock_guard<std::mutex> lock(FakeFileIO::g_file_mutex);
     FakeFileIO::g_file_exists = false;
     FakeFileIO::g_file_content.clear();
     FakeFileIO::g_fopen_call_count = 0;
@@ -397,6 +400,7 @@ void fake_fileio_reset() {
  * @brief Set fake progress file content
  */
 void fake_fileio_set_progress_file(const char* content) {
+    std::lock_guard<std::mutex> lock(FakeFileIO::g_file_mutex);
     FakeFileIO::g_file_exists = (content != nullptr);
     if (content) {
         FakeFileIO::g_file_content = content;
@@ -409,7 +413,15 @@ void fake_fileio_set_progress_file(const char* content) {
  * @brief Get fopen call count (for verification)
  */
 int fake_fileio_get_fopen_count() {
+    std::lock_guard<std::mutex> lock(FakeFileIO::g_file_mutex);
     return FakeFileIO::g_fopen_call_count;
+}
+
+bool fake_fileio_wait_for_open(unsigned int timeout_ms) {
+    std::unique_lock<std::mutex> lock(FakeFileIO::g_file_mutex);
+    return FakeFileIO::g_file_cond.wait_for(lock, std::chrono::milliseconds(timeout_ms), [] {
+        return FakeFileIO::g_fopen_call_count > 0;
+    });
 }
 
 /**
@@ -426,7 +438,9 @@ int fake_fileio_get_usleep_count() {
  */
 FILE* fopen(const char* path, const char* mode) {
     if (path && strcmp(path, "/opt/curl_progress") == 0) {
+        std::lock_guard<std::mutex> lock(FakeFileIO::g_file_mutex);
         FakeFileIO::g_fopen_call_count++;
+        FakeFileIO::g_file_cond.notify_all();
         
         if (!FakeFileIO::g_file_exists) {
             return nullptr;  // File doesn't exist
