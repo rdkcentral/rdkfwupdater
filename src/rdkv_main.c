@@ -1188,6 +1188,26 @@ int initialValidation(void)
     return status;
 }
 
+int processLegacyXconfResponse(XCONFRES *response, int *json_result)
+{
+    *json_result = processJsonResponse(response, cur_img_detail.cur_img_name,
+                                      device_info.model, device_info.maint_status);
+    SWLOG_INFO("processJsonResponse returned %d\n", *json_result);
+    if (*json_result != 0) {
+        SWLOG_ERROR("Invalid JSON Response.\n");
+        return -1;
+    }
+    if (strncmp(response->cloudProto, "tftp", 4) == 0) {
+        proto = 0;
+        SWLOG_INFO("tftp protocol support not present.\n");
+        return 0;
+    }
+    if (proto != 1) {
+        return 0;
+    }
+    return checkTriggerUpgrade(response, device_info.model, LEGACY_ALL_UPGRADE);
+}
+
 #ifndef GTEST_ENABLE
 
 int main(int argc, char *argv[]) {
@@ -1317,13 +1337,8 @@ int main(int argc, char *argv[]) {
             if( ret_curl_code == 0 && http_code == 200)
             {
                 SWLOG_INFO("XCONF Download Success\n");
-                json_res = processJsonResponse(&response, cur_img_detail.cur_img_name, device_info.model, device_info.maint_status);
-                SWLOG_INFO("processJsonResponse returned %d\n", json_res);
-                if (0 == (strncmp(response.cloudProto, "tftp", 4))) {
-                    proto = 0;
-                }
+                ret_curl_code = processLegacyXconfResponse(&response, &json_res);
                 if ((proto == 1) && (json_res == 0)) {
-                    ret_curl_code = checkTriggerUpgrade(&response, device_info.model, LEGACY_ALL_UPGRADE);
 
                     char *msg = printCurlError(ret_curl_code);
                     if (msg != NULL) {
@@ -1331,11 +1346,6 @@ int main(int argc, char *argv[]) {
                         t2CountNotify("CurlRet_split", ret_curl_code);
                     }
                     SWLOG_INFO("rdkvfwupgrader daemon exit curl code: %d\n", ret_curl_code);
-                } else if (proto == 0) {    // tftp = 0
-                   SWLOG_INFO("tftp protocol support not present.\n");
-                }
-                else {
-                   SWLOG_INFO("Invalid JSON Response.\n");
                 }
             }else {
                 SWLOG_INFO("XCONF Download Fail\n");
