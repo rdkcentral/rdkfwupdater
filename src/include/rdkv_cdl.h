@@ -115,6 +115,23 @@ static inline bool isFirmwareFilenameValid(const char *name)
     return index < 256;
 }
 
+static inline bool isFirmwareCleanupPathValid(const char *path, const char *directory)
+{
+    size_t directoryLength;
+    size_t pathLength;
+    const char *name;
+    if (path == NULL || directory == NULL || directory[0] != '/') return false;
+    directoryLength = strnlen(directory, MAX_BUFF_SIZE);
+    pathLength = strnlen(path, DWNL_PATH_FILE_LEN);
+    if (directoryLength == MAX_BUFF_SIZE || pathLength == DWNL_PATH_FILE_LEN) return false;
+    while (directoryLength > 1 && directory[directoryLength - 1] == '/') --directoryLength;
+    if (directoryLength <= 1 || pathLength <= directoryLength + 1 ||
+        strncmp(path, directory, directoryLength) != 0 || path[directoryLength] != '/') return false;
+    name = path + directoryLength + 1;
+    if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) return false;
+    return strspn(name, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-") == strlen(name);
+}
+
 //TLS values and timeouts
 //#define CURL_TLS_TIMEOUT 7200L
 #define TLS "--tlsv1.2"

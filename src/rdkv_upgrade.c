@@ -732,6 +732,12 @@ int codebigdownloadFile(
     }
      *httpCode = 0;
     /* Direct CDN mode must never enter Codebig path */
+    if ((context->server_type == HTTP_SSR_DIRECT || context->server_type == HTTP_SSR_CODEBIG) &&
+        (context->device_info == NULL || !isFirmwareCleanupPathValid((const char *)context->dwlloc,
+                                                                  context->device_info->difw_path))) {
+        SWLOG_ERROR("%s: rejected unsafe firmware cleanup path\n", __FUNCTION__);
+        return curl_ret_code;
+    }
     if (context->direct_cdn) {
         SWLOG_INFO("%s: Direct CDN mode - Codebig path not permitted, returning\n", __FUNCTION__);
         return curl_ret_code;
@@ -854,7 +860,8 @@ int codebigdownloadFile(
         }
         if (curl_ret_code != 0) {
             setDwnlState(RDKV_FWDNLD_DOWNLOAD_FAILED); 
-            if( *(file_dwnl.pathname) != 0 )
+            if( context->device_info != NULL &&
+                isFirmwareCleanupPathValid(file_dwnl.pathname, context->device_info->difw_path) )
             {
                 unlink(file_dwnl.pathname);
                 unlink(headerInfoFile);
@@ -907,6 +914,13 @@ int downloadFile(
     }
 
     int server_type = context->server_type;
+    if ((server_type == HTTP_SSR_DIRECT || server_type == HTTP_SSR_CODEBIG) &&
+        (context->device_info == NULL || !isFirmwareCleanupPathValid((const char *)context->dwlloc,
+                                                                  context->device_info->difw_path))) {
+        *httpCode = 0;
+        SWLOG_ERROR("%s: rejected unsafe firmware cleanup path\n", __FUNCTION__);
+        return curl_ret_code;
+    }
     const char* artifactLocationUrl = context->artifactLocationUrl;
     const void* localDownloadLocation = context->dwlloc;
     char* pPostFields = context->pPostFields;
@@ -1238,7 +1252,8 @@ int downloadFile(
             SWLOG_INFO("%s : State red entered during download, skipping retry\n", __FUNCTION__);
             return RDKV_UPGRADE_ERROR_STATE_RED;
         }
-        if( *(file_dwnl.pathname) != 0 )
+        if( context->device_info != NULL &&
+            isFirmwareCleanupPathValid(file_dwnl.pathname, context->device_info->difw_path) )
         {
             unlink(file_dwnl.pathname);
             unlink(headerInfoFile);
