@@ -1514,6 +1514,7 @@ TEST(LegacyPeripheralRouteTest, UpdatesContextRouteForInitialDownloadAndRetry) {
             EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _)).Times(0);
             EXPECT_CALL(mockfileops, codebigdownloadFile(selectedRoute,
                 StrEq(context.artifactLocationUrl), context.dwlloc, nullptr, _))
+                .Times(1 + CB_RETRY_COUNT)
                 .WillOnce(testing::DoAll(testing::SetArgPointee<4>(200), Return(CURLTIMEOUT)))
                 .WillOnce(testing::DoAll(testing::SetArgPointee<4>(200), Return(CURL_SUCCESS)));
         } else {
