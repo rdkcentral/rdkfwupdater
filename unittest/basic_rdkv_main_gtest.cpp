@@ -2973,7 +2973,7 @@ TEST(DirectCDNBypassTest, DirectCDN_WhenDwnlBlockForcesCodebig_RequestFails) {
     g_DeviceUtilsMock = &Deviceglobal;
 }
 
-TEST(LegacyPeripheralRouteTest, SwitchesRouteForInitialDownloadAndRetryWithoutChangingCaller) {
+TEST(LegacyPeripheralRouteTest, UpdatesContextRouteForInitialDownloadAndRetry) {
     for (const int originalRoute : {HTTP_SSR_DIRECT, HTTP_SSR_CODEBIG}) {
         SCOPED_TRACE(originalRoute);
         MockDownloadFileOps mockfileops;
@@ -3016,7 +3016,9 @@ TEST(LegacyPeripheralRouteTest, SwitchesRouteForInitialDownloadAndRetryWithoutCh
             EXPECT_CALL(mockfileops, codebigdownloadFile(_, _, _, _, _)).Times(0);
             EXPECT_CALL(mockfileops, downloadFile(selectedRoute,
                 StrEq(context.artifactLocationUrl), context.dwlloc, nullptr, _))
-                .WillOnce(testing::DoAll(testing::SetArgPointee<4>(200), Return(CURLTIMEOUT)))
+                .Times(1 + RETRY_COUNT)
+                .WillOnce(testing::DoAll(testing::SetArgPointee<4>(0), Return(CURLTIMEOUT)))
+                .WillOnce(testing::DoAll(testing::SetArgPointee<4>(0), Return(CURLTIMEOUT)))
                 .WillOnce(testing::DoAll(testing::SetArgPointee<4>(200), Return(CURL_SUCCESS)));
         }
         EXPECT_CALL(deviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
