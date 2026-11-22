@@ -24,6 +24,7 @@
 #include "common_device_api.h"
 #endif
 #define CLD_URL_MAX_LEN 512
+#define XCONF_REQUEST_BUILD_FAILED ((size_t)-1)
 
 typedef struct xconf_response {
 	char cloudFWFile[128];
