@@ -898,6 +898,41 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
             {
                 len = GetServerUrlFile( pServURL, szBufSize, STATE_RED_CONF );
             }
+			char *debugConfig = NULL;
+
+			if (getSecureDebugConfig("__all__", &debugConfig))
+			{
+    			SWLOG_INFO("Secure Debug API SUCCESS [__all__]: %s\n", debugConfig);
+    			free(debugConfig);
+			}
+			else
+			{
+    			SWLOG_INFO("Secure Debug API FAILED [__all__]\n");
+			}
+
+			debugConfig = NULL;
+
+			if (getSecureDebugConfig("Netflix", &debugConfig))
+			{
+    			SWLOG_INFO("Secure Debug API SUCCESS [Netflix]: %s\n", debugConfig);
+    			free(debugConfig);
+			}
+			else
+			{
+    			SWLOG_INFO("Secure Debug API FAILED [Netflix]\n");
+			}
+
+			debugConfig = NULL;
+
+			if (getSecureDebugConfig("rdkfwupdater", &debugConfig))
+			{
+    			SWLOG_INFO("Secure Debug API SUCCESS [rdkfwupdater]: %s\n", debugConfig);
+    			free(debugConfig);
+			}
+			else
+			{
+    			SWLOG_INFO("Secure Debug API FAILED [rdkfwupdater]\n");
+			}
             if( len == 0 || *pServURL == 0 )
             {
                 *buf = 0;
@@ -928,6 +963,41 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
                          t2ValNotify("SYST_WARN_UPGD_SKIP", pServURL);
                          skip = true;   // the only time to skip further checks is when not Prod build
                     }
+					char *debugConfig = NULL;
+
+					if (getSecureDebugConfig("__all__", &debugConfig))
+					{
+    					SWLOG_INFO("Secure Debug API SUCCESS [__all__]: %s\n", debugConfig);
+    					free(debugConfig);
+					}
+					else
+					{
+    					SWLOG_INFO("Secure Debug API FAILED [__all__]\n");
+					}
+
+					debugConfig = NULL;
+
+					if (getSecureDebugConfig("Netflix", &debugConfig))
+					{
+    					SWLOG_INFO("Secure Debug API SUCCESS [Netflix]: %s\n", debugConfig);
+    					free(debugConfig);
+					}
+					else
+					{
+    					SWLOG_INFO("Secure Debug API FAILED [Netflix]\n");
+					}
+
+					debugConfig = NULL;
+
+					if (getSecureDebugConfig("rdkfwupdater", &debugConfig))
+					{
+    					SWLOG_INFO("Secure Debug API SUCCESS [rdkfwupdater]: %s\n", debugConfig);
+    					free(debugConfig);
+					}
+					else
+					{
+    					SWLOG_INFO("Secure Debug API FAILED [rdkfwupdater]\n");
+					}
                 }
             }
             if( len == 0 && skip == false )
