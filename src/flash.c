@@ -75,6 +75,13 @@ static char *readXconfCheckNowValue(void)
     return value;
 }
 
+#ifdef GTEST_ENABLE
+char *readXconfCheckNowValueForTest(void)
+{
+    return readXconfCheckNowValue();
+}
+#endif
+
 // TODO - do similar to what is done for IARM eventing. Is not the primary goal of this module
 /* Description: Use for sending telemetry Log
  * @param marker: use for send marker details
