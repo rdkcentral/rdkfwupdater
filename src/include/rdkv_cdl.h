@@ -23,6 +23,9 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <errno.h>
 
 /* Forward declarations for types that may not be available in all contexts */
 typedef struct filedwnl FileDwnl_t;
@@ -130,6 +133,31 @@ static inline bool isFirmwareCleanupPathValid(const char *path, const char *dire
     name = path + directoryLength + 1;
     if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) return false;
     return strspn(name, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-") == strlen(name);
+}
+
+static inline FILE *openTrustedStateFile(const char *path, bool append)
+{
+    struct stat info;
+    int descriptor;
+    FILE *stream;
+    int flags = O_WRONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC;
+    if (path == NULL) return NULL;
+    if (append) flags |= O_APPEND;
+    descriptor = open(path, flags | O_CREAT | O_EXCL, 0600);
+    if (descriptor < 0 && errno == EEXIST) {
+        descriptor = open(path, flags);
+    }
+    if (descriptor < 0) return NULL;
+    if (fstat(descriptor, &info) != 0 || !S_ISREG(info.st_mode) ||
+        info.st_uid != geteuid() || info.st_nlink != 1 ||
+        (info.st_mode & (S_IWGRP | S_IWOTH)) ||
+        (!append && ftruncate(descriptor, 0) != 0)) {
+        close(descriptor);
+        return NULL;
+    }
+    stream = fdopen(descriptor, append ? "a" : "w");
+    if (stream == NULL) close(descriptor);
+    return stream;
 }
 
 //TLS values and timeouts

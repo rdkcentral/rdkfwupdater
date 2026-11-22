@@ -394,14 +394,14 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
         SWLOG_INFO("cloudPDRIVersion: %s\n", response->cloudPDRIVersion);
         SWLOG_INFO("rdmCatalogueVersion: %s\n", response->rdmCatalogueVersion);
 
-        fp = fopen("/tmp/.xconfssrdownloadurl", "w");
+        fp = openTrustedStateFile("/tmp/.xconfssrdownloadurl", false);
         if (fp != NULL) {
             fprintf(fp, "%s\n", response->cloudFWLocation);
             fclose(fp);
         }
 
         if( *response->rdmCatalogueVersion && 
-            (fp=fopen( "/tmp/.xconfRdmCatalogueVersion", "w" )) != NULL )
+            (fp=openTrustedStateFile("/tmp/.xconfRdmCatalogueVersion", false)) != NULL )
         {
             SWLOG_INFO(  "Updating RDM Catalogue version %s from XCONF in /tmp/.xconfRdmCatalogueVersion file\n", response->rdmCatalogueVersion );
             fprintf( fp, "%s\n", response->rdmCatalogueVersion );
