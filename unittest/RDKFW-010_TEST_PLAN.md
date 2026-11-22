@@ -1,0 +1,9 @@
+# RDKFW-010: installed bundle output bounds
+
+User runs builds/tests; none executed by assistant. GetInstalledBundles checks capacity for separators/name/version, retains only complete fitting records and frees all metadata nodes. Zero-capacity output is not written. Return remains the actual complete prefix length (existing signature); there is no new error sentinel. Oversized list entries are omitted rather than overflowing the request scratch buffer.
+
+L1: rebuild rdkfw_deviceutils_gtest and run --gtest_filter='DeviceApiTestFixture.BundleBounds_*' (two new tests), then the full deviceutils suite. Exact-fit fixture yields bundle:1 length 8 with capacity 9; capacity 8 rejects it with empty output and unchanged guard bytes. Existing directories cause a SKIP; use a fresh unit environment, not a skip as PASS. Add/execute a multiple-manifest stress run with enough entries to fill a 400-byte output and verify only complete name:version entries and no memory errors. Use sanitizer/leak checking when available to validate early-exhaustion cleanup.
+
+L2: plant harmless bundle metadata in the normal configured lab metadata directory and invoke a request. Verify fitting lists still advertise correct name/version, many/large entries remain bounded, no partial entry is sent, and updater remains responsive. Capture both certificate/application lists. Restore all manifests. The builder itself is an independent RDKFW-005 finding: do not attribute unrelated aggregate overflow to this function.
+
+Harness: sibling rdkfwupdater_harness/rdkfwupdater-develop_Medium_003/xione_confirmed/poc_rdkfwupdater-006.sh; read INSTRUCTIONS/META/header before approved lab execution. Require metadata/getter reach and bounded output, not just absence of a crash/marker. Record commit, selected tests, guard/sanitizer evidence, request/log output, normal regression and cleanup; review/security closure pending.
