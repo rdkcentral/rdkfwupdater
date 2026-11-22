@@ -74,6 +74,10 @@ extern "C" {
 
     int downloadFile(const RdkUpgradeContext_t* context, int *httpCode, void **curl);
     int checkTriggerUpgrade(XCONFRES *response, const char *model_num, int upgrade_type);
+    int buildDirectCdnArtifactPaths(const char *artifact_url, const char *directory,
+                                    const char *artifact_file, const char *suffix,
+                                    char *url_buffer, size_t url_buffer_size,
+                                    char *path_buffer, size_t path_buffer_size);
     int DirectCDNDownload(XCONFRES *response, char *cur_img_name, DeviceProperty_t *device_info, int server_type, int *pHttp_code);
     void setForceStop(int value);
     T2ERROR t2_event_s(char* marker, char* value);
@@ -892,6 +896,26 @@ TEST(PeripheralTokenSecurityTest, RejectsMissingFieldsWithoutDownloads) {
     }
     EXPECT_EQ(peripheral_firmware_dndl(url, nullptr), -1);
     EXPECT_EQ(peripheral_firmware_dndl(nullptr, url), -1);
+    global_mockdownloadfileops_ptr = previousDownload;
+    g_DeviceUtilsMock = previousDevice;
+}
+
+TEST(PeripheralPathSecurityTest, RejectsUnsafeTokensBeforeDownloads) {
+    NiceMock<MockDownloadFileOps> downloadMock;
+    NiceMock<DeviceUtilsMock> deviceMock;
+    auto *previousDownload = global_mockdownloadfileops_ptr;
+    auto *previousDevice = g_DeviceUtilsMock;
+    global_mockdownloadfileops_ptr = &downloadMock;
+    g_DeviceUtilsMock = &deviceMock;
+    EXPECT_CALL(downloadMock, downloadFile(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(downloadMock, codebigdownloadFile(_, _, _, _, _)).Times(0);
+    char url[] = "https://mock.example.com";
+    const char *tokens[] = {"../XR11_firmware_1", "/tmp/XR11_firmware_1",
+        "nested/XR11_firmware_1", "nested\\XR11_firmware_1", "%2e%2e_XR11_firmware_1"};
+    for (const char *token : tokens) {
+        std::string input(token);
+        EXPECT_EQ(peripheral_firmware_dndl(url, &input[0]), -1);
+    }
     global_mockdownloadfileops_ptr = previousDownload;
     g_DeviceUtilsMock = previousDevice;
 }
@@ -2763,6 +2787,52 @@ protected:
         g_DeviceUtilsMock = &Deviceglobal;
     }
 };
+
+/* Direct CDN uses a separate per-artifact route, so reject traversal before invoking its downloader. */
+TEST_F(DirectCDNOrchestratorTest, PeripheralTraversalRejectedBeforeDownload) {
+    XCONFRES response;
+    memset(&response, 0, sizeof(response));
+    strncpy(response.remCtrlUrl, "https://cdn.example.com/peripheral.tgz", sizeof(response.remCtrlUrl) - 1);
+    strncpy(response.peripheralFirmwares, "../XR11_firmware_1", sizeof(response.peripheralFirmwares) - 1);
+
+    EXPECT_CALL(mockexternal, isUpgradeInProgress()).WillOnce(Return(false));
+    EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(mockfileops, codebigdownloadFile(_, _, _, _, _)).Times(0);
+    EXPECT_EQ(checkTriggerUpgrade(&response, "testModel", PERIPHERAL_UPGRADE), -1);
+}
+
+TEST(DirectCDNArtifactPathTest, AcceptsExactFitUrlAndDestination) {
+    char url_buffer[10];
+    char path_buffer[6];
+
+    EXPECT_EQ(buildDirectCdnArtifactPaths("https://x", "/d", "fw", "",
+                                         url_buffer, sizeof(url_buffer),
+                                         path_buffer, sizeof(path_buffer)), 0);
+    EXPECT_STREQ(url_buffer, "https://x");
+    EXPECT_STREQ(path_buffer, "/d/fw");
+}
+
+TEST(DirectCDNArtifactPathTest, RejectsUrlTruncation) {
+    char url_buffer[9];
+    char path_buffer[6];
+
+    EXPECT_EQ(buildDirectCdnArtifactPaths("https://x", "/d", "fw", "",
+                                         url_buffer, sizeof(url_buffer),
+                                         path_buffer, sizeof(path_buffer)), -1);
+    EXPECT_STREQ(url_buffer, "");
+    EXPECT_STREQ(path_buffer, "");
+}
+
+TEST(DirectCDNArtifactPathTest, RejectsDestinationTruncation) {
+    char url_buffer[10];
+    char path_buffer[5];
+
+    EXPECT_EQ(buildDirectCdnArtifactPaths("https://x", "/d", "fw", "",
+                                         url_buffer, sizeof(url_buffer),
+                                         path_buffer, sizeof(path_buffer)), -1);
+    EXPECT_STREQ(url_buffer, "");
+    EXPECT_STREQ(path_buffer, "");
+}
 
 TEST_F(DirectCDNOrchestratorTest, HappyPath_AllArtifactsSucceed_ReturnsZero) {
     const char *xconf_json = "{"
