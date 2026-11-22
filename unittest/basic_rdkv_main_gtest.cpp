@@ -74,6 +74,7 @@ extern "C" {
 
     int downloadFile(const RdkUpgradeContext_t* context, int *httpCode, void **curl);
     int checkTriggerUpgrade(XCONFRES *response, const char *model_num, int upgrade_type);
+    int processLegacyXconfResponse(XCONFRES *response, int *json_result);
     int DirectCDNDownload(XCONFRES *response, char *cur_img_name, DeviceProperty_t *device_info, int server_type, int *pHttp_code);
     void setForceStop(int value);
     T2ERROR t2_event_s(char* marker, char* value);
@@ -102,6 +103,175 @@ extern "C" {
     int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* pHttp_code);
     size_t getContentLength(const char *file);
     int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_limit, int *httpcode);
+}
+
+TEST(XconfFilenameSecurityTest, RejectsUnsafeNamesBeforeAnyTransfer) {
+    MockDownloadFileOps downloads;
+    global_mockdownloadfileops_ptr = &downloads;
+    EXPECT_CALL(downloads, downloadFile(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(downloads, codebigdownloadFile(_, _, _, _, _)).Times(0);
+    const int modes[] = {LEGACY_ALL_UPGRADE, PCI_UPGRADE, PDRI_UPGRADE};
+    for (int mode : modes) {
+        XCONFRES response = {};
+        snprintf(response.cloudFWFile, sizeof(response.cloudFWFile), "%s", "../ABCD_bad.bin");
+        EXPECT_EQ(checkTriggerUpgrade(&response, "ABCD", mode), -1);
+        snprintf(response.cloudFWFile, sizeof(response.cloudFWFile), "%s", "ABCD_good.bin");
+        snprintf(response.cloudPDRIVersion, sizeof(response.cloudPDRIVersion), "%s", "../ABCD_PDRI_bad");
+        EXPECT_EQ(checkTriggerUpgrade(&response, "ABCD", mode), -1);
+    }
+    global_mockdownloadfileops_ptr = nullptr;
+}
+
+TEST(XconfFilenameSecurityTest, DirectCdnPeripheralRejectedBeforeUpgradeOrTransfer) {
+    NiceMock<MockExternal> external;
+    NiceMock<DeviceUtilsMock> device;
+    MockDownloadFileOps downloads;
+    auto *previous_external = global_mockexternal_ptr;
+    auto *previous_device = g_DeviceUtilsMock;
+    auto *previous_downloads = global_mockdownloadfileops_ptr;
+    global_mockexternal_ptr = &external;
+    g_DeviceUtilsMock = &device;
+    global_mockdownloadfileops_ptr = &downloads;
+    XCONFRES response = {};
+    snprintf(response.cloudFWFile, sizeof(response.cloudFWFile), "%s", "ABCD_good.bin");
+    snprintf(response.cloudPDRIVersion, sizeof(response.cloudPDRIVersion), "%s", "ABCD_PDRI_good.bin");
+    snprintf(response.peripheralFirmwares, sizeof(response.peripheralFirmwares), "%s", "../ABCD_remote.tgz");
+    snprintf(response.remCtrlUrl, sizeof(response.remCtrlUrl), "%s", "https://mock.example/remote.tgz");
+    EXPECT_CALL(external, isUpgradeInProgress()).WillOnce(Return(false));
+    EXPECT_CALL(external, isDwnlBlock(_)).Times(0);
+    EXPECT_CALL(external, checkForValidPCIUpgrade(_, _, _, _)).Times(0);
+    EXPECT_CALL(external, updateFWDownloadStatus(_, _)).Times(0);
+    EXPECT_CALL(device, v_secure_system(_, _, _)).Times(0);
+    EXPECT_CALL(downloads, downloadFile(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(downloads, codebigdownloadFile(_, _, _, _, _)).Times(0);
+    EXPECT_EQ(checkTriggerUpgrade(&response, "ABCD", PERIPHERAL_UPGRADE), -1);
+    global_mockexternal_ptr = previous_external;
+    g_DeviceUtilsMock = previous_device;
+    global_mockdownloadfileops_ptr = previous_downloads;
+}
+
+class XconfResponseSecurityTest : public ::testing::Test {
+protected:
+    NiceMock<DeviceUtilsMock> device;
+    MockDownloadFileOps downloads;
+    DeviceUtilsMock *previous_device;
+    MockDownloadFileOps *previous_downloads;
+    DeviceProperty_t previous_properties;
+    const char *paths[2] = {"/tmp/.xconfssrdownloadurl", "/tmp/.xconfRdmCatalogueVersion"};
+    bool existed[2] = {};
+    bool prepared[2] = {};
+    bool rdm_created = false;
+    std::string original[2];
+
+    static std::string readContents(FILE *file) {
+        std::string contents;
+        char buffer[256];
+        size_t count;
+        while ((count = fread(buffer, 1, sizeof(buffer), file)) > 0) {
+            contents.append(buffer, count);
+        }
+        return contents;
+    }
+
+    void SetUp() override {
+        previous_device = g_DeviceUtilsMock;
+        previous_downloads = global_mockdownloadfileops_ptr;
+        previous_properties = device_info;
+        g_DeviceUtilsMock = &device;
+        global_mockdownloadfileops_ptr = &downloads;
+        snprintf(device_info.model, sizeof(device_info.model), "%s", "ABCD");
+        snprintf(device_info.maint_status, sizeof(device_info.maint_status), "%s", "false");
+        for (size_t index = 0; index < 2; ++index) {
+            FILE *file = fopen(paths[index], "rb");
+            if (file != nullptr) {
+                existed[index] = true;
+                original[index] = readContents(file);
+                fclose(file);
+            }
+            prepared[index] = true;
+            file = fopen(paths[index], "wb");
+            ASSERT_NE(file, nullptr);
+            const char sentinel[] = "unchanged-sentinel\n";
+            const size_t written = fwrite(sentinel, 1, sizeof(sentinel) - 1, file);
+            fclose(file);
+            ASSERT_EQ(written, sizeof(sentinel) - 1);
+        }
+        if (access("/usr/bin/rdm", F_OK) != 0) {
+            FILE *rdm = fopen("/usr/bin/rdm", "wx");
+            ASSERT_NE(rdm, nullptr);
+            rdm_created = true;
+            fclose(rdm);
+        }
+        EXPECT_CALL(device, v_secure_system(_, _, _)).Times(0);
+        EXPECT_CALL(device, getDevicePropertyData(_, _, _)).Times(0);
+        EXPECT_CALL(downloads, downloadFile(_, _, _, _, _)).Times(0);
+        EXPECT_CALL(downloads, codebigdownloadFile(_, _, _, _, _)).Times(0);
+    }
+
+    void TearDown() override {
+        for (size_t index = 0; index < 2; ++index) {
+            if (!prepared[index]) {
+                continue;
+            }
+            if (existed[index]) {
+                FILE *file = fopen(paths[index], "wb");
+                if (file != nullptr) {
+                    fwrite(original[index].data(), 1, original[index].size(), file);
+                    fclose(file);
+                }
+            } else {
+                unlink(paths[index]);
+            }
+        }
+        if (rdm_created) {
+            unlink("/usr/bin/rdm");
+        }
+        device_info = previous_properties;
+        g_DeviceUtilsMock = previous_device;
+        global_mockdownloadfileops_ptr = previous_downloads;
+    }
+
+    XCONFRES responseWithUnsafeName(bool unsafe_pdri) {
+        XCONFRES response = {};
+        snprintf(response.cloudFWFile, sizeof(response.cloudFWFile), "%s",
+                 unsafe_pdri ? "ABCD_good.bin" : "../ABCD_bad.bin");
+        snprintf(response.cloudPDRIVersion, sizeof(response.cloudPDRIVersion), "%s",
+                 unsafe_pdri ? "../ABCD_PDRI_bad" : "ABCD_PDRI_good.bin");
+        snprintf(response.cloudFWLocation, sizeof(response.cloudFWLocation), "%s", "https://mock.example/images");
+        snprintf(response.rdmCatalogueVersion, sizeof(response.rdmCatalogueVersion), "%s", "new-catalogue");
+        snprintf(response.dlCertBundle, sizeof(response.dlCertBundle), "%s", "test-cert:1.0");
+        snprintf(response.dlAppBundle, sizeof(response.dlAppBundle), "%s", "test-app:1.0");
+        return response;
+    }
+
+    void expectSentinelsUnchanged() {
+        for (const char *path : paths) {
+            FILE *file = fopen(path, "rb");
+            ASSERT_NE(file, nullptr);
+            const std::string contents = readContents(file);
+            fclose(file);
+            EXPECT_EQ(contents, "unchanged-sentinel\n");
+        }
+    }
+};
+
+TEST_F(XconfResponseSecurityTest, RejectsPciAndPdriBeforeSideEffects) {
+    for (bool unsafe_pdri : {false, true}) {
+        SCOPED_TRACE(unsafe_pdri ? "unsafe PDRI" : "unsafe PCI");
+        XCONFRES response = responseWithUnsafeName(unsafe_pdri);
+        EXPECT_EQ(processJsonResponse(&response, "ABCD_current", "ABCD", "false"), -1);
+        expectSentinelsUnchanged();
+    }
+}
+
+TEST_F(XconfResponseSecurityTest, LegacyCallerReturnsFailureForRejectedResponse) {
+    for (bool unsafe_pdri : {false, true}) {
+        XCONFRES response = responseWithUnsafeName(unsafe_pdri);
+        int json_result = 0;
+        EXPECT_EQ(processLegacyXconfResponse(&response, &json_result), -1);
+        EXPECT_EQ(json_result, -1);
+        expectSentinelsUnchanged();
+    }
 }
 
 static const char* kBuildTypeFile = "/tmp/device_gtest.prop";
@@ -955,7 +1125,7 @@ TEST(checkTriggerUpgradeTest, ReturnsZeroWhenSuccessful) {
     EXPECT_CALL(mockdownloadfileops, downloadFile(_,_,_,_,_)).WillRepeatedly(Return(0));
 
     // Create a response object
-    XCONFRES response;
+    XCONFRES response = {};
 
     // Call the function to test
     int result = checkTriggerUpgrade(&response, "testModel", LEGACY_ALL_UPGRADE);
@@ -984,7 +1154,7 @@ TEST(checkTriggerUpgradeTest, ReturnsZeroWhenSuccessful404) {
     EXPECT_CALL(mockdownloadfileops, downloadFile(_,_,_,_,_)).WillRepeatedly(Return(HTTP_PAGE_NOT_FOUND));
 
     // Create a response object
-    XCONFRES response;
+    XCONFRES response = {};
 
     // Call the function to test
     int result = checkTriggerUpgrade(&response, "testModel", LEGACY_ALL_UPGRADE);

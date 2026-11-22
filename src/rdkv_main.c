@@ -588,12 +588,18 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type
     char dwlpath_filename[MAX_BUFF_SIZE];
     FILE *fp = NULL;
     int optout = -1;
+    int pathLength;
 
     imageHTTPURL[0] = 0;
     dwlpath_filename[0] = 0;
-    if (model == NULL) {
+    if (model == NULL || pResponse == NULL) {
         SWLOG_ERROR("%s : Parameter is NULL\n", __FUNCTION__);
         return upgrade_status;
+    }
+    if ((pResponse->cloudFWFile[0] && !isFirmwareFilenameValid(pResponse->cloudFWFile)) ||
+        (pResponse->cloudPDRIVersion[0] && !isFirmwareFilenameValid(pResponse->cloudPDRIVersion))) {
+        SWLOG_ERROR("%s: rejected unsafe firmware filename\n", __FUNCTION__);
+        return -1;
     }
      if (true == isUpgradeInProgress()) {
         SWLOG_ERROR("Exiting from DEVICE INITIATED HTTP CDL\nAnother upgrade is in progress\n");
@@ -641,13 +647,22 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type
             return 0;
         }
 
+        if (!isFirmwareFilenameValid(artifact_file)) {
+            SWLOG_ERROR("%s: rejected unsafe artifact filename\n", __FUNCTION__);
+            return -1;
+        }
+
         snprintf(imageHTTPURL, sizeof(imageHTTPURL), "%s", artifact_url);
 
         /* PDRI filename normalization: ensure .bin suffix on local save path */
         if (upgrade_type == PDRI_UPGRADE && strstr(artifact_file, ".bin") == NULL) {
-            snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s.bin", device_info.difw_path, artifact_file);
+            pathLength = snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s.bin", device_info.difw_path, artifact_file);
         } else {
-            snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s", device_info.difw_path, artifact_file);
+            pathLength = snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s", device_info.difw_path, artifact_file);
+        }
+        if (pathLength < 0 || (size_t)pathLength >= sizeof(dwlpath_filename)) {
+            SWLOG_ERROR("%s: artifact destination path is too long\n", __FUNCTION__);
+            return -1;
         }
 
         RdkUpgradeContext_t artifact_ctx = {0};
@@ -742,7 +757,10 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type
             fprintf(fp, "%s\n", imageHTTPURL);
             fclose(fp);
         }
-	snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s", device_info.difw_path, pResponse->cloudFWFile);
+	pathLength = snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s", device_info.difw_path, pResponse->cloudFWFile);
+        if (pathLength < 0 || (size_t)pathLength >= sizeof(dwlpath_filename)) {
+            return -1;
+        }
 	SWLOG_INFO("DWNL path with img name=%s\n", dwlpath_filename);
 	eraseFolderExceParamFile(device_info.difw_path, pResponse->cloudFWFile, pResponse->cloudPDRIVersion,device_info.model);
 	
@@ -794,12 +812,19 @@ int checkTriggerUpgrade(XCONFRES *pResponse, const char *model, int upgrade_type
             SWLOG_INFO("cloudImmediateRebootFlag is %s. Starting PDRI upgrade check ... \n", pResponse->cloudImmediateRebootFlag);
             if ((strstr(pResponse->cloudPDRIVersion, ".bin")) == NULL) {
                 optout = strnlen( pResponse->cloudPDRIVersion, sizeof(pResponse->cloudPDRIVersion) );   // reuse variable
+                if ((size_t)optout + sizeof(".bin") > sizeof(pResponse->cloudPDRIVersion)) {
+                    SWLOG_ERROR("%s: PDRI filename cannot fit .bin suffix\n", __FUNCTION__);
+                    return -1;
+                }
                 snprintf( pResponse->cloudPDRIVersion + optout, sizeof(pResponse->cloudPDRIVersion) - optout, ".bin" ); // prevent buffer overflow
                 SWLOG_INFO("Added .bin in pdri image=%s\n", pResponse->cloudPDRIVersion);
             }
             snprintf(imageHTTPURL, sizeof(imageHTTPURL), "%s/%s", pResponse->cloudFWLocation, pResponse->cloudPDRIVersion);
             SWLOG_INFO("pdri imageHTTPURL=%s\n", imageHTTPURL);
-            snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s", device_info.difw_path, pResponse->cloudPDRIVersion);
+            pathLength = snprintf(dwlpath_filename, sizeof(dwlpath_filename), "%s/%s", device_info.difw_path, pResponse->cloudPDRIVersion);
+            if (pathLength < 0 || (size_t)pathLength >= sizeof(dwlpath_filename)) {
+                return -1;
+            }
             SWLOG_INFO("pdri DWNL path with img name=%s\n", dwlpath_filename);
             if (true == valid_pci_status && pci_curl_code == 0) {
                 SWLOG_INFO("Adding a sleep of 30secs to avoid the PCI PDRI race condition during flashing\n");
@@ -1163,6 +1188,26 @@ int initialValidation(void)
     return status;
 }
 
+int processLegacyXconfResponse(XCONFRES *response, int *json_result)
+{
+    *json_result = processJsonResponse(response, cur_img_detail.cur_img_name,
+                                      device_info.model, device_info.maint_status);
+    SWLOG_INFO("processJsonResponse returned %d\n", *json_result);
+    if (*json_result != 0) {
+        SWLOG_ERROR("Invalid JSON Response.\n");
+        return -1;
+    }
+    if (strncmp(response->cloudProto, "tftp", 4) == 0) {
+        proto = 0;
+        SWLOG_INFO("tftp protocol support not present.\n");
+        return 0;
+    }
+    if (proto != 1) {
+        return 0;
+    }
+    return checkTriggerUpgrade(response, device_info.model, LEGACY_ALL_UPGRADE);
+}
+
 #ifndef GTEST_ENABLE
 
 int main(int argc, char *argv[]) {
@@ -1292,13 +1337,8 @@ int main(int argc, char *argv[]) {
             if( ret_curl_code == 0 && http_code == 200)
             {
                 SWLOG_INFO("XCONF Download Success\n");
-                json_res = processJsonResponse(&response, cur_img_detail.cur_img_name, device_info.model, device_info.maint_status);
-                SWLOG_INFO("processJsonResponse returned %d\n", json_res);
-                if (0 == (strncmp(response.cloudProto, "tftp", 4))) {
-                    proto = 0;
-                }
+                ret_curl_code = processLegacyXconfResponse(&response, &json_res);
                 if ((proto == 1) && (json_res == 0)) {
-                    ret_curl_code = checkTriggerUpgrade(&response, device_info.model, LEGACY_ALL_UPGRADE);
 
                     char *msg = printCurlError(ret_curl_code);
                     if (msg != NULL) {
@@ -1306,11 +1346,6 @@ int main(int argc, char *argv[]) {
                         t2CountNotify("CurlRet_split", ret_curl_code);
                     }
                     SWLOG_INFO("rdkvfwupgrader daemon exit curl code: %d\n", ret_curl_code);
-                } else if (proto == 0) {    // tftp = 0
-                   SWLOG_INFO("tftp protocol support not present.\n");
-                }
-                else {
-                   SWLOG_INFO("Invalid JSON Response.\n");
                 }
             }else {
                 SWLOG_INFO("XCONF Download Fail\n");
