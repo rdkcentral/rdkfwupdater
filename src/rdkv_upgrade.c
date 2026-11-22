@@ -414,7 +414,6 @@ int rdkv_upgrade_request(RdkUpgradeContext_t* context, void** curl, int* pHttp_c
         }
     }
 
-   
     context->server_type = server_type;
 
     if( ret_curl_code != DWNL_BLOCK )   // no point in continuing if both download types are blocked
