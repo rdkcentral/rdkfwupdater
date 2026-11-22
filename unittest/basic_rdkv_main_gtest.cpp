@@ -99,7 +99,7 @@ extern "C" {
     int peripheral_firmware_dndl(char *pCloudFWLocation, char *pPeripheralFirmwares);
     int fallBack(const RdkUpgradeContext_t* context, int *httpCode, void **curl);
     void saveHTTPCode(int http_code, const char *lastrun);
-    int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* pHttp_code);
+    int rdkv_upgrade_request(RdkUpgradeContext_t* context, void** curl, int* pHttp_code);
     size_t getContentLength(const char *file);
     int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_limit, int *httpcode);
 }
@@ -3004,9 +3004,6 @@ TEST(LegacyPeripheralRouteTest, SwitchesRouteForInitialDownloadAndRetryWithoutCh
         context.force_exit = &forceExit;
         context.trigger_type = 1;
         context.rfc_list = &localRfc;
-        unsigned char originalContext[sizeof(context)];
-        memcpy(originalContext, &context, sizeof(context));
-
         EXPECT_CALL(mockexternal, isDwnlBlock(originalRoute)).WillOnce(Return(1));
         EXPECT_CALL(mockexternal, isDwnlBlock(selectedRoute)).WillOnce(Return(0));
         if (selectedRoute == HTTP_SSR_CODEBIG) {
@@ -3031,7 +3028,7 @@ TEST(LegacyPeripheralRouteTest, SwitchesRouteForInitialDownloadAndRetryWithoutCh
 
         EXPECT_EQ(rdkv_upgrade_request(&context, &curl, &httpCode), CURL_SUCCESS);
         EXPECT_EQ(httpCode, 200);
-        EXPECT_EQ(memcmp(originalContext, &context, sizeof(context)), 0);
+        EXPECT_EQ(context.server_type, selectedRoute);
         global_mockdownloadfileops_ptr = previousFileOps;
         global_mockexternal_ptr = previousExternal;
         g_DeviceUtilsMock = previousDevice;
