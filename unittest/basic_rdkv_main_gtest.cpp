@@ -1421,7 +1421,8 @@ TEST_P(XconfStateValidationTest, ReaderReturnsOnlyExactAllowedValues) {
     ASSERT_NE(value, nullptr);
     const std::string &contents = GetParam().contents;
     const char *expected = GetParam().canary ? "CANARY" :
-        ((contents == "TRUE" || contents == "TRUE\n" || contents == "TRUE\r\n") ? "TRUE" : "");
+                ((contents == "TRUE" || contents == "TRUE\n" || contents == "TRUE\r\n" ||
+                    contents == "true" || contents == "TrUe" || contents == "TrUe\r\n") ? "TRUE" : "");
     EXPECT_STREQ(value, expected);
     free(value);
 }
@@ -1455,7 +1456,15 @@ INSTANTIATE_TEST_SUITE_P(Contents, XconfStateValidationTest, ::testing::Values(
     XconfStateCase{"Missing", "", true, false},
     XconfStateCase{"Empty", "", false, false},
     XconfStateCase{"False", "FALSE", false, false},
-    XconfStateCase{"Lowercase", "canary", false, false},
+    XconfStateCase{"LowercaseCanary", "canary", false, true},
+    XconfStateCase{"LowercaseTrue", "true", false, false},
+    XconfStateCase{"MixedTrue", "TrUe", false, false},
+    XconfStateCase{"MixedTrueCRLF", "TrUe\r\n", false, false},
+    XconfStateCase{"MixedCanary", "CaNaRy", false, true},
+    XconfStateCase{"LowercaseCanaryLF", "canary\n", false, true},
+    XconfStateCase{"LowercaseCanaryCRLF", "canary\r\n", false, true},
+    XconfStateCase{"TrueSuffix", "TRUEextra", false, false},
+    XconfStateCase{"LowercaseExtraToken", "canary x", false, false},
     XconfStateCase{"LeadingSpace", " CANARY", false, false},
     XconfStateCase{"TrailingSpace", "CANARY ", false, false},
     XconfStateCase{"ExtraToken", "CANARY x", false, false},

@@ -66,11 +66,17 @@ static char *readXconfCheckNowValue(void)
             --length;
         }
     }
+    /* Hostif accepts mixed case; normalize it without accepting prefixes or extra contents. */
+    for (size_t index = 0; index < length; ++index) {
+        if (contents[index] >= 'a' && contents[index] <= 'z') {
+            contents[index] -= 'a' - 'A';
+        }
+    }
     if ((length == 4 && memcmp(contents, "TRUE", 4) == 0) ||
         (length == 6 && memcmp(contents, "CANARY", 6) == 0)) {
         memcpy(value, contents, length);
     } else {
-        SWLOG_ERROR("xconfCheckNow: invalid value rejected; expected TRUE or CANARY\n");
+        SWLOG_ERROR("xconfCheckNow: invalid value rejected; expected complete TRUE or CANARY (case-insensitive)\n");
     }
     return value;
 }
