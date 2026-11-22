@@ -109,6 +109,88 @@ TEST_F(InterfaceTestFixture, TestName_read_RFCPropertyFail)
     EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _)).Times(1).WillOnce(Return(0));
     EXPECT_EQ(read_RFCProperty("IncrementalCDL", "rfccdl", data, sizeof(data)), -1);
 }
+
+TEST_F(InterfaceTestFixture, RfcValueBounds_QuotedAndUnquotedExactFit)
+{
+    char type[] = "test";
+    const char *values[] = {"\"true\"", "true"};
+    for (const char *value : values) {
+        char guarded[7];
+        memset(guarded, '#', sizeof(guarded));
+        EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _))
+            .WillOnce(Invoke([value](char*, const char*, RFC_ParamData_t *param) {
+                snprintf(param->value, sizeof(param->value), "%s", value);
+                return WDMP_SUCCESS;
+            }));
+        EXPECT_EQ(read_RFCProperty(type, "test.key", guarded + 1, 5), READ_RFC_SUCCESS);
+        EXPECT_STREQ(guarded + 1, "true");
+        EXPECT_EQ(guarded[0], '#');
+        EXPECT_EQ(guarded[6], '#');
+    }
+}
+
+TEST_F(InterfaceTestFixture, RfcValueBounds_QuotedOversizeIsRejected)
+{
+    char type[] = "test";
+    char guarded[6];
+    memset(guarded, '#', sizeof(guarded));
+    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _))
+        .WillOnce(Invoke([](char*, const char*, RFC_ParamData_t *param) {
+            snprintf(param->value, sizeof(param->value), "%s", "\"true\"");
+            return WDMP_SUCCESS;
+        }));
+    EXPECT_EQ(read_RFCProperty(type, "test.key", guarded + 1, 4), READ_RFC_FAILURE);
+    EXPECT_EQ(guarded[1], '\0');
+    EXPECT_EQ(guarded[0], '#');
+    EXPECT_EQ(guarded[5], '#');
+}
+
+TEST_F(InterfaceTestFixture, RfcValueBounds_UnquotedOversizeIsRejected)
+{
+    char type[] = "test";
+    char guarded[6];
+    memset(guarded, '#', sizeof(guarded));
+    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _))
+        .WillOnce(Invoke([](char*, const char*, RFC_ParamData_t *param) {
+            snprintf(param->value, sizeof(param->value), "%s", "true");
+            return WDMP_ERR_DEFAULT_VALUE;
+        }));
+    EXPECT_EQ(read_RFCProperty(type, "test.key", guarded + 1, 4), READ_RFC_FAILURE);
+    EXPECT_EQ(guarded[1], '\0');
+    EXPECT_EQ(guarded[0], '#');
+    EXPECT_EQ(guarded[5], '#');
+}
+
+TEST_F(InterfaceTestFixture, RfcValueBounds_UnterminatedInputIsRejected)
+{
+    char type[] = "test";
+    char guarded[6];
+    memset(guarded, '#', sizeof(guarded));
+    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _))
+        .WillOnce(Invoke([](char*, const char*, RFC_ParamData_t *param) {
+            memset(param->value, 'A', sizeof(param->value));
+            return WDMP_SUCCESS;
+        }));
+    EXPECT_EQ(read_RFCProperty(type, "test.key", guarded + 1, 4), READ_RFC_FAILURE);
+    EXPECT_EQ(guarded[1], '\0');
+    EXPECT_EQ(guarded[0], '#');
+    EXPECT_EQ(guarded[5], '#');
+}
+
+TEST_F(InterfaceTestFixture, RfcValueBounds_EmptyQuotedValueFitsOneByte)
+{
+    char type[] = "test";
+    char guarded[] = {'#', 'X', '#'};
+    EXPECT_CALL(*g_InterfaceMock, getRFCParameter(_, _, _))
+        .WillOnce(Invoke([](char*, const char*, RFC_ParamData_t *param) {
+            snprintf(param->value, sizeof(param->value), "%s", "\"\"");
+            return WDMP_ERR_DEFAULT_VALUE;
+        }));
+    EXPECT_EQ(read_RFCProperty(type, "test.key", guarded + 1, 1), READ_RFC_SUCCESS);
+    EXPECT_EQ(guarded[1], '\0');
+    EXPECT_EQ(guarded[0], '#');
+    EXPECT_EQ(guarded[2], '#');
+}
 TEST_F(InterfaceTestFixture, TestName_write_RFCPropertyNull)
 {
     EXPECT_EQ(write_RFCProperty(NULL, NULL, NULL, 0), -1);
