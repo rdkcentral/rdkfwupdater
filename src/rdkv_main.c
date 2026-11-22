@@ -482,6 +482,14 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
                 }
                 if( bTriggerDL == true )
                 {
+                    size_t previousDownloadedLen = szRunningLen;
+                    if (!appendDownloadedVersion(pDownloadedVers, DOWNLOADED_VERS_SIZE, &szRunningLen, pFW))
+                    {
+                        SWLOG_ERROR("%s: Peripheral download list exceeds %zu bytes\n", __FUNCTION__, (size_t)DOWNLOADED_VERS_SIZE);
+                        iRet = -1;
+                        break;
+                    }
+
                     snprintf( cSourceURL, sizeof(cSourceURL), "%s/%s.tgz", pCloudFWLocation, pFW );
                     snprintf( cDLStoreLoc, sizeof(cDLStoreLoc), "%s/%s.tgz",  device_info.difw_path, pFW );         // where on the device the file downloads to
 
@@ -525,16 +533,10 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
                             exit(1);
                         }
                         iRet = -1;
+                        pDownloadedVers[previousDownloadedLen] = '\0';
+                        szRunningLen = previousDownloadedLen;
                     } else if( iCurlCode == 0 && http_code == 200 )
                     {
-                        if( szRunningLen )
-                        {
-                            snprintf( pDownloadedVers + szRunningLen, DOWNLOADED_VERS_SIZE - szRunningLen, "," );
-                            ++szRunningLen;
-                        }
-                        szRunningLen += snprintf( pDownloadedVers + szRunningLen,
-                                                   DOWNLOADED_VERS_SIZE - szRunningLen, "%s.tgz", pFW );
-
                         snprintf( cTmpPrevVerBuf, sizeof(cTmpPrevVerBuf), "%s.tgz is successful", pFW );      // reuse buf
                         t2ValNotify( "xr_fwdnld_split", cTmpPrevVerBuf );
                     }
@@ -543,6 +545,8 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
                         iRet = -1;
                         SWLOG_ERROR( "%s: Peripheral download failed with curl return = %d, http_code = %d\n",
                                      __FUNCTION__, iCurlCode, http_code );
+                        pDownloadedVers[previousDownloadedLen] = '\0';
+                        szRunningLen = previousDownloadedLen;
                     }
                 }
 
