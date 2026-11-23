@@ -1202,6 +1202,8 @@ int initialValidation(void)
 
 int processLegacyXconfResponse(XCONFRES *response, int *json_result)
 {
+    /* A rejected XConf response must reach main as a nonzero CLI status;
+     * otherwise callers cannot distinguish rejection from a successful no-op. */
     *json_result = processJsonResponse(response, cur_img_detail.cur_img_name,
                                       device_info.model, device_info.maint_status);
     SWLOG_INFO("processJsonResponse returned %d\n", *json_result);

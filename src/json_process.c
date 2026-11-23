@@ -295,6 +295,8 @@ int processJsonResponse(XCONFRES *response, const char *myfwversion, const char 
 
     if( response != NULL && myfwversion != NULL && model != NULL )
     {
+        /* Reject both PCI and PDRI names before URL/catalogue files, bundle
+         * processing, telemetry or any later upgrade side effect is reached. */
         if (!isFirmwareFilenameValid(response->cloudFWFile) ||
             (response->cloudPDRIVersion[0] != '\0' &&
              !isFirmwareFilenameValid(response->cloudPDRIVersion))) {
