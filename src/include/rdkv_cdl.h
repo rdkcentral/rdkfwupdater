@@ -125,6 +125,13 @@ static inline bool isFirmwareFilenameValid(const char *name)
     return index <= FIRMWARE_FILENAME_MAX_LENGTH;
 }
 
+/*
+ * Append one successfully downloaded peripheral archive to the in-memory
+ * comma-separated list.  The helper reserves space for the optional comma,
+ * firmware name, and .tgz suffix before modifying the buffer, so an
+ * incomplete record is never written and the caller can roll back by keeping
+ * the previous length unchanged.
+ */
 static inline bool appendDownloadedVersion(char *buffer, size_t capacity, size_t *length, const char *firmwareName)
 {
     size_t remaining;
