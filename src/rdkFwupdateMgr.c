@@ -607,6 +607,9 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
             {
                 if( (fp=fopen( DOWNLOADED_PERIPHERAL_VERSION, "a")) != NULL )
                 {
+                    if (pPrevDlVers != NULL && *pPrevDlVers) {
+                        fputc(',', fp);
+                    }
                     fprintf( fp, "%s", pDownloadedVers );
                     fclose( fp );
                 }
