@@ -26,8 +26,9 @@ def test_real_cli_rejects_oversized_request_before_transport(directcdn, tmp_path
         output = result.stdout + result.stderr
         (tmp_path / f"{case}.log").write_text(output)
         assert result.returncode >= 0, output
-        expected_route = "Direct CDN mode enabled" if directcdn else "XCONF Download completed"
-        assert expected_route in output, f"Requested route was not exercised:\n{output}"
+        expected_route = "directcdn" if directcdn else "standard"
+        assert f"REQUEST_PROBE route={expected_route}" in output, \
+            f"Requested route was not exercised:\n{output}"
         if case == "normal":
             assert "REQUEST_PROBE build_failed=0 empty=0" in output, output
             assert "REQUEST_PROBE transport" in output, output

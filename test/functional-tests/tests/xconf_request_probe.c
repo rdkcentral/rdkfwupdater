@@ -37,7 +37,16 @@ size_t GetServURL(char *output, size_t capacity)
 bool isDirectCDNEnabled(void)
 {
     const char *mode = getenv("RDKFW_REQUEST_DIRECTCDN");
-    return mode && strcmp(mode, "1") == 0;
+    const bool directcdn = mode && strcmp(mode, "1") == 0;
+    fprintf(stderr, "REQUEST_PROBE route=%s\n", directcdn ? "directcdn" : "standard");
+    return directcdn;
+}
+
+/* The production retry path sleeps for up to 60 seconds after the blocked transport. */
+unsigned int sleep(unsigned int seconds)
+{
+    (void)seconds;
+    return 0;
 }
 
 /* Call the production builder, recording its result without altering it. */
