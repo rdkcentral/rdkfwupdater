@@ -33,6 +33,14 @@
 #include "device_api.h"
 
 #ifndef HANDLER_TEST_ONLY
+/*
+ * Append one key/value pair to the URL-encoded XConf request.
+ *
+ * The request is built incrementally, so this helper receives the output
+ * capacity and current length.  It checks snprintf's complete-write result
+ * before advancing the length, preventing truncated requests and out-of-bounds
+ * writes when a field or the aggregate request does not fit.
+ */
 static bool appendXconfField(char *output, size_t capacity, size_t *length,
                              const char *key, const char *value)
 {
