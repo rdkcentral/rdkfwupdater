@@ -1049,12 +1049,12 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		
 		// 4. Validate firmware name (Scenario 3)
 		if (!isFirmwareFilenameValid(firmware_name)) {
-			SWLOG_ERROR("[DOWNLOADFIRMWARE] REJECTED: Unsafe firmware filename\n");
+					   SWLOG_ERROR("[DOWNLOADFIRMWARE] REJECTED: Invalid firmware name (NULL or empty)\n");
 			g_dbus_method_invocation_return_value(resp_ctx,
 				g_variant_new("(sss)", 
 					"RDKFW_DWNL_FAILED",
 					"DWNL_ERROR",
-					"Unsafe firmware filename"));
+									   "Invalid firmware name"));
 			g_free(handler_id_str);
 			g_free(firmware_name);
 			g_free(download_url);
