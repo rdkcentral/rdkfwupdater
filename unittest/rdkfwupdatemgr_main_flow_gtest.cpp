@@ -33,6 +33,8 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <utility>
+#include <vector>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -127,6 +129,7 @@ protected:
 
     virtual void SetUp() override {
         printf("%s\n", __func__);
+        upgradeRequestTestHandler = nullptr;
         // Clean up test files before each test
         CleanupTestFiles();
         BackupOptoutFileIfPresent();
@@ -147,6 +150,7 @@ protected:
 
     virtual void TearDown() override {
         printf("%s\n", __func__);
+        upgradeRequestTestHandler = nullptr;
         RestoreOptoutFile();
         // Clean up test files after each test
         CleanupTestFiles();
@@ -1163,6 +1167,69 @@ TEST_F(RdkFwupdateMgrMainFlowTest, PeripheralFirmwareDownload_Success_WritesDown
     EXPECT_TRUE(FileExists(TEST_DOWNLOADED_PERIPHERAL_VERS));
     EXPECT_EQ(ReadFileContent(TEST_DOWNLOADED_PERIPHERAL_VERS), "XR11-20_firmware_1.1.4.1.tgz");
 }
+
+TEST_F(RdkFwupdateMgrMainFlowTest, AppendDownloadedVersion_ExactFitAndRejectsOverflow) {
+    char buffer[12] = {};
+    size_t length = 0;
+
+    ASSERT_TRUE(appendDownloadedVersion(buffer, sizeof(buffer), &length, "a"));
+    EXPECT_EQ(length, 5u);
+    EXPECT_STREQ(buffer, "a.tgz");
+
+    ASSERT_TRUE(appendDownloadedVersion(buffer, sizeof(buffer), &length, "b"));
+    EXPECT_EQ(length, 11u);
+    EXPECT_STREQ(buffer, "a.tgz,b.tgz");
+
+    EXPECT_FALSE(appendDownloadedVersion(buffer, sizeof(buffer), &length, "c"));
+    EXPECT_EQ(length, 11u);
+    EXPECT_STREQ(buffer, "a.tgz,b.tgz");
+
+    char firstTooSmall[5] = {};
+    size_t firstLength = 0;
+    EXPECT_FALSE(appendDownloadedVersion(firstTooSmall, sizeof(firstTooSmall), &firstLength, "a"));
+    EXPECT_EQ(firstLength, 0u);
+    EXPECT_STREQ(firstTooSmall, "");
+
+    char secondTooSmall[11] = "a.tgz";
+    size_t secondLength = 5;
+    EXPECT_FALSE(appendDownloadedVersion(secondTooSmall, sizeof(secondTooSmall), &secondLength, "b"));
+    EXPECT_EQ(secondLength, 5u);
+    EXPECT_STREQ(secondTooSmall, "a.tgz");
+}
+
+class PeripheralFirmwareDaemonRollbackTest : public RdkFwupdateMgrMainFlowTest,
+                                             public WithParamInterface<std::pair<int, int>> {};
+
+TEST_P(PeripheralFirmwareDaemonRollbackTest, PersistsOnlySuccessfulDownloads) {
+    char cloudBaseUrl[] = "https://cloud.example.com/firmwares";
+    char peripheralList[] = "QRA_firmware_1,QRB_firmware_2,QRC_firmware_3";
+    std::vector<std::string> requestedUrls;
+    const std::pair<int, int> failure = GetParam();
+
+    upgradeRequestTestHandler = [&requestedUrls, failure](const RdkUpgradeContext_t* context,
+                                                        void**, int* httpCode) {
+        requestedUrls.push_back(context->artifactLocationUrl);
+        const bool middleDownload = requestedUrls.size() == 2;
+        *httpCode = middleDownload ? failure.second : HTTP_SUCCESS;
+        return middleDownload ? failure.first : CURL_SUCCESS;
+    };
+
+    EXPECT_EQ(peripheral_firmware_dndl(cloudBaseUrl, peripheralList), -1);
+    const std::vector<std::string> expectedUrls = {
+        "https://cloud.example.com/firmwares/QRA_firmware_1.tgz",
+        "https://cloud.example.com/firmwares/QRB_firmware_2.tgz",
+        "https://cloud.example.com/firmwares/QRC_firmware_3.tgz"
+    };
+    EXPECT_EQ(requestedUrls, expectedUrls);
+    EXPECT_TRUE(FileExists(TEST_DOWNLOADED_PERIPHERAL_VERS));
+    EXPECT_EQ(ReadFileContent(TEST_DOWNLOADED_PERIPHERAL_VERS),
+              "QRA_firmware_1.tgz,QRC_firmware_3.tgz");
+}
+
+INSTANTIATE_TEST_SUITE_P(DownloadFailures, PeripheralFirmwareDaemonRollbackTest,
+    Values(std::make_pair(static_cast<int>(RDKV_UPGRADE_ERROR_STATE_RED), HTTP_SUCCESS),
+           std::make_pair(CURL_LOW_BANDWIDTH, HTTP_SUCCESS),
+           std::make_pair(CURL_SUCCESS, HTTP_PAGE_NOT_FOUND)));
 
 TEST_F(RdkFwupdateMgrMainFlowTest, GetOPTOUTValue_NullFile_ReturnsError) {
     EXPECT_EQ(getOPTOUTValue(NULL), -1);

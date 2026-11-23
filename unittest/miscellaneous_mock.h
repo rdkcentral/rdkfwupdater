@@ -3,6 +3,7 @@
 
 #include <gmock/gmock.h>
 #include <ctime>
+#include <functional>
 
 #include "miscellaneous.h"
 #include "rdkv_upgrade.h"
@@ -73,5 +74,9 @@ public:
 };
 
 extern MockExternal* global_mockexternal_ptr;
+
+#ifndef GTEST_BASIC
+extern std::function<int(const RdkUpgradeContext_t*, void**, int*)> upgradeRequestTestHandler;
+#endif
 
 #endif
