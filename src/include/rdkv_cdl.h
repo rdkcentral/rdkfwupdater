@@ -95,7 +95,17 @@ typedef struct deviceproperty DeviceProperty_t;
 #define MIN_BUFF_SIZE1 32
 #define SMALL_SIZE_BUFF 8
 #define DWNL_PATH_FILE_LEN 128
+#define FIRMWARE_FILENAME_MAX_LENGTH 255
 
+/*
+ * Validate a firmware basename before it is used in a privileged path.
+ * Valid names are non-empty, are not '.' or '..', are no longer than
+ * FIRMWARE_FILENAME_MAX_LENGTH characters, and contain only ASCII letters,
+ * digits, '.', '_' or '-'. Directory separators, traversal components,
+ * shell/path metacharacters and truncated names are rejected. This is a
+ * lexical check; file-opening callers must apply their own symlink and
+ * directory-trust protections.
+ */
 static inline bool isFirmwareFilenameValid(const char *name)
 {
     size_t index;
@@ -103,7 +113,7 @@ static inline bool isFirmwareFilenameValid(const char *name)
     if (name == NULL || name[0] == '\0' || strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
         return false;
     }
-    for (index = 0; index < 256 && name[index] != '\0'; ++index) {
+    for (index = 0; index <= FIRMWARE_FILENAME_MAX_LENGTH && name[index] != '\0'; ++index) {
         unsigned char character = (unsigned char)name[index];
         if (!((character >= 'a' && character <= 'z') ||
               (character >= 'A' && character <= 'Z') ||
@@ -112,7 +122,7 @@ static inline bool isFirmwareFilenameValid(const char *name)
             return false;
         }
     }
-    return index < 256;
+    return index <= FIRMWARE_FILENAME_MAX_LENGTH;
 }
 
 static inline bool appendDownloadedVersion(char *buffer, size_t capacity, size_t *length, const char *firmwareName)
