@@ -1,4 +1,17 @@
-# RDKFW-003 - XConf Artifact Filename Traversal
+# RDKFW-003 filename validation test plan
+
+Build the current PR branch, then run the focused CLI and manager tests from the unit-test build directory:
+
+```sh
+./rdkfw_main_gtest --gtest_filter='XconfFilenameSecurityTest.*:XconfResponseSecurityTest.*'
+./rdkfwupdatemgr_main_flow_gtest --gtest_filter='RdkFwupdateMgrMainFlowTest.XconfUnsafeFilenameRejectedBeforeUpgrade'
+```
+
+The CLI filter includes four security cases: legacy/Direct CDN filename rejection, response rejection before URL/catalogue/RDM side effects, and legacy caller failure propagation. If the optional `/usr/bin/rdm` fixture cannot be created, the response-security fixture skips rather than failing for an environment permission issue. Treat a skip as missing evidence and rerun with the required fixture or root-capable disposable VM; do not report it as a pass.
+
+Then run the full relevant unit targets and controlled MockXConf L2 scenarios. Use eligible model/version responses with unsafe PCI and PDRI names, valid PCI plus unsafe PDRI, unsafe Direct CDN peripheral name, and valid controls. Require no artifact GET, flash, RDM call or outside-file change. Test the normal legacy and Direct CDN flows afterward.
+
+No builds or tests were run while preparing this plan.# RDKFW-003 - XConf Artifact Filename Traversal
 
 User executes builds/tests; assistant has not run them. This independent branch shares identical isFirmwareFilenameValid with RDKFW-001 (no new transport dependency). Validate actual production filename compatibility before merge. This is lexical filename traversal protection, not an assertion of symlink-safe opens or approved caller authorization.
 
