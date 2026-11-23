@@ -36,10 +36,29 @@
 #include <sys/wait.h>
 #include "deviceutils.h"
 
+/* xconfCheckNow accepts one token plus an optional LF or CRLF line ending. */
+#define XCONF_CHECK_NOW_MAX_VALUE_LENGTH 6
+#define XCONF_CHECK_NOW_MAX_LINE_ENDING_LENGTH 2
+#define XCONF_CHECK_NOW_READ_BUFFER_SIZE \
+    (XCONF_CHECK_NOW_MAX_VALUE_LENGTH + XCONF_CHECK_NOW_MAX_LINE_ENDING_LENGTH + 1)
+#define XCONF_CHECK_NOW_VALUE_BUFFER_SIZE (XCONF_CHECK_NOW_MAX_VALUE_LENGTH + 1)
+
+/*
+ * Read and validate the state written by TR-69 Hostif for
+ * Device.X_COMCAST-COM_Xcalibur.Client.xconfCheckNow.
+ *
+ * The producer accepts TRUE and CANARY without regard to ASCII letter case
+ * and may write LF or CRLF.  We therefore normalize ASCII letters and accept
+ * only the complete TRUE or CANARY token plus one optional line ending.
+ * Empty, oversized, truncated, whitespace-padded, multi-token and unreadable
+ * values return an empty string, which preserves the existing non-Canary
+ * behavior.  This function validates content only; file ownership, symlink
+ * handling and producer authentication remain separate security concerns.
+ */
 static char *readXconfCheckNowValue(void)
 {
-    char contents[9];
-    char *value = calloc(10, sizeof(char));
+    char contents[XCONF_CHECK_NOW_READ_BUFFER_SIZE];
+    char *value = calloc(XCONF_CHECK_NOW_VALUE_BUFFER_SIZE, sizeof(char));
     FILE *state_file;
     size_t length;
     bool read_failed;
@@ -72,8 +91,8 @@ static char *readXconfCheckNowValue(void)
             contents[index] -= 'a' - 'A';
         }
     }
-    if ((length == 4 && memcmp(contents, "TRUE", 4) == 0) ||
-        (length == 6 && memcmp(contents, "CANARY", 6) == 0)) {
+    if ((length == strlen("TRUE") && memcmp(contents, "TRUE", strlen("TRUE")) == 0) ||
+        (length == strlen("CANARY") && memcmp(contents, "CANARY", strlen("CANARY")) == 0)) {
         memcpy(value, contents, length);
     } else {
         SWLOG_ERROR("xconfCheckNow: invalid value rejected; expected complete TRUE or CANARY (case-insensitive)\n");
