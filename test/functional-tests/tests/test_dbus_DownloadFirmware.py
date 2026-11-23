@@ -187,7 +187,7 @@ def test_download_rejects_unsafe_firmware_name_before_transfer(name_kind):
             result = api.DownloadFirmware(str(handler), names[name_kind],
                 "https://mockxconf:50052/getfirmwarefile", "PCI")
             assert str(result[0]) == "RDKFW_DWNL_FAILED", result
-            assert "Unsafe firmware filename" in str(result[2]), result
+            assert str(result[2]) == "Invalid firmware name", result
             assert canary.read_bytes() == b"outside-download-directory"
     finally:
         stop_daemon(proc)
