@@ -21,7 +21,7 @@ def test_real_cli_rejects_oversized_request_before_transport(directcdn, tmp_path
         environment["RDKFW_REQUEST_CASE"] = case
         result = subprocess.run(
             [binary, "0", "1"], env=environment,
-            capture_output=True, text=True, errors="replace", timeout=90, check=False,
+            capture_output=True, text=True, errors="replace", timeout=30, check=False,
         )
         output = result.stdout + result.stderr
         (tmp_path / f"{case}.log").write_text(output)
