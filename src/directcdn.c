@@ -104,8 +104,8 @@ int DirectCDNDownload( XCONFRES *response, char *cur_img_name, DeviceProperty_t 
             if( len )
             {
                 len = createJsonString( pJSONStr, JSON_STR_LEN );
-                if (len >= JSON_STR_LEN) {
-                    SWLOG_ERROR("DirectCDNDownload: JSON buffer overflow: %zu >= %d\n", len, JSON_STR_LEN);
+                if (len == XCONF_REQUEST_BUILD_FAILED || len >= JSON_STR_LEN) {
+                    SWLOG_ERROR("DirectCDNDownload: failed to construct XConf request\n");
                     free( pServURL );
                     free( pJSONStr );
                     if( DwnLoc.pvOut != NULL )

@@ -95,6 +95,81 @@ typedef struct deviceproperty DeviceProperty_t;
 #define MIN_BUFF_SIZE1 32
 #define SMALL_SIZE_BUFF 8
 #define DWNL_PATH_FILE_LEN 128
+#define FIRMWARE_FILENAME_MAX_LENGTH 255
+
+/*
+ * Validate a firmware basename before it is used in a privileged path.
+ * Valid names are non-empty, are not '.' or '..', are no longer than
+ * FIRMWARE_FILENAME_MAX_LENGTH characters, and contain only ASCII letters,
+ * digits, '.', '_' or '-'. Directory separators, traversal components,
+ * shell/path metacharacters and truncated names are rejected. This is a
+ * lexical check; file-opening callers must apply their own symlink and
+ * directory-trust protections.
+ */
+static inline bool isFirmwareFilenameValid(const char *name)
+{
+    size_t index;
+
+    if (name == NULL || name[0] == '\0' || strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
+        return false;
+    }
+    for (index = 0; index <= FIRMWARE_FILENAME_MAX_LENGTH && name[index] != '\0'; ++index) {
+        unsigned char character = (unsigned char)name[index];
+        if (!((character >= 'a' && character <= 'z') ||
+              (character >= 'A' && character <= 'Z') ||
+              (character >= '0' && character <= '9') ||
+              character == '.' || character == '_' || character == '-')) {
+            return false;
+        }
+    }
+    return index <= FIRMWARE_FILENAME_MAX_LENGTH;
+}
+
+/*
+ * Append one successfully downloaded peripheral archive to the in-memory
+ * comma-separated list.  The helper reserves space for the optional comma,
+ * firmware name, and .tgz suffix before modifying the buffer, so an
+ * incomplete record is never written and the caller can roll back by keeping
+ * the previous length unchanged.
+ */
+static inline bool appendDownloadedVersion(char *buffer, size_t capacity, size_t *length, const char *firmwareName)
+{
+    size_t remaining;
+    size_t nameLength;
+    size_t separatorLength;
+    size_t used;
+
+    if (buffer == NULL || length == NULL || firmwareName == NULL || *length >= capacity) {
+        return false;
+    }
+
+    used = *length;
+    remaining = capacity - used;
+    nameLength = strlen(firmwareName);
+    separatorLength = used > 0 ? 1 : 0;
+
+    if (nameLength >= remaining) {
+        return false;
+    }
+    remaining -= nameLength;
+    if (sizeof(".tgz") - 1 >= remaining) {
+        return false;
+    }
+    remaining -= sizeof(".tgz") - 1;
+    if (separatorLength >= remaining) {
+        return false;
+    }
+
+    if (separatorLength) {
+        buffer[used++] = ',';
+    }
+    memcpy(buffer + used, firmwareName, nameLength);
+    used += nameLength;
+    memcpy(buffer + used, ".tgz", sizeof(".tgz"));
+    used += sizeof(".tgz") - 1;
+    *length = used;
+    return true;
+}
 
 //TLS values and timeouts
 //#define CURL_TLS_TIMEOUT 7200L

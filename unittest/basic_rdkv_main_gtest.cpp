@@ -21,6 +21,10 @@
 #include <iostream>
 #include <unistd.h>
 #include <string>
+#include <vector>
+#include <fstream>
+#include <iterator>
+#include <utility>
 #include <sys/stat.h>
 
 #include "rdkv_cdl_log_wrapper.h"
@@ -74,6 +78,7 @@ extern "C" {
 
     int downloadFile(const RdkUpgradeContext_t* context, int *httpCode, void **curl);
     int checkTriggerUpgrade(XCONFRES *response, const char *model_num, int upgrade_type);
+    int processLegacyXconfResponse(XCONFRES *response, int *json_result);
     int DirectCDNDownload(XCONFRES *response, char *cur_img_name, DeviceProperty_t *device_info, int server_type, int *pHttp_code);
     void setForceStop(int value);
     T2ERROR t2_event_s(char* marker, char* value);
@@ -102,6 +107,177 @@ extern "C" {
     int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* pHttp_code);
     size_t getContentLength(const char *file);
     int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_limit, int *httpcode);
+}
+
+TEST(XconfFilenameSecurityTest, RejectsUnsafeNamesBeforeAnyTransfer) {
+    MockDownloadFileOps downloads;
+    global_mockdownloadfileops_ptr = &downloads;
+    EXPECT_CALL(downloads, downloadFile(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(downloads, codebigdownloadFile(_, _, _, _, _)).Times(0);
+    const int modes[] = {LEGACY_ALL_UPGRADE, PCI_UPGRADE, PDRI_UPGRADE};
+    for (int mode : modes) {
+        XCONFRES response = {};
+        snprintf(response.cloudFWFile, sizeof(response.cloudFWFile), "%s", "../ABCD_bad.bin");
+        EXPECT_EQ(checkTriggerUpgrade(&response, "ABCD", mode), -1);
+        snprintf(response.cloudFWFile, sizeof(response.cloudFWFile), "%s", "ABCD_good.bin");
+        snprintf(response.cloudPDRIVersion, sizeof(response.cloudPDRIVersion), "%s", "../ABCD_PDRI_bad");
+        EXPECT_EQ(checkTriggerUpgrade(&response, "ABCD", mode), -1);
+    }
+    global_mockdownloadfileops_ptr = nullptr;
+}
+
+TEST(XconfFilenameSecurityTest, DirectCdnPeripheralRejectedBeforeUpgradeOrTransfer) {
+    NiceMock<MockExternal> external;
+    NiceMock<DeviceUtilsMock> device;
+    MockDownloadFileOps downloads;
+    auto *previous_external = global_mockexternal_ptr;
+    auto *previous_device = g_DeviceUtilsMock;
+    auto *previous_downloads = global_mockdownloadfileops_ptr;
+    global_mockexternal_ptr = &external;
+    g_DeviceUtilsMock = &device;
+    global_mockdownloadfileops_ptr = &downloads;
+    XCONFRES response = {};
+    snprintf(response.cloudFWFile, sizeof(response.cloudFWFile), "%s", "ABCD_good.bin");
+    snprintf(response.cloudPDRIVersion, sizeof(response.cloudPDRIVersion), "%s", "ABCD_PDRI_good.bin");
+    snprintf(response.peripheralFirmwares, sizeof(response.peripheralFirmwares), "%s", "../ABCD_remote.tgz");
+    snprintf(response.remCtrlUrl, sizeof(response.remCtrlUrl), "%s", "https://mock.example/remote.tgz");
+    EXPECT_CALL(external, isUpgradeInProgress()).WillOnce(Return(false));
+    EXPECT_CALL(external, isDwnlBlock(_)).Times(0);
+    EXPECT_CALL(external, checkForValidPCIUpgrade(_, _, _, _)).Times(0);
+    EXPECT_CALL(external, updateFWDownloadStatus(_, _)).Times(0);
+    EXPECT_CALL(device, v_secure_system(_, _, _)).Times(0);
+    EXPECT_CALL(downloads, downloadFile(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(downloads, codebigdownloadFile(_, _, _, _, _)).Times(0);
+    EXPECT_EQ(checkTriggerUpgrade(&response, "ABCD", PERIPHERAL_UPGRADE), -1);
+    global_mockexternal_ptr = previous_external;
+    g_DeviceUtilsMock = previous_device;
+    global_mockdownloadfileops_ptr = previous_downloads;
+}
+
+class XconfResponseSecurityTest : public ::testing::Test {
+protected:
+    NiceMock<DeviceUtilsMock> device;
+    MockDownloadFileOps downloads;
+    DeviceUtilsMock *previous_device;
+    MockDownloadFileOps *previous_downloads;
+    DeviceProperty_t previous_properties;
+    const char *paths[2] = {"/tmp/.xconfssrdownloadurl", "/tmp/.xconfRdmCatalogueVersion"};
+    bool existed[2] = {};
+    bool prepared[2] = {};
+    bool rdm_created = false;
+    std::string original[2];
+
+    static std::string readContents(FILE *file) {
+        std::string contents;
+        char buffer[256];
+        size_t count;
+        while ((count = fread(buffer, 1, sizeof(buffer), file)) > 0) {
+            contents.append(buffer, count);
+        }
+        return contents;
+    }
+
+    void SetUp() override {
+        previous_device = g_DeviceUtilsMock;
+        previous_downloads = global_mockdownloadfileops_ptr;
+        previous_properties = device_info;
+        g_DeviceUtilsMock = &device;
+        global_mockdownloadfileops_ptr = &downloads;
+        snprintf(device_info.model, sizeof(device_info.model), "%s", "ABCD");
+        snprintf(device_info.maint_status, sizeof(device_info.maint_status), "%s", "false");
+        for (size_t index = 0; index < 2; ++index) {
+            FILE *file = fopen(paths[index], "rb");
+            if (file != nullptr) {
+                existed[index] = true;
+                original[index] = readContents(file);
+                fclose(file);
+            }
+            prepared[index] = true;
+            file = fopen(paths[index], "wb");
+            ASSERT_NE(file, nullptr);
+            const char sentinel[] = "unchanged-sentinel\n";
+            const size_t written = fwrite(sentinel, 1, sizeof(sentinel) - 1, file);
+            fclose(file);
+            ASSERT_EQ(written, sizeof(sentinel) - 1);
+        }
+        if (access("/usr/bin/rdm", F_OK) != 0) {
+            FILE *rdm = fopen("/usr/bin/rdm", "wx");
+            if (rdm == nullptr) {
+                GTEST_SKIP() << "Cannot create optional /usr/bin/rdm fixture; run as root or provide the fixture";
+            }
+            rdm_created = true;
+            fclose(rdm);
+        }
+        EXPECT_CALL(device, v_secure_system(_, _, _)).Times(0);
+        EXPECT_CALL(device, getDevicePropertyData(_, _, _)).Times(0);
+        EXPECT_CALL(downloads, downloadFile(_, _, _, _, _)).Times(0);
+        EXPECT_CALL(downloads, codebigdownloadFile(_, _, _, _, _)).Times(0);
+    }
+
+    void TearDown() override {
+        for (size_t index = 0; index < 2; ++index) {
+            if (!prepared[index]) {
+                continue;
+            }
+            if (existed[index]) {
+                FILE *file = fopen(paths[index], "wb");
+                if (file != nullptr) {
+                    fwrite(original[index].data(), 1, original[index].size(), file);
+                    fclose(file);
+                }
+            } else {
+                unlink(paths[index]);
+            }
+        }
+        if (rdm_created) {
+            unlink("/usr/bin/rdm");
+        }
+        device_info = previous_properties;
+        g_DeviceUtilsMock = previous_device;
+        global_mockdownloadfileops_ptr = previous_downloads;
+    }
+
+    XCONFRES responseWithUnsafeName(bool unsafe_pdri) {
+        XCONFRES response = {};
+        snprintf(response.cloudFWFile, sizeof(response.cloudFWFile), "%s",
+                 unsafe_pdri ? "ABCD_good.bin" : "../ABCD_bad.bin");
+        snprintf(response.cloudPDRIVersion, sizeof(response.cloudPDRIVersion), "%s",
+                 unsafe_pdri ? "../ABCD_PDRI_bad" : "ABCD_PDRI_good.bin");
+        snprintf(response.cloudFWLocation, sizeof(response.cloudFWLocation), "%s", "https://mock.example/images");
+        snprintf(response.rdmCatalogueVersion, sizeof(response.rdmCatalogueVersion), "%s", "new-catalogue");
+        snprintf(response.dlCertBundle, sizeof(response.dlCertBundle), "%s", "test-cert:1.0");
+        snprintf(response.dlAppBundle, sizeof(response.dlAppBundle), "%s", "test-app:1.0");
+        return response;
+    }
+
+    void expectSentinelsUnchanged() {
+        for (const char *path : paths) {
+            FILE *file = fopen(path, "rb");
+            ASSERT_NE(file, nullptr);
+            const std::string contents = readContents(file);
+            fclose(file);
+            EXPECT_EQ(contents, "unchanged-sentinel\n");
+        }
+    }
+};
+
+TEST_F(XconfResponseSecurityTest, RejectsPciAndPdriBeforeSideEffects) {
+    for (bool unsafe_pdri : {false, true}) {
+        SCOPED_TRACE(unsafe_pdri ? "unsafe PDRI" : "unsafe PCI");
+        XCONFRES response = responseWithUnsafeName(unsafe_pdri);
+        EXPECT_EQ(processJsonResponse(&response, "ABCD_current", "ABCD", "false"), -1);
+        expectSentinelsUnchanged();
+    }
+}
+
+TEST_F(XconfResponseSecurityTest, LegacyCallerReturnsFailureForRejectedResponse) {
+    for (bool unsafe_pdri : {false, true}) {
+        XCONFRES response = responseWithUnsafeName(unsafe_pdri);
+        int json_result = 0;
+        EXPECT_EQ(processLegacyXconfResponse(&response, &json_result), -1);
+        EXPECT_EQ(json_result, -1);
+        expectSentinelsUnchanged();
+    }
 }
 
 static const char* kBuildTypeFile = "/tmp/device_gtest.prop";
@@ -875,6 +1051,89 @@ TEST(checkTriggerUpgradeTest, ReturnsZeroWhenSuccessful) {
 }
 */
 
+class PeripheralFirmwareCliRollbackTest : public TestWithParam<std::pair<int, int>> {
+protected:
+    NiceMock<MockDownloadFileOps> downloadMock;
+    NiceMock<DeviceUtilsMock> deviceMock;
+    NiceMock<MockExternal> externalMock;
+    DeviceUtilsMock* previousDeviceMock = nullptr;
+    MockDownloadFileOps* previousDownloadMock = nullptr;
+    MockExternal* previousExternalMock = nullptr;
+    bool previousListExists = false;
+    std::string previousList;
+    bool previousMarkerExists = false;
+    std::string previousMarker;
+
+    void SetUp() override {
+        previousDeviceMock = g_DeviceUtilsMock;
+        previousDownloadMock = global_mockdownloadfileops_ptr;
+        previousExternalMock = global_mockexternal_ptr;
+        g_DeviceUtilsMock = &deviceMock;
+        global_mockdownloadfileops_ptr = &downloadMock;
+        global_mockexternal_ptr = &externalMock;
+        ON_CALL(deviceMock, filePresentCheck(_)).WillByDefault(Return(1));
+        previousListExists = access("/tmp/downloaded_peripheral_versions.txt", F_OK) == 0;
+        if (previousListExists) {
+            std::ifstream input("/tmp/downloaded_peripheral_versions.txt");
+            previousList.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+        }
+        unlink("/tmp/downloaded_peripheral_versions.txt");
+        previousMarkerExists = access("/tmp/.xconfssrdownloadurl", F_OK) == 0;
+        if (previousMarkerExists) {
+            std::ifstream input("/tmp/.xconfssrdownloadurl");
+            previousMarker.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+        }
+    }
+
+    void TearDown() override {
+        if (previousListExists) {
+            EXPECT_TRUE(WriteTextFile("/tmp/downloaded_peripheral_versions.txt", previousList));
+        } else {
+            unlink("/tmp/downloaded_peripheral_versions.txt");
+        }
+        if (previousMarkerExists) {
+            EXPECT_TRUE(WriteTextFile("/tmp/.xconfssrdownloadurl", previousMarker));
+        } else {
+            unlink("/tmp/.xconfssrdownloadurl");
+        }
+        global_mockdownloadfileops_ptr = previousDownloadMock;
+        global_mockexternal_ptr = previousExternalMock;
+        g_DeviceUtilsMock = previousDeviceMock;
+    }
+};
+
+TEST_P(PeripheralFirmwareCliRollbackTest, PersistsOnlySuccessfulDownloads) {
+    char cloudBaseUrl[] = "https://cloud.example.com/firmwares";
+    char peripheralList[] = "QRA_firmware_1,QRB_firmware_2,QRC_firmware_3";
+    const std::pair<int, int> failure = GetParam();
+    const int failedAttempts = failure.first == CURL_LOW_BANDWIDTH ? 1 + RETRY_COUNT : 1;
+    InSequence sequence;
+
+    EXPECT_CALL(downloadMock, downloadFile(HTTP_SSR_DIRECT,
+        StrEq("https://cloud.example.com/firmwares/QRA_firmware_1.tgz"), _, _, _))
+        .WillOnce(DoAll(SetArgPointee<4>(HTTP_SUCCESS), Return(CURL_SUCCESS)));
+    EXPECT_CALL(downloadMock, downloadFile(HTTP_SSR_DIRECT,
+        StrEq("https://cloud.example.com/firmwares/QRB_firmware_2.tgz"), _, _, _))
+        .Times(failedAttempts)
+        .WillRepeatedly(DoAll(SetArgPointee<4>(failure.second), Return(failure.first)));
+    EXPECT_CALL(downloadMock, downloadFile(HTTP_SSR_DIRECT,
+        StrEq("https://cloud.example.com/firmwares/QRC_firmware_3.tgz"), _, _, _))
+        .WillOnce(DoAll(SetArgPointee<4>(HTTP_SUCCESS), Return(CURL_SUCCESS)));
+    EXPECT_CALL(downloadMock, codebigdownloadFile(_, _, _, _, _)).Times(0);
+
+    EXPECT_EQ(peripheral_firmware_dndl(cloudBaseUrl, peripheralList), -1);
+    std::ifstream input("/tmp/downloaded_peripheral_versions.txt");
+    ASSERT_TRUE(input.is_open());
+    const std::string recordedList((std::istreambuf_iterator<char>(input)),
+                                   std::istreambuf_iterator<char>());
+    EXPECT_EQ(recordedList, "QRA_firmware_1.tgz,QRC_firmware_3.tgz");
+}
+
+INSTANTIATE_TEST_SUITE_P(DownloadFailures, PeripheralFirmwareCliRollbackTest,
+    Values(std::make_pair(static_cast<int>(RDKV_UPGRADE_ERROR_STATE_RED), HTTP_SUCCESS),
+           std::make_pair(CURL_LOW_BANDWIDTH, HTTP_SUCCESS),
+           std::make_pair(CURL_SUCCESS, HTTP_PAGE_NOT_FOUND)));
+
 TEST(PeripheralFirmwareDndlTest, HandlesValidInput) {
 
     MockDownloadFileOps mockdownloadfileops;
@@ -955,7 +1214,7 @@ TEST(checkTriggerUpgradeTest, ReturnsZeroWhenSuccessful) {
     EXPECT_CALL(mockdownloadfileops, downloadFile(_,_,_,_,_)).WillRepeatedly(Return(0));
 
     // Create a response object
-    XCONFRES response;
+    XCONFRES response = {};
 
     // Call the function to test
     int result = checkTriggerUpgrade(&response, "testModel", LEGACY_ALL_UPGRADE);
@@ -984,7 +1243,7 @@ TEST(checkTriggerUpgradeTest, ReturnsZeroWhenSuccessful404) {
     EXPECT_CALL(mockdownloadfileops, downloadFile(_,_,_,_,_)).WillRepeatedly(Return(HTTP_PAGE_NOT_FOUND));
 
     // Create a response object
-    XCONFRES response;
+    XCONFRES response = {};
 
     // Call the function to test
     int result = checkTriggerUpgrade(&response, "testModel", LEGACY_ALL_UPGRADE);
@@ -1240,6 +1499,120 @@ TEST(MainHelperFunctionTest, initializePreservesLegacyModelWhenMFRFails){
 
     g_DeviceUtilsMock = &Deviceglobal;
     global_mockexternal_ptr = NULL;
+}
+
+class XconfRequestBuilderTest : public ::testing::Test {
+protected:
+    NiceMock<DeviceUtilsMock> deviceMock;
+    NiceMock<MockExternal> externalMock;
+    DeviceUtilsMock* previousDeviceMock = nullptr;
+    MockExternal* previousExternalMock = nullptr;
+
+    void SetUp() override {
+        previousDeviceMock = g_DeviceUtilsMock;
+        previousExternalMock = global_mockexternal_ptr;
+        g_DeviceUtilsMock = &deviceMock;
+        global_mockexternal_ptr = &externalMock;
+        ON_CALL(deviceMock, getDevicePropertyData(_, _, _))
+            .WillByDefault(Invoke([](const char*, char* output, int capacity) {
+                if (capacity > 0) output[0] = '\0';
+                return -1;
+            }));
+        ON_CALL(deviceMock, read_RFCProperty(_, _, _, _))
+            .WillByDefault(Invoke([](char*, const char*, char* output, size_t capacity) {
+                if (capacity > 0) output[0] = '\0';
+                return -1;
+            }));
+        ON_CALL(deviceMock, GetModelNameUsingMFR(_, _))
+            .WillByDefault(Invoke([](char* output, size_t capacity) {
+                return static_cast<size_t>(snprintf(output, capacity, "%s", "TEST_MODEL"));
+            }));
+    }
+
+    void TearDown() override {
+        g_DeviceUtilsMock = previousDeviceMock;
+        global_mockexternal_ptr = previousExternalMock;
+    }
+};
+
+TEST_F(XconfRequestBuilderTest, RejectsInvalidOutputArguments) {
+    char untouched = 'X';
+    EXPECT_EQ(createJsonString(nullptr, 1000), XCONF_REQUEST_BUILD_FAILED);
+    EXPECT_EQ(createJsonString(&untouched, 0), XCONF_REQUEST_BUILD_FAILED);
+    EXPECT_EQ(untouched, 'X');
+}
+
+TEST_F(XconfRequestBuilderTest, ExactFitAndShortBuffersPreserveGuards) {
+    char baseline[4096] = {};
+    const size_t payloadLength = createJsonString(baseline, sizeof(baseline));
+    ASSERT_NE(payloadLength, XCONF_REQUEST_BUILD_FAILED);
+    ASSERT_GT(payloadLength, 1u);
+    ASSERT_EQ(payloadLength, strlen(baseline));
+    ASSERT_NE(strstr(baseline, "model=TEST_MODEL"), nullptr);
+    ASSERT_NE(strstr(baseline, "dlCertBundle="), nullptr);
+    ASSERT_NE(strstr(baseline, "dlAppBundle="), nullptr);
+    EXPECT_EQ(strstr(baseline, "&&"), nullptr);
+
+    const size_t capacities[] = {1, payloadLength - 1, payloadLength, payloadLength + 1};
+    for (size_t capacity : capacities) {
+        SCOPED_TRACE(capacity);
+        std::vector<char> guarded(capacity + 2, '#');
+        const size_t result = createJsonString(guarded.data() + 1, capacity);
+        EXPECT_EQ(guarded.front(), '#');
+        EXPECT_EQ(guarded.back(), '#');
+        if (capacity == payloadLength + 1) {
+            EXPECT_EQ(result, payloadLength);
+            EXPECT_STREQ(guarded.data() + 1, baseline);
+        } else {
+            EXPECT_EQ(result, XCONF_REQUEST_BUILD_FAILED);
+            EXPECT_EQ(guarded[1], '\0');
+        }
+    }
+
+    const char* delimiter = strchr(baseline, '&');
+    ASSERT_NE(delimiter, nullptr);
+    const size_t prefixLength = static_cast<size_t>(delimiter - baseline);
+    std::vector<char> guarded(prefixLength + 3, '#');
+    EXPECT_EQ(createJsonString(guarded.data() + 1, prefixLength + 1), XCONF_REQUEST_BUILD_FAILED);
+    EXPECT_EQ(guarded[1], '\0');
+    EXPECT_EQ(guarded.front(), '#');
+    EXPECT_EQ(guarded.back(), '#');
+}
+
+TEST_F(XconfRequestBuilderTest, AggregateOverflowClearsOutputAndPreservesGuards) {
+    const auto longValue = [](char* output, size_t capacity) {
+        const size_t length = capacity - 1;
+        memset(output, 'A', length);
+        output[length] = '\0';
+        return static_cast<int>(length);
+    };
+    EXPECT_CALL(externalMock, GetFirmwareVersion(_, _)).WillOnce(Invoke(longValue));
+    EXPECT_CALL(externalMock, GetMFRName(_, _)).WillOnce(Invoke(longValue));
+    EXPECT_CALL(externalMock, GetCapabilities(_, _)).Times(0);
+    EXPECT_CALL(deviceMock, GetModelNameUsingMFR(_, _))
+        .WillOnce(Invoke([longValue](char* output, size_t capacity) {
+            return static_cast<size_t>(longValue(output, capacity));
+        }));
+
+    char guarded[1002];
+    memset(guarded, '#', sizeof(guarded));
+    EXPECT_EQ(createJsonString(guarded + 1, 1000), XCONF_REQUEST_BUILD_FAILED);
+    EXPECT_EQ(guarded[0], '#');
+    EXPECT_EQ(guarded[1001], '#');
+    EXPECT_EQ(guarded[1], '\0');
+}
+
+TEST_F(XconfRequestBuilderTest, RecoveryFieldIsIncludedInCapacityChecks) {
+    char baseline[4096] = {};
+    const size_t baseLength = createJsonString(baseline, sizeof(baseline));
+    ASSERT_NE(baseLength, XCONF_REQUEST_BUILD_FAILED);
+    ON_CALL(deviceMock, isInStateRed()).WillByDefault(Return(true));
+    const std::string expected = std::string(baseline) + "&recovery=true";
+    std::vector<char> output(expected.size() + 1);
+    EXPECT_EQ(createJsonString(output.data(), output.size()), expected.size());
+    EXPECT_STREQ(output.data(), expected.c_str());
+    EXPECT_EQ(createJsonString(output.data(), expected.size()), XCONF_REQUEST_BUILD_FAILED);
+    EXPECT_EQ(output[0], '\0');
 }
 
 TEST(MainHelperFunctionTest, createJsonStringPrefersMFRModel){
