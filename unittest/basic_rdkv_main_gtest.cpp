@@ -103,7 +103,7 @@ extern "C" {
     int peripheral_firmware_dndl(char *pCloudFWLocation, char *pPeripheralFirmwares);
     int fallBack(const RdkUpgradeContext_t* context, int *httpCode, void **curl);
     void saveHTTPCode(int http_code, const char *lastrun);
-    int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* pHttp_code);
+    int rdkv_upgrade_request(RdkUpgradeContext_t* context, void** curl, int* pHttp_code);
     size_t getContentLength(const char *file);
     int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_limit, int *httpcode);
 }
@@ -3017,12 +3017,10 @@ TEST(DirectCDNBypassTest, DirectCDN_WhenDwnlBlockForcesCodebig_RequestFails) {
     EXPECT_CALL(mockexternal, isDwnlBlock(HTTP_SSR_CODEBIG)).WillOnce(Return(0));
 
     /* codebigdownloadFile is entered but returns -1 (direct_cdn guard) */
-    EXPECT_CALL(mockfileops, codebigdownloadFile(_, _, _, _, _))
-        .Times(1)
-        .WillOnce(testing::DoAll(testing::SetArgPointee<4>(0), testing::Return(-1)));
+    EXPECT_CALL(mockfileops, codebigdownloadFile(HTTP_SSR_CODEBIG, _, _, _, _))
+        .Times(1 + CB_RETRY_COUNT)
+        .WillRepeatedly(testing::DoAll(testing::SetArgPointee<4>(0), testing::Return(-1)));
 
-    /* retryDownload uses context->server_type (HTTP_SSR_DIRECT) so downloadFile
-       gets called from the retry path; let it fail so the overall result != 0 */
     EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _))
         .WillRepeatedly(testing::DoAll(testing::SetArgPointee<4>(0), testing::Return(-1)));
 
@@ -3043,6 +3041,70 @@ TEST(DirectCDNBypassTest, DirectCDN_WhenDwnlBlockForcesCodebig_RequestFails) {
     global_mockdownloadfileops_ptr = NULL;
     global_mockexternal_ptr = NULL;
     g_DeviceUtilsMock = &Deviceglobal;
+}
+
+TEST(LegacyPeripheralRouteTest, UpdatesContextRouteForInitialDownloadAndRetry) {
+    for (const int originalRoute : {HTTP_SSR_DIRECT, HTTP_SSR_CODEBIG}) {
+        SCOPED_TRACE(originalRoute);
+        MockDownloadFileOps mockfileops;
+        MockExternal mockexternal;
+        DeviceUtilsMock deviceMock;
+        auto previousFileOps = global_mockdownloadfileops_ptr;
+        auto previousExternal = global_mockexternal_ptr;
+        auto previousDevice = g_DeviceUtilsMock;
+        global_mockdownloadfileops_ptr = &mockfileops;
+        global_mockexternal_ptr = &mockexternal;
+        g_DeviceUtilsMock = &deviceMock;
+
+        const int selectedRoute = originalRoute == HTTP_SSR_DIRECT
+            ? HTTP_SSR_CODEBIG : HTTP_SSR_DIRECT;
+        int httpCode = 0;
+        int forceExit = 0;
+        void *curl = nullptr;
+        Rfc_t localRfc = {0};
+        RdkUpgradeContext_t context = {0};
+        context.upgrade_type = PERIPHERAL_UPGRADE;
+        context.server_type = originalRoute;
+        context.artifactLocationUrl = "https://legacy.example.com/XR16-10_firmware_2.4.1.8.tgz";
+        context.dwlloc = "/tmp/XR16-10_firmware_2.4.1.8.tgz";
+        context.immed_reboot_flag = "false";
+        context.lastrun = "0";
+        context.disableStatsUpdate = (char*)"no";
+        context.device_info = &device_info;
+        context.force_exit = &forceExit;
+        context.trigger_type = 1;
+        context.rfc_list = &localRfc;
+        EXPECT_CALL(mockexternal, isDwnlBlock(originalRoute)).WillOnce(Return(1));
+        EXPECT_CALL(mockexternal, isDwnlBlock(selectedRoute)).WillOnce(Return(0));
+        if (selectedRoute == HTTP_SSR_CODEBIG) {
+            EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _)).Times(0);
+            EXPECT_CALL(mockfileops, codebigdownloadFile(selectedRoute,
+                StrEq(context.artifactLocationUrl), context.dwlloc, nullptr, _))
+                .WillOnce(testing::DoAll(testing::SetArgPointee<4>(200), Return(CURLTIMEOUT)))
+                .WillOnce(testing::DoAll(testing::SetArgPointee<4>(200), Return(CURL_SUCCESS)));
+        } else {
+            EXPECT_CALL(mockfileops, codebigdownloadFile(_, _, _, _, _)).Times(0);
+            EXPECT_CALL(mockfileops, downloadFile(selectedRoute,
+                StrEq(context.artifactLocationUrl), context.dwlloc, nullptr, _))
+                .Times(1 + RETRY_COUNT)
+                .WillOnce(testing::DoAll(testing::SetArgPointee<4>(0), Return(CURLTIMEOUT)))
+                .WillOnce(testing::DoAll(testing::SetArgPointee<4>(0), Return(CURLTIMEOUT)))
+                .WillOnce(testing::DoAll(testing::SetArgPointee<4>(200), Return(CURL_SUCCESS)));
+        }
+        EXPECT_CALL(deviceMock, filePresentCheck(_)).WillRepeatedly(Return(-1));
+        EXPECT_CALL(deviceMock, getDevicePropertyData(_, _, _)).WillRepeatedly(Return(-1));
+        EXPECT_CALL(mockexternal, isMediaClientDevice()).WillRepeatedly(Return(false));
+        EXPECT_CALL(mockexternal, isDelayFWDownloadActive(_, _, _)).WillRepeatedly(Return(false));
+        EXPECT_CALL(mockexternal, updateFWDownloadStatus(_, _)).WillRepeatedly(Return(0));
+        EXPECT_CALL(mockexternal, eventManager(_, _)).Times(testing::AnyNumber());
+
+        EXPECT_EQ(rdkv_upgrade_request(&context, &curl, &httpCode), CURL_SUCCESS);
+        EXPECT_EQ(httpCode, 200);
+        EXPECT_EQ(context.server_type, selectedRoute);
+        global_mockdownloadfileops_ptr = previousFileOps;
+        global_mockexternal_ptr = previousExternal;
+        g_DeviceUtilsMock = previousDevice;
+    }
 }
 
 /**
