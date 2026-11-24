@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <time.h>
 #include <dlfcn.h>
 #include <curl/curl.h>
 
@@ -46,6 +47,22 @@ bool isDirectCDNEnabled(void)
 unsigned int sleep(unsigned int seconds)
 {
     (void)seconds;
+    return 0;
+}
+
+int usleep(unsigned int microseconds)
+{
+    (void)microseconds;
+    return 0;
+}
+
+int nanosleep(const struct timespec *requested, struct timespec *remaining)
+{
+    (void)requested;
+    if (remaining != NULL) {
+        remaining->tv_sec = 0;
+        remaining->tv_nsec = 0;
+    }
     return 0;
 }
 
