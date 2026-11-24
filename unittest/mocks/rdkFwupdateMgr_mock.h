@@ -57,8 +57,8 @@ public:
     virtual bool isConnectedToInternet() = 0;
    // virtual size_t GetPDRIFileNameUsingMFR( char *pPDRIFilename, size_t szBufSize ) = 0;
     
-    // Upgrade request mock - signature MUST match real function (const RdkUpgradeContext_t*)
-    virtual int rdkv_upgrade_request(const RdkUpgradeContext_t *context, void **curl, int *pHttp_code) = 0;
+    // Upgrade request mock - signature must match the mutable context API.
+    virtual int rdkv_upgrade_request(RdkUpgradeContext_t *context, void **curl, int *pHttp_code) = 0;
 };
 
 /**
@@ -79,8 +79,8 @@ public:
     MOCK_METHOD(int, filePresentCheck, (const char *filename), ());
     MOCK_METHOD(bool, isConnectedToInternet, (), ());
    // MOCK_METHOD(size_t, GetPDRIFileNameUsingMFR, ( char *pPDRIFilename, size_t szBufSize ), ());
-    // Note: Signature must match real function (const RdkUpgradeContext_t*)
-    MOCK_METHOD(int, rdkv_upgrade_request,(const RdkUpgradeContext_t *context, void **curl, int *pHttp_code), ());
+    // Note: Signature must match real function (RdkUpgradeContext_t*)
+    MOCK_METHOD(int, rdkv_upgrade_request,(RdkUpgradeContext_t *context, void **curl, int *pHttp_code), ());
 };
 
 // Global mock pointer for C code to access
