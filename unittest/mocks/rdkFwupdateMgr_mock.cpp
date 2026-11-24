@@ -183,7 +183,7 @@ extern "C" bool isConnectedToInternet() {
 // Upgrade request function
 // =============================================================================
 
-extern "C" int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* pHttp_code) {
+extern "C" int rdkv_upgrade_request(RdkUpgradeContext_t* context, void** curl, int* pHttp_code) {
     if (!g_RdkFwupdateMgrMock) {
         cerr << "rdkv_upgrade_request: g_RdkFwupdateMgrMock is NULL" << endl;
         return -1;
