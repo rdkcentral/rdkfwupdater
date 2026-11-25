@@ -580,7 +580,7 @@ extern "C" {
 #ifndef GTEST_BASIC
     // Mock for rdkv_upgrade_request - used by rdkFwupdateMgr.c main flow tests
     // Only compile when NOT building GTEST_BASIC (rdkfw_main_gtest uses real rdkv_upgrade.c)
-    int rdkv_upgrade_request(const RdkUpgradeContext_t* context, void** curl, int* pHttp_code) {
+    int rdkv_upgrade_request(RdkUpgradeContext_t* context, void** curl, int* pHttp_code) {
         // Return success by default for tests that don't focus on download/upgrade flow
         if (pHttp_code) {
             *pHttp_code = 200; // HTTP OK
@@ -663,7 +663,7 @@ public:
     MOCK_METHOD(bool, checkForValidPCIUpgrade, (int trigger_type, const char* cur_img_name, const char* cloudFWVersion, const char* cloudFWFile));
     MOCK_METHOD(int, getOPTOUTValue, (const char* path));
     MOCK_METHOD(void, uninitialize, (int status));
-    MOCK_METHOD(int, rdkv_upgrade_request, (const RdkUpgradeContext_t* context, void** curl, int* pHttp_code));
+    MOCK_METHOD(int, rdkv_upgrade_request, (RdkUpgradeContext_t* context, void** curl, int* pHttp_code));
     MOCK_METHOD(bool, isPDRIEnable, ());
     MOCK_METHOD(int, filePresentCheck, (const char* path));
     MOCK_METHOD(int, peripheral_firmware_dndl, (const char* cloudFWLocation, const char* peripheralFirmwares));

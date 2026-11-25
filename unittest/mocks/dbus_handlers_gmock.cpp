@@ -174,7 +174,7 @@ char* get_difw_path(void) {
 /**
  * @brief Mock implementation of rdkv_upgrade_request
  */
-int rdkv_upgrade_request(const RdkUpgradeContext_t *ctx, void **curl_handle, int *pHttp_code) {
+int rdkv_upgrade_request(RdkUpgradeContext_t *ctx, void **curl_handle, int *pHttp_code) {
     if (mock_rdkv_upgrade) {
         return mock_rdkv_upgrade->rdkv_upgrade_request(ctx, curl_handle, pHttp_code);
     }
