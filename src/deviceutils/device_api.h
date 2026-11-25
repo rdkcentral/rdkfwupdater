@@ -103,6 +103,7 @@ typedef enum {
 #define RFC_BOOTSTRAPURL    "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Bootstrap.XconfUrl"
 #define BOOTSTRAPURL        "BsXconfUrl"
 #define BOOTSTRAPDEFAULT    NO_URL
+#define SECURE_DEBUG_BUFFER_SIZE 128
 
 /* function GetServerUrlFile - scans a file for a URL. 
         Usage: size_t GetServerUrlFile <char *pServUrl> <size_t szBufSize> <char *pFileName>
