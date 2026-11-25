@@ -928,9 +928,9 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
                          t2ValNotify("SYST_WARN_UPGD_SKIP", pServURL);
                          skip = true;   // the only time to skip further checks is when not Prod build
                     }
-					char debugConfig[128] = {0};
+					char debugConfig[SECURE_DEBUG_BUFFER_SIZE] = {0};
 
-					if (getSecureDebugConfig("__all__", debugConfig, sizeof(debugConfig)))
+					if (getSecureDebugConfig("__all__", debugConfig, SECURE_DEBUG_BUFFER_SIZE))
 					{
     					SWLOG_INFO("Secure Debug API SUCCESS [__all__]: %s\n", debugConfig);
 					}
@@ -939,7 +939,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
     					SWLOG_INFO("Secure Debug API FAILED [__all__]\n");
 					}
 
-					if (getSecureDebugConfig("Netflix", debugConfig, sizeof(debugConfig)))
+					if (getSecureDebugConfig("Netflix", debugConfig, SECURE_DEBUG_BUFFER_SIZE))
 					{
     					SWLOG_INFO("Secure Debug API SUCCESS [Netflix]: %s\n", debugConfig);
 					}
@@ -948,7 +948,7 @@ size_t GetServURL( char *pServURL, size_t szBufSize )
    						SWLOG_INFO("Secure Debug API FAILED [Netflix]\n");
 					}
 
-					if (getSecureDebugConfig("rdkfwupdater", debugConfig, sizeof(debugConfig)))
+					if (getSecureDebugConfig("rdkfwupdater", debugConfig, SECURE_DEBUG_BUFFER_SIZE))
 					{
     					SWLOG_INFO("Secure Debug API SUCCESS [rdkfwupdater]: %s\n", debugConfig);
 					}
