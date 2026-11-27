@@ -75,7 +75,7 @@ class MockRdkvUpgrade {
 public:
     virtual ~MockRdkvUpgrade() {}
     
-    MOCK_METHOD(int, rdkv_upgrade_request, (const RdkUpgradeContext_t *ctx, void **curl_handle, int *pHttp_code));
+    MOCK_METHOD(int, rdkv_upgrade_request, (RdkUpgradeContext_t *ctx, void **curl_handle, int *pHttp_code));
 };
 
 /**
