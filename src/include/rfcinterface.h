@@ -73,19 +73,21 @@ typedef struct rfcdetails {
     char rfc_topspeed[RFC_VALUE_BUF_SIZE];
     char rfc_incr_cdl[RFC_VALUE_BUF_SIZE];
     char rfc_mtls[RFC_VALUE_BUF_SIZE];
+    char rfc_directcdn[RFC_VALUE_BUF_SIZE];
 }Rfc_t;
 
 #define RFC_THROTTLE "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLSpLimit.Enable"
 #define RFC_TOPSPEED "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLSpLimit.TopSpeed"
 #define RFC_INCR_CDL "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.IncrementalCDL.Enable"
 #define RFC_MTLS "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.MTLS.mTlsXConfDownload.Enable"
+#define RFC_DIRECTCDN "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.SWDLDirect.Enable"
 #define RFC_MNG_NOTIFY "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.ManageableNotification.Enable"
 
 #define RFC_FW_DWNL_START "Device.DeviceInfo.X_RDKCENTRAL-COM_xOpsDeviceMgmt.RPC.FirmwareDownloadStartedNotification"
 #define RFC_FW_DWNL_END "Device.DeviceInfo.X_RDKCENTRAL-COM_xOpsDeviceMgmt.RPC.FirmwareDownloadCompletedNotification"
 #define RFC_FW_REBOOT_NOTIFY "Device.DeviceInfo.X_RDKCENTRAL-COM_xOpsDeviceMgmt.RPC.RebootPendingNotification"
 #define RFC_FW_AUTO_EXCLUDE "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.FWUpdate.AutoExcluded.Enable"
-#define RFC_DEBUGSRV "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Identity.DbgServices.Enable"
+#define RFC_RED_RECV "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.RedRecovery.Status"
 
 #define RFC_XCONF_CHECK_NOW "Device.X_COMCAST-COM_Xcalibur.Client.xconfCheckNow"
 
@@ -97,6 +99,6 @@ int write_RFCProperty(char* type, const char* key, const char *data, RFCVALDATAT
 int isMtlsEnabled(const char *);
 int isIncremetalCDLEnable(const char *file_name);
 bool isMmgbleNotifyEnabled(void);
-bool isDebugServicesEnabled(void);
+bool isDirectCDNEnabled(void);
 
 #endif /* VIDEO_RFCINTERFACE_RFCINTERFACE_H_ */

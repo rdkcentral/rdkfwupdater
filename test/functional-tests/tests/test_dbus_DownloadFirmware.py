@@ -24,8 +24,13 @@ import json
 import pytest
 from pathlib import Path
 
-from rdkfw_test_helper import *
-
+from rdkfw_test_helper import (
+    remove_file,
+    rename_file,
+    write_on_file,
+    grep_log_file,
+    initial_rdkfw_setup,
+)
 # D-Bus Configuration
 DBUS_SERVICE_NAME = "org.rdkfwupdater.Service"
 DBUS_OBJECT_PATH = "/org/rdkfwupdater/Service"
@@ -441,7 +446,7 @@ def test_empty_url_no_cache():
     SCENARIO: Empty URL but no XConf cache exists
     SETUP: No cache file
     EXECUTE: DownloadFirmware with empty URL
-    VERIFY: Returns error immediately
+    VERIFY: Request is accepted and the worker reports cache resolution failure
     """
     proc = start_daemon()
     initial_rdkfw_setup()
@@ -456,23 +461,18 @@ def test_empty_url_no_cache():
         handler_id = int(result[0]) if isinstance(result, tuple) else int(result)
         assert handler_id > 0, "Registration failed"
 
-        # Empty URL, no cache - should fail
-        try:
-            # Correct API: DownloadFirmware(handler_id, filename, url, type)
-            result = api.DownloadFirmware(
-                str(handler_id),
-                "test.bin",
-                "",  # Empty URL - should be rejected
-                "PCI"
-            )
+        result = api.DownloadFirmware(
+            str(handler_id),
+            "test.bin",
+            "",  # Empty URL requests XConf cache resolution
+            "PCI"
+        )
 
-            result_code = str(result[0] if isinstance(result, tuple) else result)
-            assert result_code == "RDKFW_DWNL_FAILED", \
-                f"Expected RDKFW_DWNL_FAILED, got {result_code}"
-            print("[PASS] Returned RDKFW_DWNL_FAILED (empty URL rejected)")
-
-        except dbus.exceptions.DBusException as e:
-            print(f"[PASS] D-Bus error for empty URL: {e.get_dbus_name()}")
+        result_code = str(result[0] if isinstance(result, tuple) else result)
+        assert result_code == "RDKFW_DWNL_SUCCESS", \
+            f"Empty URL request should be accepted, got {result_code}"
+        assert wait_for_log_line(SWUPDATE_LOG_FILE_0, "No XConf cache found"), \
+            "Worker should report missing XConf cache for an empty URL"
 
 
     finally:
@@ -519,12 +519,13 @@ def test_download_delay():
         start_time = time.time()
 
         # Provide URL explicitly (daemon reads delay from cache, but URL still required)
-        result = api.DownloadFirmware(
+        download_result = api.DownloadFirmware(
             str(handler_id),
             "ABCD_PDRI_firmware_test.bin",
             download_url,  # URL must be provided (not empty)
             "PCI"
         )
+        print(f"DownloadFirmware returned: {download_result}")
 
         # Wait for delay + download
         time.sleep(75)
@@ -549,15 +550,14 @@ def test_download_delay():
         cleanup_daemon_files()
         stop_daemon(proc)
 
-def test_empty_url_rejected_even_with_cache():
+def test_empty_url_uses_cache():
     """
-    SCENARIO: Empty URL provided, even though valid cache exists
+    SCENARIO: Empty URL provided with a valid XConf cache
     SETUP: Create XConf cache with valid mock server URL (simulates CheckForUpdate was called)
     EXECUTE: DownloadFirmware with EMPTY URL
     VERIFY: 
-        1. Daemon REJECTS the request (validates download_url parameter)
-        2. Returns RDKFW_DWNL_FAILED or D-Bus error
-        3. Does NOT fall back to cache (input validation happens first)
+        1. Daemon accepts the request
+        2. Worker resolves the download URL from XConf cache
     """
     proc = start_daemon()
     initial_rdkfw_setup()
@@ -578,7 +578,7 @@ def test_empty_url_rejected_even_with_cache():
         handler_id = result[0] if isinstance(result, tuple) else int(result)
         assert handler_id > 0, "Registration failed"
         
-        # Create XConf cache with VALID URL (to verify cache is NOT used)
+        # Create XConf cache with a valid mock-server URL.
         xconf_data = {
             "firmwareFilename": "ABCD_PDRI_img.bin",
             "firmwareVersion": "ABCD_PDRI_img",
@@ -591,32 +591,20 @@ def test_empty_url_rejected_even_with_cache():
         with open(XCONF_CACHE_FILE, 'w') as f:
             json.dump(xconf_data, f)
         
-        print("[INFO] XConf cache created (but should be ignored due to empty URL)")
+        print("[INFO] XConf cache created for empty URL resolution")
         
-        # Call DownloadFirmware with EMPTY URL - should be REJECTED
-        try:
-            result = api.DownloadFirmware(
-                str(handler_id),
-                "ABCD_PDRI_img.bin",
-                "",  # EMPTY URL - daemon should reject this
-                "PCI"
-            )
-            
-            # If we get here, check result code
-            result_code = str(result[0] if isinstance(result, tuple) else result)
-            assert result_code == "RDKFW_DWNL_FAILED", \
-                f"Empty URL should be rejected with RDKFW_DWNL_FAILED, got {result_code}"
-            print("[PASS] Empty URL rejected with RDKFW_DWNL_FAILED (input validation)")
-            
-        except dbus.exceptions.DBusException as e:
-            # D-Bus error is also acceptable (daemon rejected before processing)
-            print(f"[PASS] Empty URL rejected with D-Bus error: {e.get_dbus_name()}")
-        
-        # Verify NO download happened
-        time.sleep(2)
-        assert not os.path.exists("/opt/CDL/ABCD_PDRI_img.bin"), \
-            "File should NOT be created when URL is rejected"
-        print("[PASS] No download occurred (request properly rejected)")
+        result = api.DownloadFirmware(
+            str(handler_id),
+            "ABCD_PDRI_img.bin",
+            "",  # Empty URL uses the XConf cache
+            "PCI"
+        )
+
+        result_code = str(result[0] if isinstance(result, tuple) else result)
+        assert result_code == "RDKFW_DWNL_SUCCESS", \
+            f"Empty URL request should be accepted, got {result_code}"
+        assert wait_for_log_line(SWUPDATE_LOG_FILE_0, "Using firmware download URL from XConf"), \
+            "Worker should resolve the empty URL from XConf cache"
         
     finally:
         remove_file("/opt/CDL/ABCD_PDRI_img.bin")
@@ -656,7 +644,7 @@ def test_connection_timeout_with_retry():
         # Unresolvable hostname - will timeout
         unresolvable_url = "https://unmockxconf:50052/featureControl/firmware.bin"
         
-        result = api.DownloadFirmware(
+        api.DownloadFirmware(
             handler_id,
             "ABCD_PDRI_img.bin",
             unresolvable_url,
@@ -807,11 +795,9 @@ def test_pdri_firmware_type():
         # The key validation is D-Bus API acceptance above
         if wait_for_file("/opt/CDL/ABCD_PDRI_test.bin", timeout=15):
             print("[PASS] PDRI firmware file created: /opt/CDL/ABCD_PDRI_test.bin")
-            file_created = True
         else:
             print("[INFO] File not created within timeout (may be expected with cert selector)")
             print("[INFO] D-Bus API correctly accepted PDRI type - primary test objective met")
-            file_created = False
 
         # Verify status file updated (if not skipped by disableStatsUpdate)
         if os.path.exists(STATUS_FILE):
@@ -862,8 +848,8 @@ def test_pdri_firmware_type():
                         with open(flash_file, 'r') as f:
                             content = f.read()
                             print(f"[DEBUG] Content of {flash_file}: {content[:200]}")
-                    except:
-                        print(f"[DEBUG] {flash_file} exists but cannot read (may be empty)")
+                    except Exception as exc:
+                        print(f"[DEBUG] {flash_file} exists but cannot read (may be empty). Error: {exc}")
         
         assert not found_flash_files, \
             f"Flash should NOT occur for D-Bus DownloadFirmware (download_only=1). Found: {found_flash_files}"
@@ -911,13 +897,10 @@ def test_peripheral_firmware_type():
 
         # Check if file was created (may or may not succeed depending on cert selector)
         # This is informational - the key validation is API acceptance above
-        peripheral_found = False
         if os.path.exists("/opt/CDL/peripheral_fw.bin"):
             print("[PASS] PERIPHERAL firmware downloaded to /opt/CDL")
-            peripheral_found = True
         elif os.path.exists("/tmp/peripheral_fw.bin"):
             print("[PASS] PERIPHERAL firmware downloaded to /tmp")
-            peripheral_found = True
         else:
             print("[INFO] File not created (expected with cert selector in test environment)")
             print("[INFO] D-Bus API correctly accepted PERIPHERAL type - test objective met")
@@ -961,7 +944,7 @@ def test_progress_file_creation():
         handler_id = str(result[0] if isinstance(result, tuple) else result)
         assert int(handler_id) > 0, "Registration failed"
 
-        result = api.DownloadFirmware(
+        api.DownloadFirmware(
             handler_id,
             "test_progress.bin",
             "https://mockxconf:50052/firmwareupdate/getfirmwaredata/test_progress.bin",
@@ -984,7 +967,7 @@ def test_progress_file_creation():
                     progress_content = f.read()
                     if progress_content.strip():
                         print(f"[INFO] Progress content: {progress_content[:100]}")
-            except:
+            except Exception:
                 pass
         else:
             # Progress file might be created briefly and removed after completion

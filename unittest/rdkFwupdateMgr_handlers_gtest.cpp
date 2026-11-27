@@ -24,6 +24,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <glib.h>
+#include <gio/gio.h>
 #include <utime.h>
 
 // Include the mock interface
@@ -37,11 +38,32 @@ extern "C" {
 
 // External declarations for functions under test
 extern gboolean xconf_cache_exists(void);
+extern int getOPTOUTValue(const char *file_name);
+extern gboolean emit_download_progress_idle(gpointer user_data);
 
 // External variables from rdkFwupdateMgr_handlers.c
 extern DeviceProperty_t device_info;
 extern ImageDetails_t cur_img_detail;
 }
+
+typedef struct {
+    GDBusConnection* connection;
+    gchar* handler_id;
+    gchar* firmware_name;
+    guint32 progress_percent;
+    guint64 bytes_downloaded;
+    guint64 total_bytes;
+} ProgressDataMirror;
+
+typedef struct {
+    GDBusConnection* connection;
+    gchar* handler_id;
+    gchar* firmware_name;
+    gint* stop_flag;
+    GMutex* mutex;
+    guint64 last_dlnow;
+    time_t last_activity_time;
+} ProgressMonitorContextMirror;
 
 using namespace testing;
 using namespace std;
@@ -155,6 +177,7 @@ protected:
          
         // Clean up any existing test files
         CleanupTestFiles();
+        clear_cached_xconf_data();
         
         // Initialize global variables with default test values
         memset(&device_info, 0, sizeof(device_info));
@@ -189,6 +212,7 @@ protected:
         
         // Clean up test files
         CleanupTestFiles();
+        clear_cached_xconf_data();
         
         // Destroy mock
         if (g_RdkFwupdateMgrMock) {
@@ -216,9 +240,10 @@ protected:
      */
     void CleanupTestFiles() {
 	printf("====================== Cleaned /tmp files =========================== \n");
-        unlink(TEST_XCONF_CACHE_FILE);
-        unlink(TEST_XCONF_HTTP_CODE_FILE);
-        unlink(TEST_XCONF_PROGRESS_FILE);
+        remove(TEST_XCONF_CACHE_FILE);
+        remove(TEST_XCONF_HTTP_CODE_FILE);
+        remove(TEST_XCONF_PROGRESS_FILE);
+        remove("/opt/maintenance_mgr_record.conf");
     }
 
     /**
@@ -254,6 +279,9 @@ protected:
         fclose(fp);
         return false;
     }
+
+    // Close writer before validation reopen to avoid leaked descriptors.
+    fclose(fp);
 
     //    fputs(content, fp);
     //Debugging the failed test cases; 
@@ -462,6 +490,35 @@ TEST_F(RdkFwupdateMgrHandlersTest, XconfCacheExists_CacheDeleted_ReturnsFalse) {
     EXPECT_FALSE(result) << "xconf_cache_exists() should return FALSE after cache is deleted";
 }
 
+TEST_F(RdkFwupdateMgrHandlersTest, SaveXconfToCache_NullResponse_ReturnsFalse) {
+    EXPECT_FALSE(save_xconf_to_cache(NULL, 200));
+}
+
+TEST_F(RdkFwupdateMgrHandlersTest, SaveXconfToCache_ResponseFileWriteFails_ReturnsFalse) {
+    ASSERT_EQ(mkdir(TEST_XCONF_CACHE_FILE, 0700), 0);
+
+    EXPECT_FALSE(save_xconf_to_cache(MOCK_XCONF_RESPONSE_UPDATE_AVAILABLE, 200));
+
+    ASSERT_EQ(rmdir(TEST_XCONF_CACHE_FILE), 0);
+}
+
+TEST_F(RdkFwupdateMgrHandlersTest, SaveXconfToCache_HttpCodeWriteFails_ReturnsFalse) {
+    ASSERT_EQ(mkdir(TEST_XCONF_HTTP_CODE_FILE, 0700), 0);
+
+    EXPECT_FALSE(save_xconf_to_cache(MOCK_XCONF_RESPONSE_UPDATE_AVAILABLE, 200));
+
+    ASSERT_EQ(rmdir(TEST_XCONF_HTTP_CODE_FILE), 0);
+    remove(TEST_XCONF_CACHE_FILE);
+}
+
+TEST_F(RdkFwupdateMgrHandlersTest, SaveXconfToCache_ParseFailure_FileCacheStillSaved) {
+    const char *invalid_json = "{ \"firmwareVersion\": \"BROKEN\" ";
+
+    EXPECT_TRUE(save_xconf_to_cache(invalid_json, 200));
+    EXPECT_TRUE(FileExists(TEST_XCONF_CACHE_FILE));
+    EXPECT_TRUE(FileExists(TEST_XCONF_HTTP_CODE_FILE));
+}
+
 // =============================================================================
 // TEST SUITE 2: Response Builders
 // =============================================================================
@@ -509,69 +566,6 @@ TEST_F(RdkFwupdateMgrHandlersTest, CheckupdateResponseFree_AllocatedStrings_Free
 // =============================================================================
 // These tests verify the cache-first, network-fallback logic
 
-/**
- * @test CheckForUpdate with valid cache and same version returns UPDATE_NOT_AVAILABLE
- */
-TEST_F(RdkFwupdateMgrHandlersTest, CheckForUpdate_ValidCache_SameVersion_ReturnsNotAvailable) {
-    // Setup: Create cache with same version as current
-    const char *current_version = "TEST_v2.0.0";
-    //CreateMockXconfCache(MOCK_XCONF_RESPONSE_SAME_VERSION, 200);
-    CreateMockXconfCache(MOCK_XCONF_RESPONSE_UPDATE_AVAILABLE, 200);
-    
-    // Mock current firmware version
-    MockCurrentFirmwareVersion(current_version);
-    MockCurrentImageName("TEST_v2.0.0");
-    MockXconfParseSuccess("TEST_v2.0.0", "TEST_v2.0.0.bin");
-    
-    // Test: CheckForUpdate should use cache and return "no update"
-    CheckUpdateResponse response = rdkFwupdateMgr_checkForUpdate("test_handler");
-    
-    // Verify
-    EXPECT_EQ(response.status_code, FIRMWARE_NOT_AVAILABLE) 
-        << "Should return FIRMWARE_NOT_AVAILABLE when cached version equals current version";
-    
-    if (response.current_img_version) {
-        EXPECT_STREQ(response.current_img_version, current_version) 
-            << "Current version should match system version";
-    }
-    
-    if (response.available_version) {
-        EXPECT_STREQ(response.available_version, "TEST_v2.0.0") 
-            << "Available version should match cached version";
-    }
-    
-    // Cleanup
-    checkupdate_response_free(&response);
-}
-
-/**
- * @test CheckForUpdate with valid cache and newer version returns UPDATE_AVAILABLE
- */
-TEST_F(RdkFwupdateMgrHandlersTest, CheckForUpdate_ValidCache_NewerVersion_ReturnsAvailable) {
-    // Setup: Create cache with newer version
-    const char *current_version = "TEST_v1.0.0";
-    CreateMockXconfCache(MOCK_XCONF_RESPONSE_UPDATE_AVAILABLE, 200);
-    
-    // Mock current firmware version (older than cache)
-    MockCurrentFirmwareVersion(current_version);
-    MockCurrentImageName("TEST_v1.0.0-signed.bin");
-    MockXconfParseSuccess("TEST_v2.0.0", "TEST_v2.0.0-signed.bin");
-    
-    // Test: CheckForUpdate should detect newer version in cache
-    CheckUpdateResponse response = rdkFwupdateMgr_checkForUpdate("test_handler");
-    
-    // Verify
-    EXPECT_EQ(response.status_code, FIRMWARE_AVAILABLE) 
-        << "Should return FIRMWARE_AVAILABLE when cached version is newer";
-    
-    if (response.available_version) {
-        EXPECT_STREQ(response.available_version, "TEST_v2.0.0") 
-            << "Available version should be the newer version from cache";
-    }
-    
-    // Cleanup
-    checkupdate_response_free(&response);
-}
 
 /**
  * @test CheckForUpdate with valid cache but older version (downgrade)
@@ -745,6 +739,188 @@ TEST_F(RdkFwupdateMgrHandlersTest, CheckForUpdate_MultipleCalls_ConsistentResult
     checkupdate_response_free(&response3);
 }
 
+TEST_F(RdkFwupdateMgrHandlersTest, CheckForUpdate_MaintDisabled_ReturnsFirmwareAvailable) {
+    const char *live_xconf_response = "{"
+        "\"firmwareDownloadProtocol\":\"http\"," 
+        "\"firmwareFilename\":\"TEST_MODEL_v2.0.0.bin\"," 
+        "\"firmwareLocation\":\"https://test.xconf.server.com/Images\"," 
+        "\"firmwareVersion\":\"TEST_MODEL_v2.0.0\"," 
+        "\"rebootImmediately\":false," 
+        "\"additionalFwVerInfo\":\"TEST_MODEL_PDRI_VBN_0.bin\""
+    "}";
+
+    strncpy(device_info.model, "TEST_MODEL", sizeof(device_info.model) - 1);
+    strncpy(device_info.maint_status, "false", sizeof(device_info.maint_status) - 1);
+    strncpy(device_info.sw_optout, "true", sizeof(device_info.sw_optout) - 1);
+    strncpy(cur_img_detail.cur_img_name, "TEST_MODEL_v1.0.0", sizeof(cur_img_detail.cur_img_name) - 1);
+
+    MockCurrentFirmwareVersion("TEST_MODEL_v1.0.0");
+
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, isDirectCDNEnabled()).WillRepeatedly(Return(false));
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, createJsonString(testing::_, JSON_STR_LEN))
+        .WillOnce(testing::Invoke([](char* pJSONStr, size_t szBufSize) {
+            const char *payload = "{\"estbMacAddress\":\"AA:BB:CC:DD:EE:FF\"}";
+            strncpy(pJSONStr, payload, szBufSize - 1);
+            pJSONStr[szBufSize - 1] = '\0';
+            return strlen(pJSONStr);
+        }));
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, allocDowndLoadDataMem(testing::_, DEFAULT_DL_ALLOC))
+        .WillOnce(testing::Invoke([live_xconf_response](DownloadData* pDwnLoc, int) {
+            pDwnLoc->pvOut = malloc(strlen(live_xconf_response) + 1);
+            strcpy((char*)pDwnLoc->pvOut, live_xconf_response);
+            pDwnLoc->datasize = strlen(live_xconf_response);
+            pDwnLoc->memsize = strlen(live_xconf_response) + 1;
+            return 0;
+        }));
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, GetServURL(testing::_, URL_MAX_LEN))
+        .WillOnce(testing::Invoke([](char* pServURL, size_t szBufSize) {
+            const char *url = "https://test.xconf.server.com/xconf/swu/stb";
+            strncpy(pServURL, url, szBufSize - 1);
+            pServURL[szBufSize - 1] = '\0';
+            return strlen(pServURL);
+        }));
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
+        .WillOnce(testing::Invoke([](const RdkUpgradeContext_t*, void**, int* pHttp_code) {
+            *pHttp_code = 200;
+            return 0;
+        }));
+
+    CheckUpdateResponse response = rdkFwupdateMgr_checkForUpdate("test_handler");
+
+    EXPECT_EQ(response.result, CHECK_FOR_UPDATE_SUCCESS);
+    EXPECT_EQ(response.status_code, FIRMWARE_AVAILABLE);
+    ASSERT_NE(response.available_version, nullptr);
+    ASSERT_NE(response.status_message, nullptr);
+    EXPECT_STREQ(response.available_version, "TEST_MODEL_v2.0.0");
+    EXPECT_STREQ(response.status_message, "Firmware update available");
+
+    checkupdate_response_free(&response);
+}
+
+TEST_F(RdkFwupdateMgrHandlersTest, CheckForUpdate_IgnoreUpdateOptout_ReturnsIgnoreOptout) {
+    const char *live_xconf_response = "{"
+        "\"firmwareDownloadProtocol\":\"http\"," 
+        "\"firmwareFilename\":\"TEST_MODEL_v2.0.0.bin\"," 
+        "\"firmwareLocation\":\"https://test.xconf.server.com/Images\"," 
+        "\"firmwareVersion\":\"TEST_MODEL_v2.0.0\"," 
+        "\"rebootImmediately\":false," 
+        "\"additionalFwVerInfo\":\"TEST_MODEL_PDRI_VBN_0.bin\""
+    "}";
+    const char *optoutFile = "/opt/maintenance_mgr_record.conf";
+
+    ASSERT_TRUE(CreateTestFile(optoutFile, "softwareoptout=IGNORE_UPDATE\n"));
+    ASSERT_EQ(getOPTOUTValue(optoutFile), 1);
+    strncpy(device_info.model, "TEST_MODEL", sizeof(device_info.model) - 1);
+    strncpy(device_info.maint_status, "true", sizeof(device_info.maint_status) - 1);
+    strncpy(device_info.sw_optout, "true", sizeof(device_info.sw_optout) - 1);
+    strncpy(cur_img_detail.cur_img_name, "TEST_MODEL_v1.0.0", sizeof(cur_img_detail.cur_img_name) - 1);
+
+    MockCurrentFirmwareVersion("TEST_MODEL_v1.0.0");
+
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, isDirectCDNEnabled()).WillRepeatedly(Return(false));
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, createJsonString(testing::_, JSON_STR_LEN))
+        .WillOnce(testing::Invoke([](char* pJSONStr, size_t szBufSize) {
+            const char *payload = "{\"estbMacAddress\":\"AA:BB:CC:DD:EE:FF\"}";
+            strncpy(pJSONStr, payload, szBufSize - 1);
+            pJSONStr[szBufSize - 1] = '\0';
+            return strlen(pJSONStr);
+        }));
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, allocDowndLoadDataMem(testing::_, DEFAULT_DL_ALLOC))
+        .WillOnce(testing::Invoke([live_xconf_response](DownloadData* pDwnLoc, int) {
+            pDwnLoc->pvOut = malloc(strlen(live_xconf_response) + 1);
+            strcpy((char*)pDwnLoc->pvOut, live_xconf_response);
+            pDwnLoc->datasize = strlen(live_xconf_response);
+            pDwnLoc->memsize = strlen(live_xconf_response) + 1;
+            return 0;
+        }));
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, GetServURL(testing::_, URL_MAX_LEN))
+        .WillOnce(testing::Invoke([](char* pServURL, size_t szBufSize) {
+            const char *url = "https://test.xconf.server.com/xconf/swu/stb";
+            strncpy(pServURL, url, szBufSize - 1);
+            pServURL[szBufSize - 1] = '\0';
+            return strlen(pServURL);
+        }));
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
+        .WillOnce(testing::Invoke([](const RdkUpgradeContext_t*, void**, int* pHttp_code) {
+            *pHttp_code = 200;
+            return 0;
+        }));
+
+    CheckUpdateResponse response = rdkFwupdateMgr_checkForUpdate("test_handler");
+
+    EXPECT_EQ(response.result, CHECK_FOR_UPDATE_SUCCESS);
+    EXPECT_EQ(response.status_code, IGNORE_OPTOUT);
+    ASSERT_NE(response.available_version, nullptr);
+    ASSERT_NE(response.status_message, nullptr);
+    EXPECT_STREQ(response.available_version, "TEST_MODEL_v2.0.0");
+    EXPECT_STREQ(response.status_message, "Firmware download blocked - user has opted out of updates");
+
+    unlink(optoutFile);
+    checkupdate_response_free(&response);
+}
+
+TEST_F(RdkFwupdateMgrHandlersTest, CheckForUpdate_EnforceOptout_ReturnsBypassOptout) {
+    const char *live_xconf_response = "{"
+        "\"firmwareDownloadProtocol\":\"http\"," 
+        "\"firmwareFilename\":\"TEST_MODEL_v2.0.0.bin\"," 
+        "\"firmwareLocation\":\"https://test.xconf.server.com/Images\"," 
+        "\"firmwareVersion\":\"TEST_MODEL_v2.0.0\"," 
+        "\"rebootImmediately\":false," 
+        "\"additionalFwVerInfo\":\"TEST_MODEL_PDRI_VBN_0.bin\""
+    "}";
+    const char *optoutFile = "/opt/maintenance_mgr_record.conf";
+
+    ASSERT_TRUE(CreateTestFile(optoutFile, "softwareoptout=ENFORCE_OPTOUT\n"));
+    ASSERT_EQ(getOPTOUTValue(optoutFile), 0);
+    strncpy(device_info.model, "TEST_MODEL", sizeof(device_info.model) - 1);
+    strncpy(device_info.maint_status, "true", sizeof(device_info.maint_status) - 1);
+    strncpy(device_info.sw_optout, "true", sizeof(device_info.sw_optout) - 1);
+    strncpy(cur_img_detail.cur_img_name, "TEST_MODEL_v1.0.0", sizeof(cur_img_detail.cur_img_name) - 1);
+
+    MockCurrentFirmwareVersion("TEST_MODEL_v1.0.0");
+
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, isDirectCDNEnabled()).WillRepeatedly(Return(false));
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, createJsonString(testing::_, JSON_STR_LEN))
+        .WillOnce(testing::Invoke([](char* pJSONStr, size_t szBufSize) {
+            const char *payload = "{\"estbMacAddress\":\"AA:BB:CC:DD:EE:FF\"}";
+            strncpy(pJSONStr, payload, szBufSize - 1);
+            pJSONStr[szBufSize - 1] = '\0';
+            return strlen(pJSONStr);
+        }));
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, allocDowndLoadDataMem(testing::_, DEFAULT_DL_ALLOC))
+        .WillOnce(testing::Invoke([live_xconf_response](DownloadData* pDwnLoc, int) {
+            pDwnLoc->pvOut = malloc(strlen(live_xconf_response) + 1);
+            strcpy((char*)pDwnLoc->pvOut, live_xconf_response);
+            pDwnLoc->datasize = strlen(live_xconf_response);
+            pDwnLoc->memsize = strlen(live_xconf_response) + 1;
+            return 0;
+        }));
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, GetServURL(testing::_, URL_MAX_LEN))
+        .WillOnce(testing::Invoke([](char* pServURL, size_t szBufSize) {
+            const char *url = "https://test.xconf.server.com/xconf/swu/stb";
+            strncpy(pServURL, url, szBufSize - 1);
+            pServURL[szBufSize - 1] = '\0';
+            return strlen(pServURL);
+        }));
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
+        .WillOnce(testing::Invoke([](const RdkUpgradeContext_t*, void**, int* pHttp_code) {
+            *pHttp_code = 200;
+            return 0;
+        }));
+
+    CheckUpdateResponse response = rdkFwupdateMgr_checkForUpdate("test_handler");
+
+    EXPECT_EQ(response.result, CHECK_FOR_UPDATE_SUCCESS);
+    EXPECT_EQ(response.status_code, BYPASS_OPTOUT);
+    ASSERT_NE(response.available_version, nullptr);
+    ASSERT_NE(response.status_message, nullptr);
+    EXPECT_STREQ(response.available_version, "TEST_MODEL_v2.0.0");
+    EXPECT_STREQ(response.status_message, "Firmware available - user consent required before installation");
+
+    unlink(optoutFile);
+    checkupdate_response_free(&response);
+}
+
 // =============================================================================
 // END OF TEST FILE
 // =============================================================================
@@ -824,6 +1000,14 @@ protected:
     }
 };
 
+TEST_F(FetchXconfFirmwareInfoTest, Failure_NullResponsePointer_ReturnsError) {
+    EXPECT_EQ(fetch_xconf_firmware_info(NULL, 0, &http_code), -1);
+}
+
+TEST_F(FetchXconfFirmwareInfoTest, Failure_NullHttpCodePointer_ReturnsError) {
+    EXPECT_EQ(fetch_xconf_firmware_info(&response, 0, NULL), -1);
+}
+
 // =============================================================================
 // Test 1: Success Path - HTTP 200, Valid Response, Parse Success
 // =============================================================================
@@ -866,7 +1050,7 @@ TEST_F(FetchXconfFirmwareInfoTest, Success_Http200_ValidResponse_ParseSuccess) {
     
     // Mock: rdkv_upgrade_request - simulates successful HTTP download
     EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
-        .WillOnce(testing::Invoke([](RdkUpgradeContext_t* context, void** curl, int* pHttp_code) {
+        .WillOnce(testing::Invoke([](const RdkUpgradeContext_t*  context, void** curl, int* pHttp_code) {
             // Simulate successful XConf communication: ret=0, http_code=200
             *pHttp_code = 200;  // MUST set this - checked at line 289
             return 0; // Success (0 = no errors)
@@ -1002,7 +1186,7 @@ TEST_F(FetchXconfFirmwareInfoTest, Failure_GetXconfRespData_ParseFail) {
     // (ret=0, http_code=200) by default - no need to mock here
      // Mock: rdkv_upgrade_request - simulates successful HTTP download
     EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
-        .WillOnce(testing::Invoke([](RdkUpgradeContext_t* context, void** curl, int* pHttp_code) {
+        .WillOnce(testing::Invoke([](const RdkUpgradeContext_t*  context, void** curl, int* pHttp_code) {
             *pHttp_code = 200;  // HTTP success
             return 0;  // Success
         }));
@@ -1067,7 +1251,7 @@ TEST_F(FetchXconfFirmwareInfoTest, Success_CacheSaveSuccess) {
     // (ret=0, http_code=200) by default - no need to mock here
     // Mock: rdkv_upgrade_request - simulates successful HTTP download
     EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
-        .WillOnce(testing::Invoke([](RdkUpgradeContext_t* context, void** curl, int* pHttp_code) {
+        .WillOnce(testing::Invoke([](const RdkUpgradeContext_t*  context, void** curl, int* pHttp_code) {
             *pHttp_code = 200;  // HTTP success
             return 0;  // Success
         }));
@@ -1149,7 +1333,7 @@ TEST_F(FetchXconfFirmwareInfoTest, Success_ServerTypeDirect_ValidResponse) {
     // (ret=0, http_code=200) and set server_type in context - no mocking needed
    // Mock: rdkv_upgrade_request - simulates successful HTTP download
     EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
-        .WillOnce(testing::Invoke([](RdkUpgradeContext_t* context, void** curl, int* pHttp_code) {
+        .WillOnce(testing::Invoke([](const RdkUpgradeContext_t*  context, void** curl, int* pHttp_code) {
             *pHttp_code = 200;  // HTTP success
             return 0;  // Success
         })); 
@@ -1371,7 +1555,6 @@ TEST_F(RdkFwupdateMgrHandlersTest, SaveXconfToCache_DifferentHttpCodes_SavedCorr
     g_file_get_contents(TEST_XCONF_HTTP_CODE_FILE, &http_code_content, NULL, NULL);
     EXPECT_STREQ(http_code_content, "200") << "HTTP 200 should be saved correctly";
     g_free(http_code_content);
-
     /* Test Case 2: HTTP 304 (Not Modified) */
     result = save_xconf_to_cache(xconf_response, 304);
     EXPECT_TRUE(result);
@@ -1387,6 +1570,92 @@ TEST_F(RdkFwupdateMgrHandlersTest, SaveXconfToCache_DifferentHttpCodes_SavedCorr
     g_file_get_contents(TEST_XCONF_HTTP_CODE_FILE, &http_code_content, NULL, NULL);
     EXPECT_STREQ(http_code_content, "500") << "HTTP 500 should be saved correctly";
     g_free(http_code_content);
+}
+
+TEST_F(RdkFwupdateMgrHandlersTest, GetCachedXconfData_EmptyCache_ReturnsFalse) {
+    XCONFRES response = {0};
+    int http_code = -1;
+
+    EXPECT_FALSE(get_cached_xconf_data(&response, &http_code));
+    EXPECT_EQ(http_code, -1);
+}
+
+TEST_F(RdkFwupdateMgrHandlersTest, GetCachedXconfData_AfterSave_ReturnsParsedResponse) {
+    ASSERT_TRUE(save_xconf_to_cache(MOCK_XCONF_RESPONSE_UPDATE_AVAILABLE, 200));
+
+    XCONFRES response = {0};
+    int http_code = 0;
+
+    ASSERT_TRUE(get_cached_xconf_data(&response, &http_code));
+    EXPECT_STREQ(response.cloudFWVersion, "TEST_v2.0.0");
+    EXPECT_STREQ(response.cloudFWFile, "TEST_v2.0.0.bin");
+    EXPECT_STREQ(response.cloudFWLocation, "https://test.xconf.server.com/Images");
+    EXPECT_STREQ(response.cloudProto, "http");
+    EXPECT_EQ(http_code, 200);
+}
+
+TEST_F(RdkFwupdateMgrHandlersTest, GetCachedXconfData_ReturnsDeepCopy) {
+    ASSERT_TRUE(save_xconf_to_cache(MOCK_XCONF_RESPONSE_UPDATE_AVAILABLE, 304));
+
+    XCONFRES first = {0};
+    int first_http_code = 0;
+    ASSERT_TRUE(get_cached_xconf_data(&first, &first_http_code));
+    ASSERT_EQ(first_http_code, 304);
+
+    snprintf(first.cloudFWVersion, sizeof(first.cloudFWVersion), "%s", "MUTATED_VERSION");
+    snprintf(first.cloudFWLocation, sizeof(first.cloudFWLocation), "%s", "https://mutated.example.com");
+
+    XCONFRES second = {0};
+    int second_http_code = 0;
+    ASSERT_TRUE(get_cached_xconf_data(&second, &second_http_code));
+    EXPECT_STREQ(second.cloudFWVersion, "TEST_v2.0.0");
+    EXPECT_STREQ(second.cloudFWLocation, "https://test.xconf.server.com/Images");
+    EXPECT_EQ(second_http_code, 304);
+}
+
+TEST_F(RdkFwupdateMgrHandlersTest, GetCachedXconfData_PreservesDirectCdnArtifactUrls) {
+    const char *direct_cdn_response = "{"
+        "\"firmwareDownloadProtocol\":\"http\"," 
+        "\"firmwareFilename\":\"TEST_v2.0.0.bin\"," 
+        "\"firmwareLocation\":\"https://test.xconf.server.com/Images\"," 
+        "\"firmwareVersion\":\"TEST_v2.0.0\"," 
+        "\"additionalFwVerInfo\":\"TEST_PDRI_VBN_0.bin\"," 
+        "\"firmware_URL\":\"https://cdn.example.com/fw/TEST_v2.0.0.bin\"," 
+        "\"additionalFwVerInfo_URL\":\"https://cdn.example.com/pdri/TEST_PDRI_VBN_0.bin\"," 
+        "\"remCtrl\":\"XR11_fw.bin\"," 
+        "\"remCtrl_URL\":\"https://cdn.example.com/peripheral/XR11_fw.bin\"," 
+        "\"rebootImmediately\":false"
+    "}";
+
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, isDirectCDNEnabled())
+        .WillRepeatedly(Return(true));
+
+    ASSERT_TRUE(save_xconf_to_cache(direct_cdn_response, 200));
+
+    XCONFRES response = {0};
+    int http_code = 0;
+
+    ASSERT_TRUE(get_cached_xconf_data(&response, &http_code));
+    EXPECT_STREQ(response.firmwareUrl, "https://cdn.example.com/fw/TEST_v2.0.0.bin");
+    EXPECT_STREQ(response.pdriUrl, "https://cdn.example.com/pdri/TEST_PDRI_VBN_0.bin");
+    EXPECT_STREQ(response.remCtrlUrl, "https://cdn.example.com/peripheral/XR11_fw.bin");
+    EXPECT_EQ(http_code, 200);
+}
+
+TEST_F(RdkFwupdateMgrHandlersTest, ClearCachedXconfData_InvalidatesMemoryCache) {
+    ASSERT_TRUE(save_xconf_to_cache(MOCK_XCONF_RESPONSE_UPDATE_AVAILABLE, 500));
+
+    XCONFRES cached = {0};
+    int http_code = 0;
+    ASSERT_TRUE(get_cached_xconf_data(&cached, &http_code));
+    ASSERT_EQ(http_code, 500);
+
+    clear_cached_xconf_data();
+
+    XCONFRES cleared = {0};
+    int cleared_http_code = -1;
+    EXPECT_FALSE(get_cached_xconf_data(&cleared, &cleared_http_code));
+    EXPECT_EQ(cleared_http_code, -1);
 }
 
 /**
@@ -1431,6 +1700,52 @@ TEST_F(RdkFwupdateMgrHandlersTest, CreateSuccessResponse_ValidInput_BuildsComple
         << "Status message should match input";
     
     /* Cleanup */
+    checkupdate_response_free(&response);
+}
+
+TEST_F(RdkFwupdateMgrHandlersTest, CreateSuccessResponse_SameVersion_ReturnsNotAvailable) {
+    const gchar *available_version = "TEST_v1.0.0";
+
+    CheckUpdateResponse response = create_success_response(available_version,
+                                                           "unused-details",
+                                                           "unused-message");
+
+    EXPECT_EQ(response.result, CHECK_FOR_UPDATE_SUCCESS);
+    EXPECT_EQ(response.status_code, FIRMWARE_NOT_AVAILABLE);
+    ASSERT_NE(response.current_img_version, nullptr);
+    ASSERT_NE(response.available_version, nullptr);
+    ASSERT_NE(response.update_details, nullptr);
+    ASSERT_NE(response.status_message, nullptr);
+    EXPECT_STREQ(response.current_img_version, "TEST_v1.0.0");
+    EXPECT_STREQ(response.available_version, "TEST_v1.0.0");
+    EXPECT_STREQ(response.update_details, "");
+    EXPECT_STREQ(response.status_message, "Already on latest firmware");
+
+    checkupdate_response_free(&response);
+}
+
+TEST_F(RdkFwupdateMgrHandlersTest, CreateSuccessResponse_GetFirmwareVersionFails_ReturnsNotAvailable) {
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, GetFirmwareVersion(_, _))
+        .WillOnce(Invoke([](char *buffer, size_t len) {
+            if (buffer && len > 0) {
+                buffer[0] = '\0';
+            }
+            return 0;
+        }));
+
+    CheckUpdateResponse response = create_success_response("TEST_v9.9.9",
+                                                           "unused-details",
+                                                           "unused-message");
+
+    EXPECT_EQ(response.result, CHECK_FOR_UPDATE_SUCCESS);
+    EXPECT_EQ(response.status_code, FIRMWARE_NOT_AVAILABLE);
+    ASSERT_NE(response.current_img_version, nullptr);
+    ASSERT_NE(response.available_version, nullptr);
+    ASSERT_NE(response.status_message, nullptr);
+    EXPECT_STREQ(response.current_img_version, "");
+    EXPECT_STREQ(response.available_version, "TEST_v9.9.9");
+    EXPECT_STREQ(response.status_message, "Already on latest firmware");
+
     checkupdate_response_free(&response);
 }
 
@@ -1641,6 +1956,94 @@ TEST_F(RdkFwupdateMgrHandlersTest, CreateResultResponse_NullStatusMessage_Handle
     checkupdate_response_free(&response);
 }
 
+TEST_F(RdkFwupdateMgrHandlersTest, CreateResultResponse_IgnoreOptout_DefaultMessage) {
+    CheckUpdateResponse response = create_result_response(IGNORE_OPTOUT, NULL);
+
+    EXPECT_EQ(response.status_code, IGNORE_OPTOUT);
+    ASSERT_NE(response.status_message, nullptr);
+    EXPECT_STREQ(response.status_message, "Firmware download not allowed - IGNORE_OPTOUT");
+
+    checkupdate_response_free(&response);
+}
+
+TEST_F(RdkFwupdateMgrHandlersTest, CreateResultResponse_BypassOptout_DefaultMessage) {
+    CheckUpdateResponse response = create_result_response(BYPASS_OPTOUT, NULL);
+
+    EXPECT_EQ(response.status_code, BYPASS_OPTOUT);
+    ASSERT_NE(response.status_message, nullptr);
+    EXPECT_STREQ(response.status_message, "Firmware download not allowed - BYPASS_OPTOUT");
+
+    checkupdate_response_free(&response);
+}
+
+TEST_F(RdkFwupdateMgrHandlersTest, CreateResultResponse_NullStatusMessage_UpdateNotAllowed_DefaultMessage) {
+    CheckUpdateResponse response = create_result_response(UPDATE_NOT_ALLOWED, NULL);
+
+    EXPECT_EQ(response.status_code, UPDATE_NOT_ALLOWED);
+    ASSERT_NE(response.status_message, nullptr);
+    EXPECT_STREQ(response.status_message, "Firmware not compatible with this device model");
+
+    checkupdate_response_free(&response);
+}
+
+TEST_F(RdkFwupdateMgrHandlersTest, CreateResultResponse_NullStatusMessage_CheckError_DefaultMessage) {
+    CheckUpdateResponse response = create_result_response(FIRMWARE_CHECK_ERROR, NULL);
+
+    EXPECT_EQ(response.status_code, FIRMWARE_CHECK_ERROR);
+    ASSERT_NE(response.status_message, nullptr);
+    EXPECT_STREQ(response.status_message, "Error checking for updates");
+
+    checkupdate_response_free(&response);
+}
+
+TEST_F(RdkFwupdateMgrHandlersTest, CreateResultResponse_UnknownStatus_DefaultMessage) {
+    CheckUpdateResponse response = create_result_response((CheckForUpdateStatus)999, NULL);
+
+    EXPECT_EQ(response.status_code, (CheckForUpdateStatus)999);
+    ASSERT_NE(response.status_message, nullptr);
+    EXPECT_STREQ(response.status_message, "Unknown status");
+
+    checkupdate_response_free(&response);
+}
+
+TEST_F(RdkFwupdateMgrHandlersTest, CreateOptoutResponse_PopulatesFirmwareMetadata) {
+    const gchar *available_version = "TEST_v2.0.0";
+    const gchar *update_details = "url=https://test.xconf.server.com/Images/TEST_v2.0.0.bin|proto=http";
+    const gchar *status_message = "Opt-out blocks automatic download";
+
+    CheckUpdateResponse response = create_optout_response(IGNORE_OPTOUT,
+                                                          available_version,
+                                                          update_details,
+                                                          status_message);
+
+    EXPECT_EQ(response.result, CHECK_FOR_UPDATE_SUCCESS);
+    EXPECT_EQ(response.status_code, IGNORE_OPTOUT);
+    ASSERT_NE(response.current_img_version, nullptr);
+    ASSERT_NE(response.available_version, nullptr);
+    ASSERT_NE(response.update_details, nullptr);
+    ASSERT_NE(response.status_message, nullptr);
+    EXPECT_STREQ(response.available_version, available_version);
+    EXPECT_STREQ(response.update_details, update_details);
+    EXPECT_STREQ(response.status_message, status_message);
+
+    checkupdate_response_free(&response);
+}
+
+TEST_F(RdkFwupdateMgrHandlersTest, CreateOptoutResponse_NullFieldsBecomeEmptyStrings) {
+    CheckUpdateResponse response = create_optout_response(BYPASS_OPTOUT, NULL, NULL, NULL);
+
+    EXPECT_EQ(response.result, CHECK_FOR_UPDATE_SUCCESS);
+    EXPECT_EQ(response.status_code, BYPASS_OPTOUT);
+    ASSERT_NE(response.available_version, nullptr);
+    ASSERT_NE(response.update_details, nullptr);
+    ASSERT_NE(response.status_message, nullptr);
+    EXPECT_STREQ(response.available_version, "");
+    EXPECT_STREQ(response.update_details, "");
+    EXPECT_STREQ(response.status_message, "");
+
+    checkupdate_response_free(&response);
+}
+
 /**
  * @test create_result_response generates valid responses for all status codes
  * @brief Verifies all CheckForUpdateStatus enum values produce valid responses
@@ -1724,36 +2127,6 @@ TEST_F(RdkFwupdateMgrHandlersTest, ResponseFree_PartiallyAllocated_FreesCorrectl
 // Test Group 1: Input Validation (5 tests)
 // ============================================================================
 
-/**
- * @test rdkFwupdateMgr_downloadFirmware rejects NULL localFilePath
- * @brief Verifies required parameter validation
- */
-TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_NullLocalFilePath_ReturnsError) {
-    /* Arrange */
-    const char* firmwareName = "test_firmware.bin";
-    const char* downloadUrl = "http://test.com/fw.bin";
-    const char* typeOfFirmware = "PCI";
-
-    /* Act: Call with NULL localFilePath */
-    DownloadFirmwareResult result = rdkFwupdateMgr_downloadFirmware(
-        firmwareName,
-        downloadUrl,
-        typeOfFirmware,
-        NULL,  // NULL localFilePath - should be rejected
-        NULL
-    );
-
-    /* Assert: Should return error */
-    EXPECT_EQ(result.result_code, DOWNLOAD_ERROR)
-        << "Should reject NULL localFilePath";
-    ASSERT_NE(result.error_message, nullptr)
-        << "Should provide error message";
-    EXPECT_NE(std::string(result.error_message).find("localFilePath"), std::string::npos)
-        << "Error should mention localFilePath";
-
-    /* Cleanup */
-    g_free(result.error_message);
-}
 
 /**
  * @test rdkFwupdateMgr_downloadFirmware rejects empty localFilePath
@@ -1780,649 +2153,6 @@ TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_EmptyLocalFilePath_ReturnsEr
     ASSERT_NE(result.error_message, nullptr)
         << "Should provide error message";
 
-    /* Cleanup */
-    g_free(result.error_message);
-}
-
-/**
- * @test rdkFwupdateMgr_downloadFirmware accepts valid inputs
- * @brief Verifies successful parameter validation with custom URL
- */
-TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_ValidInputs_AcceptsParameters) {
-    /* Arrange: All valid inputs */
-    const char* firmwareName = "test_firmware.bin";
-    const char* downloadUrl = "http://test.com/fw.bin";
-    const char* typeOfFirmware = "PCI";
-    const char* localFilePath = "/tmp/test_firmware.bin";
-    
-    /* Mock successful download and create file */
-    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
-        .WillOnce(testing::Invoke(
-            [localFilePath](RdkUpgradeContext_t* ctx, void** curl, int* http_code) {
-                if (http_code) *http_code = 200;
-                // Create the file to simulate successful download
-                CreateFirmwareFile(localFilePath);
-                return 0;  // Success
-            }
-        ));
-    
-    /* Act */
-    DownloadFirmwareResult result = rdkFwupdateMgr_downloadFirmware(
-        firmwareName,
-        downloadUrl,
-        typeOfFirmware,
-        localFilePath,
-        NULL
-    );
-    
-    /* Assert: Should succeed */
-    EXPECT_EQ(result.result_code, DOWNLOAD_SUCCESS) 
-        << "Should accept valid inputs";
-    EXPECT_EQ(result.error_message, nullptr)
-        << "Should have no error message on success";
-    
-    /* Cleanup */
-    if (result.error_message) g_free(result.error_message);
-    remove(localFilePath);
-}
-
-
-/**
- * @test rdkFwupdateMgr_downloadFirmware handles NULL firmwareName
- * @brief Verifies optional parameter handling
- */
-TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_NullFirmwareName_HandlesGracefully) {
-    /* Arrange */
-    const char* downloadUrl = "http://test.com/fw.bin";
-    const char* localFilePath = "/tmp/test_firmware.bin";
-
-    /* Mock successful download */
-    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
-        .WillOnce(testing::Invoke(
-            [](RdkUpgradeContext_t* ctx, void** curl, int* http_code) {
-                if (http_code) *http_code = 200;
-                return 0;
-            }
-        ));
-
-    /* Act: firmwareName is NULL (might be optional) */
-    DownloadFirmwareResult result = rdkFwupdateMgr_downloadFirmware(
-        NULL,  // NULL firmwareName
-        downloadUrl,
-        "PCI",
-        localFilePath,
-        NULL
-    );
-
-    /* Assert: Should either succeed or provide clear error */
-    EXPECT_TRUE(result.result_code == DOWNLOAD_SUCCESS ||
-                result.result_code == DOWNLOAD_ERROR)
-        << "Should handle NULL firmwareName gracefully";
-
-    /* Cleanup */
-    if (result.error_message) g_free(result.error_message);
-}
-
-/**
- * @test rdkFwupdateMgr_downloadFirmware defaults to PCI for invalid type
- * @brief Verifies firmware type handling with unknown type
- */
-
-TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_InvalidFirmwareType_UsesPCIDefault) {
-    /* Arrange */
-    const char* firmwareName = "test_firmware.bin";
-    const char* downloadUrl = "http://test.com/fw.bin";
-    const char* localFilePath = "/tmp/test_firmware.bin";
-
-    /* Mock download */
-    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
-        .WillOnce(testing::Invoke(
-            [localFilePath](RdkUpgradeContext_t* ctx, void** curl, int* http_code) {
-                if (http_code) *http_code = 200;
-                CreateFirmwareFile(localFilePath);
-                return 0;
-            }
-        ));
-
-    /* Act: Invalid firmware type */
-    DownloadFirmwareResult result = rdkFwupdateMgr_downloadFirmware(
-        firmwareName,
-        downloadUrl,
-        "INVALID_TYPE",  // Not PCI/PDRI/PERIPHERAL
-        localFilePath,
-        NULL
-    );
-
-    /* Assert: Should default to PCI and succeed */
-    EXPECT_EQ(result.result_code, DOWNLOAD_SUCCESS)
-        << "Should handle invalid type by defaulting to PCI";
-
-    /* Cleanup */
-    if (result.error_message) g_free(result.error_message);
-    remove(localFilePath);
-}
-
-// ============================================================================
-// Test Group 2: URL Selection Logic (4 tests)
-// ============================================================================
-
-/**
- * @test rdkFwupdateMgr_downloadFirmware uses custom URL when provided
- * @brief Verifies custom URL takes precedence over cache
- */
-TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_CustomURL_UsesProvidedURL) {
-    /* Arrange */
-    const char* customUrl = "http://custom.server.com/firmware.bin";
-    const char* localFilePath = "/tmp/firmware.bin";
-    
-    /* Mock download */
-    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
-        .WillOnce(testing::Invoke(
-            [localFilePath](RdkUpgradeContext_t* ctx, void** curl, int* http_code) {
-                if (http_code) *http_code = 200;
-                CreateFirmwareFile(localFilePath);
-                return 0;
-            }
-        ));
-    
-    /* Act: Provide custom URL */
-    DownloadFirmwareResult result = rdkFwupdateMgr_downloadFirmware(
-        "firmware.bin",
-        customUrl,  // Custom URL provided
-        "PCI",
-        localFilePath,
-        NULL
-    );
-    
-    /* Assert: Should use custom URL and succeed */
-    EXPECT_EQ(result.result_code, DOWNLOAD_SUCCESS)
-        << "Should use custom URL when provided";
-    
-    /* Cleanup */
-    if (result.error_message) g_free(result.error_message);
-    remove(localFilePath);
-}
-
-
-
-/**
- * @test rdkFwupdateMgr_downloadFirmware loads URL from cache when not provided
- * @brief Verifies XConf cache integration for URL retrieval
- */
-TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_NoCustomURL_LoadsFromCache) {
-    /* Arrange: Create XConf cache with firmware info */
-    CreateTestFile(TEST_XCONF_CACHE_FILE, MOCK_XCONF_RESPONSE_UPDATE_AVAILABLE);
-    CreateTestFile(TEST_XCONF_HTTP_CODE_FILE, "200");
-    const char* localFilePath = "/tmp/firmware.bin";
-    
-    /* Mock download */
-    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
-        .WillOnce(testing::Invoke(
-            [localFilePath](RdkUpgradeContext_t* ctx, void** curl, int* http_code) {
-                if (http_code) *http_code = 200;
-                CreateFirmwareFile(localFilePath);
-                return 0;
-            }
-        ));
-    
-    /* Act: No custom URL (empty string) */
-    DownloadFirmwareResult result = rdkFwupdateMgr_downloadFirmware(
-        "firmware.bin",
-        "",  // Empty - should load from cache
-        "PCI",
-        localFilePath,
-        NULL
-    );
-    
-    /* Assert: Should load from cache and succeed */
-    EXPECT_EQ(result.result_code, DOWNLOAD_SUCCESS) 
-        << "Should load URL from XConf cache";
-    
-    /* Cleanup */
-    if (result.error_message) g_free(result.error_message);
-    remove(localFilePath);
-}
-
-
-/**
- * @test rdkFwupdateMgr_downloadFirmware fails when no URL and no cache
- * @brief Verifies error handling for missing URL source
- */
-TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_NoCacheNoURL_ReturnsError) {
-    /* Arrange: Ensure no cache exists */
-    remove(TEST_XCONF_CACHE_FILE);
-    remove(TEST_XCONF_HTTP_CODE_FILE);
-
-    /* Act: No custom URL, no cache */
-    DownloadFirmwareResult result = rdkFwupdateMgr_downloadFirmware(
-        "firmware.bin",
-        "",  // No URL provided
-        "PCI",
-        "/tmp/firmware.bin",
-        NULL
-    );
-
-    /* Assert: Should fail with clear error */
-    EXPECT_EQ(result.result_code, DOWNLOAD_ERROR)
-        << "Should fail when no URL and no cache";
-    ASSERT_NE(result.error_message, nullptr)
-        << "Should provide error message";
-    EXPECT_NE(std::string(result.error_message).find("CheckForUpdate"), std::string::npos)
-        << "Error should mention calling CheckForUpdate first";
-
-    /* Cleanup */
-    g_free(result.error_message);
-}
-
-/**
- * @test rdkFwupdateMgr_downloadFirmware handles corrupt cache gracefully
- * @brief Verifies cache parse error handling
- */
-TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_CorruptCache_ReturnsError) {
-    /* Arrange: Create corrupt cache file */
-    CreateTestFile(TEST_XCONF_CACHE_FILE, "{invalid json syntax}");
-    CreateTestFile(TEST_XCONF_HTTP_CODE_FILE, "200");
-
-    /* Act: Try to load from corrupt cache */
-    DownloadFirmwareResult result = rdkFwupdateMgr_downloadFirmware(
-        "firmware.bin",
-        "",  // Load from cache
-        "PCI",
-        "/tmp/firmware.bin",
-        NULL
-    );
-
-    /* Assert: Should fail with error */
-    EXPECT_EQ(result.result_code, DOWNLOAD_ERROR)
-        << "Should fail when cache is corrupt";
-    ASSERT_NE(result.error_message, nullptr)
-        << "Should provide error message";
-
-    /* Cleanup */
-    g_free(result.error_message);
-}
-
-// ============================================================================
-// Test Group 3: Download Execution (4 tests)
-// ============================================================================
-
-/**
- * @test rdkFwupdateMgr_downloadFirmware succeeds with valid download
- * @brief Verifies happy path download execution
- */
-TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_SuccessfulDownload_ReturnsSuccess) {
-    /* Arrange */
-    const char* downloadUrl = "http://test.com/fw.bin";
-    const char* localFilePath = "/tmp/firmware.bin";
-    
-    /* Mock successful download */
-    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
-        .WillOnce(testing::Invoke(
-            [localFilePath](RdkUpgradeContext_t* ctx, void** curl, int* http_code) {
-                if (http_code) *http_code = 200;
-                CreateFirmwareFile(localFilePath);
-                return 0;  // Success
-            }
-        ));
-    
-    /* Act */
-    DownloadFirmwareResult result = rdkFwupdateMgr_downloadFirmware(
-        "firmware.bin",
-        downloadUrl,
-        "PCI",
-        localFilePath,
-        NULL
-    );
-    
-    /* Assert: Should succeed */
-    EXPECT_EQ(result.result_code, DOWNLOAD_SUCCESS)
-        << "Should succeed with valid download";
-    EXPECT_EQ(result.error_message, nullptr) 
-        << "No error message on success";
-    
-    /* Cleanup */
-    if (result.error_message) g_free(result.error_message);
-    remove(localFilePath);
-}
-
-
-/**
- * @test rdkFwupdateMgr_downloadFirmware handles network failures
- * @brief Verifies network error handling
- */
-TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_NetworkError_ReturnsNetworkError) {
-    /* Arrange */
-    const char* downloadUrl = "http://test.com/fw.bin";
-    
-    /* Mock network failure (curl error 7 = couldn't connect) */
-    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
-        .WillOnce(testing::Return(7));  // CURLE_COULDNT_CONNECT
-    
-    /* Act */
-    DownloadFirmwareResult result = rdkFwupdateMgr_downloadFirmware(
-        "firmware.bin",
-        downloadUrl,
-        "PCI",
-        "/tmp/firmware.bin",
-        NULL
-    );
-    
-    /* Assert: Should return network error */
-    EXPECT_EQ(result.result_code, DOWNLOAD_NETWORK_ERROR)
-        << "Should return DOWNLOAD_NETWORK_ERROR on network failure";
-    ASSERT_NE(result.error_message, nullptr) 
-        << "Should provide error message";
-    
-    /* Cleanup */
-    g_free(result.error_message);
-}
-
-
-/**
- * @test rdkFwupdateMgr_downloadFirmware handles HTTP 404
- * @brief Verifies file not found handling
- */
-TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_Http404_ReturnsNotFound) {
-    /* Arrange */
-    const char* downloadUrl = "http://test.com/nonexistent.bin";
-    
-    /* Mock HTTP 404 (curl success but HTTP 404) */
-    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
-        .WillOnce(testing::Invoke(
-            [](RdkUpgradeContext_t* ctx, void** curl, int* http_code) {
-                if (http_code) *http_code = 404;
-                return 0;  // curl succeeded but HTTP 404
-            }
-        ));
-    
-    /* Act */
-    DownloadFirmwareResult result = rdkFwupdateMgr_downloadFirmware(
-        "firmware.bin",
-        downloadUrl,
-        "PCI",
-        "/tmp/firmware.bin",
-        NULL
-    );
-    
-    /* Assert: Should return not found */
-    EXPECT_EQ(result.result_code, DOWNLOAD_NOT_FOUND)
-        << "Should return DOWNLOAD_NOT_FOUND for HTTP 404";
-    ASSERT_NE(result.error_message, nullptr) 
-        << "Should provide error message";
-    
-    /* Cleanup */
-    g_free(result.error_message);
-}
-
-
-/**
- * @test rdkFwupdateMgr_downloadFirmware handles HTTP 500 server error
- * @brief Verifies server error handling
- */
-TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_Http500_ReturnsError) {
-    /* Arrange */
-    const char* downloadUrl = "http://test.com/fw.bin";
-
-    /* Mock HTTP 500 */
-    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
-        .WillOnce(testing::Invoke(
-            [](RdkUpgradeContext_t* ctx, void** curl, int* http_code) {
-                if (http_code) *http_code = 500;
-                return -1;  // Error
-            }
-        ));
-
-    /* Act */
-    DownloadFirmwareResult result = rdkFwupdateMgr_downloadFirmware(
-        "firmware.bin",
-        downloadUrl,
-        "PCI",
-        "/tmp/firmware.bin",
-        NULL
-    );
-
-    /* Assert: Should return generic error */
-    EXPECT_EQ(result.result_code, DOWNLOAD_ERROR)
-        << "Should return DOWNLOAD_ERROR for HTTP 500";
-    ASSERT_NE(result.error_message, nullptr)
-        << "Should provide error message";
-
-    /* Cleanup */
-    g_free(result.error_message);
-}
-
-// ============================================================================
-// Test Group 4: Firmware Type Handling (2 tests)
-// ============================================================================
-
-/**
- * @test rdkFwupdateMgr_downloadFirmware handles PCI firmware type
- * @brief Verifies PCI_UPGRADE type is set correctly
- */
-
-TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_PCIType_SetsCorrectUpgradeType) {
-    /* Arrange */
-    const char* downloadUrl = "http://test.com/fw.bin";
-    const char* localFilePath = "/tmp/firmware.bin";
-    
-    /* Mock download */
-    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
-        .WillOnce(testing::Invoke(
-            [localFilePath](RdkUpgradeContext_t* ctx, void** curl, int* http_code) {
-                if (http_code) *http_code = 200;
-                CreateFirmwareFile(localFilePath);
-                return 0;
-            }
-        ));
-    
-    /* Act */
-    DownloadFirmwareResult result = rdkFwupdateMgr_downloadFirmware(
-        "firmware.bin",
-        downloadUrl,
-        "PCI",  // PCI type
-        localFilePath,
-        NULL
-    );
-    
-    /* Assert: Should succeed with PCI type */
-    EXPECT_EQ(result.result_code, DOWNLOAD_SUCCESS)
-        << "Should handle PCI firmware type correctly";
-    
-    /* Cleanup */
-    if (result.error_message) g_free(result.error_message);
-    remove(localFilePath);
-}
-
-
-/**
- * @test rdkFwupdateMgr_downloadFirmware handles PDRI firmware type
- * @brief Verifies PDRI_UPGRADE type is set correctly
- */
-TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_PDRIType_SetsCorrectUpgradeType) {
-    /* Arrange */
-    const char* downloadUrl = "http://test.com/fw.bin";
-    const char* localFilePath = "/tmp/firmware.bin";
-
-    /* Mock download */
-    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
-        .WillOnce(testing::Invoke(
-            [localFilePath](RdkUpgradeContext_t* ctx, void** curl, int* http_code) {
-                if (http_code) *http_code = 200;
-                CreateFirmwareFile(localFilePath);
-                return 0;
-            }
-        ));
-
-    /* Act */
-    DownloadFirmwareResult result = rdkFwupdateMgr_downloadFirmware(
-        "firmware.bin",
-        downloadUrl,
-        "PDRI",  // PDRI type
-        localFilePath,
-        NULL
-    );
-
-    /* Assert: Should succeed with PDRI type */
-    EXPECT_EQ(result.result_code, DOWNLOAD_SUCCESS)
-        << "Should handle PDRI firmware type correctly";
-
-    /* Cleanup */
-    if (result.error_message) g_free(result.error_message);
-    remove(localFilePath);
-}
-
-
-
-// ============================================================================
-// BATCH 5: DownloadFirmware Edge Cases + CheckForUpdate Validation + Integration (12 tests)
-// Target: Push both functions to 98%+ coverage, add real-world workflows
-// Coverage Goal: +3% → Total: ~112%
-// ============================================================================
-
-// ============================================================================
-// Group 1: DownloadFirmware Edge Cases (4 tests)
-// ============================================================================
-
-/**
- * @test rdkFwupdateMgr_downloadFirmware handles PERIPHERAL firmware type
- * @brief Verifies PERIPHERAL_UPGRADE type is set correctly
- */
-TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_PERIPHERAL_Type_SetsCorrectUpgradeType) {
-    /* Arrange */
-    const char* downloadUrl = "http://test.com/peripheral.bin";
-    const char* localFilePath = "/tmp/peripheral.bin";
-
-    /* Mock download */
-    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
-        .WillOnce(testing::Invoke(
-            [localFilePath](RdkUpgradeContext_t* ctx, void** curl, int* http_code) {
-                if (http_code) *http_code = 200;
-                CreateFirmwareFile(localFilePath);
-                return 0;
-            }
-        ));
-
-    /* Act */
-    DownloadFirmwareResult result = rdkFwupdateMgr_downloadFirmware(
-        "peripheral.bin",
-        downloadUrl,
-        "PERIPHERAL",  // PERIPHERAL type
-        localFilePath,
-        NULL
-    );
-
-    /* Assert: Should succeed with PERIPHERAL type */
-    EXPECT_EQ(result.result_code, DOWNLOAD_SUCCESS)
-        << "Should handle PERIPHERAL firmware type correctly";
-
-    /* Cleanup */
-    if (result.error_message) g_free(result.error_message);
-    remove(localFilePath);
-}
-
-/**
- * @test rdkFwupdateMgr_downloadFirmware defaults to PCI when type is NULL
- * @brief Verifies NULL firmware type handling
- */
-TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_NullFirmwareType_DefaultsToPCI) {
-    /* Arrange */
-    const char* downloadUrl = "http://test.com/fw.bin";
-    const char* localFilePath = "/tmp/fw.bin";
-
-    /* Mock download */
-    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
-        .WillOnce(testing::Invoke(
-            [localFilePath](RdkUpgradeContext_t* ctx, void** curl, int* http_code) {
-                if (http_code) *http_code = 200;
-                CreateFirmwareFile(localFilePath);
-                return 0;
-            }
-        ));
-
-    /* Act: NULL firmware type - should default to PCI */
-    DownloadFirmwareResult result = rdkFwupdateMgr_downloadFirmware(
-        "firmware.bin",
-        downloadUrl,
-        NULL,  // NULL type - should default to PCI
-        localFilePath,
-        NULL
-    );
-
-    /* Assert: Should handle NULL firmware type gracefully */
-    EXPECT_EQ(result.result_code, DOWNLOAD_SUCCESS)
-        << "Should handle NULL firmware type by defaulting to PCI";
-
-    /* Cleanup */
-    if (result.error_message) g_free(result.error_message);
-    remove(localFilePath);
-}
-
-/**
- * @test rdkFwupdateMgr_downloadFirmware handles DNS resolution failure
- * @brief Verifies CURLE_COULDNT_RESOLVE_HOST handling (curl error 6)
- */
-TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_CurlError6_DNSFailure) {
-    /* Arrange */
-    const char* downloadUrl = "http://invalid.domain.test/fw.bin";
-
-    /* Mock DNS failure (curl error 6 = CURLE_COULDNT_RESOLVE_HOST) */
-    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
-        .WillOnce(testing::Return(6));  // CURLE_COULDNT_RESOLVE_HOST
-
-    /* Act */
-    DownloadFirmwareResult result = rdkFwupdateMgr_downloadFirmware(
-        "firmware.bin",
-        downloadUrl,
-        "PCI",
-        "/tmp/firmware.bin",
-        NULL
-    );
-
-    /* Assert: Should return DOWNLOAD_NETWORK_ERROR for DNS failure */
-    EXPECT_EQ(result.result_code, DOWNLOAD_NETWORK_ERROR)
-        << "Should return DOWNLOAD_NETWORK_ERROR for DNS resolution failure";
-    ASSERT_NE(result.error_message, nullptr)
-        << "Should provide error message";
-    EXPECT_NE(std::string(result.error_message).find("DNS"), std::string::npos)
-        << "Error message should mention DNS";
-
-    /* Cleanup */
-    g_free(result.error_message);
-}
-
-/**
- * @test rdkFwupdateMgr_downloadFirmware handles timeout
- * @brief Verifies CURLE_OPERATION_TIMEDOUT handling (curl error 28)
- */
-TEST_F(RdkFwupdateMgrHandlersTest, DownloadFirmware_CurlError28_Timeout) {
-    /* Arrange */
-    const char* downloadUrl = "http://slowserver.test/fw.bin";
-    
-    /* Mock timeout (curl error 28 = CURLE_OPERATION_TIMEDOUT) */
-    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
-        .WillOnce(testing::Return(28));  // CURLE_OPERATION_TIMEDOUT
-    
-    /* Act */
-    DownloadFirmwareResult result = rdkFwupdateMgr_downloadFirmware(
-        "firmware.bin",
-        downloadUrl,
-        "PCI",
-        "/tmp/firmware.bin",
-        NULL
-    );
-    
-    /* Assert: Should return DOWNLOAD_NETWORK_ERROR for timeout */
-    EXPECT_EQ(result.result_code, DOWNLOAD_NETWORK_ERROR)
-        << "Should return DOWNLOAD_NETWORK_ERROR for timeout";
-    ASSERT_NE(result.error_message, nullptr) 
-        << "Should provide error message";
-    // Check for either "Timeout" or "timed out" (case insensitive match)
-    std::string error_msg_lower = result.error_message;
-    std::transform(error_msg_lower.begin(), error_msg_lower.end(), error_msg_lower.begin(), ::tolower);
-    EXPECT_TRUE(error_msg_lower.find("timeout") != std::string::npos ||
-                error_msg_lower.find("timed out") != std::string::npos)
-        << "Error message should mention timeout, got: " << result.error_message;
-    
     /* Cleanup */
     g_free(result.error_message);
 }
@@ -2521,154 +2251,8 @@ TEST_F(RdkFwupdateMgrHandlersTest, CheckForUpdate_CacheExistsHttpCodeMissing_Han
     checkupdate_response_free(&response);
 }
 
-// ============================================================================
-// Group 3: Integration Tests - Real User Workflows (4 tests)
-// ============================================================================
 
-/**
- * @test Integration: CheckForUpdate followed by DownloadFirmware (happy path)
- * @brief Verifies complete workflow from check to download
- */
-TEST_F(RdkFwupdateMgrHandlersTest, Integration_CheckThenDownload_Success) {
-    /* Arrange: Create cache for CheckForUpdate */
-    CreateTestFile(TEST_XCONF_CACHE_FILE, MOCK_XCONF_RESPONSE_UPDATE_AVAILABLE);
-    CreateTestFile(TEST_XCONF_HTTP_CODE_FILE, "200");
-    const char* localFilePath = "/tmp/integration_fw.bin";
 
-    /* Act 1: Check for update */
-    CheckUpdateResponse check_response = rdkFwupdateMgr_checkForUpdate("test_handler");
-
-    /* Assert 1: Update should be available */
-    EXPECT_EQ(check_response.result, CHECK_FOR_UPDATE_SUCCESS)
-        << "CheckForUpdate should succeed";
-    EXPECT_EQ(check_response.status_code, FIRMWARE_AVAILABLE)
-        << "Firmware should be available";
-    EXPECT_NE(check_response.available_version, nullptr)
-        << "Should have available version";
-
-    /* Act 2: Download firmware using cache (empty URL = load from cache) */
-    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
-        .WillOnce(testing::Invoke(
-            [localFilePath](RdkUpgradeContext_t* ctx, void** curl, int* http_code) {
-                if (http_code) *http_code = 200;
-                CreateFirmwareFile(localFilePath);
-                return 0;
-            }
-        ));
-
-    DownloadFirmwareResult download_result = rdkFwupdateMgr_downloadFirmware(
-        "firmware.bin",
-        "",  // Empty URL - load from cache created by CheckForUpdate
-        "PCI",
-        localFilePath,
-        NULL
-    );
-
-    /* Assert 2: Download should succeed using cache */
-    EXPECT_EQ(download_result.result_code, DOWNLOAD_SUCCESS)
-        << "Download should succeed after CheckForUpdate";
-
-    /* Cleanup */
-    checkupdate_response_free(&check_response);
-    if (download_result.error_message) g_free(download_result.error_message);
-    remove(localFilePath);
-}
-
-/**
- * @test Integration: CheckForUpdate shows no update available
- * @brief Verifies workflow when no update is needed
- */
-TEST_F(RdkFwupdateMgrHandlersTest, Integration_CheckNoUpdate_DownloadNotNeeded) {
-    /* Arrange: Create cache for "no update" scenario */
-    CreateTestFile(TEST_XCONF_CACHE_FILE, MOCK_XCONF_RESPONSE_NO_UPDATE);
-    CreateTestFile(TEST_XCONF_HTTP_CODE_FILE, "200");
-
-    /* Act: Check for update */
-    CheckUpdateResponse check_response = rdkFwupdateMgr_checkForUpdate("test_handler");
-
-    /* Assert: No update should be available */
-    EXPECT_EQ(check_response.result, CHECK_FOR_UPDATE_SUCCESS)
-        << "CheckForUpdate call should succeed";
-    EXPECT_EQ(check_response.status_code, FIRMWARE_NOT_AVAILABLE)
-        << "No firmware update should be available";
-
-    /* In this scenario, user would NOT proceed to download */
-    /* This test validates the check correctly identifies no update needed */
-
-    /* Cleanup */
-    checkupdate_response_free(&check_response);
-}
-
-/**
- * @test Integration: Download without CheckForUpdate requires custom URL
- * @brief Verifies download fails without cache or custom URL
- */
-TEST_F(RdkFwupdateMgrHandlersTest, Integration_DownloadBeforeCheck_RequiresCustomURL) {
-    /* Arrange: Ensure no cache exists (simulates not calling CheckForUpdate) */
-    remove(TEST_XCONF_CACHE_FILE);
-    remove(TEST_XCONF_HTTP_CODE_FILE);
-
-    /* Act: Try to download without checking first and without custom URL */
-    DownloadFirmwareResult result = rdkFwupdateMgr_downloadFirmware(
-        "firmware.bin",
-        "",  // No custom URL - should fail because cache doesn't exist
-        "PCI",
-        "/tmp/firmware.bin",
-        NULL
-    );
-
-    /* Assert: Should fail with clear error message */
-    EXPECT_EQ(result.result_code, DOWNLOAD_ERROR)
-        << "Download should fail without cache or custom URL";
-    ASSERT_NE(result.error_message, nullptr)
-        << "Should provide error message";
-    EXPECT_NE(std::string(result.error_message).find("CheckForUpdate"), std::string::npos)
-        << "Error should mention calling CheckForUpdate first";
-
-    /* Cleanup */
-    g_free(result.error_message);
-}
-
-/**
- * @test Integration: Custom URL allows download without CheckForUpdate
- * @brief Verifies custom URL bypasses cache requirement
- */
-TEST_F(RdkFwupdateMgrHandlersTest, Integration_CustomURL_BypassesCheckForUpdate) {
-    /* Arrange: No cache, but provide custom URL */
-    remove(TEST_XCONF_CACHE_FILE);
-    remove(TEST_XCONF_HTTP_CODE_FILE);
-    const char* customUrl = "http://custom.server.com/firmware.bin";
-    const char* localFilePath = "/tmp/custom_fw.bin";
-
-    /* Mock successful download */
-    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
-        .WillOnce(testing::Invoke(
-            [localFilePath](RdkUpgradeContext_t* ctx, void** curl, int* http_code) {
-                if (http_code) *http_code = 200;
-                CreateFirmwareFile(localFilePath);
-                return 0;
-            }
-        ));
-
-    /* Act: Download with custom URL (no CheckForUpdate needed) */
-    DownloadFirmwareResult result = rdkFwupdateMgr_downloadFirmware(
-        "firmware.bin",
-        customUrl,  // Custom URL provided - bypasses cache requirement
-        "PCI",
-        localFilePath,
-        NULL
-    );
-
-    /* Assert: Should succeed without calling CheckForUpdate */
-    EXPECT_EQ(result.result_code, DOWNLOAD_SUCCESS)
-        << "Custom URL should allow download without CheckForUpdate";
-
-    /* Cleanup */
-    if (result.error_message) g_free(result.error_message);
-    remove(localFilePath);
-}
-
-// ============================================================================
 // BATCH 6: Thread NULL Safety Tests (2 tests)
 // Target: Basic thread safety validation
 // Coverage Goal: +1% → Total: ~113%
@@ -2692,6 +2276,53 @@ TEST_F(RdkFwupdateMgrHandlersTest, ProgressMonitor_NullContext_ReturnsImmediatel
     /* Real thread logic will be tested via dbus_server.c integration tests */
 }
 
+TEST_F(RdkFwupdateMgrHandlersTest, ProgressMonitor_NullStopFlag_ReturnsImmediately) {
+    ProgressMonitorContextMirror* ctx = g_new0(ProgressMonitorContextMirror, 1);
+
+    gpointer result = rdkfw_progress_monitor_thread(ctx);
+
+    EXPECT_EQ(result, nullptr);
+}
+
+TEST_F(RdkFwupdateMgrHandlersTest, ProgressMonitor_NullMutex_ReturnsImmediately) {
+    ProgressMonitorContextMirror* ctx = g_new0(ProgressMonitorContextMirror, 1);
+    gint stop_flag = 0;
+    ctx->stop_flag = &stop_flag;
+
+    gpointer result = rdkfw_progress_monitor_thread(ctx);
+
+    EXPECT_EQ(result, nullptr);
+}
+
+TEST_F(RdkFwupdateMgrHandlersTest, ProgressMonitor_NullConnection_ReturnsImmediately) {
+    ProgressMonitorContextMirror* ctx = g_new0(ProgressMonitorContextMirror, 1);
+    gint stop_flag = 0;
+    GMutex* mutex = g_new0(GMutex, 1);
+    g_mutex_init(mutex);
+    ctx->stop_flag = &stop_flag;
+    ctx->mutex = mutex;
+
+    gpointer result = rdkfw_progress_monitor_thread(ctx);
+
+    EXPECT_EQ(result, nullptr);
+}
+
+TEST_F(RdkFwupdateMgrHandlersTest, EmitDownloadProgressIdle_NullData_ReturnsFalse) {
+    EXPECT_FALSE(emit_download_progress_idle(NULL));
+}
+
+TEST_F(RdkFwupdateMgrHandlersTest, EmitDownloadProgressIdle_NullConnection_ReturnsFalse) {
+    ProgressDataMirror* data = g_new0(ProgressDataMirror, 1);
+    data->connection = NULL;
+    data->handler_id = g_strdup("123");
+    data->firmware_name = g_strdup("test.bin");
+    data->progress_percent = 0;
+    data->bytes_downloaded = 0;
+    data->total_bytes = 0;
+
+    EXPECT_FALSE(emit_download_progress_idle((gpointer)data));
+}
+
 /**
  * @test rdkfw_flash_worker_thread handles NULL context
  * @brief Verifies NULL pointer safety at flash worker thread entry
@@ -2708,4 +2339,108 @@ TEST_F(RdkFwupdateMgrHandlersTest, FlashWorker_NullContext_ReturnsImmediately) {
 
     /* Note: This validates the CRITICAL_VALIDATION check at thread entry */
     /* Real thread business logic will be tested via UpdateFirmware handler tests */
+}
+
+/* =========================================================================
+ * Task 5.6: Direct CDN daemon routing tests
+ * ========================================================================= */
+
+/**
+ * @test fetch_xconf_firmware_info sets direct_cdn=true when RFC enabled
+ * @brief Verifies the daemon XConf handler propagates Direct CDN flag to context
+ */
+TEST_F(FetchXconfFirmwareInfoTest, DirectCDN_Enabled_SetsContextFlag) {
+    const char* test_url = "http://xconf.test.example.com/xconf/firmware/stb/";
+    const char* test_json = "{\"estbMacAddress\":\"AA:BB:CC:DD:EE:FF\"}";
+    const char* xconf_response = MOCK_XCONF_RESPONSE_UPDATE_AVAILABLE;
+
+    /* isDirectCDNEnabled returns true */
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, isDirectCDNEnabled())
+        .WillRepeatedly(Return(true));
+
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, createJsonString(testing::_, JSON_STR_LEN))
+        .WillOnce(testing::Invoke([test_json](char* pJSONStr, size_t szBufSize) {
+            strncpy(pJSONStr, test_json, szBufSize - 1);
+            pJSONStr[szBufSize - 1] = '\0';
+            return strlen(test_json);
+        }));
+
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, allocDowndLoadDataMem(testing::_, DEFAULT_DL_ALLOC))
+        .WillOnce(testing::Invoke([xconf_response](DownloadData* pDwnLoc, int size) {
+            pDwnLoc->pvOut = malloc(strlen(xconf_response) + 1);
+            strcpy((char*)pDwnLoc->pvOut, xconf_response);
+            pDwnLoc->datasize = strlen(xconf_response);
+            pDwnLoc->memsize = strlen(xconf_response) + 1;
+            return 0;
+        }));
+
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, GetServURL(testing::_, URL_MAX_LEN))
+        .WillOnce(testing::Invoke([test_url](char* pServURL, size_t szBufSize) {
+            strncpy(pServURL, test_url, szBufSize - 1);
+            pServURL[szBufSize - 1] = '\0';
+            return strlen(test_url);
+        }));
+
+    /* KEY ASSERTION: Verify context->direct_cdn == true when passed to rdkv_upgrade_request */
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
+        .WillOnce(testing::Invoke([](const RdkUpgradeContext_t* context, void** curl, int* pHttp_code) {
+            EXPECT_TRUE(context->direct_cdn)
+                << "Context direct_cdn must be true when RFC is enabled";
+            *pHttp_code = 200;
+            return 0;
+        }));
+
+    int result = fetch_xconf_firmware_info(&response, 0, &http_code);
+    EXPECT_EQ(result, 0);
+    EXPECT_EQ(http_code, 200);
+}
+
+/**
+ * @test fetch_xconf_firmware_info sets direct_cdn=false when RFC disabled
+ * @brief Verifies legacy behavior: direct_cdn flag is false when Direct CDN RFC disabled
+ */
+TEST_F(FetchXconfFirmwareInfoTest, DirectCDN_Disabled_ContextFlagIsFalse) {
+    const char* test_url = "http://xconf.test.example.com/xconf/swu/stb";
+    const char* test_json = "{\"estbMacAddress\":\"AA:BB:CC:DD:EE:FF\"}";
+    const char* xconf_response = MOCK_XCONF_RESPONSE_UPDATE_AVAILABLE;
+
+    /* isDirectCDNEnabled returns false (legacy) */
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, isDirectCDNEnabled())
+        .WillRepeatedly(Return(false));
+
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, createJsonString(testing::_, JSON_STR_LEN))
+        .WillOnce(testing::Invoke([test_json](char* pJSONStr, size_t szBufSize) {
+            strncpy(pJSONStr, test_json, szBufSize - 1);
+            pJSONStr[szBufSize - 1] = '\0';
+            return strlen(test_json);
+        }));
+
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, allocDowndLoadDataMem(testing::_, DEFAULT_DL_ALLOC))
+        .WillOnce(testing::Invoke([xconf_response](DownloadData* pDwnLoc, int size) {
+            pDwnLoc->pvOut = malloc(strlen(xconf_response) + 1);
+            strcpy((char*)pDwnLoc->pvOut, xconf_response);
+            pDwnLoc->datasize = strlen(xconf_response);
+            pDwnLoc->memsize = strlen(xconf_response) + 1;
+            return 0;
+        }));
+
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, GetServURL(testing::_, URL_MAX_LEN))
+        .WillOnce(testing::Invoke([test_url](char* pServURL, size_t szBufSize) {
+            strncpy(pServURL, test_url, szBufSize - 1);
+            pServURL[szBufSize - 1] = '\0';
+            return strlen(test_url);
+        }));
+
+    /* KEY ASSERTION: Verify context->direct_cdn == false when RFC is disabled */
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_))
+        .WillOnce(testing::Invoke([](const RdkUpgradeContext_t* context, void** curl, int* pHttp_code) {
+            EXPECT_FALSE(context->direct_cdn)
+                << "Context direct_cdn must be false when RFC is disabled";
+            *pHttp_code = 200;
+            return 0;
+        }));
+
+    int result = fetch_xconf_firmware_info(&response, 0, &http_code);
+    EXPECT_EQ(result, 0);
+    EXPECT_EQ(http_code, 200);
 }

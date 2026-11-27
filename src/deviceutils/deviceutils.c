@@ -219,6 +219,20 @@ size_t RunCommand( SYSCMD eSysCmd, const char *pArgs, char *pResult, size_t szRe
     return nbytes_read;
 }
 
+/* Static cache for peripheral product name, populated by BuildRemoteInfo() */
+static char pProductNumber[128] = {0};
+
+int getPeripheralProduct(char *buf, size_t szIn)
+{
+    if (buf == NULL || szIn == 0) return -1;
+    if (pProductNumber[0] != '\0') {
+        snprintf(buf, szIn, "%s", pProductNumber);
+    } else {
+        snprintf(buf, szIn, "%s", "remCtrl");
+    }
+    return 0;
+}
+
 /* function BuildRemoteInfo - Formats the "periperalFirmwares" string for remote info part of xconf communication
  
         Usage: size_t BuildRemoteInfo <JSON *pItem> <char *pRemoteInfo> <size_t szMaxBuf> <bool bAddremCtrl>
@@ -246,14 +260,18 @@ size_t BuildRemoteInfo( JSON *pItem, char *pRemoteInfo, size_t szMaxBuf, bool bA
     char productBuf[100];
     char versionBuf[50];
 
-    if( pItem != NULL && pRemoteInfo != NULL )
+    if( pItem != NULL && pRemoteInfo != NULL && szMaxBuf > 0 )
     {
+        pRemoteInfo[0] = '\0';
         szBufRemaining = szMaxBuf;
 	SWLOG_INFO( "BuildRemoteInfo: Start\n" );
 
         i = GetJsonVal( pItem, "Product", productBuf, sizeof(productBuf) );
         if( i )
         {
+            /* Cache peripheral product name for Direct CDN URL key lookup */
+            snprintf(pProductNumber, sizeof(pProductNumber), "remCtrl%s", productBuf);
+
             if( bAddremCtrl == true )
             {
                 pPrefix = pRemCtrlStrings;
@@ -282,9 +300,14 @@ size_t BuildRemoteInfo( JSON *pItem, char *pRemoteInfo, size_t szMaxBuf, bool bA
                 if( i )
                 {
                     iLen = snprintf( pRemoteInfo + szRunningLen, szBufRemaining, "%s%s%s%s%s", *pPrefix, productBuf, *pMid, versionBuf, pSuffix );
-		    if (iLen >= szBufRemaining) {
+            if (iLen < 0) {
+            pRemoteInfo[szRunningLen] = '\0';
+            break;
+            }
+            if ((size_t)iLen >= szBufRemaining) {
 			SWLOG_INFO( "Buffer is Full\n" );
-			iLen = szBufRemaining;
+            szRunningLen += szBufRemaining - 1;
+            pRemoteInfo[szRunningLen] = '\0';
 			break;
 		    }
                     ++pPrefix;
@@ -300,7 +323,7 @@ size_t BuildRemoteInfo( JSON *pItem, char *pRemoteInfo, size_t szMaxBuf, bool bA
     {
         SWLOG_ERROR( "BuildRemoteInfo: Error, input argument(s) invalid\n" );
     }
-    return (size_t)iLen;
+    return szRunningLen;
 }
 
 /* function getJsonRpc - Use to get jsonrpc using curl lib
@@ -456,6 +479,17 @@ metaDataFileList_st *getMetaDataFile(const char *dir)
             if (pDirent->d_type == DT_REG && strstr(pDirent->d_name, "_package.json") != NULL)
             {
                 newnode = (metaDataFileList_st *)malloc(sizeof(metaDataFileList_st));
+                    if (newnode == NULL)
+                    {
+                        SWLOG_ERROR("GetInstalledBundles: malloc failed for %s\n", pDirent->d_name);
+                        while (headNode != NULL)
+                        {
+                            metaDataFileList_st *next = headNode->next;
+                            free(headNode);
+                            headNode = next;
+                        }
+                        break;
+                    }
                 SWLOG_INFO("GetInstalledBundles: found %s\n", pDirent->d_name);
                 snprintf(newnode->fileName, sizeof(newnode->fileName), "%s/%s", dir, pDirent->d_name);
                 newnode->next = NULL;
