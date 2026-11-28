@@ -20,6 +20,8 @@
 #include <gmock/gmock.h>
 #include <iostream>
 #include <unistd.h>
+#include <sys/stat.h>
+#include <cerrno>
 
 #include "../mocks/deviceutils_mock.h"
 #include "rdkv_cdl_log_wrapper.h"
@@ -198,10 +200,47 @@ TEST_F(DeviceApiTestFixture,TestName_bundle_Nullcheck)
 {
     EXPECT_EQ(GetInstalledBundles(NULL, 0, "dlCertBundle"), 0);
 }
+TEST_F(DeviceApiTestFixture, BundleBounds_ZeroCapacityDoesNotWrite)
+{
+    char output = '#';
+    EXPECT_EQ(GetInstalledBundles(&output, 0, "dlAppBundle"), 0u);
+    EXPECT_EQ(output, '#');
+}
+
+TEST_F(DeviceApiTestFixture, BundleBounds_ExactFitAndRejectsIncompleteEntry)
+{
+    if (access("/tmp/apps", F_OK) == 0 || access("/tmp/rfc/apps", F_OK) == 0) {
+        GTEST_SKIP() << "Requires isolated bundle directories; existing state left untouched";
+    }
+    ASSERT_EQ(mkdir("/tmp/apps", 0700), 0);
+    const char *manifest = "/tmp/apps/rdkfw010_package.json";
+    FILE *file = fopen(manifest, "w");
+    if (file == NULL) {
+        rmdir("/tmp/apps");
+        FAIL() << "Cannot create bundle fixture";
+    }
+    fputs("{\"name\":\"bundle\",\"version\":\"1\"}", file);
+    fclose(file);
+    char exact[11];
+    memset(exact, '#', sizeof(exact));
+    EXPECT_EQ(GetInstalledBundles(exact + 1, 9, "dlAppBundle"), 8u);
+    EXPECT_STREQ(exact + 1, "bundle:1");
+    EXPECT_EQ(exact[0], '#');
+    EXPECT_EQ(exact[10], '#');
+    char shortBuffer[10];
+    memset(shortBuffer, '#', sizeof(shortBuffer));
+    EXPECT_EQ(GetInstalledBundles(shortBuffer + 1, 8, "dlAppBundle"), 0u);
+    EXPECT_EQ(shortBuffer[1], '\0');
+    EXPECT_EQ(shortBuffer[0], '#');
+    EXPECT_EQ(shortBuffer[9], '#');
+    unlink(manifest);
+    rmdir("/tmp/apps");
+}
+
 TEST_F(DeviceApiTestFixture,TestName_bundle_Success)
 {
     int ret;
-    char pBundles[32] = {0};
+    char pBundles[400] = {0};
     ret = system("mkdir /tmp/certs;cp ca-store-update-bundle_package.json /tmp/certs/ ");
     EXPECT_NE(GetInstalledBundles(pBundles, sizeof(pBundles), "dlCertBundle"), 0);
     ret = system("rm -rf /tmp/certs/ ");
@@ -210,7 +249,7 @@ TEST_F(DeviceApiTestFixture,TestName_bundle_Success)
 TEST_F(DeviceApiTestFixture,TestName_bundle_rfcpath)
 {
     int ret;
-    char pBundles[32] = {0};
+    char pBundles[400] = {0};
     ret = system("mkdir /tmp/rfc;mkdir /tmp/rfc/certs; cp ca-store-update-bundle_package.json /tmp/rfc/certs/ ");
     EXPECT_NE(GetInstalledBundles(pBundles, sizeof(pBundles), "dlCertBundle"), 0);
     ret = system("rm -rf /tmp/rfc/certs/ ");
