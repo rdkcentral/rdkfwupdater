@@ -50,6 +50,10 @@
 #include "rfcinterface.h"
 #include "flash.h"  // For flashImage() function from librdksw_flash.so
 #include <string.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <errno.h>
 #include <gio/gio.h>
 #include "rdkv_dbus_server.h"
 
@@ -291,8 +295,9 @@ gboolean xconf_cache_exists(void) {
  */
 gboolean load_xconf_from_cache(XCONFRES *pResponse) {
     gchar *cache_content = NULL;
-    gsize length;
-    GError *error = NULL;
+    gsize length = 0;
+    struct stat file_info;
+    int descriptor;
     gboolean result = FALSE;
     
     // Validate input parameter (no lock needed)
@@ -306,20 +311,43 @@ gboolean load_xconf_from_cache(XCONFRES *pResponse) {
     // === CRITICAL SECTION START ===
     G_LOCK(xconf_cache);
     
-    // Read file with mutex held (prevents concurrent writes)
-    if (!g_file_get_contents(XCONF_CACHE_FILE, &cache_content, &length, &error)) {
-        SWLOG_ERROR("[CACHE] Failed to read cache file: %s\n", 
-                    error ? error->message : "Unknown error");
-        if (error) g_error_free(error);
-        CACHE_UNLOCK_AND_RETURN(FALSE);  // Unlock on error path
+    descriptor = open(XCONF_CACHE_FILE, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
+    if (descriptor < 0) {
+        SWLOG_ERROR("[CACHE] Cannot securely open cache\n");
+        CACHE_UNLOCK_AND_RETURN(FALSE);
     }
+    if (fstat(descriptor, &file_info) != 0 || !S_ISREG(file_info.st_mode) ||
+        file_info.st_uid != geteuid() || (file_info.st_mode & (S_IWGRP | S_IWOTH)) ||
+        file_info.st_size <= 0 || file_info.st_size > 1024 * 1024) {
+        close(descriptor);
+        SWLOG_ERROR("[CACHE] Rejected untrusted or oversized cache\n");
+        CACHE_UNLOCK_AND_RETURN(FALSE);
+    }
+    cache_content = g_try_malloc((gsize)file_info.st_size + 1);
+    if (cache_content == NULL) {
+        close(descriptor);
+        CACHE_UNLOCK_AND_RETURN(FALSE);
+    }
+    while (length < (gsize)file_info.st_size) {
+        ssize_t received = read(descriptor, cache_content + length, (gsize)file_info.st_size - length);
+        if (received < 0 && errno == EINTR) {
+            continue;
+        }
+        if (received <= 0) {
+            close(descriptor);
+            g_free(cache_content);
+            CACHE_UNLOCK_AND_RETURN(FALSE);
+        }
+        length += (gsize)received;
+    }
+    close(descriptor);
+    cache_content[length] = '\0';
     
     G_UNLOCK(xconf_cache);
     // === CRITICAL SECTION END ===
     
     // Parse OUTSIDE critical section (no need to hold lock)
     SWLOG_INFO("[CACHE] Loaded %zu bytes from cache\n", length);
-    SWLOG_INFO("[CACHE] Cache content: %s\n", cache_content);
 
     // Parse cached JSON using existing parser
     int parse_result = getXconfRespData(pResponse, cache_content);
