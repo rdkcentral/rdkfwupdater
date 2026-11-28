@@ -91,6 +91,13 @@ jobs:
           git checkout develop
           git reset --hard origin/develop
           git fetch origin main:main
+          git config gitflow.branch.master main
+          git config gitflow.branch.develop develop
+          git config gitflow.prefix.feature feature/
+          git config gitflow.prefix.release release/
+          git config gitflow.prefix.hotfix hotfix/
+          git config gitflow.prefix.support support/
+          git config gitflow.prefix.versiontag ""
           git flow init -d
 
       - name: "Auto-complete: full release"
@@ -113,9 +120,7 @@ jobs:
           git flow release publish "${RELEASE_VERSION}"
           git flow release finish -m "${RELEASE_VERSION} release" "${RELEASE_VERSION}"
           echo "CREATED_TAG=true" >> "$GITHUB_ENV"
-          git push origin main
-          git push origin --tags
-          git push origin develop
+          git push --atomic origin "refs/heads/main" "refs/heads/develop" "refs/tags/${RELEASE_VERSION}"
           git push origin --delete "release/${RELEASE_VERSION}" || true
 
       - name: "Approvable: start release and create PR"
@@ -207,8 +212,7 @@ jobs:
 
           git tag -a "${RELEASE_VERSION}" -m "Hotfix ${RELEASE_VERSION}"
           echo "CREATED_TAG=true" >> "$GITHUB_ENV"
-          git push origin "${SOURCE_BRANCH}"
-          git push origin "${RELEASE_VERSION}"
+          git push --atomic origin "refs/heads/${SOURCE_BRANCH}" "refs/tags/${RELEASE_VERSION}"
           echo "Hotfix complete: pushed ${SOURCE_BRANCH} and tag ${RELEASE_VERSION}."
 
       - name: Cleanup on failure
@@ -227,10 +231,6 @@ jobs:
           if [[ "${RELEASE_TYPE}" == "main" ]]; then
             if [[ "${CREATED_RELEASE_BRANCH:-false}" == "true" ]] && git show-ref --verify --quiet "refs/heads/release/${RELEASE_VERSION}"; then
               git push origin --delete "release/${RELEASE_VERSION}" 2>/dev/null || true
-            fi
-          else
-            if [[ "${CREATED_HOTFIX_BRANCH:-false}" == "true" ]] && git show-ref --verify --quiet "refs/heads/hotfix/${RELEASE_VERSION}"; then
-              git push origin --delete "hotfix/${RELEASE_VERSION}" 2>/dev/null || true
             fi
           fi
 
