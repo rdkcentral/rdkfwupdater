@@ -36,6 +36,77 @@
 #include <sys/wait.h>
 #include "deviceutils.h"
 
+/* xconfCheckNow accepts one token plus an optional LF or CRLF line ending. */
+#define XCONF_CHECK_NOW_MAX_VALUE_LENGTH 6
+#define XCONF_CHECK_NOW_MAX_LINE_ENDING_LENGTH 2
+#define XCONF_CHECK_NOW_READ_BUFFER_SIZE \
+    (XCONF_CHECK_NOW_MAX_VALUE_LENGTH + XCONF_CHECK_NOW_MAX_LINE_ENDING_LENGTH + 1)
+#define XCONF_CHECK_NOW_VALUE_BUFFER_SIZE (XCONF_CHECK_NOW_MAX_VALUE_LENGTH + 1)
+
+/*
+ * Read and validate the state written by TR-69 Hostif for
+ * Device.X_COMCAST-COM_Xcalibur.Client.xconfCheckNow.
+ *
+ * The producer accepts TRUE and CANARY without regard to ASCII letter case
+ * and may write LF or CRLF.  We therefore normalize ASCII letters and accept
+ * only the complete TRUE or CANARY token plus one optional line ending.
+ * Empty, oversized, truncated, whitespace-padded, multi-token and unreadable
+ * values return an empty string, which preserves the existing non-Canary
+ * behavior.  This function validates content only; file ownership, symlink
+ * handling and producer authentication remain separate security concerns.
+ */
+static char *readXconfCheckNowValue(void)
+{
+    char contents[XCONF_CHECK_NOW_READ_BUFFER_SIZE];
+    char *value = calloc(XCONF_CHECK_NOW_VALUE_BUFFER_SIZE, sizeof(char));
+    FILE *state_file;
+    size_t length;
+    bool read_failed;
+
+    if (value == NULL) {
+        return NULL;
+    }
+    state_file = fopen("/tmp/xconfchecknow_val", "r");
+    if (state_file == NULL) {
+        SWLOG_INFO("xconfCheckNow: state file unavailable; using non-Canary behavior\n");
+        return value;
+    }
+    length = fread(contents, 1, sizeof(contents), state_file);
+    read_failed = ferror(state_file) != 0;
+    fclose(state_file);
+
+    if (read_failed || length == sizeof(contents)) {
+        SWLOG_ERROR("xconfCheckNow: unreadable or oversized value rejected\n");
+        return value;
+    }
+    if (length > 0 && contents[length - 1] == '\n') {
+        --length;
+        if (length > 0 && contents[length - 1] == '\r') {
+            --length;
+        }
+    }
+    /* Hostif accepts mixed case; normalize it without accepting prefixes or extra contents. */
+    for (size_t index = 0; index < length; ++index) {
+        if (contents[index] >= 'a' && contents[index] <= 'z') {
+            contents[index] -= 'a' - 'A';
+        }
+    }
+    if ((length == strlen("TRUE") && memcmp(contents, "TRUE", strlen("TRUE")) == 0) ||
+        (length == strlen("CANARY") && memcmp(contents, "CANARY", strlen("CANARY")) == 0)) {
+        memcpy(value, contents, length);
+    } else {
+        SWLOG_ERROR("xconfCheckNow: invalid value rejected; expected complete TRUE or CANARY (case-insensitive)\n");
+    }
+    return value;
+}
+
+#ifdef GTEST_ENABLE
+char *readXconfCheckNowValueForTest(void)
+{
+    return readXconfCheckNowValue();
+}
+#endif
+
 // TODO - do similar to what is done for IARM eventing. Is not the primary goal of this module
 /* Description: Use for sending telemetry Log
  * @param marker: use for send marker details
@@ -165,17 +236,10 @@ int flashImage(const char *server_url, const char *upgrade_file, const char *reb
          snprintf(fwdls.status, sizeof(fwdls.status), "Status|Success\n");
          snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Validation complete\n");
          snprintf(fwdls.failureReason, sizeof(fwdls.failureReason), "FailureReason|");
-	 char *pXconfCheckNow = calloc(10, sizeof(char));
-         FILE *canFile = fopen("/tmp/xconfchecknow_val", "r");
-         if (canFile != NULL) {
-             int fret = fscanf(canFile, "%9s", pXconfCheckNow);
-	     if (fret <= 0) {
-	         SWLOG_ERROR("Device_X_COMCAST_COM_Xcalibur_Client_xconfCheckNow: Error reading from file\n");
-	     }
-             fclose(canFile);
-         }
-         else {
-             SWLOG_INFO("Device_X_COMCAST_COM_Xcalibur_Client_xconfCheckNow: File does not exist\n");
+         char *pXconfCheckNow = readXconfCheckNowValue();
+         if (pXconfCheckNow == NULL) {
+             SWLOG_ERROR("xconfCheckNow: allocation failed\n");
+             return ret;
          }
 	 if (((strncmp(maint, "true", 4)) == 0) && (0 == (strncmp(reboot_flag, "true", 4))) && ((0 != strcasecmp("CANARY", pXconfCheckNow)) || (trigger_type != 3))) {
              eventManager("MaintenanceMGR", MAINT_CRITICAL_UPDATE);
@@ -322,20 +386,10 @@ int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, con
     }
     sleep(5);
     sync();
-    char* pXconfCheckNow = calloc(10, sizeof(char));
+    char* pXconfCheckNow = readXconfCheckNowValue();
     if (pXconfCheckNow == NULL) {
         SWLOG_ERROR("Device_X_COMCAST_COM_Xcalibur_Client_xconfCheckNow: CALLOC failure\n");
 	return ret;
-    }
-    FILE *file = fopen("/tmp/xconfchecknow_val", "r");
-    if (file != NULL) {
-        if (fscanf(file, "%9s", pXconfCheckNow) == EOF) {
-	    SWLOG_ERROR("Device_X_COMCAST_COM_Xcalibur_Client_xconfCheckNow: Error reading file\n");
-	}
-        fclose(file);
-    }
-    else {
-        SWLOG_INFO("Device_X_COMCAST_COM_Xcalibur_Client_xconfCheckNow: Error opening file for read\n");
     }
     if (0 != (filePresentCheck("/tmp/fw_preparing_to_reboot"))) {
 	fp = fopen("/tmp/fw_preparing_to_reboot", "w");

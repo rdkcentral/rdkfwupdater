@@ -1,0 +1,94 @@
+"""
+# Copyright 2026 Comcast Cable Communications Management, LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+#!/usr/bin/env python3
+"""
+
+import json
+import os
+from pathlib import Path
+import subprocess
+
+import pytest
+
+
+CASES = [
+    pytest.param(b"TRUE", False, id="true"),
+    pytest.param(b"TRUE\n", False, id="true-lf"),
+    pytest.param(b"TRUE\r\n", False, id="true-crlf"),
+    pytest.param(b"CANARY", True, id="canary"),
+    pytest.param(b"CANARY\n", True, id="canary-lf"),
+    pytest.param(b"CANARY\r\n", True, id="canary-crlf"),
+    pytest.param(None, False, id="missing"),
+    pytest.param(b"", False, id="empty"),
+    pytest.param(b"FALSE", False, id="false"),
+    pytest.param(b"canary", True, id="lowercase-canary"),
+    pytest.param(b"true", False, id="lowercase-true"),
+    pytest.param(b"TrUe", False, id="mixed-true"),
+    pytest.param(b"TrUe\r\n", False, id="mixed-true-crlf"),
+    pytest.param(b"CaNaRy", True, id="mixed-canary"),
+    pytest.param(b"canary\n", True, id="lowercase-canary-lf"),
+    pytest.param(b"canary\r\n", True, id="lowercase-canary-crlf"),
+    pytest.param(b"TRUEextra", False, id="true-suffix"),
+    pytest.param(b"canary x", False, id="lowercase-extra-token"),
+    pytest.param(b" CANARY", False, id="leading-space"),
+    pytest.param(b"CANARY ", False, id="trailing-space"),
+    pytest.param(b"CANARY x", False, id="extra-token"),
+    pytest.param(b"CANARY\nTRUE", False, id="extra-line"),
+    pytest.param(b"CANARY\n\n", False, id="double-lf"),
+    pytest.param(b"CANARY\r", False, id="bare-cr"),
+    pytest.param(b"CANARY\0", False, id="embedded-nul"),
+    pytest.param(b"CANARYxxx", False, id="nine-bytes"),
+    pytest.param(b"A" * 64, False, id="oversized"),
+]
+
+
+@pytest.fixture(scope="module")
+def state_driver():
+    driver = Path(os.environ.get("RDKFW_STATE_DRIVER", "./xconf_state_driver")).resolve()
+    library_name = os.environ.get("RDKFW_FLASH_LIBRARY")
+    assert driver.is_file(), "Build xconf_state_driver using the RDKFW-002 test plan"
+    assert library_name, "Set RDKFW_FLASH_LIBRARY to the freshly built production librdksw_flash.so"
+    library = Path(library_name).resolve()
+    assert library.is_file(), f"Flash library not found: {library}"
+    return driver, library
+
+
+@pytest.mark.parametrize("contents,canary", CASES)
+@pytest.mark.parametrize("entry_point", ["flash", "post"])
+def test_xconf_state_rejection_rules(state_driver, tmp_path, contents, canary, entry_point):
+    driver, library = state_driver
+    if contents is not None:
+        (tmp_path / "xconfchecknow_val").write_bytes(contents)
+    completed = subprocess.run(
+        [str(driver), str(library), str(tmp_path), entry_point],
+        capture_output=True, text=True, timeout=15, check=False,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    lines = [line for line in completed.stdout.splitlines() if line.startswith("XCONF_STATE_RESULT ")]
+    assert len(lines) == 1, completed.stdout + completed.stderr
+    observed = json.loads(lines[0].removeprefix("XCONF_STATE_RESULT "))
+    assert observed["result"] == 0
+    assert observed["preparing"] == (0 if canary else 1)
+    assert observed["critical"] == (0 if canary or entry_point == "post" else 1)
+    assert observed["flash"] == (1 if entry_point == "flash" else 0)
+    assert observed["status"] == (1 if entry_point == "flash" else 0)
+    assert observed["cleanup"] == (1 if entry_point == "flash" else 0)
+    if contents is not None:
+        assert (tmp_path / "xconfchecknow_val").read_bytes() == contents
+    else:
+        assert not (tmp_path / "xconfchecknow_val").exists()

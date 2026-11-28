@@ -30,6 +30,9 @@ extern "C" {
 //#include "json_process.h"
 //#include "rdk_fwdl_utils.h"
 int copyFile(const char *src, const char *target);
+char *readXconfCheckNowValueForTest(void);
+
+void sync(void) noexcept {}
 
 unsigned int sleep(unsigned int seconds)
 {
@@ -1364,6 +1367,114 @@ TEST(MainHelperFunctionTest, HandlesNullFilename) {
 TEST(MainHelperFunctionTest,flashImageTestNull){
     EXPECT_EQ(flashImage(NULL, NULL, "false", "2", 0, "false",1), -1);
 }
+
+struct XconfStateCase {
+    const char *name;
+    std::string contents;
+    bool missing;
+    bool canary;
+};
+
+class XconfStateValidationTest : public ::testing::TestWithParam<XconfStateCase> {
+protected:
+    NiceMock<MockExternal> external;
+    NiceMock<DeviceUtilsMock> device;
+    MockExternal *previous_external;
+    DeviceUtilsMock *previous_device;
+
+    void SetUp() override {
+        previous_external = global_mockexternal_ptr;
+        previous_device = g_DeviceUtilsMock;
+        global_mockexternal_ptr = &external;
+        g_DeviceUtilsMock = &device;
+        unlink("/tmp/xconfchecknow_val");
+        if (!GetParam().missing) {
+            FILE *state = fopen("/tmp/xconfchecknow_val", "wb");
+            ASSERT_NE(state, nullptr);
+            const size_t written = fwrite(GetParam().contents.data(), 1, GetParam().contents.size(), state);
+            fclose(state);
+            ASSERT_EQ(written, GetParam().contents.size());
+        }
+        ON_CALL(device, getDevicePropertyData(_, _, _))
+            .WillByDefault(Invoke([](const char *key, char *value, int capacity) {
+                const char *result = strcmp(key, "DEVICE_NAME") == 0 ? "DEV_CONTAINER" : "mediaclient";
+                snprintf(value, capacity, "%s", result);
+                return 0;
+            }));
+        ON_CALL(device, filePresentCheck(_)).WillByDefault(Return(-1));
+        ON_CALL(device, filePresentCheck(StrEq("/lib/rdk/imageFlasher.sh"))).WillByDefault(Return(0));
+        ON_CALL(external, isMediaClientDevice()).WillByDefault(Return(true));
+        ON_CALL(device, v_secure_system(_, _, _)).WillByDefault(Return(0));
+    }
+
+    void TearDown() override {
+        unlink("/tmp/xconfchecknow_val");
+        unlink("/tmp/fw_preparing_to_reboot");
+        unlink("/tmp/rdkvfw_sec_stage");
+        global_mockexternal_ptr = previous_external;
+        g_DeviceUtilsMock = previous_device;
+    }
+};
+
+TEST_P(XconfStateValidationTest, ReaderReturnsOnlyExactAllowedValues) {
+    char *value = readXconfCheckNowValueForTest();
+    ASSERT_NE(value, nullptr);
+    const std::string &contents = GetParam().contents;
+    const char *expected = GetParam().canary ? "CANARY" :
+                ((contents == "TRUE" || contents == "TRUE\n" || contents == "TRUE\r\n" ||
+                    contents == "true" || contents == "TrUe" || contents == "TrUe\r\n") ? "TRUE" : "");
+    EXPECT_STREQ(value, expected);
+    free(value);
+}
+
+TEST_P(XconfStateValidationTest, FlashImageCriticalEventUsesValidatedValue) {
+    EXPECT_CALL(external, eventManager(_, _)).Times(AnyNumber());
+    EXPECT_CALL(external, eventManager(StrEq("MaintenanceMGR"), StrEq(MAINT_CRITICAL_UPDATE)))
+        .Times(GetParam().canary ? 0 : 1);
+    EXPECT_CALL(external, updateFWDownloadStatus(_, _)).Times(1);
+    EXPECT_CALL(device, getJsonRpcData(_, _, _, _)).Times(0);
+    EXPECT_EQ(flashImage("https://mock.example/fw", "/tmp/state_test.bin", "true", "2",
+                         PDRI_UPGRADE, "true", 3), 0);
+}
+
+TEST_P(XconfStateValidationTest, PostFlashPreparingEventUsesValidatedValue) {
+    EXPECT_CALL(external, eventManager(_, _)).Times(AnyNumber());
+    EXPECT_CALL(device, filePresentCheck(StrEq("/tmp/fw_preparing_to_reboot"))).WillOnce(Return(-1));
+    EXPECT_CALL(external, eventManager(StrEq(FW_STATE_EVENT), StrEq(FW_STATE_PREPARING_TO_REBOOT)))
+        .Times(GetParam().canary ? 0 : 1);
+    EXPECT_CALL(device, getJsonRpcData(_, _, _, _)).Times(0);
+    EXPECT_EQ(postFlash("true", "state_test.bin", PDRI_UPGRADE, "true", 3), 0);
+}
+
+INSTANTIATE_TEST_SUITE_P(Contents, XconfStateValidationTest, ::testing::Values(
+    XconfStateCase{"True", "TRUE", false, false},
+    XconfStateCase{"TrueLF", "TRUE\n", false, false},
+    XconfStateCase{"TrueCRLF", "TRUE\r\n", false, false},
+    XconfStateCase{"Canary", "CANARY", false, true},
+    XconfStateCase{"CanaryLF", "CANARY\n", false, true},
+    XconfStateCase{"CanaryCRLF", "CANARY\r\n", false, true},
+    XconfStateCase{"Missing", "", true, false},
+    XconfStateCase{"Empty", "", false, false},
+    XconfStateCase{"False", "FALSE", false, false},
+    XconfStateCase{"LowercaseCanary", "canary", false, true},
+    XconfStateCase{"LowercaseTrue", "true", false, false},
+    XconfStateCase{"MixedTrue", "TrUe", false, false},
+    XconfStateCase{"MixedTrueCRLF", "TrUe\r\n", false, false},
+    XconfStateCase{"MixedCanary", "CaNaRy", false, true},
+    XconfStateCase{"LowercaseCanaryLF", "canary\n", false, true},
+    XconfStateCase{"LowercaseCanaryCRLF", "canary\r\n", false, true},
+    XconfStateCase{"TrueSuffix", "TRUEextra", false, false},
+    XconfStateCase{"LowercaseExtraToken", "canary x", false, false},
+    XconfStateCase{"LeadingSpace", " CANARY", false, false},
+    XconfStateCase{"TrailingSpace", "CANARY ", false, false},
+    XconfStateCase{"ExtraToken", "CANARY x", false, false},
+    XconfStateCase{"ExtraLine", "CANARY\nTRUE", false, false},
+    XconfStateCase{"DoubleLF", "CANARY\n\n", false, false},
+    XconfStateCase{"BareCR", "CANARY\r", false, false},
+    XconfStateCase{"EmbeddedNul", std::string("CANARY\0", 7), false, false},
+    XconfStateCase{"NineBytes", "CANARYxxx", false, false},
+    XconfStateCase{"Oversized", std::string(64, 'A'), false, false}
+), [](const ::testing::TestParamInfo<XconfStateCase> &info) { return info.param.name; });
 
 static void RunCanaryPowerStateTest(const char *responseJson, int rpcResult, bool expectDeferred)
 {
