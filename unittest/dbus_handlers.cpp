@@ -2879,14 +2879,11 @@ TEST_F(DbusHandlersTest, ProgressMonitorThread_EmptyFile_FgetsNullBranch) {
     GThread* thread = g_thread_new("monitor_empty", rdkfw_progress_monitor_thread, ctx);
     ASSERT_NE(thread, nullptr);
 
-    for (int i = 0; i < 200000; ++i) {
-        if (fake_fileio_get_fopen_count() > 2) {
-            break;
-        }
-    }
+    const bool file_opened = fake_fileio_wait_for_open(1000);
     g_atomic_int_set(&stop_flag, 1);
     g_thread_join(thread);
 
+    EXPECT_TRUE(file_opened);
     EXPECT_GT(fake_fileio_get_fopen_count(), 0);
 }
 

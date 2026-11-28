@@ -104,6 +104,21 @@ extern "C" {
     int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_limit, int *httpcode);
 }
 
+TEST(FirmwareFilenameSecurityTest, RejectsTraversalAndUnsafeCharacters) {
+    const char* invalidNames[] = {nullptr, "", ".", "..", "../outside.bin", "/tmp/outside.bin",
+        "nested/image.bin", "nested\\image.bin", "%2e%2e%2foutside.bin", "image?x=1", "image\n.bin"};
+    for (const char* name : invalidNames) {
+        EXPECT_FALSE(isFirmwareFilenameValid(name));
+    }
+}
+
+TEST(FirmwareFilenameSecurityTest, AcceptsNormalNamesAndEnforcesNameLimit) {
+    EXPECT_TRUE(isFirmwareFilenameValid("ABCD_PDRI_VBN_1.2.3-signed.bin"));
+    EXPECT_TRUE(isFirmwareFilenameValid("XR11-20_firmware_5103.3.4.tgz"));
+    EXPECT_TRUE(isFirmwareFilenameValid(std::string(255, 'A').c_str()));
+    EXPECT_FALSE(isFirmwareFilenameValid(std::string(256, 'A').c_str()));
+}
+
 static const char* kBuildTypeFile = "/tmp/device_gtest.prop";
 static const char* kRdmOverrideConfig = "/opt/rdm-versioned-packages.conf";
 static const char* kRdmBinaryPath = "/usr/bin/rdm";
