@@ -1008,6 +1008,29 @@ TEST_F(FetchXconfFirmwareInfoTest, Failure_NullHttpCodePointer_ReturnsError) {
     EXPECT_EQ(fetch_xconf_firmware_info(&response, 0, NULL), -1);
 }
 
+TEST_F(FetchXconfFirmwareInfoTest, Failure_RequestBuildFailed_DoesNotStartTransport) {
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, allocDowndLoadDataMem(testing::_, DEFAULT_DL_ALLOC))
+        .WillOnce(testing::Invoke([](DownloadData* data, int size) {
+            data->pvOut = malloc(size);
+            data->datasize = 0;
+            data->memsize = size;
+            return data->pvOut ? 0 : -1;
+        }));
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, GetServURL(testing::_, URL_MAX_LEN))
+        .WillOnce(testing::Invoke([](char* output, size_t capacity) {
+            return static_cast<size_t>(snprintf(output, capacity, "%s", "https://xconf.test.example.com"));
+        }));
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, createJsonString(testing::_, JSON_STR_LEN))
+        .WillOnce(testing::Invoke([](char* output, size_t) {
+            output[0] = '\0';
+            return XCONF_REQUEST_BUILD_FAILED;
+        }));
+    EXPECT_CALL(*g_RdkFwupdateMgrMock, rdkv_upgrade_request(testing::_, testing::_, testing::_)).Times(0);
+
+    EXPECT_EQ(fetch_xconf_firmware_info(&response, HTTP_XCONF_DIRECT, &http_code), -1);
+    EXPECT_EQ(http_code, 0);
+}
+
 // =============================================================================
 // Test 1: Success Path - HTTP 200, Valid Response, Parse Success
 // =============================================================================
