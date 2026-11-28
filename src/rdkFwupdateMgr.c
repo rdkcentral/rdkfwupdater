@@ -451,6 +451,10 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
     bool bTriggerDL;
 
 
+    if (pCloudFWLocation == NULL || pPeripheralFirmwares == NULL ||
+        strnlen(pPeripheralFirmwares, 960) >= 960) {
+        return -1;
+    }
     SWLOG_INFO( "%s: pPeripheralFirmwares = %s\n", __FUNCTION__, pPeripheralFirmwares );
 
     GetFileContents( &pPrevDlVers, DOWNLOADED_PERIPHERAL_VERSION );
@@ -475,14 +479,34 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
 
             while( pFW != NULL )
             {
+                if (!isFirmwareFilenameValid(pFW)) {
+                    SWLOG_ERROR("%s: rejected unsafe peripheral filename\n", __FUNCTION__);
+                    iRet = -1;
+                    pFW = strtok_r(NULL, ",", &pSavedFW);
+                    continue;
+                }
                 bTriggerDL = true;
 
                 SWLOG_INFO( "%s: pFW = %s\n", __FUNCTION__, pFW );
-                snprintf( cTmpCloudFW, sizeof(cTmpCloudFW), "%s", pFW );      //save a copy, example XR11-20_firmware_1.1.4.1
+                if (strlen(pFW) >= sizeof(cTmpCloudFW) || pFW[0] == '_' ||
+                    pFW[strlen(pFW) - 1] == '_' || strstr(pFW, "__") != NULL) {
+                    SWLOG_ERROR("%s: rejected malformed peripheral token\n", __FUNCTION__);
+                    iRet = -1;
+                    pFW = strtok_r(NULL, ",", &pSavedFW);
+                    continue;
+                }
+                snprintf( cTmpCloudFW, sizeof(cTmpCloudFW), "%s", pFW );
 
                 pDeviceName = strtok_r( cTmpCloudFW, "_", &pSavedDetails );
                 pDeviceType = strtok_r( NULL, "_", &pSavedDetails );    // should be pointing to firmware, audio, dsp, or kw_model
                 pDeviceVer = strtok_r( NULL, "_", &pSavedDetails );     // really just the last bit
+
+                if (pDeviceName == NULL || pDeviceType == NULL || pDeviceVer == NULL) {
+                    SWLOG_ERROR("%s: rejected incomplete peripheral token\n", __FUNCTION__);
+                    iRet = -1;
+                    pFW = strtok_r(NULL, ",", &pSavedFW);
+                    continue;
+                }
 
                 SWLOG_INFO( "%s: pDeviceName = %s\n", __FUNCTION__, pDeviceName );
                 SWLOG_INFO( "%s: pDeviceType = %s\n", __FUNCTION__, pDeviceType );
@@ -539,8 +563,15 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
                 }
                 if( bTriggerDL == true )
                 {
-                    snprintf( cSourceURL, sizeof(cSourceURL), "%s/%s.tgz", pCloudFWLocation, pFW );
-                    snprintf( cDLStoreLoc, sizeof(cDLStoreLoc), "%s/%s.tgz",  device_info.difw_path, pFW );         // where on the device the file downloads to
+                    int urlLength = snprintf(cSourceURL, sizeof(cSourceURL), "%s/%s.tgz", pCloudFWLocation, pFW);
+                    int pathLength = snprintf(cDLStoreLoc, sizeof(cDLStoreLoc), "%s/%s.tgz", device_info.difw_path, pFW);
+                    if (urlLength < 0 || (size_t)urlLength >= sizeof(cSourceURL) ||
+                        pathLength < 0 || (size_t)pathLength >= sizeof(cDLStoreLoc)) {
+                        SWLOG_ERROR("%s: peripheral destination or URL exceeds capacity\n", __FUNCTION__);
+                        iRet = -1;
+                        pFW = strtok_r(NULL, ",", &pSavedFW);
+                        continue;
+                    }
 
                     SWLOG_INFO( "%s: firmware filename with path = %s\n", __FUNCTION__,  cDLStoreLoc );
                     if( filePresentCheck( cDLStoreLoc ) != 0 )
@@ -601,7 +632,7 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
 
             if( *pDownloadedVers )
             {
-                if( (fp=fopen( DOWNLOADED_PERIPHERAL_VERSION, "a")) != NULL )
+                if( (fp=openTrustedStateFile(DOWNLOADED_PERIPHERAL_VERSION, true)) != NULL )
                 {
                     fprintf( fp, "%s", pDownloadedVers );
                     fclose( fp );
@@ -814,9 +845,7 @@ int startFactoryProtectService(void)
     *jsondata = 0;
     RunCommand( eWpeFrameworkSecurityUtility, NULL, jsondata, sizeof(jsondata) );
     
-    SWLOG_INFO("token jsondata=%s\n", jsondata);
     getJRPCTokenData(token, jsondata, sizeof(token));
-    SWLOG_INFO("token after parse=%s\n", token);
     req_data.pHeaderData = header;
     req_data.pDlHeaderData = NULL;
     snprintf(token_header, sizeof(token_header), "Authorization: Bearer %s", token);
@@ -825,7 +854,6 @@ int startFactoryProtectService(void)
     snprintf(req_data.url, sizeof(req_data.url), "%s", url);
     SWLOG_INFO("%s: url=%s\n", __FUNCTION__, req_data.url);
     SWLOG_INFO("%s: header=%s\n", __FUNCTION__, req_data.pHeaderData);
-    SWLOG_INFO("%s: token_header=%s\n", __FUNCTION__, token_header);
     Curl_req = doCurlInit();
     if (Curl_req != NULL) {
         curl_ret_code = doCurlPutRequest(Curl_req, &req_data, token_header, &httpCode );

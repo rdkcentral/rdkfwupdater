@@ -250,8 +250,7 @@ static void *background_thread_func(void *arg)
     /*
      * Subscribe to the CheckForUpdateComplete signal.
      *
-     * sender = NULL  → accept from any sender
-     *                  (daemon's well-known name may vary by deployment)
+    * sender is the same service identity used for API calls.
      * arg0   = NULL  → no filter on first argument
      *
      * GLib calls on_check_complete_signal() in THIS thread's context
@@ -259,7 +258,7 @@ static void *background_thread_func(void *arg)
      */
     g_bg_thread.subscription_id = g_dbus_connection_signal_subscribe(
         g_bg_thread.connection,
-        NULL,                        /* sender: any                       */
+        DBUS_SERVICE_NAME,
         DBUS_INTERFACE_NAME,         /* interface                         */
         DBUS_SIGNAL_COMPLETE,        /* signal: CheckForUpdateComplete    */
         DBUS_OBJECT_PATH,            /* object path                       */
@@ -280,7 +279,7 @@ static void *background_thread_func(void *arg)
      */
     guint dwnl_sub_id = g_dbus_connection_signal_subscribe(
         g_bg_thread.connection,
-        NULL,                           /* sender: any                        */
+        DBUS_SERVICE_NAME,
         DBUS_INTERFACE_NAME,            /* interface                          */
         DBUS_SIGNAL_DWNL_PROGRESS,     /* signal: DownloadProgress           */
         DBUS_OBJECT_PATH,              /* object path                         */
@@ -294,7 +293,7 @@ static void *background_thread_func(void *arg)
 
     guint update_sub_id = g_dbus_connection_signal_subscribe(
         g_bg_thread.connection,
-        NULL,                           /* sender: any                        */
+        DBUS_SERVICE_NAME,
         DBUS_INTERFACE_NAME,            /* interface                          */
         DBUS_SIGNAL_UPDATE_PROGRESS,   /* signal: UpdateProgress             */
         DBUS_OBJECT_PATH,              /* object path                         */

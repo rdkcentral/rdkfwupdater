@@ -46,9 +46,12 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <unistd.h>
+#include <errno.h>
 #include <pthread.h>
 #include <time.h>
 #include <curl/curl.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 #include "rdkv_dbus_server.h"
 #include "rdkFwupdateMgr_handlers.h"
 #include "rdkv_cdl_log_wrapper.h"
@@ -297,9 +300,65 @@ static gchar* get_difw_path(void)
  * Creates hash table mapping handler_id -> ProcessInfo to track registered clients.
  * Called once at daemon startup.
  */
+static void free_process_info(gpointer data)
+{
+	ProcessInfo *info = (ProcessInfo *)data;
+	if (info != NULL) {
+		g_free(info->process_name);
+		g_free(info->lib_version);
+		g_free(info->sender_id);
+		g_free(info);
+	}
+}
+
+static gboolean firmware_cache_is_trusted(const gchar *directory, const gchar *name, gboolean allow_missing)
+{
+	struct stat info;
+	int descriptor;
+	int next_descriptor;
+	gboolean trusted = FALSE;
+	gchar **parts;
+	guint index;
+	if (directory == NULL || directory[0] != '/' || name == NULL || *name == '\0' ||
+		strcmp(name, ".") == 0 || strcmp(name, "..") == 0 || strlen(name) > 255 ||
+		strspn(name, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-") != strlen(name)) {
+		return FALSE;
+	}
+	descriptor = open("/", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+	if (descriptor < 0) return FALSE;
+	parts = g_strsplit(directory, "/", -1);
+	for (index = 0; ; ++index) {
+		if (fstat(descriptor, &info) != 0 || !S_ISDIR(info.st_mode) ||
+			info.st_uid != geteuid() || (info.st_mode & (S_IWGRP | S_IWOTH))) {
+			break;
+		}
+		if (parts[index] == NULL) {
+			next_descriptor = openat(descriptor, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
+			if (next_descriptor >= 0) {
+				trusted = fstat(next_descriptor, &info) == 0 && S_ISREG(info.st_mode) &&
+					info.st_uid == geteuid() && info.st_nlink == 1 && info.st_size > 0 &&
+					!(info.st_mode & (S_IWGRP | S_IWOTH));
+				close(next_descriptor);
+			} else if (errno == ENOENT) {
+				trusted = allow_missing;
+			}
+			break;
+		}
+		if (parts[index][0] == '\0') continue;
+		if (strcmp(parts[index], ".") == 0 || strcmp(parts[index], "..") == 0) break;
+		next_descriptor = openat(descriptor, parts[index], O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+		if (next_descriptor < 0) break;
+		close(descriptor);
+		descriptor = next_descriptor;
+	}
+	g_strfreev(parts);
+	close(descriptor);
+	return trusted;
+}
+
 static void init_process_tracking()
 {
-    registered_processes = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, (GDestroyNotify)g_free);
+	registered_processes = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, free_process_info);
     SWLOG_INFO("[TRACKING] process tracking initialized\n");
 }
 
@@ -1126,10 +1185,21 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		// ========== CHECK FOR CACHED FILE (Scenario 8) ==========
 		
 		SWLOG_INFO("[DOWNLOADFIRMWARE] Checking for cached file...\n");
-		gchar *cache_path = g_strdup_printf("/opt/CDL/%s", firmware_name);  // TODO - check if this is the path always to download image
+		g_autofree gchar *cache_directory = get_difw_path();
+		gchar *cache_path = g_build_filename(cache_directory, firmware_name, NULL);
 		SWLOG_INFO("[DOWNLOADFIRMWARE]   Cache path: %s\n", cache_path);
 		
-		if (g_file_test(cache_path, G_FILE_TEST_EXISTS)) {
+		if (!firmware_cache_is_trusted(cache_directory, firmware_name, TRUE)) {
+			g_dbus_method_invocation_return_value(resp_ctx,
+				g_variant_new("(sss)", "RDKFW_DWNL_FAILED", "DWNL_ERROR", "Untrusted firmware cache path"));
+			g_free(cache_path);
+			g_free(handler_id_str);
+			g_free(firmware_name);
+			g_free(download_url);
+			g_free(type_of_firmware);
+			return;
+		}
+		if (firmware_cache_is_trusted(cache_directory, firmware_name, FALSE)) {
 			SWLOG_INFO("[DOWNLOADFIRMWARE] File already cached!\n");
 			SWLOG_INFO("[DOWNLOADFIRMWARE] Returning SUCCESS with COMPLETED status immediately\n");
 			
@@ -1628,9 +1698,9 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 		}
 
 		gchar *firmware_fullpath = g_build_filename(loc_of_firmware, firmware_name, NULL); // full path for the firmware file name i.e /opt/CDL/firmware.bin<
-	        if (!g_file_test(firmware_fullpath, G_FILE_TEST_EXISTS)) {
-		   SWLOG_ERROR("[UPDATEFIRMWARE] REJECTED: Firmware file not found: %s\n", firmware_fullpath);
-		   gchar *error_msg = g_strdup_printf("'%s' is not present in '%s' path", firmware_name, loc_of_firmware);
+	        if (!firmware_cache_is_trusted(loc_of_firmware, firmware_name, FALSE)) {
+		   SWLOG_ERROR("[UPDATEFIRMWARE] REJECTED: Firmware file or storage is untrusted: %s\n", firmware_fullpath);
+		   gchar *error_msg = g_strdup_printf("'%s' is missing or untrusted in '%s'", firmware_name, loc_of_firmware);
 		   g_dbus_method_invocation_return_value(resp_ctx,
 				   g_variant_new("(sss)",
 			           "RDKFW_UPDATE_FAILED",
@@ -1894,7 +1964,7 @@ static void process_app_request(GDBusConnection *rdkv_conn_dbus,
 
 		// Look up process info to validate ownership and get process name for logging
 		ProcessInfo *process_info = g_hash_table_lookup(registered_processes, GINT_TO_POINTER(handler));
-		const gchar *process_name = process_info ? process_info->process_name : "UNKNOWN";
+		g_autofree gchar *process_name = g_strdup(process_info ? process_info->process_name : "UNKNOWN");
 		if (process_info && g_strcmp0(process_info->sender_id, rdkv_req_caller_id) != 0) {
 			SWLOG_ERROR("[UNREGISTER] REJECTED: Sender '%s' does not own handler %"G_GUINT64_FORMAT"\n",
 			            rdkv_req_caller_id, handler);

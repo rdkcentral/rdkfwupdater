@@ -65,7 +65,7 @@ bool savePID(const char *file, char *data)
     FILE *fp = NULL;
 
     if ((file != NULL) && (data != NULL)) {
-        fp = fopen(file, "w");
+        fp = openTrustedStateFile(file, false);
         if(fp == NULL) {
             SWLOG_INFO("savePID() %s unable to create file=\n", file);
         }else {
@@ -227,7 +227,7 @@ void saveHTTPCode(int http_code,const char *lastrun)
     FILE *fp = NULL;
 
     snprintf( http, sizeof(http), "%03ld\n", (long int)http_code );
-    fp = fopen(HTTP_CODE_FILE, "w");
+    fp = openTrustedStateFile(HTTP_CODE_FILE, false);
     if(fp == NULL) {
         SWLOG_ERROR("%s : fopen failed:%s\n", __FUNCTION__, HTTP_CODE_FILE);
     }else {
@@ -512,7 +512,7 @@ int rdkv_upgrade_request(RdkUpgradeContext_t* context, void** curl, int* pHttp_c
             if (*pHttp_code == HTTP_PAGE_NOT_FOUND) {
                 SWLOG_INFO("%s : Received HTTPS 404 Response from Xconf Server. Retry logic not needed\n", __FUNCTION__);
                 SWLOG_INFO("%s : Creating /tmp/.xconfssrdownloadurl with 404 response from Xconf\n", __FUNCTION__);
-                fp = fopen("/tmp/.xconfssrdownloadurl", "w");
+                fp = openTrustedStateFile("/tmp/.xconfssrdownloadurl", false);
                 if (fp != NULL) {
                     fprintf(fp, "%d\n", *pHttp_code);
                     fclose(fp);
@@ -734,6 +734,12 @@ int codebigdownloadFile(
     }
      *httpCode = 0;
     /* Direct CDN mode must never enter Codebig path */
+    if ((context->server_type == HTTP_SSR_DIRECT || context->server_type == HTTP_SSR_CODEBIG) &&
+        (context->device_info == NULL || !isFirmwareCleanupPathValid((const char *)context->dwlloc,
+                                                                  context->device_info->difw_path))) {
+        SWLOG_ERROR("%s: rejected unsafe firmware cleanup path\n", __FUNCTION__);
+        return curl_ret_code;
+    }
     if (context->direct_cdn) {
         SWLOG_INFO("%s: Direct CDN mode - Codebig path not permitted, returning\n", __FUNCTION__);
         return curl_ret_code;
@@ -856,7 +862,8 @@ int codebigdownloadFile(
         }
         if (curl_ret_code != 0) {
             setDwnlState(RDKV_FWDNLD_DOWNLOAD_FAILED); 
-            if( *(file_dwnl.pathname) != 0 )
+            if( context->device_info != NULL &&
+                isFirmwareCleanupPathValid(file_dwnl.pathname, context->device_info->difw_path) )
             {
                 unlink(file_dwnl.pathname);
                 unlink(headerInfoFile);
@@ -909,6 +916,13 @@ int downloadFile(
     }
 
     int server_type = context->server_type;
+    if ((server_type == HTTP_SSR_DIRECT || server_type == HTTP_SSR_CODEBIG) &&
+        (context->device_info == NULL || !isFirmwareCleanupPathValid((const char *)context->dwlloc,
+                                                                  context->device_info->difw_path))) {
+        *httpCode = 0;
+        SWLOG_ERROR("%s: rejected unsafe firmware cleanup path\n", __FUNCTION__);
+        return curl_ret_code;
+    }
     const char* artifactLocationUrl = context->artifactLocationUrl;
     const void* localDownloadLocation = context->dwlloc;
     char* pPostFields = context->pPostFields;
@@ -1240,7 +1254,8 @@ int downloadFile(
             SWLOG_INFO("%s : State red entered during download, skipping retry\n", __FUNCTION__);
             return RDKV_UPGRADE_ERROR_STATE_RED;
         }
-        if( *(file_dwnl.pathname) != 0 )
+        if( context->device_info != NULL &&
+            isFirmwareCleanupPathValid(file_dwnl.pathname, context->device_info->difw_path) )
         {
             unlink(file_dwnl.pathname);
             unlink(headerInfoFile);

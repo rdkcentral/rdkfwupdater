@@ -23,6 +23,9 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <errno.h>
 
 /* Forward declarations for types that may not be available in all contexts */
 typedef struct filedwnl FileDwnl_t;
@@ -95,6 +98,67 @@ typedef struct deviceproperty DeviceProperty_t;
 #define MIN_BUFF_SIZE1 32
 #define SMALL_SIZE_BUFF 8
 #define DWNL_PATH_FILE_LEN 128
+
+static inline bool isFirmwareFilenameValid(const char *name)
+{
+    size_t index;
+
+    if (name == NULL || name[0] == '\0' || strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
+        return false;
+    }
+    for (index = 0; index < 256 && name[index] != '\0'; ++index) {
+        unsigned char character = (unsigned char)name[index];
+        if (!((character >= 'a' && character <= 'z') ||
+              (character >= 'A' && character <= 'Z') ||
+              (character >= '0' && character <= '9') ||
+              character == '.' || character == '_' || character == '-')) {
+            return false;
+        }
+    }
+    return index < 256;
+}
+
+static inline bool isFirmwareCleanupPathValid(const char *path, const char *directory)
+{
+    size_t directoryLength;
+    size_t pathLength;
+    const char *name;
+    if (path == NULL || directory == NULL || directory[0] != '/') return false;
+    directoryLength = strnlen(directory, MAX_BUFF_SIZE);
+    pathLength = strnlen(path, DWNL_PATH_FILE_LEN);
+    if (directoryLength == MAX_BUFF_SIZE || pathLength == DWNL_PATH_FILE_LEN) return false;
+    while (directoryLength > 1 && directory[directoryLength - 1] == '/') --directoryLength;
+    if (directoryLength <= 1 || pathLength <= directoryLength + 1 ||
+        strncmp(path, directory, directoryLength) != 0 || path[directoryLength] != '/') return false;
+    name = path + directoryLength + 1;
+    if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) return false;
+    return strspn(name, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-") == strlen(name);
+}
+
+static inline FILE *openTrustedStateFile(const char *path, bool append)
+{
+    struct stat info;
+    int descriptor;
+    FILE *stream;
+    int flags = O_WRONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC;
+    if (path == NULL) return NULL;
+    if (append) flags |= O_APPEND;
+    descriptor = open(path, flags | O_CREAT | O_EXCL, 0600);
+    if (descriptor < 0 && errno == EEXIST) {
+        descriptor = open(path, flags);
+    }
+    if (descriptor < 0) return NULL;
+    if (fstat(descriptor, &info) != 0 || !S_ISREG(info.st_mode) ||
+        info.st_uid != geteuid() || info.st_nlink != 1 ||
+        (info.st_mode & (S_IWGRP | S_IWOTH)) ||
+        (!append && ftruncate(descriptor, 0) != 0)) {
+        close(descriptor);
+        return NULL;
+    }
+    stream = fdopen(descriptor, append ? "a" : "w");
+    if (stream == NULL) close(descriptor);
+    return stream;
+}
 
 //TLS values and timeouts
 //#define CURL_TLS_TIMEOUT 7200L

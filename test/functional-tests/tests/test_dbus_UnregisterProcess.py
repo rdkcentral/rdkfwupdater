@@ -87,6 +87,27 @@ def test_unregister_registered_process_succeeds():
     finally:
         stop_daemon(proc)
 
+def test_repeated_register_unregister_preserves_daemon_lifecycle():
+    proc = start_daemon()
+    try:
+        api = iface()
+        previous_handler = 0
+        for index in range(200):
+            registered = api.RegisterProcess("RDKFW014Lifecycle", "1.0")
+            handler = int(registered[0]) if isinstance(registered, tuple) else int(registered)
+            assert handler > previous_handler, "Expected a fresh registration after removal"
+            repeated = api.RegisterProcess("RDKFW014Lifecycle", "1.0")
+            same_handler = int(repeated[0]) if isinstance(repeated, tuple) else int(repeated)
+            assert same_handler == handler, "Duplicate registration should be idempotent"
+            assert bool(api.UnregisterProcess(handler)), f"Removal failed at cycle {index}"
+            assert not bool(api.UnregisterProcess(handler)), "Removed handler must not remain registered"
+            assert proc.poll() is None, "Daemon exited during registration cleanup"
+            previous_handler = handler
+        print("Completed 200 register/unregister cycles; leak-check evidence is separate")
+    finally:
+        stop_daemon(proc)
+
+
 def test_unregister_nonexistent_process_fails():
     """
     Test that unregistering a non-existent handler_id fails.

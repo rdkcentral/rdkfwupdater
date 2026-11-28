@@ -74,6 +74,10 @@ extern "C" {
 
     int downloadFile(const RdkUpgradeContext_t* context, int *httpCode, void **curl);
     int checkTriggerUpgrade(XCONFRES *response, const char *model_num, int upgrade_type);
+    int buildDirectCdnArtifactPaths(const char *artifact_url, const char *directory,
+                                    const char *artifact_file, const char *suffix,
+                                    char *url_buffer, size_t url_buffer_size,
+                                    char *path_buffer, size_t path_buffer_size);
     int DirectCDNDownload(XCONFRES *response, char *cur_img_name, DeviceProperty_t *device_info, int server_type, int *pHttp_code);
     void setForceStop(int value);
     T2ERROR t2_event_s(char* marker, char* value);
@@ -102,6 +106,71 @@ extern "C" {
     int rdkv_upgrade_request(RdkUpgradeContext_t* context, void** curl, int* pHttp_code);
     size_t getContentLength(const char *file);
     int chunkDownload(FileDwnl_t *pfile_dwnl, MtlsAuth_t *sec, unsigned int speed_limit, int *httpcode);
+}
+
+TEST(FirmwareCleanupSecurityTest, RejectsOutsideOrAmbiguousPaths) {
+    EXPECT_FALSE(isFirmwareCleanupPathValid("/opt/CDL/../canary", "/opt/CDL"));
+    EXPECT_FALSE(isFirmwareCleanupPathValid("/opt/CDL-other/canary", "/opt/CDL"));
+    EXPECT_FALSE(isFirmwareCleanupPathValid("/opt/CDL/nested/canary", "/opt/CDL"));
+    EXPECT_FALSE(isFirmwareCleanupPathValid("/tmp/canary", "/opt/CDL"));
+    EXPECT_FALSE(isFirmwareCleanupPathValid("/canary", "/"));
+    EXPECT_FALSE(isFirmwareCleanupPathValid(nullptr, "/opt/CDL"));
+}
+
+TEST(FirmwareCleanupSecurityTest, AcceptsDirectChildAndRejectsHeaderTruncation) {
+    EXPECT_TRUE(isFirmwareCleanupPathValid("/opt/CDL/ABCD-signed.bin", "/opt/CDL"));
+    EXPECT_TRUE(isFirmwareCleanupPathValid("/opt/CDL/remote_firmware_1.tgz", "/opt/CDL/"));
+    const std::string tooLong = "/opt/CDL/" + std::string(128, 'A');
+    EXPECT_FALSE(isFirmwareCleanupPathValid(tooLong.c_str(), "/opt/CDL"));
+}
+
+TEST(TrustedStateFileTest, RejectsSymlinkWithoutChangingTarget) {
+    char directory[] = "/tmp/rdkfw018-XXXXXX";
+    ASSERT_NE(mkdtemp(directory), nullptr);
+    const std::string target = std::string(directory) + "/target";
+    const std::string linkPath = std::string(directory) + "/link";
+    FILE *file = fopen(target.c_str(), "w");
+    ASSERT_NE(file, nullptr);
+    fputs("canary", file);
+    fclose(file);
+    ASSERT_EQ(symlink(target.c_str(), linkPath.c_str()), 0);
+    EXPECT_EQ(openTrustedStateFile(linkPath.c_str(), false), nullptr);
+    file = fopen(target.c_str(), "r");
+    ASSERT_NE(file, nullptr);
+    char data[16] = {};
+    fgets(data, sizeof(data), file);
+    fclose(file);
+    EXPECT_STREQ(data, "canary");
+    unlink(linkPath.c_str());
+    unlink(target.c_str());
+    rmdir(directory);
+}
+
+TEST(TrustedStateFileTest, CreatesRestrictedFileAndAppends) {
+    char directory[] = "/tmp/rdkfw018-XXXXXX";
+    ASSERT_NE(mkdtemp(directory), nullptr);
+    const std::string path = std::string(directory) + "/state";
+    FILE *file = openTrustedStateFile(path.c_str(), false);
+    ASSERT_NE(file, nullptr);
+    fputs("first", file);
+    fclose(file);
+    struct stat info;
+    ASSERT_EQ(stat(path.c_str(), &info), 0);
+    EXPECT_EQ(info.st_mode & 0777, 0600u);
+    file = openTrustedStateFile(path.c_str(), true);
+    ASSERT_NE(file, nullptr);
+    fputs("second", file);
+    fclose(file);
+    file = fopen(path.c_str(), "r");
+    ASSERT_NE(file, nullptr);
+    char data[32] = {};
+    fgets(data, sizeof(data), file);
+    fclose(file);
+    EXPECT_STREQ(data, "firstsecond");
+    ASSERT_EQ(chmod(path.c_str(), 0666), 0);
+    EXPECT_EQ(openTrustedStateFile(path.c_str(), false), nullptr);
+    unlink(path.c_str());
+    rmdir(directory);
 }
 
 static const char* kBuildTypeFile = "/tmp/device_gtest.prop";
@@ -874,6 +943,47 @@ TEST(checkTriggerUpgradeTest, ReturnsZeroWhenSuccessful) {
     EXPECT_EQ(result, 0);
 }
 */
+
+TEST(PeripheralTokenSecurityTest, RejectsMissingFieldsWithoutDownloads) {
+    NiceMock<MockDownloadFileOps> downloadMock;
+    NiceMock<DeviceUtilsMock> deviceMock;
+    auto *previousDownload = global_mockdownloadfileops_ptr;
+    auto *previousDevice = g_DeviceUtilsMock;
+    global_mockdownloadfileops_ptr = &downloadMock;
+    g_DeviceUtilsMock = &deviceMock;
+    EXPECT_CALL(downloadMock, downloadFile(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(downloadMock, codebigdownloadFile(_, _, _, _, _)).Times(0);
+    char url[] = "https://mock.example.com";
+    const char *tokens[] = {"bad", "remote_firmware", "remote__1", "_firmware_1", "remote_firmware_"};
+    for (const char *token : tokens) {
+        std::string input(token);
+        EXPECT_EQ(peripheral_firmware_dndl(url, &input[0]), -1);
+    }
+    EXPECT_EQ(peripheral_firmware_dndl(url, nullptr), -1);
+    EXPECT_EQ(peripheral_firmware_dndl(nullptr, url), -1);
+    global_mockdownloadfileops_ptr = previousDownload;
+    g_DeviceUtilsMock = previousDevice;
+}
+
+TEST(PeripheralPathSecurityTest, RejectsUnsafeTokensBeforeDownloads) {
+    NiceMock<MockDownloadFileOps> downloadMock;
+    NiceMock<DeviceUtilsMock> deviceMock;
+    auto *previousDownload = global_mockdownloadfileops_ptr;
+    auto *previousDevice = g_DeviceUtilsMock;
+    global_mockdownloadfileops_ptr = &downloadMock;
+    g_DeviceUtilsMock = &deviceMock;
+    EXPECT_CALL(downloadMock, downloadFile(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(downloadMock, codebigdownloadFile(_, _, _, _, _)).Times(0);
+    char url[] = "https://mock.example.com";
+    const char *tokens[] = {"../XR11_firmware_1", "/tmp/XR11_firmware_1",
+        "nested/XR11_firmware_1", "nested\\XR11_firmware_1", "%2e%2e_XR11_firmware_1"};
+    for (const char *token : tokens) {
+        std::string input(token);
+        EXPECT_EQ(peripheral_firmware_dndl(url, &input[0]), -1);
+    }
+    global_mockdownloadfileops_ptr = previousDownload;
+    g_DeviceUtilsMock = previousDevice;
+}
 
 TEST(PeripheralFirmwareDndlTest, HandlesValidInput) {
 
@@ -2742,6 +2852,52 @@ protected:
         g_DeviceUtilsMock = &Deviceglobal;
     }
 };
+
+/* Direct CDN uses a separate per-artifact route, so reject traversal before invoking its downloader. */
+TEST_F(DirectCDNOrchestratorTest, PeripheralTraversalRejectedBeforeDownload) {
+    XCONFRES response;
+    memset(&response, 0, sizeof(response));
+    strncpy(response.remCtrlUrl, "https://cdn.example.com/peripheral.tgz", sizeof(response.remCtrlUrl) - 1);
+    strncpy(response.peripheralFirmwares, "../XR11_firmware_1", sizeof(response.peripheralFirmwares) - 1);
+
+    EXPECT_CALL(mockexternal, isUpgradeInProgress()).WillOnce(Return(false));
+    EXPECT_CALL(mockfileops, downloadFile(_, _, _, _, _)).Times(0);
+    EXPECT_CALL(mockfileops, codebigdownloadFile(_, _, _, _, _)).Times(0);
+    EXPECT_EQ(checkTriggerUpgrade(&response, "testModel", PERIPHERAL_UPGRADE), -1);
+}
+
+TEST(DirectCDNArtifactPathTest, AcceptsExactFitUrlAndDestination) {
+    char url_buffer[10];
+    char path_buffer[6];
+
+    EXPECT_EQ(buildDirectCdnArtifactPaths("https://x", "/d", "fw", "",
+                                         url_buffer, sizeof(url_buffer),
+                                         path_buffer, sizeof(path_buffer)), 0);
+    EXPECT_STREQ(url_buffer, "https://x");
+    EXPECT_STREQ(path_buffer, "/d/fw");
+}
+
+TEST(DirectCDNArtifactPathTest, RejectsUrlTruncation) {
+    char url_buffer[9];
+    char path_buffer[6];
+
+    EXPECT_EQ(buildDirectCdnArtifactPaths("https://x", "/d", "fw", "",
+                                         url_buffer, sizeof(url_buffer),
+                                         path_buffer, sizeof(path_buffer)), -1);
+    EXPECT_STREQ(url_buffer, "");
+    EXPECT_STREQ(path_buffer, "");
+}
+
+TEST(DirectCDNArtifactPathTest, RejectsDestinationTruncation) {
+    char url_buffer[10];
+    char path_buffer[5];
+
+    EXPECT_EQ(buildDirectCdnArtifactPaths("https://x", "/d", "fw", "",
+                                         url_buffer, sizeof(url_buffer),
+                                         path_buffer, sizeof(path_buffer)), -1);
+    EXPECT_STREQ(url_buffer, "");
+    EXPECT_STREQ(path_buffer, "");
+}
 
 TEST_F(DirectCDNOrchestratorTest, HappyPath_AllArtifactsSucceed_ReturnsZero) {
     const char *xconf_json = "{"
