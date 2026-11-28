@@ -65,7 +65,7 @@ bool savePID(const char *file, char *data)
     FILE *fp = NULL;
 
     if ((file != NULL) && (data != NULL)) {
-        fp = fopen(file, "w");
+        fp = openTrustedStateFile(file, false);
         if(fp == NULL) {
             SWLOG_INFO("savePID() %s unable to create file=\n", file);
         }else {
@@ -227,7 +227,7 @@ void saveHTTPCode(int http_code,const char *lastrun)
     FILE *fp = NULL;
 
     snprintf( http, sizeof(http), "%03ld\n", (long int)http_code );
-    fp = fopen(HTTP_CODE_FILE, "w");
+    fp = openTrustedStateFile(HTTP_CODE_FILE, false);
     if(fp == NULL) {
         SWLOG_ERROR("%s : fopen failed:%s\n", __FUNCTION__, HTTP_CODE_FILE);
     }else {
@@ -512,7 +512,7 @@ int rdkv_upgrade_request(RdkUpgradeContext_t* context, void** curl, int* pHttp_c
             if (*pHttp_code == HTTP_PAGE_NOT_FOUND) {
                 SWLOG_INFO("%s : Received HTTPS 404 Response from Xconf Server. Retry logic not needed\n", __FUNCTION__);
                 SWLOG_INFO("%s : Creating /tmp/.xconfssrdownloadurl with 404 response from Xconf\n", __FUNCTION__);
-                fp = fopen("/tmp/.xconfssrdownloadurl", "w");
+                fp = openTrustedStateFile("/tmp/.xconfssrdownloadurl", false);
                 if (fp != NULL) {
                     fprintf(fp, "%d\n", *pHttp_code);
                     fclose(fp);

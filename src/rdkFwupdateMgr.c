@@ -601,7 +601,7 @@ int peripheral_firmware_dndl( char *pCloudFWLocation, char *pPeripheralFirmwares
 
             if( *pDownloadedVers )
             {
-                if( (fp=fopen( DOWNLOADED_PERIPHERAL_VERSION, "a")) != NULL )
+                if( (fp=openTrustedStateFile(DOWNLOADED_PERIPHERAL_VERSION, true)) != NULL )
                 {
                     fprintf( fp, "%s", pDownloadedVers );
                     fclose( fp );
