@@ -814,9 +814,7 @@ int startFactoryProtectService(void)
     *jsondata = 0;
     RunCommand( eWpeFrameworkSecurityUtility, NULL, jsondata, sizeof(jsondata) );
     
-    SWLOG_INFO("token jsondata=%s\n", jsondata);
     getJRPCTokenData(token, jsondata, sizeof(token));
-    SWLOG_INFO("token after parse=%s\n", token);
     req_data.pHeaderData = header;
     req_data.pDlHeaderData = NULL;
     snprintf(token_header, sizeof(token_header), "Authorization: Bearer %s", token);
@@ -825,7 +823,6 @@ int startFactoryProtectService(void)
     snprintf(req_data.url, sizeof(req_data.url), "%s", url);
     SWLOG_INFO("%s: url=%s\n", __FUNCTION__, req_data.url);
     SWLOG_INFO("%s: header=%s\n", __FUNCTION__, req_data.pHeaderData);
-    SWLOG_INFO("%s: token_header=%s\n", __FUNCTION__, token_header);
     Curl_req = doCurlInit();
     if (Curl_req != NULL) {
         curl_ret_code = doCurlPutRequest(Curl_req, &req_data, token_header, &httpCode );
